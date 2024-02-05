@@ -1,2 +1,4 @@
 Diagnostics:
-  Suppress: unused-includes
+  Suppress: [unused-includes, module_odr_violation_function, module_odr_violation_mismatch_decl_unknown, module_odr_violation_record, module_odr_violation_template_parameter, fatal_too_many_errors]
+CompileFlags:
+  Add: -ferror-limit=0
