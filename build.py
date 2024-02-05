@@ -7,16 +7,10 @@ import subprocess as sp
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from queue import Queue
-files = []
 
 
 
-with open('translation_units', 'rt') as f:
-  for line in f:
-    files.append(line.strip())
-
-
-def calculate_hash(file_path):
+def compute_hash(file_path):
   # 以二进制读取文件内容
   with open(file_path, 'rb') as file:
       # 创建 SHA-256 哈希对象
@@ -41,54 +35,73 @@ precompile_flags = flags + ['-I.\\third_party\include\\', f'-fprebuilt-module-pa
 link_flags = flags + [ '-LC:/Users/18389/msys2/mingw64/lib', '-Lthird_party/static_library']
 link_librarys = ['c++', 'vulkan-1', 'glfw3dll']
 
-def scan_deps():
-  compile_database = []
-  for file in files:
-    output = file + '.o'
-    command = compile_flags + [file, '-o', output, '-IC:/Users/18389/msys64/mingw64/lib/clang/17/include']
-    compile_database.append({
-      'file': file,
-      'directory': path.abspath('.'),
-      'arguments': command,
-      'output': output,
-    })
+input_files = []
+with open('translation_units', 'rt') as f:
+  for line in f:
+    input_files.append(line.strip())
 
-  with open('commands_for_scan_dep.json', 'wt') as f:
-    json.dump(compile_database, f, indent=4)
+def exec_scan_deps(files):
+    compile_database = []
+    for file in files:
+      output = file + '.o'
+      command = compile_flags + [file, '-o', output, '-IC:/Users/18389/msys64/mingw64/lib/clang/17/include']
+      compile_database.append({
+        'file': file,
+        'directory': path.abspath('.'),
+        'arguments': command,
+        'output': output,
+      })
+    with open(path.join(build_dir, 'commands_for_scan_dep.json'), 'wt') as f:
+      json.dump(compile_database, f, indent=4)
+    result = sp.run('clang-scan-deps -format=p1689 -compilation-database commands_for_scan_dep.json', stdout=sp.PIPE, check=True)
+    def get_info(rule):
+      info = {
+          'deps': list(map(lambda x: x['logical-name'], rule.get('requires', [])))
+        }
+      if 'provides' in rule:
+        assert(len(rule['provides']) == 1)
+        info['module'] = rule['provides'][0]['logical-name']
+      return rule['primary-output'][:-2], info
+    return {file: info for file, info in map(get_info, json.loads(result.stdout)['rules'])}
 
+# info = {
+#     'module': 'A', optional
+#     'deps': ['B'], module list
+#     'hash': 'xxx',
+#   }
+def get_scan_deps(files):
+  
+  cache_path = path.join(build_dir, 'scan_deps.json')
+  
+  file_hashes = {file: compute_hash(file) for file in files}
+  if path.exists(cache_path):
+    with open(cache_path, 'rt') as f:
+      scan_deps = json.load(f)
+  else:
+    scan_deps = {}
+  need_update_files = list(filter(lambda file: file not in scan_deps or scan_deps[file]['hash'] != file_hashes[file], files))
+  updated_infos = exec_scan_deps(need_update_files)
+  for file, updated_info in updated_infos.items():
+    updated_info['hash'] = file_hashes[file]
+    scan_deps[file] = updated_info
+    
+  with open(cache_path, 'wt') as f:
+    json.dump(scan_deps, f, indent=2)
+  
+  module_file_map = {}
+  for file, info in scan_deps.items():
+    if 'module' in info:
+      module_file_map[info['module']] = file
+  for info in scan_deps.values():
+    info['redep_num'] = 0
+    info['deps'] = list(map(lambda x: module_file_map[x], info['deps']))
+  for info in scan_deps.values():
+    for dep in info['deps']:
+      scan_deps[dep]['redep_num'] += 1
 
-  result = sp.run('clang-scan-deps -format=p1689 -compilation-database commands_for_scan_dep.json', stdout=sp.PIPE, check=True)
-  scan_dep = json.loads(result.stdout)
-  print(scan_dep)
-  return scan_dep
+  return scan_deps
 
-scan_dep = scan_deps()
-
-def get_deps():
-  dep_info = {}
-  for rule in scan_dep['rules']:
-    file = rule['primary-output'][:-2]
-    info = dep_info.setdefault(file, {})
-    info['deps'] = []
-    info.setdefault('redep_num', 0)
-    # info.setdefault('redeps', [])
-    if 'provides' in rule:
-      assert(len(rule['provides']) == 1)
-      provide = rule['provides'][0]
-      assert(file == provide['source-path'])
-      info['module'] =  provide['logical-name']
-    for require in rule.get('requires', []):
-      assert('logical-name' in require)
-      dep = require['source-path']
-      info['deps'].append(dep)
-      # dep_info.setdefault(dep, {}).setdefault('redeps', []).append(file)
-      dep_info.setdefault(dep, {}).setdefault('redep_num', 0)
-      dep_info[dep]['redep_num'] += 1
-
-  print(dep_info)
-  return dep_info
-
-dep_info = get_deps()
+dep_info = get_scan_deps(input_files)
 
 class Edge:
   def __init__(self):
@@ -147,8 +160,8 @@ with ThreadPoolExecutor(max_workers=20) as executor:  # 创建一个最大容纳
   def execute(edge: Edge):
     os.makedirs(path.split(edge.output)[0], exist_ok=True)
     cached = False
-    if edge.prev_all_cached and not check_change():
-      cached = True
+    # if edge.prev_all_cached and not check_change():
+    #   cached = True
     if not cached:
       sp.run(edge.command, check=True)
     for next in edge.next:
