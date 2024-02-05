@@ -40,11 +40,11 @@ def exec_scan_deps(files):
       output = file + '.o'
       command = compile_flags + [file, '-o', output, '-IC:/Users/18389/msys64/mingw64/lib/clang/17/include']
       compile_database.append({
-        'file': file,
-        'directory': path.abspath('.'),
-        'arguments': command,
-        'output': output,
-      })
+          'file': file,
+          'directory': path.abspath('.'),
+          'arguments': command,
+          'output': output,
+        })
     with open(compile_database_path, 'wt') as f:
       json.dump(compile_database, f, indent=4)
     result = sp.run(f'clang-scan-deps -format=p1689 -compilation-database {compile_database_path}', stdout=sp.PIPE, check=True)
@@ -116,38 +116,33 @@ with open('build.ninja', 'wt') as f:
     obj_files.append(obj_file)
     dep_pcm_files = list(map(get_pcm_file, info['deps']))
 
-    # compile_command = {}
-    # if info['redep_num'] == 0:
-    #   command_obj = compile_flags + [file, '-o', obj_file]
-    #   rule_name = generate_rule_name()
-    #   ninja_writer.rule(rule_name, command_obj)
-    #   ninja_writer.build(outputs=[obj_file], rule=rule_name, inputs=dep_pcm_files+[file])
-    #   compile_command['arguments'] = command_obj
-    # else:
-    pcm_file = get_pcm_file(file)
-    command_pcm = precompile_flags + [file, '-o', pcm_file]
-    rule_name = generate_rule_name()
-    ninja_writer.rule(rule_name, command_pcm)
-    ninja_writer.build(outputs=[pcm_file], rule=rule_name, inputs=dep_pcm_files+[file])
+    compile_command = {}
+    if 'module' not in info:
+      command_obj = compile_flags + [file, '-o', obj_file]
+      rule_name = generate_rule_name()
+      ninja_writer.rule(rule_name, command_obj)
+      ninja_writer.build(outputs=[obj_file], rule=rule_name, inputs=dep_pcm_files+[file])
+      compile_command['arguments'] = command_obj
+    else:
+      pcm_file = get_pcm_file(file)
+      command_pcm = precompile_flags + [file, '-o', pcm_file]
+      rule_name = generate_rule_name()
+      ninja_writer.rule(rule_name, command_pcm)
+      ninja_writer.build(outputs=[pcm_file], rule=rule_name, inputs=dep_pcm_files+[file])
 
-    command_obj = compile_flags + [pcm_file, '-o', obj_file]
-    rule_name = generate_rule_name()
-    ninja_writer.rule(rule_name, command_obj)
-    ninja_writer.build(outputs=[obj_file], rule=rule_name, inputs=dep_pcm_files+[pcm_file])
-    ninja_writer.build(outputs=[dep_info[file]['module']], rule='phony', inputs=[obj_file])
+      command_obj = compile_flags + [pcm_file, '-o', obj_file]
+      rule_name = generate_rule_name()
+      ninja_writer.rule(rule_name, command_obj)
+      ninja_writer.build(outputs=[obj_file], rule=rule_name, inputs=dep_pcm_files+[pcm_file])
+      ninja_writer.build(outputs=[dep_info[file]['module']], rule='phony', inputs=[obj_file])
     
-    # compile_command['arguments'] = command_pcm
+      compile_command['arguments'] = command_pcm
 
-    # compile_command.update({
-    #     'directory': path.abspath(path.split(file)[0]),
-    #     'file': path.abspath(file),
-    #     'arguments': command_pcm,
-    #   })
-    compile_commands.append({
+    compile_command.update({
         'directory': path.abspath(path.split(file)[0]),
         'file': path.abspath(file),
-        'arguments': command_pcm,
       })
+    compile_commands.append(compile_command)
   link_command = link_flags + ['-o', output_path] + obj_files + list(map(lambda x: '-l'+x, link_librarys))
   rule_name = generate_rule_name()
   ninja_writer.rule(rule_name, link_command)
