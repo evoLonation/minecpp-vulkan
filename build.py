@@ -83,8 +83,11 @@ def get_scan_deps(files):
   for file, info in scan_deps.items():
     if 'module' in info:
       module_file_map[info['module']] = file
-  for info in scan_deps.values():
+  for file, info in scan_deps.items():
     info['redep_num'] = 0
+    for dep in info['deps']:
+      if dep not in module_file_map:
+        raise RuntimeError(f'not found module "{dep}" for file {file}')
     info['deps'] = list(map(lambda x: module_file_map[x], info['deps']))
   for info in scan_deps.values():
     for dep in info['deps']:

@@ -1,27 +1,6 @@
-#include <algorithm>
-#include <concepts>
-#include <cstddef>
-#include <cstdint>
-#include <limits>
-#include <iostream>
-#include <optional>
-#include <span>
-#include <string>
-#include <format>
-#include <string_view>
-#include <tuple>
-#include <type_traits>
-#include <utility>
-#include <vector>
-#include <map>
-#include <ranges>
-#include <print>
-#include <algorithm>
-#include <sstream>
-#include <functional>
-
 #include "vulkan_config.h"
 
+import std;
 import tool;
 import log;
 
@@ -660,7 +639,7 @@ auto getQueueFamilyIndices(VkPhysicalDevice device, VkSurfaceKHR surface,
     return false;
   };
 	
-  if (!ranges::all_of(views::iota(0u, request_size),
+  if (!ranges::all_of(views::iota((decltype(request_size))0, request_size),
                       [&dfs](int u) { return dfs(u, u); })) {
     return std::nullopt;
   }
