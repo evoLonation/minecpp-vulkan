@@ -1,0 +1,7 @@
+[
+  {
+    "directory": "C:\\Users\\18389\\Desktop\\minecpp-vulkan",
+    "command": "clang ./main.cc -o main.exe   -L./third_party/static_library/  -lc++ -lvulkan-1 -lglfw3dll -include-pch tool.h.pch -include-pch vulkan_config.h.pch --std=c++23 --stdlib=libc++ -fexperimental-library -I.\\third_party\\include\\",
+    "file": "C:\\Users\\18389\\Desktop\\minecpp-vulkan\\main.cc"
+  }
+]
