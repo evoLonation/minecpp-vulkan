@@ -151,7 +151,7 @@ with open(ninja_build_file, 'wt') as f:
     if 'module' not in info:
       command_obj = compile_flags + [abs_file, '-o', obj_file]
       rule_name = generate_rule_name()
-      ninja_writer.rule(rule_name, command_obj, description=f'PRECOMPILE {ospath.relpath(obj_file, root_dir)}')
+      ninja_writer.rule(rule_name, command_obj, description=f'COMPILE {ospath.relpath(obj_file, root_dir)}')
       ninja_writer.build(outputs=[obj_file], rule=rule_name, inputs=dep_pcm_files+[abs_file])
       compile_command['arguments'] = command_obj
     else:
@@ -174,10 +174,10 @@ with open(ninja_build_file, 'wt') as f:
         'file': ospath.abspath(file),
       })
     compile_commands.append(compile_command)
-  link_command = link_flags + ['-o', output_file] + obj_files + list(map(lambda x: '-l'+x, link_librarys))
+  link_command = link_flags + ['-o', ospath.abspath(output_file)] + obj_files + list(map(lambda x: '-l'+x, link_librarys))
   rule_name = generate_rule_name()
   ninja_writer.rule(rule_name, link_command, description=f'LINK {ospath.relpath(output_file)}')
-  ninja_writer.build(outputs=[output_file], rule=rule_name, inputs=obj_files)
+  ninja_writer.build(outputs=[ospath.abspath(output_file)], rule=rule_name, inputs=obj_files)
 print('ninja generate done')
 
 with open('compile_commands.json', 'wt') as f:
