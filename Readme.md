@@ -1,28 +1,53 @@
 ## 环境配置
-- 建议全程开启TUN mode
+- 安装cmake（用于构建第三方库）
 - 安装msys2
 - 在msys2 mingw64中执行:
   - `pacman -S mingw-w64-x86_64-clang`
+  - `pacman -S mingw-w64-x86_64-libc++`
   - `pacman -S mingw-w64-x86_64-clang-tools-extra`
-  
+
 # 第三方库
 ## glfw3
-
-[glfw/glfw: A multi-platform library for OpenGL, OpenGL ES, Vulkan, window and input (github.com)](https://github.com/glfw/glfw)
-
-从github中下载release（我这里下载了win64）
-
 > GLFW是一个用C语言编写的库，专门针对OpenGL。GLFW为我们提供了将好东西呈现到屏幕上所需的基本必需品。它允许我们创建OpenGL上下文、定义窗口参数和处理用户输入，这对于我们的目的来说已经足够了。
+### 获取方式 
+https://github.com/glfw/glfw/releases/tag/3.3.9 （我这里下载win64版本）
 
-我们需要的是：
-
-- include中的头文件， 将其移到项目目录的include目录下
-- 对应编译环境的库文件（vs2022）
-  - glfw3.lib
+### 需要的部分
+- 头文件： include中的头文件
+- 静态库： libglfw3dll.a 
+- 动态库： glfw3.dll
 
 ## Vulkan
-在这个网站中下载vulkan的sdk并安装：
-https://vulkan.lunarg.com/sdk/home 
+### 获取方式
+https://vulkan.lunarg.com/sdk/home （下载VulkanSDK-1.3.268.0-Installer.exe）
+### 需要的部分
+- 头文件
+- 静态库： vulkan-1.lib
 
-- include目录：头文件
-- Lib目录：静态库（需要使用其中的vulkan-1.lib）
+## glm
+### 获取方式
+https://github.com/g-truc/glm/releases/tag/1.0.0 (source code)
+### 构建方式
+```
+cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DGLM_ENABLE_CXX_20=ON -DCMAKE_CXX_FLAGS="-Wno-unsafe-buffer-usage -Wno-used-but-marked-unused"  -B build -G "Ninja" .
+ cmake --build build -- all
+```
+### 需要的部分
+- 头文件： glm目录下的hpp文件
+  - 利用该脚本删除不必要的文件
+  ```python
+  import os
+  for dir, _, filenames in os.walk('glm'):
+    for filename in filenames:
+      file = os.path.join(dir, filename)
+      if file[-4:] != '.hpp':
+        os.remove(file)
+  ```
+- 静态库： libglm.a
+- 模块接口文件： glm.cppm
+
+## std_module
+- 来自clang18版本的libc++
+- 直接在libc++目录中用cmake构建得到std的模块接口文件
+- 放到third_party中试探性构建，并注释掉会报错的#include和using
+- todo：详细步骤
