@@ -1,0 +1,124 @@
+export module vulkan.tool;
+
+import "vulkan_config.h";
+import std;
+import tool;
+import log;
+
+namespace ranges = std::ranges;
+namespace views = std::views;
+using namespace tool;
+using namespace log;
+
+export {
+
+template <typename F, typename... Args>
+  requires std::
+    invocable<F, Args&&..., uint32_t*, FuncArg<sizeof...(Args) + 1, F>>
+  auto getVkResource(F func, Args&&... args) {
+  uint32_t count;
+  func(std::forward<Args>(args)..., &count, nullptr);
+  std::vector<std::remove_pointer_t<FuncArg<sizeof...(Args) + 1, F>>> resources;
+  resources.resize(count);
+  func(args..., &count, resources.data());
+  return resources;
+}
+
+void checkVkResult(VkResult vk_result, std::string_view action) {
+  if (vk_result != VK_SUCCESS) {
+    throwf("failed to {}", action);
+  }
+}
+
+template <typename F, typename... Args>
+  requires std::same_as<FuncArg<sizeof...(Args), F>,
+                        const VkAllocationCallbacks*> &&
+           std::invocable<F,
+                          Args&&...,
+                          const VkAllocationCallbacks*,
+                          FuncArg<sizeof...(Args) + 1, F>>
+auto createVkResource(F func, std::string_view name, Args&&... args) {
+  using ResourceTypeHandle =
+    std::remove_pointer_t<FuncArg<sizeof...(Args) + 1, F>>;
+  ResourceTypeHandle resource;
+  checkVkResult(func(std::forward<Args>(args)..., nullptr, &resource),
+                std::format("create {}", name));
+  return resource;
+}
+template <typename F, typename... Args>
+  requires std::
+    is_invocable_r_v<VkResult, F, Args&&..., FuncArg<sizeof...(Args), F>>
+  auto createVkResource(F func, std::string_view name, Args&&... args) {
+  using ResourceTypeHandle = std::remove_pointer_t<FuncArg<sizeof...(Args), F>>;
+  ResourceTypeHandle resource;
+  checkVkResult(func(std::forward<Args>(args)..., &resource),
+                std::format("create {}", name));
+  return resource;
+}
+
+template <ranges::range RequiredRange,
+          ranges::range AvailableRange,
+          typename Mapper>
+  requires RangeOf<RequiredRange, const char*> &&
+           std::is_invocable_r_v<std::string_view,
+                                 Mapper,
+                                 ranges::range_reference_t<AvailableRange>>
+void checkAvaliableSupports(RequiredRange&&  required_range,
+                            AvailableRange&& available_range,
+                            std::string_view support_name,
+                            Mapper&&         mapper) {
+  debugf("the required {} {} are :\n {::}",
+         required_range.size(),
+         support_name,
+         required_range);
+  debugf("the available {} {} are :\n {::}",
+         available_range.size(),
+         support_name,
+         available_range);
+  auto unsupported_range =
+    required_range |
+    views::filter([&available_range, &mapper](const auto& required) {
+      return ranges::none_of(
+        available_range,
+        [&required](auto extension) { return extension == required; },
+        [&mapper](auto& extension) {
+          return std::string_view{ mapper(extension) };
+        });
+    });
+  if (!unsupported_range.empty()) {
+    throwf("these {} requested but not available: \n{::}",
+           support_name,
+           unsupported_range);
+  }
+}
+
+template <typename T>
+concept CustomFormatter = std::is_same_v<T, VkExtensionProperties> ||
+                          std::is_same_v<T, VkLayerProperties>;
+
+template <CustomFormatter T>
+class std::formatter<T> : public std::formatter<std::string> {
+public:
+  template <typename FormatContext, typename... Args>
+  auto format(const T& e, FormatContext& ctx) const {
+    return std::formatter<std::string>::format(formatString(e), ctx);
+  }
+
+private:
+  auto formatString(const T& e) const -> std::string {
+    if constexpr (std::same_as<T, VkExtensionProperties>) {
+      return std::format("{} (version {})", e.extensionName, e.specVersion);
+    } else if constexpr (std::same_as<T, VkLayerProperties>) {
+      return std::format(
+        "{} (spec version {}, implementation version {}) : {} ",
+        e.layerName,
+        e.specVersion,
+        e.implementationVersion,
+        e.description);
+    } else {
+      throw 0;
+    }
+  }
+};
+
+}

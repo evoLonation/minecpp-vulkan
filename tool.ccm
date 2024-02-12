@@ -452,7 +452,7 @@ inline void test_EnumerateAdaptor(){
   for(auto [i, e]: arr | EnumerateAdaptor{}) {
     j++;
   }
-  check_throwf(j == 2, "");
+  checkThrowf(j == 2, "");
 }
 
 inline void test_SortedRange() {
@@ -467,10 +467,10 @@ inline void test_SortedRange() {
   auto view4 =
       SortedView{view, {}, [](auto a){return 10 - a;}};
   debug(view2);
-  check_throwf(ranges::all_of(views::zip(view2, std::move(view3)),
+  checkThrowf(ranges::all_of(views::zip(view2, std::move(view3)),
                               [](auto a) { return a.first == a.second; }),
                "test_SortedRange");
-  check_throwf(ranges::all_of(views::zip(view2, std::move(view4)),
+  checkThrowf(ranges::all_of(views::zip(view2, std::move(view4)),
                               [](auto a) { return a.first == a.second; }),
                "test_SortedRange");
 }
@@ -488,14 +488,14 @@ inline void test_ChunkBy(){
     debug(*i);
     i++;
   }
-  check_throwf(i == view.end(), "i == view.end()");
+  checkThrowf(i == view.end(), "i == view.end()");
   i--;
   for(auto _ : views::iota(0, 4)) {
     debug(*i);
     i--;
   }
   debug(*i);
-  check_throwf(i == view.begin(), "i == view.begin()");
+  checkThrowf(i == view.begin(), "i == view.begin()");
 }
 
 } // namespace tool

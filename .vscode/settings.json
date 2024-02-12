@@ -3,6 +3,5 @@
    "clangd.arguments": [
       // 关闭头文件自动插入
       "--header-insertion=never",
-      "-j=4",
    ],
 }

@@ -1,4 +1,4 @@
-#include "vulkan_config.h"
+import "vulkan_config.h";
 
 import std;
 import tool;
@@ -149,7 +149,7 @@ VulkanApplication::VulkanApplication(uint32_t width, uint32_t height,
       .message_type_flags = VK_DEBUG_UTILS_MESSAGE_TYPE_FLAG_BITS_MAX_ENUM_EXT,
     };
     std::tie(instance_, debug_messenger_) = createInstanceAndDebugMessenger(
-      appName, debugHandler, debug_messenger_info_);
+      appName, debug_messenger_info_);
   } else {
     instance_ = createInstance(appName);
   }
@@ -178,7 +178,7 @@ VulkanApplication::VulkanApplication(uint32_t width, uint32_t height,
   std::tie(swapchain_, extent_) = createSwapChain(
     surface_, device_, physical_device_info.capabilities,
     physical_device_info.surface_format, physical_device_info.present_mode,
-    p_window_, std::span(queue_family_indices));
+    p_window_, std::span(queue_family_indices), VK_NULL_HANDLE).value();
   image_views_ = createImageViews(device_, swapchain_,
                                   physical_device_info.surface_format.format);
   render_pass_ =

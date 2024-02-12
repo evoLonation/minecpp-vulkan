@@ -1,0 +1,82 @@
+export module vulkan.device;
+
+import "vulkan_config.h";
+import std;
+
+namespace ranges = std::ranges;
+
+export {
+
+/*
+ * physical device 相关
+ * 借助 instance 得到所有 physical device
+ * 与 surface 结合得到 physical device 的属性，并选择一个合适的
+ * features, queue family indices, extensions 用于创建 logical device
+ * surface capability, format, present mode 用于创建 swap chain
+ */
+
+using QueueIndexes = std::vector<std::pair<uint32_t, uint32_t>>;
+struct PhysicalDeviceInfo {
+  VkPhysicalDevice           device;
+  VkPhysicalDeviceProperties properties;
+  VkPhysicalDeviceFeatures   features;
+  VkSurfaceCapabilitiesKHR   capabilities;
+  VkPresentModeKHR           present_mode;
+  VkSurfaceFormatKHR         surface_format;
+  QueueIndexes               queue_indices;
+};
+struct QueueFamilyCheckContext {
+  VkPhysicalDevice         device;
+  VkSurfaceKHR             surface;
+  size_t                   index;
+  VkQueueFamilyProperties& properties;
+};
+struct DeviceCheckContext {
+  VkPhysicalDeviceProperties& properties;
+  VkPhysicalDeviceFeatures&   features;
+};
+struct SurfaceCheckContext {
+  VkSurfaceCapabilitiesKHR&                         capabilities;
+  ranges::ref_view<std::vector<VkPresentModeKHR>>   present_modes;
+  ranges::ref_view<std::vector<VkSurfaceFormatKHR>> surface_formats;
+};
+struct SelectedSurfaceInfo {
+  VkPresentModeKHR   present_mode;
+  VkSurfaceFormatKHR surface_format;
+};
+using SurfaceChecker =
+  std::function<std::optional<SelectedSurfaceInfo>(const SurfaceCheckContext&)>;
+using DeviceChecker = std::function<bool(const DeviceCheckContext&)>;
+using QueueFamilyChecker = std::function<bool(const QueueFamilyCheckContext&)>;
+using SurfaceChecker =
+  std::function<std::optional<SelectedSurfaceInfo>(const SurfaceCheckContext&)>;
+
+auto pickPhysicalDevice(VkInstance                    instance,
+                        VkSurfaceKHR                  surface,
+                        std::span<const char*>        required_extensions,
+                        DeviceChecker                 device_checker,
+                        SurfaceChecker                surface_checker,
+                        std::span<QueueFamilyChecker> queue_chekers)
+  -> PhysicalDeviceInfo;
+
+auto checkPhysicalDeviceSupport(const DeviceCheckContext& ctx) -> bool;
+auto checkSurfaceSupport(const SurfaceCheckContext& ctx)
+  -> std::optional<SelectedSurfaceInfo>;
+auto checkGraphicQueue(const QueueFamilyCheckContext& ctx) -> bool;
+auto checkPresentQueue(const QueueFamilyCheckContext& ctx) -> bool;
+
+/*
+ * logical device 相关
+ * 创建 logical device, 得到 queue
+ */
+auto createLogicalDevice(const PhysicalDeviceInfo& physical_device_info,
+                         std::span<const char*>    required_extensions)
+  -> std::pair<VkDevice, std::vector<VkQueue>>;
+void destroyLogicalDevice(VkDevice device) noexcept;
+
+}
+
+auto getQueueFamilyIndices(VkPhysicalDevice              device,
+                           VkSurfaceKHR                  surface,
+                           std::span<QueueFamilyChecker> queue_chekers)
+  -> std::optional<QueueIndexes>;

@@ -1,0 +1,39 @@
+export module vulkan.swapchain;
+
+import "vulkan_config.h";
+import std;
+
+export {
+
+/*
+ * surface 相关
+ * 借助 instance 创建 surface
+ */
+auto createSurface(VkInstance instance, GLFWwindow* p_window) -> VkSurfaceKHR;
+void destroySurface(VkSurfaceKHR surface, VkInstance instance) noexcept;
+
+/*
+ * swap chain 相关
+ */
+enum class SwapchainCreateError {
+  EXTENT_ZERO,
+};
+auto createSwapChain(VkSurfaceKHR                    surface,
+                     VkDevice                        device,
+                     const VkSurfaceCapabilitiesKHR& capabilities,
+                     VkSurfaceFormatKHR              surface_format,
+                     VkPresentModeKHR                present_mode,
+                     GLFWwindow*                     p_window,
+                     std::span<uint32_t>             queue_family_indices,
+                     VkSwapchainKHR                  old_swapchain)
+  -> std::expected<std::pair<VkSwapchainKHR, VkExtent2D>, SwapchainCreateError>;
+
+void destroySwapChain(VkSwapchainKHR swapchain, VkDevice device) noexcept;
+
+auto createImageViews(VkDevice       device,
+                      VkSwapchainKHR swapchain,
+                      VkFormat       format) -> std::vector<VkImageView>;
+void destroyImageViews(std::span<VkImageView> image_views,
+                       VkDevice               device) noexcept;
+
+}

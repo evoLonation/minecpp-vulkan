@@ -1,0 +1,15 @@
+export module vulkan.glfw;
+
+import "vulkan_config.h";
+import std;
+
+export {
+
+auto createWindow(uint32_t width, uint32_t height, std::string_view title)
+  -> GLFWwindow*;
+void destroyWindow(GLFWwindow* p_window) noexcept;
+
+// 抛出glfw的报错（如果有的话）
+void checkGlfwError();
+
+}

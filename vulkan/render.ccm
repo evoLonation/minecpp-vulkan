@@ -1,0 +1,53 @@
+export module vulkan.render;
+
+import "vulkan_config.h";
+import std;
+
+export {
+
+/*
+ * render pass 相关
+ */
+auto createRenderPass(VkDevice device, VkFormat format) -> VkRenderPass;
+void destroyRenderPass(VkRenderPass render_pass, VkDevice device) noexcept;
+
+/*
+ * pipeline 相关
+ */
+struct PipelineResource {
+  VkShaderModule   vertex_shader;
+  VkShaderModule   frag_shader;
+  VkPipelineLayout pipeline_layout;
+  VkPipeline       pipeline;
+};
+
+auto createGraphicsPipeline(VkDevice device, VkRenderPass render_pass)
+  -> PipelineResource;
+void destroyGraphicsPipeline(PipelineResource pipeline_resource,
+                             VkDevice         device) noexcept;
+
+/*
+ * framebuffer 相关
+ */
+auto createFramebuffers(VkRenderPass           render_pass,
+                        VkDevice               device,
+                        VkExtent2D             extent,
+                        std::span<VkImageView> image_views)
+  -> std::vector<VkFramebuffer>;
+void destroyFramebuffers(std::span<VkFramebuffer> framebuffers,
+                         VkDevice                 device) noexcept;
+
+/*
+* command buffer 相关
+*/
+auto createCommandPool(VkDevice device, uint32_t graphic_family_index)
+  -> VkCommandPool;
+void destroyCommandPool(VkCommandPool command_pool, VkDevice device) noexcept;
+auto allocateCommandBuffer(VkDevice      device,
+                           VkCommandPool command_pool,
+                           uint32_t      count) -> std::vector<VkCommandBuffer>;
+void freeCommandBuffer(VkCommandBuffer command_buffer,
+                       VkDevice        device,
+                       VkCommandPool   command_pool) noexcept;
+
+}

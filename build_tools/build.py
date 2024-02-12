@@ -5,6 +5,7 @@ import os
 import subprocess as sp
 import ninja_syntax as ninja
 import tempfile
+import shutil
 
 def compute_hash(file_path):
   # 以二进制读取文件内容
@@ -20,34 +21,100 @@ def compute_hash(file_path):
   return sha256.hexdigest()
 
 root_dir = './'
-output_name = 'hello.exe'
+target_name = 'hello.exe'
 
+# build产物相关
 build_dir = ospath.join(root_dir, 'build')
 os.makedirs(build_dir, exist_ok=True)
 ninja_build_file = ospath.join(build_dir, 'build.ninja')
-output_file = ospath.join(build_dir, 'out', output_name)
+target_dir = ospath.join(build_dir, 'out')
+target_file = ospath.join(target_dir, target_name)
 obj_dir = ospath.join(build_dir, 'obj')
 pcm_dir = ospath.join(build_dir, 'pcm')
-ninja_file = ospath.join(build_dir, 'build.ninja')
+ninja_dir = build_dir
+ninja_file = ospath.join(ninja_dir, 'build.ninja')
 
-flags = ['C:/Users/18389/msys2/mingw64/bin/clang', '-std=c++23', '-fexperimental-library', '-nostdinc++', '-nostdlib++', '-isystem', 'C:/Users/18389/msys2/mingw64/include/c++/v1', '-Wno-unused-command-line-argument', '-Wno-reserved-module-identifier']
+# 第三方库相关
+third_party_dir = ospath.join(root_dir, 'third_party')
+third_party_include_dir = ospath.join(third_party_dir, 'include')
+third_party_static_lib_dir = ospath.join(third_party_dir, 'static_library')
+third_party_dynamic_lib_dir = ospath.join(third_party_dir, 'dynamic_library')
+third_party_module_dir = ospath.join(third_party_dir, 'module')
+
+
+flags = [
+  'C:/Users/18389/msys2/mingw64/bin/clang', 
+  '-std=c++23', 
+  '-fexperimental-library', 
+  '-nostdinc++', 
+  '-nostdlib++', 
+  '-isystem', 'C:/Users/18389/msys2/mingw64/include/c++/v1', 
+  '-Wno-unused-command-line-argument',
+  # for std module 
+  '-Wno-reserved-module-identifier',
+  # for header unit 
+  '-fretain-comments-from-system-headers', 
+  '-Wno-experimental-header-units']
 include_dirs = [
-    ospath.join(root_dir, 'third_party\include')
+    third_party_include_dir,
+    ospath.join(root_dir, 'include')
   ]
 include_flags = list(map(lambda x: '-I'+ospath.abspath(x), include_dirs))
 compile_flags = flags + include_flags +[f'-fprebuilt-module-path={ospath.abspath(pcm_dir)}', '-c']
 precompile_flags = flags + include_flags + [f'-fprebuilt-module-path={ospath.abspath(pcm_dir)}', '--precompile']
 
 link_dirs = [
-    ospath.join(root_dir, 'third_party\static_library')
+    third_party_static_lib_dir
   ]
-link_flags = flags + [ '-LC:/Users/18389/msys2/mingw64/lib' ] + list(map(lambda x: '-L'+ospath.abspath(x), link_dirs))
-link_librarys = ['c++', 'vulkan-1', 'glfw3dll']
+link_flags = \
+  flags + \
+  [ '-LC:/Users/18389/msys2/mingw64/lib' ] +\
+  list(map(lambda x: '-L'+ospath.abspath(x), link_dirs))
+link_librarys = ['c++']
+for filename in os.listdir(third_party_static_lib_dir):
+  if filename[:3] == 'lib' and filename[-2:] == '.a':
+    link_librarys.append(filename[3:-2])
+  elif filename[-4:] == '.lib':
+    link_librarys.append(filename[:-4])
+
+# header unit
+def build_header_unit():
+  header_unit_src_dir = ospath.join(root_dir, 'include')
+  header_unit_dst_dir = ospath.join(build_dir, 'hpcm')
+  precompile_header_unit_flags = flags + include_flags + ['-fmodule-header', '-xc++-header']
+
+  header_units = []
+  with open(ospath.join(header_unit_src_dir, 'header_units'), 'rt') as f:
+    for line in f:
+      file = ospath.join(header_unit_src_dir, line.strip())
+      assert(ospath.exists(file))
+      header_units.append(ospath.normpath(ospath.relpath(file, root_dir)))
+
+  header_unit_outputs = []
+  with open(ninja_build_file, 'wt') as f:
+    ninja_writer = ninja.Writer(f)
+    rule_name = 'precompile_header_unit'
+    ninja_writer.rule(rule_name, 
+                      precompile_header_unit_flags + ['$in', '-o', '$out'], 
+                      description=f'HEADERUNIT $out')
+    for file in header_units:
+      output = ospath.abspath(ospath.join(header_unit_dst_dir, file[:-2] + '.pcm'))
+      ninja_writer.build(
+        outputs=[output], 
+        rule=rule_name, 
+        inputs=[ospath.abspath(file)])
+      header_unit_outputs = [output]
+      compile_flags.append(f'-fmodule-file={output}')
+      precompile_flags.append(f'-fmodule-file={output}')
+  sp.run(f'ninja -C {ninja_dir}', check=True)
+  print('header unit precompile done')
+  return header_unit_outputs
+header_unit_outputs = build_header_unit()
 
 # 所有文件路径都是相对于 root_dir 的规范化相对路径
 input_files = []
 
-dir_stack = [root_dir]
+dir_stack = [root_dir, third_party_module_dir]
 while len(dir_stack) != 0:
   dir = dir_stack.pop()
   with open(ospath.join(dir, 'sources'), 'rt') as f:
@@ -129,9 +196,9 @@ obj_files = []
 compile_commands = []
 
 def get_pcm_file(file):
-  return ospath.abspath(ospath.join(pcm_dir, ospath.relpath(dep_info[file]['module'].replace(':', '-') + '.pcm')))
+  return ospath.abspath(ospath.join(pcm_dir, dep_info[file]['module'].replace(':', '-') + '.pcm'))
 def get_object_file(file):
-  return ospath.abspath(ospath.join(obj_dir, ospath.relpath(file + '.o')))
+  return ospath.abspath(ospath.join(obj_dir, file + '.o'))
 
 rule_id = 0
 def generate_rule_name():
@@ -152,7 +219,7 @@ with open(ninja_build_file, 'wt') as f:
       command_obj = compile_flags + [abs_file, '-o', obj_file]
       rule_name = generate_rule_name()
       ninja_writer.rule(rule_name, command_obj, description=f'COMPILE {ospath.relpath(obj_file, root_dir)}')
-      ninja_writer.build(outputs=[obj_file], rule=rule_name, inputs=dep_pcm_files+[abs_file])
+      ninja_writer.build(outputs=[obj_file], rule=rule_name, inputs=dep_pcm_files+[abs_file]+header_unit_outputs)
       compile_command['arguments'] = command_obj
     else:
       pcm_file = get_pcm_file(file)
@@ -164,8 +231,8 @@ with open(ninja_build_file, 'wt') as f:
       command_obj = compile_flags + [pcm_file, '-o', obj_file]
       rule_name = generate_rule_name()
       ninja_writer.rule(rule_name, command_obj, description=f'COMPILE {ospath.relpath(obj_file, root_dir)}')
-      ninja_writer.build(outputs=[obj_file], rule=rule_name, inputs=dep_pcm_files+[pcm_file])
-      ninja_writer.build(outputs=[dep_info[file]['module']], rule='phony', inputs=[obj_file])
+      ninja_writer.build(outputs=[obj_file], rule=rule_name, inputs=dep_pcm_files+[pcm_file]+header_unit_outputs)
+      ninja_writer.build(outputs=[dep_info[file]['module']], rule='phony', inputs=[obj_file]+header_unit_outputs)
     
       compile_command['arguments'] = command_pcm
 
@@ -174,11 +241,16 @@ with open(ninja_build_file, 'wt') as f:
         'file': ospath.abspath(file),
       })
     compile_commands.append(compile_command)
-  link_command = link_flags + ['-o', ospath.abspath(output_file)] + obj_files + list(map(lambda x: '-l'+x, link_librarys))
+  link_command = link_flags + ['-o', ospath.abspath(target_file)] + obj_files + list(map(lambda x: '-l'+x, link_librarys))
   rule_name = generate_rule_name()
-  ninja_writer.rule(rule_name, link_command, description=f'LINK {ospath.relpath(output_file)}')
-  ninja_writer.build(outputs=[ospath.abspath(output_file)], rule=rule_name, inputs=obj_files)
+  ninja_writer.rule(rule_name, link_command, description=f'LINK {ospath.relpath(target_file)}')
+  ninja_writer.build(outputs=[ospath.abspath(target_file)], rule=rule_name, inputs=obj_files)
 print('ninja generate done')
+
+sp.run(f'ninja -C {ninja_dir}', check=True)
+for filename in os.listdir(third_party_dynamic_lib_dir):
+  shutil.copy(ospath.join(third_party_dynamic_lib_dir, filename), target_dir)
+print('build done')
 
 with open('compile_commands.json', 'wt') as f:
   json.dump(compile_commands, f, indent=2)

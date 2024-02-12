@@ -1,0 +1,48 @@
+export module vulkan.instance;
+
+import "vulkan_config.h";
+import std;
+
+export {
+
+/*
+ * instance, extension, layer相关
+ * instance: vulkan最底层的对象，一切皆源于instance，存储几乎所有状态
+ */
+struct DebugMessengerInfo {
+  VkDebugUtilsMessageSeverityFlagBitsEXT message_severity_level;
+  VkDebugUtilsMessageTypeFlagsEXT        message_type_flags;
+};
+auto createInstance(std::string_view appName) -> VkInstance;
+auto createInstanceAndDebugMessenger(std::string_view    app_name,
+                                     DebugMessengerInfo& debug_messenger_info)
+  -> std::pair<VkInstance, VkDebugUtilsMessengerEXT>;
+
+void destroyInstance(VkInstance instance) noexcept;
+void destroyDebugMessenger(VkDebugUtilsMessengerEXT debug_messenger,
+                           VkInstance               instance) noexcept;
+// 获得所有可能需要提供的 instance 级别的 extension
+template <bool enableValidLayer>
+auto getRequiredInstanceExtensions() -> std::vector<const char*>;
+template <bool enableValidLayer>
+auto getRequiredLayers() -> std::vector<const char*>;
+
+}
+
+//需要借助instance 来手动加载 debugMessenger 的create和destroy函数
+auto createDebugUtilsMessengerEXT(
+  VkInstance                                instance,
+  const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
+  const VkAllocationCallbacks*              pAllocator,
+  VkDebugUtilsMessengerEXT*                 pDebugMessenger) -> VkResult;
+void destroyDebugUtilsMessengerEXT(VkInstance                   instance,
+                                   VkDebugUtilsMessengerEXT     debugMessenger,
+                                   const VkAllocationCallbacks* pAllocator);
+template <bool enable_valid_layer>
+auto createInstanceTemplate(std::string_view    appName,
+                            DebugMessengerInfo* p_debug_messenger_info);
+VKAPI_ATTR VkBool32 VKAPI_CALL
+debugHandler(VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
+             VkDebugUtilsMessageTypeFlagsEXT             message_type,
+             const VkDebugUtilsMessengerCallbackDataEXT* p_callback_data,
+             void*                                       p_user_data);
