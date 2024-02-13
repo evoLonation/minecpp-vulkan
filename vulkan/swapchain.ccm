@@ -18,7 +18,7 @@ void destroySurface(VkSurfaceKHR surface, VkInstance instance) noexcept;
 enum class SwapchainCreateError {
   EXTENT_ZERO,
 };
-auto createSwapChain(VkSurfaceKHR                    surface,
+auto createSwapchain(VkSurfaceKHR                    surface,
                      VkDevice                        device,
                      const VkSurfaceCapabilitiesKHR& capabilities,
                      VkSurfaceFormatKHR              surface_format,
@@ -28,7 +28,7 @@ auto createSwapChain(VkSurfaceKHR                    surface,
                      VkSwapchainKHR                  old_swapchain)
   -> std::expected<std::pair<VkSwapchainKHR, VkExtent2D>, SwapchainCreateError>;
 
-void destroySwapChain(VkSwapchainKHR swapchain, VkDevice device) noexcept;
+void destroySwapchain(VkSwapchainKHR swapchain, VkDevice device) noexcept;
 
 auto createImageViews(VkDevice       device,
                       VkSwapchainKHR swapchain,

@@ -31,7 +31,7 @@ void destroySurface(VkSurfaceKHR surface, VkInstance instance) noexcept {
   vkDestroySurfaceKHR(instance, surface, nullptr);
 }
 
-auto createSwapChain(VkSurfaceKHR                    surface,
+auto createSwapchain(VkSurfaceKHR                    surface,
                      VkDevice                        device,
                      const VkSurfaceCapabilitiesKHR& capabilities,
                      VkSurfaceFormatKHR              surface_format,
@@ -132,7 +132,7 @@ auto createSwapChain(VkSurfaceKHR                    surface,
   return std::pair{ swapchain, extent };
 }
 
-void destroySwapChain(VkSwapchainKHR swapchain, VkDevice device) noexcept {
+void destroySwapchain(VkSwapchainKHR swapchain, VkDevice device) noexcept {
   vkDestroySwapchainKHR(device, swapchain, nullptr);
 }
 

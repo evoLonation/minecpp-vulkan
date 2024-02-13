@@ -11,16 +11,19 @@ using namespace tool;
 using namespace log;
 
 void recordCommandBuffer(VkCommandBuffer command_buffer,
-                         VkRenderPass render_pass, VkPipeline graphics_pipeline,
-                         VkExtent2D extent, VkFramebuffer framebuffer) {
-  VkCommandBufferBeginInfo begin_info {
+                         VkRenderPass    render_pass,
+                         VkPipeline      graphics_pipeline,
+                         VkExtent2D      extent,
+                         VkFramebuffer   framebuffer) {
+  VkCommandBufferBeginInfo begin_info{
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     .flags = 0,
     .pInheritanceInfo = nullptr,
   };
   checkVkResult(vkBeginCommandBuffer(command_buffer, &begin_info),
                 "begin command buffer");
-  VkClearValue clearColor = {.color = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}}};
+  VkClearValue clearColor = { .color = {
+                                .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } };
   VkRenderPassBeginInfo render_pass_begin_info {
     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
     .renderPass = render_pass,
@@ -33,24 +36,25 @@ void recordCommandBuffer(VkCommandBuffer command_buffer,
     .pClearValues = &clearColor,
   };
   // VK_SUBPASS_CONTENTS_INLINE: render pass的command被嵌入主缓冲区
-  // VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS: render pass 命令 将会从次缓冲区执行
-  vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info,
-                       VK_SUBPASS_CONTENTS_INLINE);
-  vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    graphics_pipeline);
+  // VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS: render pass 命令
+  // 将会从次缓冲区执行
+  vkCmdBeginRenderPass(
+    command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+  vkCmdBindPipeline(
+    command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
   // 定义了 viewport 到缓冲区的变换
-  VkViewport viewport {
+  VkViewport viewport{
     .x = 0,
     .y = 0,
-    .width = (float) extent.width,
-    .height = (float) extent.height,
+    .width = (float)extent.width,
+    .height = (float)extent.height,
     .minDepth = 0.0f,
     .maxDepth = 1.0f,
   };
   vkCmdSetViewport(command_buffer, 0, 1, &viewport);
   // 定义了缓冲区实际存储像素的区域
-  VkRect2D scissor {
-    .offset = {.x = 0, .y = 0},
+  VkRect2D scissor{
+    .offset = { .x = 0, .y = 0 },
     .extent = extent,
   };
   vkCmdSetScissor(command_buffer, 0, 1, &scissor);
@@ -61,8 +65,8 @@ void recordCommandBuffer(VkCommandBuffer command_buffer,
 
 auto createSemaphore(VkDevice device) -> VkSemaphore {
   VkSemaphoreCreateInfo create_info{
-      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-      
+    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+
   };
   return createVkResource(vkCreateSemaphore, "semaphore", device, &create_info);
 }
@@ -71,7 +75,7 @@ void destroySemaphore(VkSemaphore semaphore, VkDevice device) noexcept {
 }
 auto createFence(VkDevice device, bool signaled) -> VkFence {
   VkFenceCreateInfo create_info{
-      .sType =  VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+    .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
   };
   if (signaled) {
     create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
@@ -82,30 +86,32 @@ void destroyFence(VkFence fence, VkDevice device) noexcept {
   vkDestroyFence(device, fence, nullptr);
 }
 
-
 class VulkanApplication {
 public:
   VulkanApplication(uint32_t width, uint32_t height, std::string_view appName);
 
   ~VulkanApplication();
 
-  VulkanApplication(const VulkanApplication &other) = delete;
-  VulkanApplication(VulkanApplication &&other) noexcept = delete;
-  VulkanApplication &operator=(const VulkanApplication &other) = delete;
-  VulkanApplication &operator=(VulkanApplication &&other) noexcept = delete;
+  VulkanApplication(const VulkanApplication& other) = delete;
+  VulkanApplication(VulkanApplication&& other) noexcept = delete;
+  VulkanApplication& operator=(const VulkanApplication& other) = delete;
+  VulkanApplication& operator=(VulkanApplication&& other) noexcept = delete;
 
-  [[nodiscard]] GLFWwindow *pWindow() const { return p_window_; }
+  [[nodiscard]] GLFWwindow* pWindow() const { return p_window_; }
 
+  bool recreateSwapchain();
   void drawFrame();
 
 private:
-  GLFWwindow *p_window_;
+  GLFWwindow* p_window_;
 
   // 该类型本质是一个指针，后续的device也类似
   VkInstance instance_;
   // vulkan中的回调也是一种资源，需要创建
   VkDebugUtilsMessengerEXT debug_messenger_;
   DebugMessengerInfo       debug_messenger_info_;
+
+  PhysicalDeviceInfo physical_device_info_;
 
   VkSurfaceKHR surface_;
 
@@ -135,12 +141,15 @@ private:
   std::vector<Worker> workers_;
 
   int in_flight_index_;
+
+  bool last_present_failed_;
 };
 
-VulkanApplication::VulkanApplication(uint32_t width, uint32_t height,
+VulkanApplication::VulkanApplication(uint32_t         width,
+                                     uint32_t         height,
                                      std::string_view appName)
-    : p_window_(nullptr), instance_(nullptr), debug_messenger_(nullptr),
-      surface_(nullptr) {
+  : p_window_(nullptr), instance_(nullptr), debug_messenger_(nullptr),
+    surface_(nullptr), in_flight_index_(0), last_present_failed_(false) {
   p_window_ = createWindow(width, height, appName);
 
   if constexpr (enableDebugOutput) {
@@ -148,41 +157,51 @@ VulkanApplication::VulkanApplication(uint32_t width, uint32_t height,
       .message_severity_level = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT,
       .message_type_flags = VK_DEBUG_UTILS_MESSAGE_TYPE_FLAG_BITS_MAX_ENUM_EXT,
     };
-    std::tie(instance_, debug_messenger_) = createInstanceAndDebugMessenger(
-      appName, debug_messenger_info_);
+    std::tie(instance_, debug_messenger_) =
+      createInstanceAndDebugMessenger(appName, debug_messenger_info_);
   } else {
     instance_ = createInstance(appName);
   }
-  
+
   surface_ = createSurface(instance_, p_window_);
 
   // VK_KHR_SWAPCHAIN_EXTENSION_NAME 对应的扩展用于支持交换链
-  auto required_device_extensions = std::array{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+  auto required_device_extensions =
+    std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME };
   auto queue_checkers =
-    std::vector<QueueFamilyChecker>{checkGraphicQueue, checkPresentQueue};
-  auto physical_device_info = pickPhysicalDevice(
-    instance_, surface_, required_device_extensions, checkPhysicalDeviceSupport,
-    checkSurfaceSupport, std::span{queue_checkers});
+    std::vector<QueueFamilyChecker>{ checkGraphicQueue, checkPresentQueue };
+  physical_device_info_ = pickPhysicalDevice(instance_,
+                                             surface_,
+                                             required_device_extensions,
+                                             checkPhysicalDeviceSupport,
+                                             checkSurfaceSupport,
+                                             std::span{ queue_checkers });
 
   std::vector<VkQueue> queues;
   std::tie(device_, queues) =
-    createLogicalDevice(physical_device_info, required_device_extensions);
+    createLogicalDevice(physical_device_info_, required_device_extensions);
   graphic_queue_ = queues[0];
   present_queue_ = queues[1];
 
   std::vector<uint32_t> queue_family_indices =
-    physical_device_info.queue_indices |
+    physical_device_info_.queue_indices |
     views::transform([](auto a) { return a.first; }) |
     ranges::to<std::vector>();
-  
-  std::tie(swapchain_, extent_) = createSwapChain(
-    surface_, device_, physical_device_info.capabilities,
-    physical_device_info.surface_format, physical_device_info.present_mode,
-    p_window_, std::span(queue_family_indices), VK_NULL_HANDLE).value();
-  image_views_ = createImageViews(device_, swapchain_,
-                                  physical_device_info.surface_format.format);
+
+  std::tie(swapchain_, extent_) =
+    createSwapchain(surface_,
+                    device_,
+                    physical_device_info_.capabilities,
+                    physical_device_info_.surface_format,
+                    physical_device_info_.present_mode,
+                    p_window_,
+                    std::span(queue_family_indices),
+                    VK_NULL_HANDLE)
+      .value();
+  image_views_ = createImageViews(
+    device_, swapchain_, physical_device_info_.surface_format.format);
   render_pass_ =
-    createRenderPass(device_, physical_device_info.surface_format.format);
+    createRenderPass(device_, physical_device_info_.surface_format.format);
   framebuffers_ =
     createFramebuffers(render_pass_, device_, extent_, image_views_);
   pipeline_resource_ = createGraphicsPipeline(device_, render_pass_);
@@ -213,7 +232,7 @@ VulkanApplication::~VulkanApplication() {
   destroyGraphicsPipeline(pipeline_resource_, device_);
   destroyRenderPass(render_pass_, device_);
   destroyImageViews(image_views_, device_);
-  destroySwapChain(swapchain_, device_);
+  destroySwapchain(swapchain_, device_);
   destroyLogicalDevice(device_);
   destroySurface(surface_, instance_);
   if constexpr (enableDebugOutput) {
@@ -223,19 +242,79 @@ VulkanApplication::~VulkanApplication() {
   destroyWindow(p_window_);
 }
 
+bool VulkanApplication::recreateSwapchain() {
+  // todo: 换成范围更小的约束
+  vkDeviceWaitIdle(device_);
+  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+    physical_device_info_.device,
+    surface_,
+    &physical_device_info_.capabilities);
+  auto old_swap_chain = swapchain_;
+  auto queue_family_indices = physical_device_info_.queue_indices |
+                              views::transform([](auto a) { return a.first; }) |
+                              ranges::to<std::vector>();
+  if (auto ret = createSwapchain(surface_,
+                                 device_,
+                                 physical_device_info_.capabilities,
+                                 physical_device_info_.surface_format,
+                                 physical_device_info_.present_mode,
+                                 p_window_,
+                                 std::span(queue_family_indices),
+                                 old_swap_chain);
+      ret.has_value()) {
+    std::tie(swapchain_, extent_) = ret.value();
+  } else if (ret.error() == SwapchainCreateError::EXTENT_ZERO) {
+    return false;
+  } else {
+    throwf("create swapchain return some error different to "
+           "SwapchainCreateError::EXTENT_ZERO");
+  }
+  auto old_image_views = std::move(image_views_);
+  auto old_framebuffers = std::move(framebuffers_);
+  image_views_ = createImageViews(
+    device_, swapchain_, physical_device_info_.surface_format.format);
+  framebuffers_ =
+    createFramebuffers(render_pass_, device_, extent_, image_views_);
+  destroyFramebuffers(old_framebuffers, device_);
+  destroyImageViews(old_image_views, device_);
+  destroySwapchain(old_swap_chain, device_);
+  return true;
+}
+
 void VulkanApplication::drawFrame() {
   auto     worker = workers_[in_flight_index_];
   uint32_t image_index;
-  checkVkResult(vkAcquireNextImageKHR(
-                  device_, swapchain_, std::numeric_limits<uint64_t>::max(),
-                  worker.image_available_sema, VK_NULL_HANDLE, &image_index),
-                "acquire next image");
-  vkWaitForFences(device_, 1, &worker.queue_batch_fence, VK_TRUE,
+  if (auto result = vkAcquireNextImageKHR(device_,
+                                          swapchain_,
+                                          std::numeric_limits<uint64_t>::max(),
+                                          worker.image_available_sema,
+                                          VK_NULL_HANDLE,
+                                          &image_index);
+      result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
+      last_present_failed_) {
+    if (recreateSwapchain()) {
+      last_present_failed_ = false;
+      drawFrame();
+      return;
+    } else {
+      debugf("recreate swapchain failed, draw frame return");
+      return;
+    }
+  } else {
+    checkVkResult(result, "acquire next image");
+  }
+
+  vkWaitForFences(device_,
+                  1,
+                  &worker.queue_batch_fence,
+                  VK_TRUE,
                   std::numeric_limits<uint64_t>::max());
   vkResetFences(device_, 1, &worker.queue_batch_fence);
   vkResetCommandBuffer(worker.command_buffer, 0);
-  recordCommandBuffer(worker.command_buffer, render_pass_,
-                      pipeline_resource_.pipeline, extent_,
+  recordCommandBuffer(worker.command_buffer,
+                      render_pass_,
+                      pipeline_resource_.pipeline,
+                      extent_,
                       framebuffers_[image_index]);
   VkPipelineStageFlags wait_stage_mask =
     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -263,7 +342,15 @@ void VulkanApplication::drawFrame() {
     .pImageIndices = &image_index,
     // .pResults: 当有多个 swapchain 时检查每个的result
   };
-  checkVkResult(vkQueuePresentKHR(present_queue_, &present_info), "present");
+  if (auto result = vkQueuePresentKHR(present_queue_, &present_info);
+      result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+    debugf("the queue present return {}",
+           result == VK_ERROR_OUT_OF_DATE_KHR ? "out of date error"
+                                              : "sub optimal");
+    last_present_failed_ = true;
+  } else {
+    checkVkResult(result, "present");
+  }
   in_flight_index_ = (in_flight_index_ + 1) % workers_.size();
 }
 
@@ -272,25 +359,25 @@ int main() {
     test_EnumerateAdaptor();
     test_SortedRange();
     test_ChunkBy();
-    std::string applicationName = "hello, vulkan!";
-    uint32_t width = 800;
-    uint32_t height = 600;
-    VulkanApplication application{width, height, applicationName};
+    std::string       applicationName = "hello, vulkan!";
+    uint32_t          width = 800;
+    uint32_t          height = 600;
+    VulkanApplication application{ width, height, applicationName };
 
     glfwSetKeyCallback(
-        application.pWindow(),
-        [](GLFWwindow *pWindow, int key, int scancode, int action, int mods) {
-          if (action == GLFW_PRESS) {
-            std::cout << "press key!" << std::endl;
-          }
-        });
+      application.pWindow(),
+      [](GLFWwindow* pWindow, int key, int scancode, int action, int mods) {
+        if (action == GLFW_PRESS) {
+          std::cout << "press key!" << std::endl;
+        }
+      });
 
     while (!glfwWindowShouldClose(application.pWindow())) {
       glfwPollEvents();
       application.drawFrame();
     }
-    
-  } catch (const std::exception &e) {
+
+  } catch (const std::exception& e) {
 
     std::print("catch exception at root:\n{}\n", e.what());
     return 1;
