@@ -397,6 +397,6 @@ struct FindIf {
   }
 };
 
-inline constexpr auto find_if = FindIf{};
+inline constexpr auto findIf = FindIf{};
 
 }

@@ -5,12 +5,13 @@ import toy;
 import vulkan;
 import glm;
 
-
 void recordCommandBuffer(VkCommandBuffer command_buffer,
                          VkRenderPass    render_pass,
                          VkPipeline      graphics_pipeline,
                          VkExtent2D      extent,
-                         VkFramebuffer   framebuffer) {
+                         VkFramebuffer   framebuffer,
+                         VkBuffer        vertex_buffer,
+                         uint32_t        vertex_count) {
   VkCommandBufferBeginInfo begin_info{
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     .flags = 0,
@@ -54,7 +55,9 @@ void recordCommandBuffer(VkCommandBuffer command_buffer,
     .extent = extent,
   };
   vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-  vkCmdDraw(command_buffer, 3, 1, 0, 0);
+  auto offsets = std::array<VkDeviceSize, 1>{ 0 };
+  vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffer, offsets.data());
+  vkCmdDraw(command_buffer, vertex_count, 1, 0, 0);
   vkCmdEndRenderPass(command_buffer);
   checkVkResult(vkEndCommandBuffer(command_buffer), "end command buffer");
 }
@@ -140,7 +143,9 @@ private:
 
   bool last_present_failed_;
 
-  VertexData2D vertex_data_;
+  VertexData2D   vertex_data_;
+  VkBuffer       vertex_buffer_;
+  VkDeviceMemory vertex_buffer_memory_;
 };
 
 VulkanApplication::VulkanApplication(uint32_t         width,
@@ -215,9 +220,11 @@ VulkanApplication::VulkanApplication(uint32_t         width,
                };
              }) |
              ranges::to<std::vector>();
-  vertex_data_ = { { { { +0.0f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
+  vertex_data_ = { { { { +0.0f, -0.5f }, { 1.0f, 1.0f, 1.0f } },
                      { { +0.5f, +0.5f }, { 0.0f, 1.0f, 0.0f } },
                      { { -0.5f, +0.5f }, { 0.0f, 0.0f, 1.0f } } } };
+  std::tie(vertex_buffer_, vertex_buffer_memory_) =
+    createVertexBuffer(vertex_data_, device_, physical_device_info_.device);
 }
 
 VulkanApplication::~VulkanApplication() {
@@ -268,7 +275,7 @@ bool VulkanApplication::recreateSwapchain() {
     return false;
   } else {
     toy::throwf("create swapchain return some error different to "
-           "SwapchainCreateError::EXTENT_ZERO");
+                "SwapchainCreateError::EXTENT_ZERO");
   }
   auto old_image_views = std::move(image_views_);
   auto old_framebuffers = std::move(framebuffers_);
@@ -316,7 +323,9 @@ void VulkanApplication::drawFrame() {
                       render_pass_,
                       pipeline_resource_.pipeline,
                       extent_,
-                      framebuffers_[image_index]);
+                      framebuffers_[image_index],
+                      vertex_buffer_,
+                      vertex_data_.vertices.size());
   VkPipelineStageFlags wait_stage_mask =
     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
   VkSubmitInfo submit_info{
@@ -346,8 +355,8 @@ void VulkanApplication::drawFrame() {
   if (auto result = vkQueuePresentKHR(present_queue_, &present_info);
       result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
     toy::debugf("the queue present return {}",
-           result == VK_ERROR_OUT_OF_DATE_KHR ? "out of date error"
-                                              : "sub optimal");
+                result == VK_ERROR_OUT_OF_DATE_KHR ? "out of date error"
+                                                   : "sub optimal");
     last_present_failed_ = true;
   } else {
     checkVkResult(result, "present");
