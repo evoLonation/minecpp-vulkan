@@ -14,7 +14,17 @@ void recordCommandBuffer(VkCommandBuffer command_buffer,
                          uint32_t        vertex_count) {
   VkCommandBufferBeginInfo begin_info{
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-    .flags = 0,
+    /** \param VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT specifies that each
+     * recording of the command buffer will only be submitted once, and the
+     * command buffer will be reset and recorded again between each submission.
+     * \param VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT specifies that a
+     * secondary command buffer is considered to be entirely inside a render
+     * pass. If this is a primary command buffer, then this bit is ignored.
+     * \param VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT specifies that a
+     * command buffer can be resubmitted to any queue of the same queue family
+     * while it is in the pending state, and recorded into multiple primary
+     * command buffers.*/
+    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     .pInheritanceInfo = nullptr,
   };
   checkVkResult(vkBeginCommandBuffer(command_buffer, &begin_info),
@@ -143,9 +153,11 @@ private:
 
   bool last_present_failed_;
 
-  VertexData2D   vertex_data_;
-  VkBuffer       vertex_buffer_;
-  VkDeviceMemory vertex_buffer_memory_;
+  VertexData2D    vertex_data_;
+  VkCommandBuffer copy_command_buffer_;
+  VkFence         copy_fence_;
+  VkBuffer        vertex_buffer_;
+  VkDeviceMemory  vertex_buffer_memory_;
 };
 
 VulkanApplication::VulkanApplication(uint32_t         width,
@@ -223,8 +235,15 @@ VulkanApplication::VulkanApplication(uint32_t         width,
   vertex_data_ = { { { { +0.0f, -0.5f }, { 1.0f, 1.0f, 1.0f } },
                      { { +0.5f, +0.5f }, { 0.0f, 1.0f, 0.0f } },
                      { { -0.5f, +0.5f }, { 0.0f, 0.0f, 1.0f } } } };
+  copy_command_buffer_ = allocateCommandBuffer(device_, command_pool_, 1)[0];
+  copy_fence_ = createFence(device_, false);
   std::tie(vertex_buffer_, vertex_buffer_memory_) =
-    createVertexBuffer(vertex_data_, device_, physical_device_info_.device);
+    createVertexBuffer(vertex_data_,
+                       physical_device_info_.device,
+                       device_,
+                       graphic_queue_,
+                       copy_command_buffer_,
+                       copy_fence_);
 }
 
 VulkanApplication::~VulkanApplication() {
