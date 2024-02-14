@@ -2,10 +2,9 @@ module vulkan.glfw;
 
 import "vulkan_config.h";
 import std;
-import log;
+import toy;
 
 namespace views = std::views;
-using namespace log;
 
 void checkGlfwError() {
   const char* description;
@@ -15,7 +14,7 @@ void checkGlfwError() {
       return glfwGetError(&description) != GLFW_NO_ERROR;
     });
   if (!errors.empty()) {
-    throwf("{::}", errors);
+    toy::throwf("{::}", errors);
   }
 }
 

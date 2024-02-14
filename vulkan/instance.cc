@@ -4,9 +4,7 @@ import "vulkan_config.h";
 import vulkan.tool;
 
 import std;
-import log;
-
-using namespace log;
+import toy;
 
 template <bool enable_valid_layer>
 auto createInstanceTemplate(std::string_view    appName,
@@ -44,7 +42,7 @@ auto createInstanceTemplate(std::string_view    appName,
   VkInstance instance;
   auto       instance_creator = [&create_info, &instance]() {
     if (vkCreateInstance(&create_info, nullptr, &instance) != VK_SUCCESS) {
-      throwf("failed to create vulkan instance");
+      toy::throwf("failed to create vulkan instance");
     }
   };
 
@@ -72,7 +70,7 @@ auto createInstanceTemplate(std::string_view    appName,
     if (createDebugUtilsMessengerEXT(
           instance, &debug_messenger_create_info, nullptr, &debug_messenger) !=
         VK_SUCCESS) {
-      throwf("failed to create debug messenger");
+      toy::throwf("failed to create debug messenger");
     }
 
     return std::pair{ instance, debug_messenger };
@@ -207,10 +205,10 @@ debugHandler(VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
       return "OTHER";
     }
   };
-  debugf("validation layer: ({},{}) {}",
-         serverityGetter(message_severity),
-         typeGetter(message_type),
-         p_callback_data->pMessage);
+  toy::debugf("validation layer: ({},{}) {}",
+              serverityGetter(message_severity),
+              typeGetter(message_type),
+              p_callback_data->pMessage);
 
   return VK_FALSE;
 }

@@ -1,8 +1,8 @@
-export module log;
+export module toy.log;
 
 import std;
 
-export namespace log {
+export namespace toy {
 
 constexpr bool enableDebugOutput = true;
 template <size_t number>

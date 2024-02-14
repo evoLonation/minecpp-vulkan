@@ -247,12 +247,12 @@ with open(ninja_build_file, 'wt') as f:
   ninja_writer.build(outputs=[ospath.abspath(target_file)], rule=rule_name, inputs=obj_files)
 print('ninja generate done')
 
-sp.run(f'ninja -C {ninja_dir}', check=True)
-for filename in os.listdir(third_party_dynamic_lib_dir):
-  shutil.copy(ospath.join(third_party_dynamic_lib_dir, filename), target_dir)
-print('build done')
-
 with open('compile_commands.json', 'wt') as f:
   json.dump(compile_commands, f, indent=2)
 
 print('compile_commands.json done')
+
+sp.run(f'ninja -C {ninja_dir}', check=True)
+for filename in os.listdir(third_party_dynamic_lib_dir):
+  shutil.copy(ospath.join(third_party_dynamic_lib_dir, filename), target_dir)
+print('build done')

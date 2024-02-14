@@ -1,14 +1,12 @@
 import "vulkan_config.h";
 
 import std;
-import tool;
-import log;
+import toy;
 import vulkan;
+import glm;
 
 namespace ranges = std::ranges;
 namespace views = std::views;
-using namespace tool;
-using namespace log;
 
 void recordCommandBuffer(VkCommandBuffer command_buffer,
                          VkRenderPass    render_pass,
@@ -143,6 +141,8 @@ private:
   int in_flight_index_;
 
   bool last_present_failed_;
+
+  VertexData2D vertex_data_;
 };
 
 VulkanApplication::VulkanApplication(uint32_t         width,
@@ -152,7 +152,7 @@ VulkanApplication::VulkanApplication(uint32_t         width,
     surface_(nullptr), in_flight_index_(0), last_present_failed_(false) {
   p_window_ = createWindow(width, height, appName);
 
-  if constexpr (enableDebugOutput) {
+  if constexpr (toy::enableDebugOutput) {
     debug_messenger_info_ = {
       .message_severity_level = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT,
       .message_type_flags = VK_DEBUG_UTILS_MESSAGE_TYPE_FLAG_BITS_MAX_ENUM_EXT,
@@ -217,6 +217,9 @@ VulkanApplication::VulkanApplication(uint32_t         width,
                };
              }) |
              ranges::to<std::vector>();
+  vertex_data_ = { { { { +0.0f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
+                     { { +0.5f, +0.5f }, { 0.0f, 1.0f, 0.0f } },
+                     { { -0.5f, +0.5f }, { 0.0f, 0.0f, 1.0f } } } };
 }
 
 VulkanApplication::~VulkanApplication() {
@@ -235,7 +238,7 @@ VulkanApplication::~VulkanApplication() {
   destroySwapchain(swapchain_, device_);
   destroyLogicalDevice(device_);
   destroySurface(surface_, instance_);
-  if constexpr (enableDebugOutput) {
+  if constexpr (toy::enableDebugOutput) {
     destroyDebugMessenger(debug_messenger_, instance_);
   }
   destroyInstance(instance_);
@@ -266,7 +269,7 @@ bool VulkanApplication::recreateSwapchain() {
   } else if (ret.error() == SwapchainCreateError::EXTENT_ZERO) {
     return false;
   } else {
-    throwf("create swapchain return some error different to "
+    toy::throwf("create swapchain return some error different to "
            "SwapchainCreateError::EXTENT_ZERO");
   }
   auto old_image_views = std::move(image_views_);
@@ -297,7 +300,7 @@ void VulkanApplication::drawFrame() {
       drawFrame();
       return;
     } else {
-      debugf("recreate swapchain failed, draw frame return");
+      toy::debugf("recreate swapchain failed, draw frame return");
       return;
     }
   } else {
@@ -344,7 +347,7 @@ void VulkanApplication::drawFrame() {
   };
   if (auto result = vkQueuePresentKHR(present_queue_, &present_info);
       result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-    debugf("the queue present return {}",
+    toy::debugf("the queue present return {}",
            result == VK_ERROR_OUT_OF_DATE_KHR ? "out of date error"
                                               : "sub optimal");
     last_present_failed_ = true;
@@ -356,9 +359,9 @@ void VulkanApplication::drawFrame() {
 
 int main() {
   try {
-    test_EnumerateAdaptor();
-    test_SortedRange();
-    test_ChunkBy();
+    toy::test_EnumerateAdaptor();
+    toy::test_SortedRange();
+    toy::test_ChunkBy();
     std::string       applicationName = "hello, vulkan!";
     uint32_t          width = 800;
     uint32_t          height = 600;

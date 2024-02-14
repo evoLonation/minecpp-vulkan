@@ -5,3 +5,4 @@ export import vulkan.instance;
 export import vulkan.device;
 export import vulkan.swapchain;
 export import vulkan.render;
+export import vulkan.buffer;

@@ -2,10 +2,10 @@ module vulkan.render;
 
 import "vulkan_config.h";
 import vulkan.tool;
+import vulkan.buffer;
 import std;
-import log;
+import toy;
 
-using namespace log;
 namespace ranges = std::ranges;
 namespace views = std::views;
 
@@ -42,10 +42,12 @@ auto createRenderPass(VkDevice device, VkFormat format) -> VkRenderPass {
     // pInputAttachments: Attachments that are read from a shader
     // pResolveAttachments: Attachments used for multisampling color attachments
     // pDepthStencilAttachment: Attachment for depth and stencil data
-    // pPreserveAttachments: Attachments that are not used by this subpass, but for which the data must be preserved
+    // pPreserveAttachments: Attachments that are not used by this subpass, but
+    // for which the data must be preserved
   };
   // attachment 的 layout 转换是在定义的依赖的中间进行的
-  // 如果不主动定义从 VK_SUBPASS_EXTERNAL 到 第一个使用attachment的subpass 的dependency
+  // 如果不主动定义从 VK_SUBPASS_EXTERNAL 到 第一个使用attachment的subpass
+  // 的dependency
   // 就会隐式定义一个，VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT到VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
   VkSubpassDependency dependency{
     // VK_SUBPASS_EXTERNAL 代表整个render pass之前提交的命令
@@ -80,7 +82,7 @@ auto createShaderModule(std::string_view filepath, VkDevice device)
   -> VkShaderModule {
   std::ifstream istrm{ filepath, std::ios::in | std::ios::binary };
   if (!istrm.is_open()) {
-    throwf("Open shader file {} failed!", filepath);
+    toy::throwf("Open shader file {} failed!", filepath);
   }
   std::vector<byte> content;
   std::copy(std::istreambuf_iterator<char>{ istrm },
@@ -101,7 +103,8 @@ auto createGraphicsPipeline(VkDevice device, VkRenderPass render_pass)
 
   auto vertex_shader = createShaderModule("vert.spv", device);
   auto frag_shader = createShaderModule("frag.spv", device);
-  // pSpecializationInfo 可以为 管道 配置着色器的常量，利于编译器优化，类似 constexpr
+  // pSpecializationInfo 可以为 管道 配置着色器的常量，利于编译器优化
+  // 类似 constexpr
   std::array<VkPipelineShaderStageCreateInfo, 2> shader_stage_infos = {
     VkPipelineShaderStageCreateInfo{
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -118,7 +121,8 @@ auto createGraphicsPipeline(VkDevice device, VkRenderPass render_pass)
   };
 
   // 很多状态必须提前烘焙到管道中
-  // 如果某些状态想要动态设置，可以用 VkPipelineDynamicStateCreateInfo 设置 多个 VkDynamicState
+  // 如果某些状态想要动态设置，可以用 VkPipelineDynamicStateCreateInfo
+  // 设置 多个 VkDynamicState
   std::array<VkDynamicState, 2> dynamic_states = {
     VK_DYNAMIC_STATE_VIEWPORT,
     VK_DYNAMIC_STATE_SCISSOR,
@@ -130,12 +134,14 @@ auto createGraphicsPipeline(VkDevice device, VkRenderPass render_pass)
     .pDynamicStates = dynamic_states.data(),
   };
 
+  auto vertex_info = VertexData2D::getVertexInfo();
   VkPipelineVertexInputStateCreateInfo vertex_input_info{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-    .vertexBindingDescriptionCount = 0,
-    .pVertexBindingDescriptions = nullptr,
-    .vertexAttributeDescriptionCount = 0,
-    .pVertexAttributeDescriptions = nullptr,
+    .vertexBindingDescriptionCount = 1,
+    .pVertexBindingDescriptions = &vertex_info.binding_description,
+    .vertexAttributeDescriptionCount =
+      vertex_info.attribute_descriptions.size(),
+    .pVertexAttributeDescriptions = vertex_info.attribute_descriptions.data(),
   };
 
   VkPipelineInputAssemblyStateCreateInfo input_assembly_info{
@@ -144,7 +150,8 @@ auto createGraphicsPipeline(VkDevice device, VkRenderPass render_pass)
     // VK_PRIMITIVE_TOPOLOGY_LINE_LIST: 不复用的线
     // VK_PRIMITIVE_TOPOLOGY_LINE_STRIP: 首尾相连的线
     // VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST: 不复用的三角形
-    // VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP: 下一个三角形的前两条边是上一个三角形的后两条边
+    // VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
+    // 下一个三角形的前两条边是上一个三角形的后两条边
     .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
     // 当_STRIP topology下，如果为True，则可以用特殊索引值来 break up 线和三角形
     .primitiveRestartEnable = VK_FALSE,
@@ -184,9 +191,9 @@ auto createGraphicsPipeline(VkDevice device, VkRenderPass render_pass)
   // 颜色混合：将片段着色器返回的颜色与缓冲区中的颜色进行混合
   /**
    * if (blendEnable) {
-   *   finalColor.rgb = (srcColorBlendFactor * newColor.rgb) <colorBlendOp> (dstColorBlendFactor * oldColor.rgb);
-   *   finalColor.a = (srcAlphaBlendFactor * newColor.a) <alphaBlendOp> (dstAlphaBlendFactor * oldColor.a);
-   * } else {
+   *   finalColor.rgb = (srcColorBlendFactor * newColor.rgb) <colorBlendOp>
+   * (dstColorBlendFactor * oldColor.rgb); finalColor.a = (srcAlphaBlendFactor *
+   * newColor.a) <alphaBlendOp> (dstAlphaBlendFactor * oldColor.a); } else {
    *   finalColor = newColor;
    * }
    * finalColor = finalColor & colorWriteMask;

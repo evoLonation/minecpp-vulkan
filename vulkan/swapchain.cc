@@ -4,13 +4,10 @@ import "vulkan_config.h";
 import vulkan.tool;
 
 import std;
-import log;
-import tool;
+import toy;
 
 namespace ranges = std::ranges;
 namespace views = std::views;
-using namespace log;
-using namespace tool;
 
 auto createSurface(VkInstance instance, GLFWwindow* p_window) -> VkSurfaceKHR {
   VkSurfaceKHR                surface;
@@ -22,7 +19,7 @@ auto createSurface(VkInstance instance, GLFWwindow* p_window) -> VkSurfaceKHR {
 
   if (vkCreateWin32SurfaceKHR(instance, &createInfo, nullptr, &surface) !=
       VK_SUCCESS) {
-    throwf("failed to create surface!");
+    toy::throwf("failed to create surface!");
   }
   return surface;
 }
@@ -81,10 +78,10 @@ auto createSwapchain(VkSurfaceKHR                    surface,
     // 不整 3D 应用程序的话就设置为1
     .imageArrayLayers = 1,
     /*
-       * VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT: 交换链的图像直接用于渲染
-       * VK_IMAGE_USAGE_TRANSFER_DST_BIT :
-       * 先渲染到单独的图像上（以便进行后处理），然后传输到交换链图像
-       */
+     * VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT: 交换链的图像直接用于渲染
+     * VK_IMAGE_USAGE_TRANSFER_DST_BIT :
+     * 先渲染到单独的图像上（以便进行后处理），然后传输到交换链图像
+     */
     .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
     .preTransform = capabilities.currentTransform,
     // alpha通道是否应用于与窗口系统中的其他窗口混合
@@ -105,7 +102,7 @@ auto createSwapchain(VkSurfaceKHR                    surface,
    * (性能最佳)
    */
   auto diff_indices =
-    queue_family_indices | chunkBy(std::equal_to{}) |
+    queue_family_indices | toy::chunkBy(std::equal_to{}) |
     views::transform([](auto subrange) { return *subrange.begin(); }) |
     ranges::to<std::vector>();
   if (diff_indices.size() >= 2) {
@@ -125,9 +122,9 @@ auto createSwapchain(VkSurfaceKHR                    surface,
     throw std::runtime_error("failed to create swap chain");
   }
 
-  debugf("the info of created swap chain:");
-  debugf("image count:{}", imageCount);
-  debugf("extent:({},{})", extent.width, extent.height);
+  toy::debugf("the info of created swap chain:");
+  toy::debugf("image count:{}", imageCount);
+  toy::debugf("extent:({},{})", extent.width, extent.height);
 
   return std::pair{ swapchain, extent };
 }

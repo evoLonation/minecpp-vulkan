@@ -3,11 +3,8 @@ module vulkan.device;
 import "vulkan_config.h";
 import vulkan.tool;
 import std;
-import log;
-import tool;
+import toy;
 
-using namespace log;
-using namespace tool;
 namespace ranges = std::ranges;
 namespace views = std::views;
 
@@ -33,7 +30,7 @@ auto pickPhysicalDevice(VkInstance                    instance,
     auto formats =
       getVkResource(vkGetPhysicalDeviceSurfaceFormatsKHR, device, surface);
 
-    debugf("checking physical device {}:", device_properties.deviceName);
+    toy::debugf("checking physical device {}:", device_properties.deviceName);
     bool unsupport = false;
     if (!device_checker(
           DeviceCheckContext{ device_properties, device_features })) {
@@ -52,7 +49,7 @@ auto pickPhysicalDevice(VkInstance                    instance,
         "device extensions",
         [](auto& extension) { return extension.extensionName; });
     } catch (const std::exception& e) {
-      debug(e.what());
+      toy::debug(e.what());
       unsupport = true;
     }
 
@@ -74,14 +71,14 @@ auto pickPhysicalDevice(VkInstance                    instance,
     }
   }
   if (supported_devices.empty()) {
-    throwf("no support physical device");
+    toy::throwf("no support physical device");
   }
-  debugf("support devices: {::}",
-         supported_devices | views::transform([](auto& info) {
-           return info.properties.deviceName;
-         }));
+  toy::debugf("support devices: {::}",
+              supported_devices | views::transform([](auto& info) {
+                return info.properties.deviceName;
+              }));
   auto selected_device = supported_devices[0];
-  debugf("select device {}", selected_device.properties.deviceName);
+  toy::debugf("select device {}", selected_device.properties.deviceName);
   return selected_device;
 }
 
@@ -95,7 +92,7 @@ auto getQueueFamilyIndices(VkPhysicalDevice              device,
 
   auto family_size = queue_families.size();
   auto request_size = queue_chekers.size();
-  debugf(
+  toy::debugf(
     "queue family size: {}, queue request size: {}", family_size, request_size);
 
   // 二分图，左半边是所有请求，右半边是所有队列(将队列族展开)
@@ -112,18 +109,18 @@ auto getQueueFamilyIndices(VkPhysicalDevice              device,
 
   std::vector<std::vector<std::pair<int, int>>> graph(request_size);
 
-  for (auto [family_i, properties] : queue_families | enumerate) {
+  for (auto [family_i, properties] : queue_families | toy::enumerate) {
     int request_i = 0;
     int queue_number = properties.queueCount;
-    debugf(
+    toy::debugf(
       "check queue family {}, which has {} queues", family_i, queue_number);
-    for (auto&& [request_i, queue_checker] : queue_chekers | enumerate) {
+    for (auto&& [request_i, queue_checker] : queue_chekers | toy::enumerate) {
       if (queue_checker(
             QueueFamilyCheckContext{ device, surface, family_i, properties })) {
         graph[request_i].append_range(views::zip(
           views::repeat(family_i, queue_number), views::iota(0, queue_number)));
       } else {
-        debugf("queue request {} failed", request_i);
+        toy::debugf("queue request {} failed", request_i);
       }
     }
   }
@@ -131,23 +128,23 @@ auto getQueueFamilyIndices(VkPhysicalDevice              device,
   std::function<bool(int, int)> dfs =
     [&graph, &visit, &queue2request, &request2family, &dfs](int u,
                                                             int tag) -> bool {
-    debugf("u: {}", u);
+    toy::debugf("u: {}", u);
     if (visit[u] == tag) {
-      debugf("visit[u] == tag, return false");
+      toy::debugf("visit[u] == tag, return false");
       return false;
     }
     visit[u] = tag;
     for (auto [family_i, queue_i] : graph[u]) {
-      debugf("u {} lookup {}", u, std::pair{ family_i, queue_i });
+      toy::debugf("u {} lookup {}", u, std::pair{ family_i, queue_i });
       if ((queue2request[family_i][queue_i] == -1 ||
            dfs(queue2request[family_i][queue_i], tag))) {
         queue2request[family_i][queue_i] = u;
         request2family[u] = { family_i, queue_i };
-        debugf("u {} select {}", u, std::pair{ family_i, queue_i });
+        toy::debugf("u {} select {}", u, std::pair{ family_i, queue_i });
         return true;
       }
     }
-    debugf("u {} no satisfied select", u);
+    toy::debugf("u {} no satisfied select", u);
     return false;
   };
 
@@ -160,11 +157,11 @@ auto getQueueFamilyIndices(VkPhysicalDevice              device,
 }
 
 auto checkPhysicalDeviceSupport(const DeviceCheckContext& ctx) -> bool {
-  return checkDebugf(
+  return toy::checkDebugf(
            ctx.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
            "device not satisfied VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU") &&
-         checkDebugf(ctx.features.geometryShader == VK_TRUE,
-                     "device not support geometryShader feature");
+         toy::checkDebugf(ctx.features.geometryShader == VK_TRUE,
+                          "device not support geometryShader feature");
 }
 
 auto checkSurfaceSupport(const SurfaceCheckContext& ctx)
@@ -174,7 +171,7 @@ auto checkSurfaceSupport(const SurfaceCheckContext& ctx)
            format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
   });
   if (p_format == ctx.surface_formats.end()) {
-    debugf("no suitable format");
+    toy::debugf("no suitable format");
     return std::nullopt;
   }
   /*
@@ -189,14 +186,14 @@ auto checkSurfaceSupport(const SurfaceCheckContext& ctx)
   auto p_present_mode =
     ranges::find(ctx.present_modes, VK_PRESENT_MODE_FIFO_KHR);
   if (p_present_mode == ctx.present_modes.end()) {
-    debugf("no suitable present mode");
+    toy::debugf("no suitable present mode");
     return std::nullopt;
   }
   return { { *p_present_mode, *p_format } };
 }
 
 auto checkGraphicQueue(const QueueFamilyCheckContext& ctx) -> bool {
-  return checkDebugf(
+  return toy::checkDebugf(
     ctx.properties.queueFlags & VK_QUEUE_GRAPHICS_BIT,
     "can not found queue family which satisfied VK_QUEUE_GRAPHICS_BIT");
 }
@@ -204,7 +201,7 @@ auto checkPresentQueue(const QueueFamilyCheckContext& ctx) -> bool {
   VkBool32 presentSupport = false;
   vkGetPhysicalDeviceSurfaceSupportKHR(
     ctx.device, ctx.index, ctx.surface, &presentSupport);
-  return checkDebugf(
+  return toy::checkDebugf(
     presentSupport == VK_TRUE,
     "can not found queue family which satisfied SurfaceSupport");
 }
@@ -219,9 +216,9 @@ auto createLogicalDevice(const PhysicalDeviceInfo& physical_device_info,
    */
 
   auto create_meta_infos =
-    SortedView(physical_device_info.queue_indices |
-               views::transform(&std::pair<uint32_t, uint32_t>::first)) |
-    chunkBy(std::equal_to{}) | views::transform([](auto subrange) {
+    toy::SortedView(physical_device_info.queue_indices |
+                    views::transform(&std::pair<uint32_t, uint32_t>::first)) |
+    toy::chunkBy(std::equal_to{}) | views::transform([](auto subrange) {
       std::vector<float> queue_priorities(subrange.size());
       ranges::fill(queue_priorities, 1.0);
       return std::tuple{ *subrange.begin(),
