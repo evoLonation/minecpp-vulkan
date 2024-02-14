@@ -380,4 +380,23 @@ inline void test_ChunkBy() {
   checkThrowf(i == view.begin(), "i == view.begin()");
 }
 
+struct FindIf {
+  template <ranges::input_range Rp,
+            class Proj = std::identity,
+            std::indirect_unary_predicate<
+              std::projected<ranges::iterator_t<Rp>, Proj>> Pred>
+  auto operator()(Rp&& range, Pred pred, Proj proj = {}) const
+    -> std::optional<ranges::range_value_t<Rp>> {
+    auto iter = ranges::find_if(
+      std::forward<Rp>(range), std::move(pred), std::move(proj));
+    if (iter == ranges::end(range)) {
+      return std::nullopt;
+    } else {
+      return *iter;
+    }
+  }
+};
+
+inline constexpr auto find_if = FindIf{};
+
 }
