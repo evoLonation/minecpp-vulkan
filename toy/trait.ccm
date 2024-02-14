@@ -1,0 +1,115 @@
+export module toy.trait;
+
+import std;
+
+export namespace toy {
+
+template <uint32_t index, typename Callable>
+struct FuncArgT;
+// todo: 对于重载函数而言有bug
+template <uint32_t index, typename Func>
+using FuncArg = typename FuncArgT<index, Func>::type;
+
+// 用于成员函数类型 (需要考虑 const 和非 const)
+template <uint32_t index, typename C, typename R, typename... Args>
+struct FuncArgT<index, R (C::*)(Args...) const> {
+  using type = std::tuple_element_t<index, std::tuple<Args...>>;
+};
+template <uint32_t index, typename C, typename R, typename... Args>
+struct FuncArgT<index, R (C::*)(Args...)> {
+  using type = std::tuple_element_t<index, std::tuple<Args...>>;
+};
+
+// 用于函数指针
+template <uint32_t index, typename R, typename... Args>
+struct FuncArgT<index, R (*)(Args...)> {
+  using type = std::tuple_element_t<index, std::tuple<Args...>>;
+};
+// 用于函数
+template <uint32_t index, typename R, typename... Args>
+struct FuncArgT<index, R(Args...)> {
+  using type = std::tuple_element_t<index, std::tuple<Args...>>;
+};
+
+// 用于持有 operator() 的类
+template <uint32_t index, typename Callable>
+struct FuncArgT {
+  using type = FuncArgT<index, decltype(&Callable::operator())>::type;
+};
+
+// type list
+template <typename... P>
+struct TypePack {
+  // 这种模板嵌套说明 T 可以是一个模板
+  template <template <typename...> typename T>
+  using apply = T<P...>;
+
+  template <typename... T>
+  using merge = TypePack<P..., T...>;
+};
+
+template <typename T, typename Seq>
+struct RepeatS;
+template <typename T, size_t... Is>
+struct RepeatS<T, std::index_sequence<Is...>> {
+  template <size_t N>
+  using element = T;
+  using type = TypePack<element<Is>...>;
+};
+template <typename T, size_t N>
+using Repeat = RepeatS<T, std::make_index_sequence<N>>::type;
+
+template <typename TypePack, size_t N>
+using Index = typename std::
+  tuple_element<N, typename TypePack::template apply<std::tuple>>::type;
+
+template <typename TypePack, typename T>
+struct InsertS;
+
+template <typename TypePack, typename T>
+using Insert = InsertS<TypePack, T>::type;
+
+template <typename... TypeList, typename T>
+struct InsertS<TypePack<TypeList...>, T> {
+  using type = TypePack<TypeList..., T>;
+};
+
+template <typename TypePack, template <typename...> typename Mapper>
+struct MapToS;
+
+template <typename TypePack, template <typename...> typename Mapper>
+using MapTo = MapToS<TypePack, Mapper>::type;
+
+template <typename... TypeList, template <typename...> typename Mapper>
+struct MapToS<TypePack<TypeList...>, Mapper> {
+  using type = TypePack<Mapper<TypeList>...>;
+};
+
+template <typename TypePack1, typename TypePack2>
+struct MergeS;
+
+template <typename TypePack1, typename TypePack2>
+using Merge = MergeS<TypePack1, TypePack2>::type;
+
+template <typename... TypeList1, typename... TypeList2>
+struct MergeS<TypePack<TypeList1...>, TypePack<TypeList2...>> {
+  using type = TypePack<TypeList1..., TypeList2...>;
+};
+
+template <typename TypePack, size_t index>
+struct RemoveFrontS;
+
+template <typename TypePack, size_t index>
+using RemoveFront = RemoveFrontS<TypePack, index>::type;
+
+template <typename Arg, typename... Args>
+struct RemoveFrontS<TypePack<Arg, Args...>, 1> {
+  using type = TypePack<Args...>;
+};
+
+template <size_t index, typename Arg, typename... Args>
+struct RemoveFrontS<TypePack<Arg, Args...>, index> {
+  using type = RemoveFront<TypePack<Args...>, index - 1>;
+};
+
+}

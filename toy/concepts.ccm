@@ -1,0 +1,10 @@
+export module toy.concepts;
+
+import std;
+
+export namespace toy {
+
+template <typename R, typename V>
+concept RangeOf = std::same_as<ranges::range_value_t<R>, V>;
+
+}
