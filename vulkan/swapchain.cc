@@ -6,9 +6,6 @@ import vulkan.tool;
 import std;
 import toy;
 
-namespace ranges = std::ranges;
-namespace views = std::views;
-
 auto createSurface(VkInstance instance, GLFWwindow* p_window) -> VkSurfaceKHR {
   VkSurfaceKHR                surface;
   VkWin32SurfaceCreateInfoKHR createInfo{

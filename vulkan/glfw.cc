@@ -4,8 +4,6 @@ import "vulkan_config.h";
 import std;
 import toy;
 
-namespace views = std::views;
-
 void checkGlfwError() {
   const char* description;
 

@@ -5,9 +5,6 @@ import vulkan.tool;
 import std;
 import toy;
 
-namespace ranges = std::ranges;
-namespace views = std::views;
-
 auto pickPhysicalDevice(VkInstance                    instance,
                         VkSurfaceKHR                  surface,
                         std::span<const char*>        required_extensions,

@@ -3,8 +3,6 @@ export import toy.log;
 
 import std;
 
-namespace ranges = std::ranges;
-namespace views = std::views;
 
 export namespace toy {
 

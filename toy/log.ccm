@@ -10,7 +10,7 @@ class BracesString {
 private:
   static consteval auto getFormatStringArray() {
     std::array<char, number * 4> arr{};
-    for (auto i : std::ranges::iota_view(static_cast<size_t>(0), number - 1)) {
+    for (auto i : ranges::iota_view(static_cast<size_t>(0), number - 1)) {
       arr[i * 4] = '{';
       arr[i * 4 + 1] = '}';
       arr[i * 4 + 2] = ',';

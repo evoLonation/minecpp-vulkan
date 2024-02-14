@@ -6,9 +6,6 @@ import vulkan.buffer;
 import std;
 import toy;
 
-namespace ranges = std::ranges;
-namespace views = std::views;
-
 auto createRenderPass(VkDevice device, VkFormat format) -> VkRenderPass {
   VkAttachmentDescription color_attachment{
     .format = format,

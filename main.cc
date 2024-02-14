@@ -5,8 +5,6 @@ import toy;
 import vulkan;
 import glm;
 
-namespace ranges = std::ranges;
-namespace views = std::views;
 
 void recordCommandBuffer(VkCommandBuffer command_buffer,
                          VkRenderPass    render_pass,

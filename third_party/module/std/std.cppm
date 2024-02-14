@@ -402,3 +402,8 @@ export module std;
 #include "std/variant.inc"
 #include "std/vector.inc"
 #include "std/version.inc"
+
+export {
+  namespace views = std::views;
+  namespace ranges = std::ranges;
+}

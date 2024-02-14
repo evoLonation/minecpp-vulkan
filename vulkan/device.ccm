@@ -3,8 +3,6 @@ export module vulkan.device;
 import "vulkan_config.h";
 import std;
 
-namespace ranges = std::ranges;
-
 export {
 
 /*
