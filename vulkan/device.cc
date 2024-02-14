@@ -116,6 +116,7 @@ auto getQueueFamilyIndices(VkPhysicalDevice              device,
             QueueFamilyCheckContext{ device, surface, family_i, properties })) {
         graph[request_i].append_range(views::zip(
           views::repeat(family_i, queue_number), views::iota(0, queue_number)));
+        toy::debugf("queue request {} success", request_i);
       } else {
         toy::debugf("queue request {} failed", request_i);
       }
@@ -190,17 +191,18 @@ auto checkSurfaceSupport(const SurfaceCheckContext& ctx)
 }
 
 auto checkGraphicQueue(const QueueFamilyCheckContext& ctx) -> bool {
-  return toy::checkDebugf(
-    ctx.properties.queueFlags & VK_QUEUE_GRAPHICS_BIT,
-    "can not found queue family which satisfied VK_QUEUE_GRAPHICS_BIT");
+  return ctx.properties.queueFlags & VK_QUEUE_GRAPHICS_BIT;
 }
 auto checkPresentQueue(const QueueFamilyCheckContext& ctx) -> bool {
-  VkBool32 presentSupport = false;
+  VkBool32 presentSupport = VK_FALSE;
   vkGetPhysicalDeviceSurfaceSupportKHR(
     ctx.device, ctx.index, ctx.surface, &presentSupport);
-  return toy::checkDebugf(
-    presentSupport == VK_TRUE,
-    "can not found queue family which satisfied SurfaceSupport");
+  return presentSupport == VK_TRUE;
+}
+auto checkTransferQueue(const QueueFamilyCheckContext& ctx) -> bool {
+  // 支持 graphics 和 compute operation 的 queue 也必定支持 transfer operation
+  return ctx.properties.queueFlags &
+         (VK_QUEUE_TRANSFER_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_GRAPHICS_BIT);
 }
 
 auto createLogicalDevice(const PhysicalDeviceInfo& physical_device_info,

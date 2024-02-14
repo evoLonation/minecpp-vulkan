@@ -31,7 +31,7 @@ auto createSwapchain(VkSurfaceKHR                    surface,
                      VkSurfaceFormatKHR              surface_format,
                      VkPresentModeKHR                present_mode,
                      GLFWwindow*                     p_window,
-                     std::span<uint32_t>             queue_family_indices,
+                     std::span<uint32_t>             sharing_family_indices,
                      VkSwapchainKHR                  old_swapchain)
   -> std::expected<std::pair<VkSwapchainKHR, VkExtent2D>,
                    SwapchainCreateError> {
@@ -99,7 +99,7 @@ auto createSwapchain(VkSurfaceKHR                    surface,
    * (性能最佳)
    */
   auto diff_indices =
-    queue_family_indices | toy::chunkBy(std::equal_to{}) |
+    sharing_family_indices | toy::chunkBy(std::equal_to{}) |
     views::transform([](auto subrange) { return *subrange.begin(); }) |
     ranges::to<std::vector>();
   if (diff_indices.size() >= 2) {

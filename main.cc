@@ -139,7 +139,7 @@ private:
 
   PipelineResource pipeline_resource_;
 
-  VkCommandPool command_pool_;
+  VkCommandPool graphics_command_pool_;
 
   struct Worker {
     VkCommandBuffer command_buffer;
@@ -154,8 +154,10 @@ private:
   bool last_present_failed_;
 
   VertexData2D    vertex_data_;
-  VkCommandBuffer copy_command_buffer_;
-  VkFence         copy_fence_;
+  VkQueue         transfer_queue_;
+  VkCommandPool   transfer_command_pool_;
+  VkCommandBuffer transfer_command_buffer_;
+  VkFence         transfer_fence_;
   VkBuffer        vertex_buffer_;
   VkDeviceMemory  vertex_buffer_memory_;
 };
@@ -183,14 +185,21 @@ VulkanApplication::VulkanApplication(uint32_t         width,
   // VK_KHR_SWAPCHAIN_EXTENSION_NAME 对应的扩展用于支持交换链
   auto required_device_extensions =
     std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME };
-  auto queue_checkers =
-    std::vector<QueueFamilyChecker>{ checkGraphicQueue, checkPresentQueue };
+  auto queue_checkers = std::vector<QueueFamilyChecker>{ checkGraphicQueue,
+                                                         checkPresentQueue,
+                                                         checkTransferQueue };
   physical_device_info_ = pickPhysicalDevice(instance_,
                                              surface_,
                                              required_device_extensions,
                                              checkPhysicalDeviceSupport,
                                              checkSurfaceSupport,
                                              std::span{ queue_checkers });
+  toy::debug(physical_device_info_.queue_indices);
+  toy::debugf("graphic family index {} transfer family index",
+              physical_device_info_.queue_indices[0].first ==
+                  physical_device_info_.queue_indices[2].first
+                ? "=="
+                : "!=");
 
   std::vector<VkQueue> queues;
   std::tie(device_, queues) =
@@ -198,10 +207,10 @@ VulkanApplication::VulkanApplication(uint32_t         width,
   graphic_queue_ = queues[0];
   present_queue_ = queues[1];
 
-  std::vector<uint32_t> queue_family_indices =
-    physical_device_info_.queue_indices |
-    views::transform([](auto a) { return a.first; }) |
-    ranges::to<std::vector>();
+  auto image_sharing_families = std::vector<uint32_t>{
+    physical_device_info_.queue_indices[0].first,
+    physical_device_info_.queue_indices[1].first,
+  };
 
   std::tie(swapchain_, extent_) =
     createSwapchain(surface_,
@@ -210,7 +219,7 @@ VulkanApplication::VulkanApplication(uint32_t         width,
                     physical_device_info_.surface_format,
                     physical_device_info_.present_mode,
                     p_window_,
-                    std::span(queue_family_indices),
+                    std::span(image_sharing_families),
                     VK_NULL_HANDLE)
       .value();
   image_views_ = createImageViews(
@@ -220,41 +229,52 @@ VulkanApplication::VulkanApplication(uint32_t         width,
   framebuffers_ =
     createFramebuffers(render_pass_, device_, extent_, image_views_);
   pipeline_resource_ = createGraphicsPipeline(device_, render_pass_);
-  command_pool_ = createCommandPool(device_, queue_family_indices[0]);
+  graphics_command_pool_ =
+    createCommandPool(device_, physical_device_info_.queue_indices[0].first);
   int worker_count = 2;
-  workers_ = allocateCommandBuffer(device_, command_pool_, worker_count) |
-             views::transform([device_ = device_](auto command_buffer) {
-               return Worker{
-                 .command_buffer = command_buffer,
-                 .image_available_sema = createSemaphore(device_),
-                 .render_finished_sema = createSemaphore(device_),
-                 .queue_batch_fence = createFence(device_, true),
-               };
-             }) |
-             ranges::to<std::vector>();
+  workers_ =
+    allocateCommandBuffer(device_, graphics_command_pool_, worker_count) |
+    views::transform([device_ = device_](auto command_buffer) {
+      return Worker{
+        .command_buffer = command_buffer,
+        .image_available_sema = createSemaphore(device_),
+        .render_finished_sema = createSemaphore(device_),
+        .queue_batch_fence = createFence(device_, true),
+      };
+    }) |
+    ranges::to<std::vector>();
   vertex_data_ = { { { { +0.0f, -0.5f }, { 1.0f, 1.0f, 1.0f } },
                      { { +0.5f, +0.5f }, { 0.0f, 1.0f, 0.0f } },
                      { { -0.5f, +0.5f }, { 0.0f, 0.0f, 1.0f } } } };
-  copy_command_buffer_ = allocateCommandBuffer(device_, command_pool_, 1)[0];
-  copy_fence_ = createFence(device_, false);
+  transfer_command_pool_ =
+    createCommandPool(device_, physical_device_info_.queue_indices[2].first);
+  transfer_queue_ = queues[2];
+  transfer_command_buffer_ =
+    allocateCommandBuffer(device_, transfer_command_pool_, 1)[0];
+  transfer_fence_ = createFence(device_, false);
   std::tie(vertex_buffer_, vertex_buffer_memory_) =
     createVertexBuffer(vertex_data_,
                        physical_device_info_.device,
                        device_,
-                       graphic_queue_,
-                       copy_command_buffer_,
-                       copy_fence_);
+                       transfer_queue_,
+                       transfer_command_buffer_,
+                       transfer_fence_);
 }
 
 VulkanApplication::~VulkanApplication() {
   vkDeviceWaitIdle(device_);
+  destroyBuffer(vertex_buffer_, vertex_buffer_memory_, device_);
+  destroyFence(transfer_fence_, device_);
+  freeCommandBuffer(transfer_command_buffer_, device_, transfer_command_pool_);
+  destroyCommandPool(transfer_command_pool_, device_);
+
   for (auto [command_buffer, sema1, sema2, fence] : workers_) {
     destroySemaphore(sema1, device_);
     destroySemaphore(sema2, device_);
     destroyFence(fence, device_);
-    freeCommandBuffer(command_buffer, device_, command_pool_);
+    freeCommandBuffer(command_buffer, device_, graphics_command_pool_);
   }
-  destroyCommandPool(command_pool_, device_);
+  destroyCommandPool(graphics_command_pool_, device_);
   destroyFramebuffers(framebuffers_, device_);
   destroyGraphicsPipeline(pipeline_resource_, device_);
   destroyRenderPass(render_pass_, device_);

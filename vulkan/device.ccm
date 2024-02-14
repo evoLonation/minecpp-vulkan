@@ -62,6 +62,7 @@ auto checkSurfaceSupport(const SurfaceCheckContext& ctx)
   -> std::optional<SelectedSurfaceInfo>;
 auto checkGraphicQueue(const QueueFamilyCheckContext& ctx) -> bool;
 auto checkPresentQueue(const QueueFamilyCheckContext& ctx) -> bool;
+auto checkTransferQueue(const QueueFamilyCheckContext& ctx) -> bool;
 
 /*
  * logical device 相关

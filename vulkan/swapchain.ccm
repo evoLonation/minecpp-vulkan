@@ -24,7 +24,7 @@ auto createSwapchain(VkSurfaceKHR                    surface,
                      VkSurfaceFormatKHR              surface_format,
                      VkPresentModeKHR                present_mode,
                      GLFWwindow*                     p_window,
-                     std::span<uint32_t>             queue_family_indices,
+                     std::span<uint32_t>             sharing_family_indices,
                      VkSwapchainKHR                  old_swapchain)
   -> std::expected<std::pair<VkSwapchainKHR, VkExtent2D>, SwapchainCreateError>;
 
