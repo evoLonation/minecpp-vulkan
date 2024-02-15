@@ -252,7 +252,6 @@ with open('compile_commands.json', 'wt') as f:
 
 print('compile_commands.json done')
 
-sp.run(f'ninja -C {ninja_dir}', check=True)
 for filename in os.listdir(third_party_dynamic_lib_dir):
   shutil.copy(ospath.join(third_party_dynamic_lib_dir, filename), target_dir)
-print('build done')
+print('copy dynamic library done')
