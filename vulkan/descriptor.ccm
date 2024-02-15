@@ -1,0 +1,110 @@
+export module vulkan.descriptor;
+
+import "vulkan_config.h";
+import vulkan.tool;
+import std;
+
+export namespace vk {
+
+constexpr VkDescriptorType descriptor_type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+
+auto createDescriptorSetLayout(VkDevice device) -> VkDescriptorSetLayout {
+  auto descriptor_set_binding = VkDescriptorSetLayoutBinding{
+    .binding = 0,
+    .descriptorType = descriptor_type,
+    .descriptorCount = 1,
+    .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+    .pImmutableSamplers = nullptr,
+  };
+  auto descriptor_set_layout_info = VkDescriptorSetLayoutCreateInfo{
+    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+    .bindingCount = 1,
+    .pBindings = &descriptor_set_binding,
+  };
+  auto descriptor_set_layout = createVkResource(vkCreateDescriptorSetLayout,
+                                                "descriptor set layout",
+                                                device,
+                                                &descriptor_set_layout_info);
+  return descriptor_set_layout;
+}
+
+void destroyDescriptorSetLayout(VkDescriptorSetLayout descriptor_set_layout,
+                                VkDevice              device) noexcept {
+  vkDestroyDescriptorSetLayout(device, descriptor_set_layout, nullptr);
+}
+
+auto createDescriptorPool(uint32_t size, VkDevice device) -> VkDescriptorPool {
+  // 每个类型的描述符的数量
+  auto poolSize = VkDescriptorPoolSize{
+    .type = descriptor_type,
+    .descriptorCount = size,
+  };
+  auto pool_create_info = VkDescriptorPoolCreateInfo{
+    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+    // VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT: 允许freeDescriptorSets
+    .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+    // 会分配描述符集的最大数量
+    .maxSets = size,
+    .poolSizeCount = 1,
+    .pPoolSizes = &poolSize,
+  };
+  return createVkResource(
+    vkCreateDescriptorPool, "descriptor pool", device, &pool_create_info);
+}
+
+void destroyDescriptorPool(VkDescriptorPool descriptor_pool,
+                           VkDevice         device) noexcept {
+  vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
+}
+
+auto allocateDescriptorSets(
+  std::span<const VkDescriptorSetLayout> descriptor_set_layouts,
+  VkDevice                               device,
+  VkDescriptorPool descriptor_pool) -> std::vector<VkDescriptorSet> {
+
+  auto allocate_info = VkDescriptorSetAllocateInfo{
+    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+    .descriptorPool = descriptor_pool,
+    .descriptorSetCount = (uint32_t)descriptor_set_layouts.size(),
+    .pSetLayouts = descriptor_set_layouts.data(),
+  };
+  auto descriptor_sets =
+    std::vector<VkDescriptorSet>(descriptor_set_layouts.size());
+  checkVkResult(
+    vkAllocateDescriptorSets(device, &allocate_info, descriptor_sets.data()),
+    "allocate descriptor sets");
+  return descriptor_sets;
+}
+
+void freeDescriptorSets(std::span<const VkDescriptorSet> descriptor_sets,
+                        VkDevice                         device,
+                        VkDescriptorPool descriptor_tool) noexcept {
+  checkVkResult(
+    vkFreeDescriptorSets(
+      device, descriptor_tool, descriptor_sets.size(), descriptor_sets.data()),
+    "free descriptor sets");
+}
+
+void updateDescriptorSet(VkDescriptorSet descriptor_set,
+                         VkBuffer        buffer,
+                         VkDevice        device) {
+  auto src_buffer_info = VkDescriptorBufferInfo{
+    .buffer = buffer,
+    .offset = 0,
+    .range = VK_WHOLE_SIZE,
+  };
+  auto descriptor_set_write_info = VkWriteDescriptorSet{
+    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+    .dstSet = descriptor_set,
+    .dstBinding = 0,
+    // 数组起始索引
+    .dstArrayElement = 0,
+    .descriptorCount = 1,
+    .descriptorType = descriptor_type,
+    // 是descriptorCount个，一个对应一个descriptor
+    .pBufferInfo = &src_buffer_info,
+  };
+  vkUpdateDescriptorSets(device, 1, &descriptor_set_write_info, 0, nullptr);
+}
+
+} // namespace vk

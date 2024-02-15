@@ -5,14 +5,18 @@ import toy;
 import vulkan;
 import glm;
 
-void recordCommandBuffer(VkCommandBuffer command_buffer,
-                         VkRenderPass    render_pass,
-                         VkPipeline      graphics_pipeline,
-                         VkExtent2D      extent,
-                         VkFramebuffer   framebuffer,
-                         VkBuffer        vertex_buffer,
-                         VkBuffer        index_buffer,
-                         uint32_t        index_count) {
+using namespace vk;
+
+void recordCommandBuffer(VkCommandBuffer                  command_buffer,
+                         VkRenderPass                     render_pass,
+                         VkPipeline                       graphics_pipeline,
+                         VkExtent2D                       extent,
+                         VkFramebuffer                    framebuffer,
+                         VkBuffer                         vertex_buffer,
+                         VkBuffer                         index_buffer,
+                         uint32_t                         index_count,
+                         VkPipelineLayout                 pipeline_layout,
+                         std::span<const VkDescriptorSet> descriptor_sets) {
   VkCommandBufferBeginInfo begin_info{
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     /** \param VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT specifies that each
@@ -69,6 +73,15 @@ void recordCommandBuffer(VkCommandBuffer command_buffer,
   auto offsets = std::array<VkDeviceSize, 1>{ 0 };
   vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffer, offsets.data());
   vkCmdBindIndexBuffer(command_buffer, index_buffer, 0, VK_INDEX_TYPE_UINT16);
+  vkCmdBindDescriptorSets(command_buffer,
+                          VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          pipeline_layout,
+                          // firstSet: 对应着色器中的layout(set=0)
+                          0,
+                          descriptor_sets.size(),
+                          descriptor_sets.data(),
+                          0,
+                          nullptr);
   vkCmdDrawIndexed(command_buffer, index_count, 1, 0, 0, 0);
   vkCmdEndRenderPass(command_buffer);
   checkVkResult(vkEndCommandBuffer(command_buffer), "end command buffer");
@@ -110,7 +123,7 @@ public:
 
   [[nodiscard]] GLFWwindow* pWindow() const { return p_window_; }
 
-  bool recreateSwapchain();
+  auto recreateSwapchain() -> bool;
   void drawFrame();
 
 private:
@@ -139,7 +152,8 @@ private:
 
   std::vector<VkFramebuffer> framebuffers_;
 
-  PipelineResource pipeline_resource_;
+  VkDescriptorSetLayout descriptor_set_layout_;
+  PipelineResource      pipeline_resource_;
 
   VkCommandPool graphics_command_pool_;
 
@@ -148,14 +162,21 @@ private:
     VkSemaphore     image_available_sema;
     VkSemaphore     render_finished_sema;
     VkFence         queue_batch_fence;
+    VkBuffer        uniform_buffer;
+    VkDeviceMemory  uniform_memory;
+    void*           uniform_memory_map;
+    VkDescriptorSet descriptor_set;
   };
   std::vector<Worker> workers_;
+
+  void updateUniformBuffer(Worker worker);
 
   int in_flight_index_;
 
   bool last_present_failed_;
 
-  VertexData2D          vertex_data_;
+  using Vertex2D = Vertex<glm::vec2, glm::vec3>;
+  std::vector<Vertex2D> vertex_data_;
   VkQueue               transfer_queue_;
   VkCommandPool         transfer_command_pool_;
   VkCommandBuffer       transfer_command_buffer_;
@@ -165,6 +186,17 @@ private:
   std::vector<uint16_t> vertex_indices;
   VkBuffer              index_buffer_;
   VkDeviceMemory        index_buffer_memory_;
+
+  struct UniformBufferObject {
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
+  };
+  // std::vector<std::pair<VkBuffer, VkDeviceMemory>> uniform_buffers_;
+  // std::vector<void*>                               uniform_buffer_maps_;
+
+  VkDescriptorPool descriptor_pool_;
+  // std::vector<VkDescriptorSet> descriptor_sets_;
 };
 
 VulkanApplication::VulkanApplication(uint32_t         width,
@@ -190,15 +222,14 @@ VulkanApplication::VulkanApplication(uint32_t         width,
   // VK_KHR_SWAPCHAIN_EXTENSION_NAME 对应的扩展用于支持交换链
   auto required_device_extensions =
     std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME };
-  auto queue_checkers = std::vector<QueueFamilyChecker>{ checkGraphicQueue,
-                                                         checkPresentQueue,
-                                                         checkTransferQueue };
-  physical_device_info_ = pickPhysicalDevice(instance_,
-                                             surface_,
-                                             required_device_extensions,
-                                             checkPhysicalDeviceSupport,
-                                             checkSurfaceSupport,
-                                             std::span{ queue_checkers });
+  physical_device_info_ = pickPhysicalDevice(
+    instance_,
+    surface_,
+    required_device_extensions,
+    checkPhysicalDeviceSupport,
+    checkSurfaceSupport,
+    std::array<QueueFamilyChecker, 3>{
+      checkGraphicQueue, checkPresentQueue, checkTransferQueue });
   toy::debug(physical_device_info_.queue_indices);
   toy::debugf("graphic family index {} transfer family index",
               physical_device_info_.queue_indices[0].first ==
@@ -233,27 +264,59 @@ VulkanApplication::VulkanApplication(uint32_t         width,
     createRenderPass(device_, physical_device_info_.surface_format.format);
   framebuffers_ =
     createFramebuffers(render_pass_, device_, extent_, image_views_);
-  pipeline_resource_ = createGraphicsPipeline(device_, render_pass_);
+  descriptor_set_layout_ = createDescriptorSetLayout(device_);
+  auto vertex_info = Vertex2D::getVertexInfo();
+  pipeline_resource_ =
+    createGraphicsPipeline(device_,
+                           render_pass_,
+                           std::span{ &vertex_info.binding_description, 1 },
+                           vertex_info.attribute_descriptions,
+                           std::span{ &descriptor_set_layout_, 1 });
   graphics_command_pool_ =
     createCommandPool(device_, physical_device_info_.queue_indices[0].first);
   int worker_count = 2;
+  descriptor_pool_ = createDescriptorPool(worker_count, device_);
   workers_ =
-    allocateCommandBuffer(device_, graphics_command_pool_, worker_count) |
-    views::transform([device_ = device_](auto command_buffer) {
-      return Worker{
-        .command_buffer = command_buffer,
-        .image_available_sema = createSemaphore(device_),
-        .render_finished_sema = createSemaphore(device_),
-        .queue_batch_fence = createFence(device_, true),
-      };
-    }) |
+    views::zip(
+      allocateCommandBuffers(device_, graphics_command_pool_, worker_count),
+      allocateDescriptorSets(views::repeat(descriptor_set_layout_) |
+                               views::take(worker_count) |
+                               ranges::to<std::vector>(),
+                             device_,
+                             descriptor_pool_)) |
+    views::transform(
+      [device = device_,
+       descriptor_set_layout = descriptor_set_layout_,
+       physical_device = physical_device_info_.device](auto pair) {
+        auto [command_buffer, descriptor_set] = pair;
+        auto [uniform_buffer, uniform_memory] =
+          createBuffer(device,
+                       physical_device,
+                       sizeof(UniformBufferObject),
+                       VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        void* map;
+        vkMapMemory(
+          device, uniform_memory, 0, sizeof(UniformBufferObject), 0, &map);
+        return Worker{
+          .command_buffer = command_buffer,
+          .image_available_sema = createSemaphore(device),
+          .render_finished_sema = createSemaphore(device),
+          .queue_batch_fence = createFence(device, true),
+          .uniform_buffer = uniform_buffer,
+          .uniform_memory = uniform_memory,
+          .uniform_memory_map = map,
+          .descriptor_set = descriptor_set,
+        };
+      }) |
     ranges::to<std::vector>();
-  vertex_data_ = { {
+  vertex_data_ = {
     { { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
     { { +0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f } },
     { { +0.5f, +0.5f }, { 0.0f, 0.0f, 1.0f } },
     { { -0.5f, +0.5f }, { 1.0f, 1.0f, 1.0f } },
-  } };
+  };
   vertex_indices = {
     0, 1, 2, 2, 3, 0,
   };
@@ -261,7 +324,7 @@ VulkanApplication::VulkanApplication(uint32_t         width,
     createCommandPool(device_, physical_device_info_.queue_indices[2].first);
   transfer_queue_ = queues[2];
   transfer_command_buffer_ =
-    allocateCommandBuffer(device_, transfer_command_pool_, 1)[0];
+    allocateCommandBuffers(device_, transfer_command_pool_, 1)[0];
   transfer_fence_ = createFence(device_, false);
   std::tie(vertex_buffer_, vertex_buffer_memory_) =
     createVertexBuffer(vertex_data_,
@@ -271,15 +334,41 @@ VulkanApplication::VulkanApplication(uint32_t         width,
                        transfer_command_buffer_,
                        transfer_fence_);
   std::tie(index_buffer_, index_buffer_memory_) =
-    createIndexBuffer(std::span{ vertex_indices },
+    createIndexBuffer(vertex_indices,
                       physical_device_info_.device,
                       device_,
                       transfer_queue_,
                       transfer_command_buffer_,
                       transfer_fence_);
+  // uniform_buffers_.resize(worker_count);
+  // uniform_buffer_maps_.resize(worker_count);
+  // for (int i = 0; i < worker_count; i++) {
+  //   uniform_buffers_[i] = createBuffer(device_,
+  //                                      physical_device_info_.device,
+  //                                      sizeof(UniformBufferObject),
+  //                                      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+  //                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+  //                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  //   vkMapMemory(device_,
+  //               uniform_buffers_[i].second,
+  //               0,
+  //               sizeof(UniformBufferObject),
+  //               0,
+  //               &uniform_buffer_maps_[i]);
+  // }
+
+  // descriptor_sets_ = allocateDescriptorSets(
+  //   views::repeat(descriptor_set_layout_) | views::take(worker_count) |
+  //     ranges::to<std::vector>(),
+  //   device_,
+  //   descriptor_pool_);
 }
 
 VulkanApplication::~VulkanApplication() {
+  // for (auto [buffer, memory] : uniform_buffers_) {
+  //   vkUnmapMemory(device_, memory);
+  //   destroyBuffer(buffer, memory, device_);
+  // }
   vkDeviceWaitIdle(device_);
   destroyBuffer(index_buffer_, index_buffer_memory_, device_);
   destroyBuffer(vertex_buffer_, vertex_buffer_memory_, device_);
@@ -287,15 +376,26 @@ VulkanApplication::~VulkanApplication() {
   freeCommandBuffer(transfer_command_buffer_, device_, transfer_command_pool_);
   destroyCommandPool(transfer_command_pool_, device_);
 
-  for (auto [command_buffer, sema1, sema2, fence] : workers_) {
+  freeDescriptorSets(workers_ | views::transform([](auto worker) {
+                       return worker.descriptor_set;
+                     }) |
+                       ranges::to<std::vector>(),
+                     device_,
+                     descriptor_pool_);
+  for (auto [command_buffer, sema1, sema2, fence, buffer, memory, _1, _2] :
+       workers_) {
+    vkUnmapMemory(device_, memory);
+    destroyBuffer(buffer, memory, device_);
     destroySemaphore(sema1, device_);
     destroySemaphore(sema2, device_);
     destroyFence(fence, device_);
     freeCommandBuffer(command_buffer, device_, graphics_command_pool_);
   }
+  destroyDescriptorPool(descriptor_pool_, device_);
   destroyCommandPool(graphics_command_pool_, device_);
   destroyFramebuffers(framebuffers_, device_);
   destroyGraphicsPipeline(pipeline_resource_, device_);
+  destroyDescriptorSetLayout(descriptor_set_layout_, device_);
   destroyRenderPass(render_pass_, device_);
   destroyImageViews(image_views_, device_);
   destroySwapchain(swapchain_, device_);
@@ -308,7 +408,7 @@ VulkanApplication::~VulkanApplication() {
   destroyWindow(p_window_);
 }
 
-bool VulkanApplication::recreateSwapchain() {
+auto VulkanApplication::recreateSwapchain() -> bool {
   // todo: 换成范围更小的约束
   vkDeviceWaitIdle(device_);
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
@@ -347,6 +447,28 @@ bool VulkanApplication::recreateSwapchain() {
   return true;
 }
 
+void VulkanApplication::updateUniformBuffer(Worker worker) {
+  static auto startTime = std::chrono::high_resolution_clock::now();
+
+  auto  currentTime = std::chrono::high_resolution_clock::now();
+  float time = std::chrono::duration<float, std::chrono::seconds::period>(
+                 currentTime - startTime)
+                 .count();
+  auto ubo = UniformBufferObject{
+    .model = glm::rotate(
+      glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+    .view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
+                        glm::vec3(0.0f, 0.0f, 0.0f),
+                        glm::vec3(0.0f, 0.0f, 1.0f)),
+    .proj = glm::perspective(
+      glm::radians(45.0f), extent_.width * 1.0f / extent_.height, 0.1f, 10.0f),
+  };
+  ubo.proj[1][1] *= -1;
+  std::memcpy(
+    worker.uniform_memory_map, reinterpret_cast<void*>(&ubo), sizeof(ubo));
+  updateDescriptorSet(worker.descriptor_set, worker.uniform_buffer, device_);
+}
+
 void VulkanApplication::drawFrame() {
   auto     worker = workers_[in_flight_index_];
   uint32_t image_index;
@@ -376,6 +498,7 @@ void VulkanApplication::drawFrame() {
                   VK_TRUE,
                   std::numeric_limits<uint64_t>::max());
   vkResetFences(device_, 1, &worker.queue_batch_fence);
+  updateUniformBuffer(worker);
   vkResetCommandBuffer(worker.command_buffer, 0);
   recordCommandBuffer(worker.command_buffer,
                       render_pass_,
@@ -384,7 +507,9 @@ void VulkanApplication::drawFrame() {
                       framebuffers_[image_index],
                       vertex_buffer_,
                       index_buffer_,
-                      vertex_indices.size());
+                      vertex_indices.size(),
+                      pipeline_resource_.pipeline_layout,
+                      std::span{ &worker.descriptor_set, 1 });
   VkPipelineStageFlags wait_stage_mask =
     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
   VkSubmitInfo submit_info{
