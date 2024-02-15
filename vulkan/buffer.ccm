@@ -147,13 +147,15 @@ void copyBuffer(VkBuffer        src_buffer,
   checkVkResult(vkResetFences(device, 1, &fence), "reset fence");
 }
 
-auto createVertexBuffer(VertexData2D     vertex_data,
-                        VkPhysicalDevice physical_device,
-                        VkDevice         device,
-                        VkQueue          queue,
-                        VkCommandBuffer  command_buffer,
-                        VkFence fence) -> std::pair<VkBuffer, VkDeviceMemory> {
-  auto buffer_size = vertex_data.vertices.size() * sizeof(VertexData2D::Vertex);
+auto createDeviceLocalBuffer(std::span<const std::byte> buffer_data,
+                             VkBufferUsageFlagBits      usage,
+                             VkPhysicalDevice           physical_device,
+                             VkDevice                   device,
+                             VkQueue                    transfer_queue,
+                             VkCommandBuffer            transfer_command_buffer,
+                             VkFence                    transfer_fence)
+  -> std::pair<VkBuffer, VkDeviceMemory> {
+  auto buffer_size = buffer_data.size() * sizeof(byte);
   auto [staging_buffer, staging_memory] = createBuffer(
     device,
     physical_device,
@@ -164,27 +166,60 @@ auto createVertexBuffer(VertexData2D     vertex_data,
   void* data;
   checkVkResult(vkMapMemory(device, staging_memory, 0, buffer_size, 0, &data),
                 "map memory");
-  std::memcpy(data, vertex_data.vertices.data(), buffer_size);
+  std::memcpy(data, buffer_data.data(), buffer_size);
   vkUnmapMemory(device, staging_memory);
 
-  auto [vertex_buffer, vertex_memory] = createBuffer(
-    device,
-    physical_device,
-    buffer_size,
-    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  auto [vertex_buffer, vertex_memory] =
+    createBuffer(device,
+                 physical_device,
+                 buffer_size,
+                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage,
+                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
   copyBuffer(staging_buffer,
              vertex_buffer,
              buffer_size,
              device,
-             queue,
-             command_buffer,
-             fence);
+             transfer_queue,
+             transfer_command_buffer,
+             transfer_fence);
 
   destroyBuffer(staging_buffer, staging_memory, device);
 
   return { vertex_buffer, vertex_memory };
+}
+
+auto createVertexBuffer(VertexData2D     vertex_data,
+                        VkPhysicalDevice physical_device,
+                        VkDevice         device,
+                        VkQueue          transfer_queue,
+                        VkCommandBuffer  transfer_command_buffer,
+                        VkFence          transfer_fence)
+  -> std::pair<VkBuffer, VkDeviceMemory> {
+  return createDeviceLocalBuffer(
+    std::as_bytes(std::span{ vertex_data.vertices }),
+    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+    physical_device,
+    device,
+    transfer_queue,
+    transfer_command_buffer,
+    transfer_fence);
+}
+
+auto createIndexBuffer(std::span<uint16_t> vertex_indices,
+                       VkPhysicalDevice    physical_device,
+                       VkDevice            device,
+                       VkQueue             transfer_queue,
+                       VkCommandBuffer     transfer_command_buffer,
+                       VkFence             transfer_fence)
+  -> std::pair<VkBuffer, VkDeviceMemory> {
+  return createDeviceLocalBuffer(std::as_bytes(vertex_indices),
+                                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                 physical_device,
+                                 device,
+                                 transfer_queue,
+                                 transfer_command_buffer,
+                                 transfer_fence);
 }
 
 }

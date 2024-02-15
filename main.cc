@@ -11,7 +11,8 @@ void recordCommandBuffer(VkCommandBuffer command_buffer,
                          VkExtent2D      extent,
                          VkFramebuffer   framebuffer,
                          VkBuffer        vertex_buffer,
-                         uint32_t        vertex_count) {
+                         VkBuffer        index_buffer,
+                         uint32_t        index_count) {
   VkCommandBufferBeginInfo begin_info{
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     /** \param VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT specifies that each
@@ -67,7 +68,8 @@ void recordCommandBuffer(VkCommandBuffer command_buffer,
   vkCmdSetScissor(command_buffer, 0, 1, &scissor);
   auto offsets = std::array<VkDeviceSize, 1>{ 0 };
   vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffer, offsets.data());
-  vkCmdDraw(command_buffer, vertex_count, 1, 0, 0);
+  vkCmdBindIndexBuffer(command_buffer, index_buffer, 0, VK_INDEX_TYPE_UINT16);
+  vkCmdDrawIndexed(command_buffer, index_count, 1, 0, 0, 0);
   vkCmdEndRenderPass(command_buffer);
   checkVkResult(vkEndCommandBuffer(command_buffer), "end command buffer");
 }
@@ -153,13 +155,16 @@ private:
 
   bool last_present_failed_;
 
-  VertexData2D    vertex_data_;
-  VkQueue         transfer_queue_;
-  VkCommandPool   transfer_command_pool_;
-  VkCommandBuffer transfer_command_buffer_;
-  VkFence         transfer_fence_;
-  VkBuffer        vertex_buffer_;
-  VkDeviceMemory  vertex_buffer_memory_;
+  VertexData2D          vertex_data_;
+  VkQueue               transfer_queue_;
+  VkCommandPool         transfer_command_pool_;
+  VkCommandBuffer       transfer_command_buffer_;
+  VkFence               transfer_fence_;
+  VkBuffer              vertex_buffer_;
+  VkDeviceMemory        vertex_buffer_memory_;
+  std::vector<uint16_t> vertex_indices;
+  VkBuffer              index_buffer_;
+  VkDeviceMemory        index_buffer_memory_;
 };
 
 VulkanApplication::VulkanApplication(uint32_t         width,
@@ -243,9 +248,15 @@ VulkanApplication::VulkanApplication(uint32_t         width,
       };
     }) |
     ranges::to<std::vector>();
-  vertex_data_ = { { { { +0.0f, -0.5f }, { 1.0f, 1.0f, 1.0f } },
-                     { { +0.5f, +0.5f }, { 0.0f, 1.0f, 0.0f } },
-                     { { -0.5f, +0.5f }, { 0.0f, 0.0f, 1.0f } } } };
+  vertex_data_ = { {
+    { { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
+    { { +0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f } },
+    { { +0.5f, +0.5f }, { 0.0f, 0.0f, 1.0f } },
+    { { -0.5f, +0.5f }, { 1.0f, 1.0f, 1.0f } },
+  } };
+  vertex_indices = {
+    0, 1, 2, 2, 3, 0,
+  };
   transfer_command_pool_ =
     createCommandPool(device_, physical_device_info_.queue_indices[2].first);
   transfer_queue_ = queues[2];
@@ -259,6 +270,13 @@ VulkanApplication::VulkanApplication(uint32_t         width,
                        transfer_queue_,
                        transfer_command_buffer_,
                        transfer_fence_);
+  std::tie(index_buffer_, index_buffer_memory_) =
+    createIndexBuffer(std::span{ vertex_indices },
+                      physical_device_info_.device,
+                      device_,
+                      transfer_queue_,
+                      transfer_command_buffer_,
+                      transfer_fence_);
 }
 
 VulkanApplication::~VulkanApplication() {
@@ -364,7 +382,8 @@ void VulkanApplication::drawFrame() {
                       extent_,
                       framebuffers_[image_index],
                       vertex_buffer_,
-                      vertex_data_.vertices.size());
+                      index_buffer_,
+                      vertex_indices.size());
   VkPipelineStageFlags wait_stage_mask =
     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
   VkSubmitInfo submit_info{
