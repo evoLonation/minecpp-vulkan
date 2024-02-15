@@ -281,6 +281,7 @@ VulkanApplication::VulkanApplication(uint32_t         width,
 
 VulkanApplication::~VulkanApplication() {
   vkDeviceWaitIdle(device_);
+  destroyBuffer(index_buffer_, index_buffer_memory_, device_);
   destroyBuffer(vertex_buffer_, vertex_buffer_memory_, device_);
   destroyFence(transfer_fence_, device_);
   freeCommandBuffer(transfer_command_buffer_, device_, transfer_command_pool_);
