@@ -8,6 +8,8 @@ AlignConsecutiveDeclarations:	true
 AlignOperands:	true
 # 允许函数声明的所有参数在放在下一行
 AllowAllParametersOfDeclarationOnNextLine:	true
+# 允许函数调用的所有参数在放在下一行
+AllowAllArgumentsOnNextLine: true
 # 总是在template声明后换行
 AlwaysBreakTemplateDeclarations: true
 # 延续的行的缩进宽度
@@ -23,4 +25,4 @@ Cpp11BracedListStyle:	false
 # 指针和引用的对齐: Left, Right, Middle
 PointerAlignment:	Left
 # 在namespace块的右大括号后自动添加注释
-FixNamespaceComments: false
+FixNamespaceComments: true
