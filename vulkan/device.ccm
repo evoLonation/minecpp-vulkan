@@ -3,7 +3,7 @@ export module vulkan.device;
 import "vulkan_config.h";
 import std;
 
-export {
+export namespace vk {
 
 /*
  * physical device 相关
@@ -49,12 +49,12 @@ using QueueFamilyChecker = std::function<bool(const QueueFamilyCheckContext&)>;
 using SurfaceChecker =
   std::function<std::optional<SelectedSurfaceInfo>(const SurfaceCheckContext&)>;
 
-auto pickPhysicalDevice(VkInstance                    instance,
-                        VkSurfaceKHR                  surface,
-                        std::span<const char*>        required_extensions,
-                        DeviceChecker                 device_checker,
-                        SurfaceChecker                surface_checker,
-                        std::span<QueueFamilyChecker> queue_chekers)
+auto pickPhysicalDevice(VkInstance                          instance,
+                        VkSurfaceKHR                        surface,
+                        std::span<const char*>              required_extensions,
+                        DeviceChecker                       device_checker,
+                        SurfaceChecker                      surface_checker,
+                        std::span<const QueueFamilyChecker> queue_chekers)
   -> PhysicalDeviceInfo;
 
 auto checkPhysicalDeviceSupport(const DeviceCheckContext& ctx) -> bool;
@@ -73,9 +73,13 @@ auto createLogicalDevice(const PhysicalDeviceInfo& physical_device_info,
   -> std::pair<VkDevice, std::vector<VkQueue>>;
 void destroyLogicalDevice(VkDevice device) noexcept;
 
-}
+} // namespace vk
 
-auto getQueueFamilyIndices(VkPhysicalDevice              device,
-                           VkSurfaceKHR                  surface,
-                           std::span<QueueFamilyChecker> queue_chekers)
+namespace vk {
+
+auto getQueueFamilyIndices(VkPhysicalDevice                    device,
+                           VkSurfaceKHR                        surface,
+                           std::span<const QueueFamilyChecker> queue_chekers)
   -> std::optional<QueueIndexes>;
+
+} // namespace vk

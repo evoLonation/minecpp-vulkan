@@ -6,6 +6,8 @@ import vulkan.tool;
 import std;
 import toy;
 
+namespace vk {
+
 template <bool enable_valid_layer>
 auto createInstanceTemplate(std::string_view    appName,
                             DebugMessengerInfo* p_debug_messenger_info) {
@@ -212,3 +214,5 @@ debugHandler(VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
 
   return VK_FALSE;
 }
+
+} // namespace vk

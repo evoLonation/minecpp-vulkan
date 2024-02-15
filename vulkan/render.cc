@@ -6,6 +6,8 @@ import vulkan.buffer;
 import std;
 import toy;
 
+namespace vk {
+
 auto createRenderPass(VkDevice device, VkFormat format) -> VkRenderPass {
   VkAttachmentDescription color_attachment{
     .format = format,
@@ -94,7 +96,13 @@ auto createShaderModule(std::string_view filepath, VkDevice device)
     vkCreateShaderModule, "shader module", device, &create_info);
 }
 
-auto createGraphicsPipeline(VkDevice device, VkRenderPass render_pass)
+auto createGraphicsPipeline(
+  VkDevice                                         device,
+  VkRenderPass                                     render_pass,
+  std::span<const VkVertexInputBindingDescription> vertex_binding_descriptions,
+  std::span<const VkVertexInputAttributeDescription>
+                                         vertex_attribute_descriptions,
+  std::span<const VkDescriptorSetLayout> descriptor_set_layouts)
   -> PipelineResource {
   constexpr bool enable_blending_color = false;
 
@@ -131,14 +139,14 @@ auto createGraphicsPipeline(VkDevice device, VkRenderPass render_pass)
     .pDynamicStates = dynamic_states.data(),
   };
 
-  auto vertex_info = VertexData2D::getVertexInfo();
   VkPipelineVertexInputStateCreateInfo vertex_input_info{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-    .vertexBindingDescriptionCount = 1,
-    .pVertexBindingDescriptions = &vertex_info.binding_description,
+    .vertexBindingDescriptionCount =
+      (uint32_t)vertex_binding_descriptions.size(),
+    .pVertexBindingDescriptions = vertex_binding_descriptions.data(),
     .vertexAttributeDescriptionCount =
-      vertex_info.attribute_descriptions.size(),
-    .pVertexAttributeDescriptions = vertex_info.attribute_descriptions.data(),
+      (uint32_t)vertex_attribute_descriptions.size(),
+    .pVertexAttributeDescriptions = vertex_attribute_descriptions.data(),
   };
 
   VkPipelineInputAssemblyStateCreateInfo input_assembly_info{
@@ -173,7 +181,7 @@ auto createGraphicsPipeline(VkDevice device, VkRenderPass render_pass)
     .polygonMode = VK_POLYGON_MODE_FILL,
     // 背面剔除
     .cullMode = VK_CULL_MODE_BACK_BIT,
-    .frontFace = VK_FRONT_FACE_CLOCKWISE,
+    .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
     // 深度偏移
     .depthBiasEnable = VK_FALSE,
     // 不为1.0的都需要 gpu 支持
@@ -224,6 +232,8 @@ auto createGraphicsPipeline(VkDevice device, VkRenderPass render_pass)
   // 指定 uniform 全局变量
   VkPipelineLayoutCreateInfo pipeline_layout_info{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+    .setLayoutCount = (uint32_t)descriptor_set_layouts.size(),
+    .pSetLayouts = descriptor_set_layouts.data(),
   };
   VkPipelineLayout pipeline_layout = createVkResource(
     vkCreatePipelineLayout, "pipeline layout", device, &pipeline_layout_info);
@@ -264,10 +274,10 @@ void destroyGraphicsPipeline(PipelineResource pipeline_resource,
   vkDestroyShaderModule(device, pipeline_resource.vertex_shader, nullptr);
 }
 
-auto createFramebuffers(VkRenderPass           render_pass,
-                        VkDevice               device,
-                        VkExtent2D             extent,
-                        std::span<VkImageView> image_views)
+auto createFramebuffers(VkRenderPass                 render_pass,
+                        VkDevice                     device,
+                        VkExtent2D                   extent,
+                        std::span<const VkImageView> image_views)
   -> std::vector<VkFramebuffer> {
   return image_views |
          views::transform([render_pass, device, extent](auto image_view) {
@@ -286,8 +296,8 @@ auto createFramebuffers(VkRenderPass           render_pass,
          ranges::to<std::vector>();
 }
 
-void destroyFramebuffers(std::span<VkFramebuffer> framebuffers,
-                         VkDevice                 device) noexcept {
+void destroyFramebuffers(std::span<const VkFramebuffer> framebuffers,
+                         VkDevice                       device) noexcept {
   for (auto framebuffer : framebuffers) {
     vkDestroyFramebuffer(device, framebuffer, nullptr);
   }
@@ -307,9 +317,9 @@ auto createCommandPool(VkDevice device, uint32_t graphic_family_index)
     vkCreateCommandPool, "command pool", device, &pool_create_info);
 }
 
-auto allocateCommandBuffer(VkDevice      device,
-                           VkCommandPool command_pool,
-                           uint32_t count) -> std::vector<VkCommandBuffer> {
+auto allocateCommandBuffers(VkDevice      device,
+                            VkCommandPool command_pool,
+                            uint32_t count) -> std::vector<VkCommandBuffer> {
   VkCommandBufferAllocateInfo cbuffer_alloc_info{
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
     .commandPool = command_pool,
@@ -334,3 +344,5 @@ void freeCommandBuffer(VkCommandBuffer command_buffer,
                        VkCommandPool   command_pool) noexcept {
   vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
 }
+
+} // namespace vk

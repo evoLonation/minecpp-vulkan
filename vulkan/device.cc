@@ -5,12 +5,14 @@ import vulkan.tool;
 import std;
 import toy;
 
-auto pickPhysicalDevice(VkInstance                    instance,
-                        VkSurfaceKHR                  surface,
-                        std::span<const char*>        required_extensions,
-                        DeviceChecker                 device_checker,
-                        SurfaceChecker                surface_checker,
-                        std::span<QueueFamilyChecker> queue_chekers)
+namespace vk {
+
+auto pickPhysicalDevice(VkInstance                          instance,
+                        VkSurfaceKHR                        surface,
+                        std::span<const char*>              required_extensions,
+                        DeviceChecker                       device_checker,
+                        SurfaceChecker                      surface_checker,
+                        std::span<const QueueFamilyChecker> queue_chekers)
   -> PhysicalDeviceInfo {
   std::vector<VkPhysicalDevice> devices =
     getVkResource(vkEnumeratePhysicalDevices, instance);
@@ -79,9 +81,9 @@ auto pickPhysicalDevice(VkInstance                    instance,
   return selected_device;
 }
 
-auto getQueueFamilyIndices(VkPhysicalDevice              device,
-                           VkSurfaceKHR                  surface,
-                           std::span<QueueFamilyChecker> queue_chekers)
+auto getQueueFamilyIndices(VkPhysicalDevice                    device,
+                           VkSurfaceKHR                        surface,
+                           std::span<const QueueFamilyChecker> queue_chekers)
   -> std::optional<QueueIndexes> {
 
   auto queue_families =
@@ -272,3 +274,5 @@ auto createLogicalDevice(const PhysicalDeviceInfo& physical_device_info,
 void destroyLogicalDevice(VkDevice device) noexcept {
   vkDestroyDevice(device, nullptr);
 }
+
+} // namespace vk

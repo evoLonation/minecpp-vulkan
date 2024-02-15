@@ -4,6 +4,8 @@ import "vulkan_config.h";
 import std;
 import toy;
 
+namespace vk {
+
 void checkGlfwError() {
   const char* description;
 
@@ -44,3 +46,5 @@ void destroyWindow(GLFWwindow* p_window) noexcept {
   }
   glfwTerminate();
 }
+
+} // namespace vk

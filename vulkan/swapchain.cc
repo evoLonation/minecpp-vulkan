@@ -6,6 +6,8 @@ import vulkan.tool;
 import std;
 import toy;
 
+namespace vk {
+
 auto createSurface(VkInstance instance, GLFWwindow* p_window) -> VkSurfaceKHR {
   VkSurfaceKHR                surface;
   VkWin32SurfaceCreateInfoKHR createInfo{
@@ -31,7 +33,7 @@ auto createSwapchain(VkSurfaceKHR                    surface,
                      VkSurfaceFormatKHR              surface_format,
                      VkPresentModeKHR                present_mode,
                      GLFWwindow*                     p_window,
-                     std::span<uint32_t>             sharing_family_indices,
+                     std::span<const uint32_t>       sharing_family_indices,
                      VkSwapchainKHR                  old_swapchain)
   -> std::expected<std::pair<VkSwapchainKHR, VkExtent2D>,
                    SwapchainCreateError> {
@@ -163,9 +165,11 @@ auto createImageViews(VkDevice       device,
   return image_views;
 }
 
-void destroyImageViews(std::span<VkImageView> image_views,
-                       VkDevice               device) noexcept {
+void destroyImageViews(std::span<const VkImageView> image_views,
+                       VkDevice                     device) noexcept {
   for (auto image_view : image_views) {
     vkDestroyImageView(device, image_view, nullptr);
   }
 }
+
+} // namespace vk

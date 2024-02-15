@@ -3,7 +3,7 @@ export module vulkan.instance;
 import "vulkan_config.h";
 import std;
 
-export {
+export namespace vk {
 
 /*
  * instance, extension, layer相关
@@ -27,9 +27,11 @@ auto getRequiredInstanceExtensions() -> std::vector<const char*>;
 template <bool enableValidLayer>
 auto getRequiredLayers() -> std::vector<const char*>;
 
-}
+} // namespace vk
 
-//需要借助instance 来手动加载 debugMessenger 的create和destroy函数
+namespace vk {
+
+// 需要借助instance 来手动加载 debugMessenger 的create和destroy函数
 auto createDebugUtilsMessengerEXT(
   VkInstance                                instance,
   const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
@@ -46,3 +48,5 @@ debugHandler(VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
              VkDebugUtilsMessageTypeFlagsEXT             message_type,
              const VkDebugUtilsMessengerCallbackDataEXT* p_callback_data,
              void*                                       p_user_data);
+
+} // namespace vk
