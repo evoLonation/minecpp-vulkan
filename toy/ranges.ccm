@@ -5,6 +5,103 @@ import std;
 
 export namespace toy {
 
+template <typename T>
+concept SelfIncrement = requires(T iter) {
+  { iter.selfIncrement() } -> std::same_as<void>;
+};
+template <typename T>
+concept SelfDecrement = requires(T iter) {
+  { iter.selfDecrement() } -> std::same_as<void>;
+};
+template <typename Derived>
+class SelfOperatorHelper {
+public:
+  auto self() -> Derived& { return static_cast<Derived&>(*this); }
+
+  template <SelfIncrement Derived_ = Derived>
+  auto operator++() -> Derived& {
+    self().selfIncrement();
+    return self();
+  }
+  template <SelfIncrement Derived_ = Derived>
+  auto operator++(int) -> Derived {
+    auto old = self();
+    self().selfIncrement();
+    return old;
+  }
+
+  template <SelfDecrement Derived_ = Derived>
+  auto operator--() -> Derived& {
+    self().selfDecrement();
+    return self();
+  }
+  template <SelfDecrement Derived_ = Derived>
+  auto operator--(int) -> Derived {
+    auto old = self();
+    self().selfDecrement();
+    return old;
+  }
+};
+template <typename T>
+concept RandomAccess = requires(T iter) {
+  requires std::random_access_iterator<
+    std::remove_reference_t<decltype(iter.*T::randomAccessMember())>>;
+};
+template <typename Derived, typename DifferenceType = std::ptrdiff_t>
+class RandomAccessIteratorHelper : public SelfOperatorHelper<Derived> {
+private:
+  using difference_type = DifferenceType;
+
+  RandomAccess auto& self() { return static_cast<Derived&>(*this); }
+  RandomAccess auto  self() const { return static_cast<const Derived&>(*this); }
+
+  auto  base() const { return self().*Derived::randomAccessMember(); }
+  auto& base() { return self().*Derived::randomAccessMember(); }
+
+private:
+  friend SelfOperatorHelper<Derived>;
+  void selfIncrement() { ++base(); }
+  void selfDecrement() { --base(); }
+
+public:
+  auto operator+=(difference_type n) -> Derived& {
+    base() += n;
+    return self();
+  }
+  friend auto operator+(Derived a, difference_type n) -> Derived {
+    return a.RandomAccessIteratorHelper::base() + n;
+  }
+  friend auto operator+(difference_type n, Derived a) -> Derived {
+    return a.RandomAccessIteratorHelper::base() + n;
+  }
+  auto operator-=(difference_type n) -> Derived& {
+    base() -= n;
+    return self();
+  }
+  friend auto operator-(Derived a, difference_type n) -> Derived {
+    return a.RandomAccessIteratorHelper::base() - n;
+  }
+
+  decltype(auto) operator[](difference_type n) const { return *(self() + n); }
+
+  friend auto operator-(Derived a, Derived b) -> difference_type {
+    return a.RandomAccessIteratorHelper::base() -
+           b.RandomAccessIteratorHelper::base();
+  }
+
+  // 飞船运算符 = default， 编译器会自动生成所有比较运算符
+  // 如果飞船运算符是用户自定义的，则编译器不会自动生成相等比较运算符
+  // 考虑到容器类进行相等比较时，如果size不等则可以直接false，而进行三相比较则永远是O(n)的
+  friend auto operator<=>(Derived a, Derived b) -> std::strong_ordering {
+    return a.RandomAccessIteratorHelper::base() <=>
+           b.RandomAccessIteratorHelper::base();
+  }
+  friend auto operator==(Derived a, Derived b) -> bool {
+    return a.RandomAccessIteratorHelper::base() ==
+           b.RandomAccessIteratorHelper::base();
+  }
+};
+
 template <typename Adaptor, typename... Args>
 struct AdaptorClosure {
   Adaptor             adaptor_;
@@ -78,7 +175,7 @@ private:
 
 public:
   class Sentinel {};
-  class Iterator {
+  class Iterator : public SelfOperatorHelper<Iterator> {
     // 指向一个子范围（惰性的），当解引用时需要得到一个子范围（除非是end），自增操作需要寻找下一个子范围
   private:
     View*        base_;
@@ -89,14 +186,17 @@ public:
   public:
     Iterator(View& base, Pred& pred)
       : base_(&base), left_(base.begin()), right_(left_), pred_(&pred) {
-      nextSubRange();
+      selfIncrement();
     }
     Iterator() = default;
 
     using difference_type = std::ptrdiff_t;
     using value_type = SubRange;
     using reference_type = value_type;
-    auto nextSubRange() {
+
+  private:
+    friend SelfOperatorHelper<Iterator>;
+    auto selfIncrement() {
       left_ = right_;
       right_ = ranges::adjacent_find(
         ranges::subrange(left_, base_->end()), [this](auto&& a, auto&& b) {
@@ -107,7 +207,7 @@ public:
         ++right_;
       }
     }
-    auto prevSubRange() {
+    auto selfDecrement() {
       right_ = left_;
       left_ = ranges::adjacent_find(
                 ranges::subrange(base_->begin(), left_) | views::reverse,
@@ -121,24 +221,8 @@ public:
         --left_;
       }
     }
-    auto operator++() -> Iterator& {
-      nextSubRange();
-      return *this;
-    }
-    auto operator++(int) -> Iterator {
-      auto old = *this;
-      nextSubRange();
-      return old;
-    }
-    auto operator--() -> Iterator& {
-      prevSubRange();
-      return *this;
-    }
-    auto operator--(int) -> Iterator {
-      auto old = *this;
-      prevSubRange();
-      return old;
-    }
+
+  public:
     friend auto operator==(const Iterator& a, const Iterator& b) -> bool {
       return a.left_ == b.left_;
     }
@@ -167,100 +251,6 @@ struct ChunkByAdaptor {
 inline constexpr EnumerateAdaptor enumerate = EnumerateAdaptor{};
 inline constexpr ChunkByAdaptor   chunkBy = ChunkByAdaptor{};
 
-// todo: 增加灵活性
-template <typename Derived,
-          typename ValueType,
-          typename ReferenceType = ValueType>
-class IteratorHelper {
-public:
-  using value_type = ValueType;
-  using reference_type = ReferenceType;
-  using difference_type = std::ptrdiff_t;
-
-  decltype(auto) base() const {
-    return static_cast<const Derived&>(*this).*Derived::baseMember();
-  }
-  decltype(auto) base() {
-    return static_cast<Derived&>(*this).*Derived::baseMember();
-  }
-  decltype(auto) self() { return static_cast<Derived&>(*this); }
-  decltype(auto) self() const { return static_cast<const Derived&>(*this); }
-
-  auto operator*() const -> reference_type {
-    return static_cast<const Derived>(static_cast<const Derived&>(*this))
-      .deref();
-  }
-
-  auto operator++() -> Derived& {
-    base()++;
-    return static_cast<Derived&>(*this);
-  }
-  auto operator++(int) -> Derived {
-    auto old = static_cast<Derived&>(*this);
-    base()++;
-    return old;
-  }
-
-  auto operator--() -> Derived& {
-    base()--;
-    return self();
-  }
-  auto operator--(int) -> Derived {
-    auto old = self();
-    base()--;
-    return old;
-  }
-
-  auto operator+=(difference_type n) -> Derived& {
-    base() += n;
-    return self();
-  }
-  friend auto operator+(const Derived& a, difference_type n) -> Derived {
-    return a.base() + n;
-  }
-  friend auto operator+(difference_type n, const Derived& a) -> Derived {
-    return a.base() + n;
-  }
-  auto operator-=(difference_type n) -> Derived& {
-    base() -= n;
-    return self();
-  }
-  friend auto operator-(const Derived& a, difference_type n) -> Derived {
-    return a.base() - n;
-  }
-  friend auto operator-(difference_type n, const Derived& a) -> Derived {
-    return a.base() - n;
-  }
-
-  auto operator[](difference_type n) const -> reference_type {
-    return self().at(n);
-  }
-
-  friend auto operator==(const Derived& a, const Derived& b) -> bool {
-    return a.base() == b.base();
-  }
-  friend auto operator!=(const Derived& a, const Derived& b) -> bool {
-    return a.base() != b.base();
-  }
-
-  friend auto operator<(const Derived& a, const Derived& b) -> bool {
-    return a.base() < b.base();
-  }
-  friend auto operator<=(const Derived& a, const Derived& b) -> bool {
-    return a.base() <= b.base();
-  }
-  friend auto operator>(const Derived& a, const Derived& b) -> bool {
-    return a.base() > b.base();
-  }
-  friend auto operator>=(const Derived& a, const Derived& b) -> bool {
-    return a.base() >= b.base();
-  }
-
-  friend auto operator-(const Derived& a, const Derived& b) -> difference_type {
-    return a.base() - b.base();
-  }
-};
-
 // 给一个range，返回一个排序后的新range，该range为了省空间只会存储排序后的迭代器
 template <typename Range, class Comp = ranges::less, class Proj = std::identity>
   requires ranges::random_access_range<Range> && ranges::viewable_range<Range>
@@ -281,28 +271,25 @@ public:
   SortedView& operator=(const SortedView&) = delete;
   SortedView& operator=(SortedView&&) = default;
 
-  class Iterator
-    : public IteratorHelper<Iterator, std::iter_value_t<BaseIterator>> {
+  class Iterator : public RandomAccessIteratorHelper<Iterator> {
   private:
     IndexIterator index_iter;
-    using Base = IteratorHelper<Iterator, std::iter_value_t<BaseIterator>>;
-    friend Base;
 
   public:
-    using typename Base::difference_type;
-    using typename Base::reference_type;
-    using typename Base::value_type;
+    using reference_type = std::iter_reference_t<BaseIterator>;
+    using value_type = std::iter_value_t<BaseIterator>;
+
     Iterator(IndexIterator index_it) : index_iter(index_it) {}
     Iterator() = default;
 
   private:
-    constexpr static IndexIterator Iterator::*baseMember() {
+    friend RandomAccessIteratorHelper<Iterator>;
+    constexpr static IndexIterator Iterator::*randomAccessMember() {
       return &Iterator::index_iter;
     }
-    auto deref() const -> reference_type { return **index_iter; }
-    auto at(difference_type n) const -> reference_type {
-      return *index_iter[n];
-    }
+
+  public:
+    auto operator*() const -> reference_type { return **index_iter; }
   };
   auto begin() { return Iterator{ index_.begin() }; }
   auto end() { return Iterator{ index_.end() }; }
