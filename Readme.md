@@ -33,16 +33,8 @@ cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=cl
  cmake --build build -- all
 ```
 ### 需要的部分
-- 头文件： glm目录下的hpp文件
-  - 利用该脚本删除不必要的文件
-  ```python
-  import os
-  for dir, _, filenames in os.walk('glm'):
-    for filename in filenames:
-      file = os.path.join(dir, filename)
-      if file[-4:] != '.hpp':
-        os.remove(file)
-  ```
+- 头文件： glm目录
+  - 删除glm.cppm和CMakeList.txt
 - 静态库： libglm.a
 - 模块接口文件： glm.cppm
 

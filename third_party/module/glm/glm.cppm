@@ -2,6 +2,7 @@ module;
 
 // #define GLM_GTC_INLINE_NAMESPACE to inline glm::gtc into glm
 // #define GLM_EXT_INLINE_NAMESPACE to inline glm::ext into glm
+#define GLM_EXT_INLINE_NAMESPACE
 // #define GLM_GTX_INLINE_NAMESPACE to inline glm::gtx into glm
 
 #include <glm/glm.hpp>
