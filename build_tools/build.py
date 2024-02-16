@@ -113,17 +113,27 @@ header_unit_outputs = build_header_unit()
 
 # 所有文件路径都是相对于 root_dir 的规范化相对路径
 input_files = []
+dir_sub_paths = {}
 
 dir_stack = [root_dir, third_party_module_dir]
 while len(dir_stack) != 0:
   dir = dir_stack.pop()
   with open(ospath.join(dir, 'sources'), 'rt') as f:
+    sub_file_list = []
+    sub_dir_list = []
     for line in f:
       path = ospath.join(dir, line.strip())
+      rel_path = ospath.normpath(ospath.relpath(path, root_dir))
       if ospath.isdir(path):
         dir_stack.append(path)
+        sub_dir_list.append(rel_path)
       else:
-        input_files.append(ospath.normpath(ospath.relpath(path, root_dir)))
+        input_files.append(rel_path)
+        sub_file_list.append(rel_path)
+    dir_sub_paths[ospath.normpath(ospath.relpath(dir, root_dir))] = {
+      'sub_dir' : sub_dir_list,
+      'sub_file' : sub_file_list,
+    }
 
 def exec_scan_deps(files):
     with tempfile.NamedTemporaryFile('wt') as f:
@@ -232,7 +242,7 @@ with open(ninja_build_file, 'wt') as f:
       rule_name = generate_rule_name()
       ninja_writer.rule(rule_name, command_obj, description=f'COMPILE {ospath.relpath(obj_file, root_dir)}')
       ninja_writer.build(outputs=[obj_file], rule=rule_name, inputs=dep_pcm_files+[pcm_file]+header_unit_outputs)
-      ninja_writer.build(outputs=[dep_info[file]['module']], rule='phony', inputs=[obj_file]+header_unit_outputs)
+      ninja_writer.build(outputs=[f"module:{dep_info[file]['module']}"], rule='phony', inputs=[obj_file]+header_unit_outputs)
     
       compile_command['arguments'] = command_pcm
 
@@ -241,6 +251,14 @@ with open(ninja_build_file, 'wt') as f:
         'file': ospath.abspath(file),
       })
     compile_commands.append(compile_command)
+  for dir, info in dir_sub_paths.items():
+    sub_dir_list = info['sub_dir']
+    sub_file_list = info['sub_file']
+    ninja_writer.build(
+      outputs=[f"dir:{dir}"], 
+      rule='phony', 
+      inputs=list(map(get_object_file, sub_file_list))+\
+        list(map(lambda x: f"dir:{x}", sub_dir_list)))
   link_command = link_flags + ['-o', ospath.abspath(target_file)] + obj_files + list(map(lambda x: '-l'+x, link_librarys))
   rule_name = generate_rule_name()
   ninja_writer.rule(rule_name, link_command, description=f'LINK {ospath.relpath(target_file)}')
