@@ -129,11 +129,20 @@ public:
 private:
   GLFWwindow* p_window_;
 
-  // 该类型本质是一个指针，后续的device也类似
-  VkInstance instance_;
-  // vulkan中的回调也是一种资源，需要创建
-  VkDebugUtilsMessengerEXT debug_messenger_;
-  DebugMessengerInfo       debug_messenger_info_;
+  template <bool enable_debug_messenger>
+  struct InstanceWithDebugMessenger;
+
+  template <>
+  struct InstanceWithDebugMessenger<true> {
+    Instance             instance;
+    DebugMessenger       debug_messenger;
+    DebugMessengerConfig debug_config;
+  };
+  template <>
+  struct InstanceWithDebugMessenger<false> {
+    Instance instance;
+  };
+  InstanceWithDebugMessenger<toy::enable_debug> instance_;
 
   PhysicalDeviceInfo physical_device_info_;
 
@@ -202,28 +211,29 @@ private:
 VulkanApplication::VulkanApplication(uint32_t         width,
                                      uint32_t         height,
                                      std::string_view appName)
-  : p_window_(nullptr), instance_(nullptr), debug_messenger_(nullptr),
-    surface_(nullptr), in_flight_index_(0), last_present_failed_(false) {
+  : p_window_(nullptr), instance_(), surface_(nullptr), in_flight_index_(0),
+    last_present_failed_(false) {
   p_window_ = createWindow(width, height, appName);
 
-  if constexpr (toy::enableDebugOutput) {
-    debug_messenger_info_ = {
+  if constexpr (toy::enable_debug) {
+    instance_.debug_config = DebugMessengerConfig{
       .message_severity_level = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT,
       .message_type_flags = VK_DEBUG_UTILS_MESSAGE_TYPE_FLAG_BITS_MAX_ENUM_EXT,
     };
-    std::tie(instance_, debug_messenger_) =
-      createInstanceAndDebugMessenger(appName, debug_messenger_info_);
+    instance_.instance = Instance{ appName, instance_.debug_config };
+    instance_.debug_messenger =
+      DebugMessenger{ instance_.debug_config, instance_.instance.get() };
   } else {
-    instance_ = createInstance(appName);
+    instance_.instance = Instance{ appName };
   }
 
-  surface_ = createSurface(instance_, p_window_);
+  surface_ = createSurface(instance_.instance.get(), p_window_);
 
   // VK_KHR_SWAPCHAIN_EXTENSION_NAME 对应的扩展用于支持交换链
   auto required_device_extensions =
     std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME };
   physical_device_info_ = pickPhysicalDevice(
-    instance_,
+    instance_.instance.get(),
     surface_,
     required_device_extensions,
     checkPhysicalDeviceSupport,
@@ -400,11 +410,7 @@ VulkanApplication::~VulkanApplication() {
   destroyImageViews(image_views_, device_);
   destroySwapchain(swapchain_, device_);
   destroyLogicalDevice(device_);
-  destroySurface(surface_, instance_);
-  if constexpr (toy::enableDebugOutput) {
-    destroyDebugMessenger(debug_messenger_, instance_);
-  }
-  destroyInstance(instance_);
+  destroySurface(surface_, instance_.instance.get());
   destroyWindow(p_window_);
 }
 
