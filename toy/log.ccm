@@ -4,7 +4,7 @@ import std;
 
 export namespace toy {
 
-constexpr bool enableDebugOutput = true;
+constexpr bool enable_debug = true;
 template <size_t number>
 class BracesString {
 private:
@@ -30,7 +30,7 @@ public:
 
 template <typename... Args>
 void debugf(std::format_string<Args...> fmt, Args&&... args) {
-  if constexpr (enableDebugOutput) {
+  if constexpr (enable_debug) {
     std::println(fmt, std::forward<Args>(args)...);
   }
 }
@@ -46,7 +46,7 @@ auto checkDebugf(bool                        condition,
 
 template <typename... Args>
 void debug(Args&&... args) {
-  if constexpr (enableDebugOutput) {
+  if constexpr (enable_debug) {
     std::println(
       std::format_string<Args...>(BracesString<sizeof...(Args)>::get()),
       std::forward<Args>(args)...);
