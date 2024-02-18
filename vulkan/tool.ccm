@@ -6,13 +6,15 @@ import toy;
 
 export namespace vk {
 
-template <typename F, typename... Args>
-  requires std::
-    invocable<F, Args&&..., uint32_t*, toy::FuncArg<sizeof...(Args) + 1, F>>
-  auto getVkResource(F func, Args&&... args) {
+template <typename Func, typename... Args>
+  requires std::invocable<Func,
+                          Args&&...,
+                          uint32_t*,
+                          toy::FuncArg<sizeof...(Args) + 1, Func>>
+auto getVkResource(Func func, Args&&... args) {
   uint32_t count;
   func(std::forward<Args>(args)..., &count, nullptr);
-  std::vector<std::remove_pointer_t<toy::FuncArg<sizeof...(Args) + 1, F>>>
+  std::vector<std::remove_pointer_t<toy::FuncArg<sizeof...(Args) + 1, Func>>>
     resources;
   resources.resize(count);
   func(args..., &count, resources.data());
@@ -40,42 +42,40 @@ auto createVkResource(F func, std::string_view name, Args&&... args) {
                 std::format("create {}", name));
   return resource;
 }
-template <typename F, typename... Args>
-  requires std::
-    is_invocable_r_v<VkResult, F, Args&&..., toy::FuncArg<sizeof...(Args), F>>
-  auto createVkResource(F func, std::string_view name, Args&&... args) {
+template <typename Func, typename... Args>
+  requires std::is_invocable_r_v<VkResult,
+                                 Func,
+                                 Args&&...,
+                                 toy::FuncArg<sizeof...(Args), Func>>
+auto createVkResource(Func func, std::string_view name, Args&&... args) {
   using ResourceTypeHandle =
-    std::remove_pointer_t<toy::FuncArg<sizeof...(Args), F>>;
+    std::remove_pointer_t<toy::FuncArg<sizeof...(Args), Func>>;
   ResourceTypeHandle resource;
   checkVkResult(func(std::forward<Args>(args)..., &resource),
                 std::format("create {}", name));
   return resource;
 }
 
-template <ranges::range RequiredRange,
-          ranges::range AvailableRange,
-          typename Mapper>
-  requires toy::RangeOf<RequiredRange, const char*> &&
-           std::is_invocable_r_v<std::string_view,
+template <ranges::contiguous_range AvailableRange, typename Mapper>
+  requires std::is_invocable_r_v<std::string_view,
                                  Mapper,
                                  ranges::range_reference_t<AvailableRange>>
-void checkAvaliableSupports(RequiredRange&&  required_range,
-                            AvailableRange&& available_range,
-                            std::string_view support_name,
-                            Mapper&&         mapper) {
+void checkAvaliableSupports(std::span<const char* const> requiress,
+                            AvailableRange&&             availables,
+                            std::string_view             support_name,
+                            Mapper&&                     mapper) {
   toy::debugf("the required {} {} are :\n {::}",
-              required_range.size(),
+              requiress.size(),
               support_name,
-              required_range);
+              requiress);
   toy::debugf("the available {} {} are :\n {::}",
-              available_range.size(),
+              availables.size(),
               support_name,
-              available_range);
+              availables);
   auto unsupported_range =
-    required_range |
-    views::filter([&available_range, &mapper](const auto& required) {
+    requiress | views::filter([&availables, &mapper](const auto& required) {
       return ranges::none_of(
-        available_range,
+        availables,
         [&required](auto extension) { return extension == required; },
         [&mapper](auto& extension) {
           return std::string_view{ mapper(extension) };
@@ -91,6 +91,48 @@ void checkAvaliableSupports(RequiredRange&&  required_range,
 template <typename T>
 concept CustomFormatter = std::is_same_v<T, VkExtensionProperties> ||
                           std::is_same_v<T, VkLayerProperties>;
+
+template <typename Derived, typename VkHandle>
+  requires std::is_pointer_v<VkHandle>
+class Resource {
+private:
+  VkHandle handle_ = VK_NULL_HANDLE;
+
+  auto self() -> Derived& { return static_cast<Derived&>(*this); }
+
+  void destroyResource_() {
+    if (handle_ != VK_NULL_HANDLE) {
+      this->self().destroyResource(handle_);
+    }
+  }
+
+protected:
+  auto operator=(VkHandle handle) -> Derived& {
+    destroyResource_();
+    handle_ = handle;
+    return self();
+  }
+
+public:
+  using CRTPBase = Resource;
+
+  VkHandle get() const { return handle_; }
+
+  Resource(const Resource&) = delete;
+  Resource(Resource&& resource) {
+    handle_ = resource.handle_;
+    resource.handle_ = VK_NULL_HANDLE;
+  }
+  auto operator=(const Resource&) -> Resource& = delete;
+  auto operator=(Resource&& resource) -> Resource& {
+    destroyResource_();
+    handle_ = resource.handle_;
+    resource.handle_ = VK_NULL_HANDLE;
+    return *this;
+  }
+  Resource(VkHandle handle) : handle_(handle) {}
+  Resource() = default;
+};
 
 } // namespace vk
 
