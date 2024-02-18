@@ -242,7 +242,7 @@ with open(ninja_build_file, 'wt') as f:
       rule_name = generate_rule_name()
       ninja_writer.rule(rule_name, command_obj, description=f'COMPILE {ospath.relpath(obj_file, root_dir)}')
       ninja_writer.build(outputs=[obj_file], rule=rule_name, inputs=dep_pcm_files+[pcm_file]+header_unit_outputs)
-      ninja_writer.build(outputs=[f"module:{dep_info[file]['module']}"], rule='phony', inputs=[obj_file]+header_unit_outputs)
+      ninja_writer.build(outputs=[dep_info[file]['module']], rule='phony', inputs=[obj_file]+header_unit_outputs)
     
       compile_command['arguments'] = command_pcm
 
@@ -255,10 +255,10 @@ with open(ninja_build_file, 'wt') as f:
     sub_dir_list = info['sub_dir']
     sub_file_list = info['sub_file']
     ninja_writer.build(
-      outputs=[f"dir:{dir}"], 
+      outputs=[f"/{dir}"], 
       rule='phony', 
       inputs=list(map(get_object_file, sub_file_list))+\
-        list(map(lambda x: f"dir:{x}", sub_dir_list)))
+        list(map(lambda x: f"/{x}", sub_dir_list)))
   link_command = link_flags + ['-o', ospath.abspath(target_file)] + obj_files + list(map(lambda x: '-l'+x, link_librarys))
   rule_name = generate_rule_name()
   ninja_writer.rule(rule_name, link_command, description=f'LINK {ospath.relpath(target_file)}')
@@ -270,6 +270,7 @@ with open('compile_commands.json', 'wt') as f:
 
 print('compile_commands.json done')
 
+os.makedirs(target_dir, exist_ok=True)
 for filename in os.listdir(third_party_dynamic_lib_dir):
   shutil.copy(ospath.join(third_party_dynamic_lib_dir, filename), target_dir)
 print('copy dynamic library done')
