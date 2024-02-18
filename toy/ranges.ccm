@@ -386,4 +386,4 @@ struct FindIf {
 
 inline constexpr auto findIf = FindIf{};
 
-}
+} // namespace toy
