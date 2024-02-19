@@ -1,7 +1,6 @@
 vulkan.ccm
 tool.ccm
 glfw.ccm
-glfw.cc
 instance.ccm
 instance.cc
 swapchain.ccm

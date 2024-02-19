@@ -135,33 +135,33 @@ void destroySwapchain(VkSwapchainKHR swapchain, VkDevice device) noexcept {
 auto createImageViews(VkDevice       device,
                       VkSwapchainKHR swapchain,
                       VkFormat       format) -> std::vector<VkImageView> {
-  auto images = getVkResource(vkGetSwapchainImagesKHR, device, swapchain);
-  auto image_views = images | views::transform([device, format](auto image) {
-                       VkImageViewCreateInfo create_info{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = format,
-        // 颜色通道映射
-        .components = {
-          .r = VK_COMPONENT_SWIZZLE_IDENTITY,
-          .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-          .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-          .a = VK_COMPONENT_SWIZZLE_IDENTITY,
-        },
-        // view 访问 image 资源的范围
-        .subresourceRange = {
-          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-          .baseMipLevel = 0,
-          .levelCount = 1,
-          .baseArrayLayer = 0,
-          .layerCount = 1,
-        },
-      };
-                       return createVkResource(
-                         vkCreateImageView, "image view", device, &create_info);
-                     }) |
-                     ranges::to<std::vector>();
+  auto images = getVkResources(vkGetSwapchainImagesKHR, device, swapchain);
+  auto image_views =
+    images | views::transform([device, format](VkImage image) {
+      auto create_info = VkImageViewCreateInfo{
+                          .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                          .image = image,
+                          .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                          .format = format,
+                          // 颜色通道映射
+                          .components = {
+                            .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                            .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                            .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                            .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+                          },
+                          // view 访问 image 资源的范围
+                          .subresourceRange = {
+                            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                            .baseMipLevel = 0,
+                            .levelCount = 1,
+                            .baseArrayLayer = 0,
+                            .layerCount = 1,
+                          },
+                        };
+      return createVkResource(vkCreateImageView, device, &create_info);
+    }) |
+    ranges::to<std::vector>();
   return image_views;
 }
 

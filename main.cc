@@ -92,7 +92,7 @@ auto createSemaphore(VkDevice device) -> VkSemaphore {
     .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
 
   };
-  return createVkResource(vkCreateSemaphore, "semaphore", device, &create_info);
+  return createVkResource(vkCreateSemaphore, device, &create_info);
 }
 void destroySemaphore(VkSemaphore semaphore, VkDevice device) noexcept {
   vkDestroySemaphore(device, semaphore, nullptr);
@@ -104,7 +104,7 @@ auto createFence(VkDevice device, bool signaled) -> VkFence {
   if (signaled) {
     create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
   }
-  return createVkResource(vkCreateFence, "fence", device, &create_info);
+  return createVkResource(vkCreateFence, device, &create_info);
 }
 void destroyFence(VkFence fence, VkDevice device) noexcept {
   vkDestroyFence(device, fence, nullptr);
@@ -121,13 +121,13 @@ public:
   VulkanApplication& operator=(const VulkanApplication& other) = delete;
   VulkanApplication& operator=(VulkanApplication&& other) noexcept = delete;
 
-  [[nodiscard]] GLFWwindow* pWindow() const { return p_window_; }
+  [[nodiscard]] GLFWwindow* pWindow() const { return window_.get(); }
 
   auto recreateSwapchain() -> bool;
   void drawFrame();
 
 private:
-  GLFWwindow* p_window_;
+  Window window_;
 
   template <bool enable_debug_messenger>
   struct InstanceWithDebugMessenger;
@@ -211,9 +211,9 @@ private:
 VulkanApplication::VulkanApplication(uint32_t         width,
                                      uint32_t         height,
                                      std::string_view appName)
-  : p_window_(nullptr), instance_(), surface_(nullptr), in_flight_index_(0),
+  : window_(), instance_(), surface_(nullptr), in_flight_index_(0),
     last_present_failed_(false) {
-  p_window_ = createWindow(width, height, appName);
+  window_ = Window(width, height, appName);
 
   if constexpr (toy::enable_debug) {
     instance_.debug_config = DebugMessengerConfig{
@@ -227,7 +227,7 @@ VulkanApplication::VulkanApplication(uint32_t         width,
     instance_.instance = Instance{ appName };
   }
 
-  surface_ = createSurface(instance_.instance.get(), p_window_);
+  surface_ = createSurface(instance_.instance.get(), window_.get());
 
   // VK_KHR_SWAPCHAIN_EXTENSION_NAME 对应的扩展用于支持交换链
   auto required_device_extensions =
@@ -264,7 +264,7 @@ VulkanApplication::VulkanApplication(uint32_t         width,
                     physical_device_info_.capabilities,
                     physical_device_info_.surface_format,
                     physical_device_info_.present_mode,
-                    p_window_,
+                    window_.get(),
                     std::span(image_sharing_families),
                     VK_NULL_HANDLE)
       .value();
@@ -411,7 +411,6 @@ VulkanApplication::~VulkanApplication() {
   destroySwapchain(swapchain_, device_);
   destroyLogicalDevice(device_);
   destroySurface(surface_, instance_.instance.get());
-  destroyWindow(p_window_);
 }
 
 auto VulkanApplication::recreateSwapchain() -> bool {
@@ -430,7 +429,7 @@ auto VulkanApplication::recreateSwapchain() -> bool {
                                  physical_device_info_.capabilities,
                                  physical_device_info_.surface_format,
                                  physical_device_info_.present_mode,
-                                 p_window_,
+                                 window_.get(),
                                  std::span(queue_family_indices),
                                  old_swap_chain);
       ret.has_value()) {
