@@ -1,15 +1,62 @@
 export module vulkan.glfw;
 
 import "vulkan_config.h";
+import vulkan.tool;
+import toy;
 import std;
 
 export namespace vk {
 
-auto createWindow(uint32_t width, uint32_t height, std::string_view title)
-  -> GLFWwindow*;
-void destroyWindow(GLFWwindow* p_window) noexcept;
-
-// 抛出glfw的报错（如果有的话）
 void checkGlfwError();
+
+class Window : public Resource<Window, GLFWwindow*> {
+private:
+  friend CRTPBase;
+  using CRTPBase::operator=;
+
+public:
+  Window() = default;
+  Window(uint32_t width, uint32_t height, std::string_view title);
+
+private:
+  void destroyResource(GLFWwindow* p_window);
+};
+
+Window::Window(uint32_t width, uint32_t height, std::string_view title) {
+  try {
+    if (glfwInit() != GLFW_TRUE) {
+      throw std::runtime_error("glfw init failed");
+    }
+    // 不要创建openGL上下文
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    // 禁用改变窗口尺寸
+    // glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+
+    *this = glfwCreateWindow(width, height, title.data(), nullptr, nullptr);
+
+    checkGlfwError();
+  } catch (const std::exception&) {
+    glfwTerminate();
+    throw;
+  }
+}
+
+void Window::destroyResource(GLFWwindow* p_window) {
+  glfwDestroyWindow(p_window);
+  glfwTerminate();
+}
+
+void checkGlfwError() {
+  const char* description;
+
+  // todo: 使用generator实现
+  auto errors =
+    views::repeat(description) | views::take_while([&description](auto _) {
+      return glfwGetError(&description) != GLFW_NO_ERROR;
+    });
+  if (!errors.empty()) {
+    toy::throwf("{::}", errors);
+  }
+}
 
 } // namespace vk
