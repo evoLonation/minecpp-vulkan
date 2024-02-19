@@ -84,10 +84,8 @@ void DebugMessenger::destroyResource(VkDebugUtilsMessengerEXT handle) {
 DebugMessenger::DebugMessenger(
   const DebugMessengerConfig& debug_messenger_config, VkInstance instance) {
   auto debug_messenger_info = getDebugMessengerInfo(debug_messenger_config);
-  *this = createVkResource(vkCreateDebugUtilsMessengerEXT,
-                           "debug messenger",
-                           instance,
-                           &debug_messenger_info);
+  *this = createVkResource(
+    vkCreateDebugUtilsMessengerEXT, instance, &debug_messenger_info);
 }
 
 } // namespace vk

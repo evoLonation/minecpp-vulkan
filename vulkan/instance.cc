@@ -97,9 +97,12 @@ Instance::Instance(
 
   checkAvaliableSupports(
     required_extensions,
-    getVkResource(vkEnumerateInstanceExtensionProperties, nullptr),
-    "extensions",
+    getVkResources(vkEnumerateInstanceExtensionProperties, nullptr),
     [](auto& extension) { return extension.extensionName; });
+
+  checkAvaliableSupports(required_layers,
+                         getVkResources(vkEnumerateInstanceLayerProperties),
+                         [](auto& layer) { return layer.layerName; });
 
   auto create_info = VkInstanceCreateInfo{
     .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -112,7 +115,7 @@ Instance::Instance(
     .ppEnabledExtensionNames = required_extensions.data(),
   };
 
-  *this = createVkResource(vkCreateInstance, "instance", &create_info);
+  *this = createVkResource(vkCreateInstance, &create_info);
 }
 
 auto DebugMessenger::getDebugMessengerInfo(const DebugMessengerConfig& config)

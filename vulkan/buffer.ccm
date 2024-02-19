@@ -82,8 +82,7 @@ auto createBuffer(VkDevice              device,
     .usage = usage,
     .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
   };
-  auto buffer =
-    createVkResource(vkCreateBuffer, "buffer", device, &buffer_info);
+  auto buffer = createVkResource(vkCreateBuffer, device, &buffer_info);
   /*
    * alignment: The offset in bytes where the buffer begins in the allocated
    *  region of memory, depends on bufferInfo.usage and bufferInfo.flags.
@@ -115,8 +114,8 @@ auto createBuffer(VkDevice              device,
     .allocationSize = memory_requirements.size,
     .memoryTypeIndex = memory_type_index,
   };
-  auto vertex_buffer_memory = createVkResource(
-    vkAllocateMemory, "buffer memory allocation", device, &allocate_info);
+  auto vertex_buffer_memory =
+    createVkResource(vkAllocateMemory, device, &allocate_info);
   // offset 是在一个内存给多个缓冲区用的时候设置的，要除的尽
   // memRequirements.alignment
   vkBindBufferMemory(device, buffer, vertex_buffer_memory, 0);

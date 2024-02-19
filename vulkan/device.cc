@@ -15,7 +15,7 @@ auto pickPhysicalDevice(VkInstance                          instance,
                         std::span<const QueueFamilyChecker> queue_chekers)
   -> PhysicalDeviceInfo {
   std::vector<VkPhysicalDevice> devices =
-    getVkResource(vkEnumeratePhysicalDevices, instance);
+    getVkResources(vkEnumeratePhysicalDevices, instance);
   std::vector<PhysicalDeviceInfo> supported_devices;
   for (auto device : devices) {
     VkPhysicalDeviceProperties device_properties;
@@ -24,10 +24,10 @@ auto pickPhysicalDevice(VkInstance                          instance,
     vkGetPhysicalDeviceFeatures(device, &device_features);
     VkSurfaceCapabilitiesKHR capabilities;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &capabilities);
-    auto presentModes =
-      getVkResource(vkGetPhysicalDeviceSurfacePresentModesKHR, device, surface);
+    auto presentModes = getVkResources(
+      vkGetPhysicalDeviceSurfacePresentModesKHR, device, surface);
     auto formats =
-      getVkResource(vkGetPhysicalDeviceSurfaceFormatsKHR, device, surface);
+      getVkResources(vkGetPhysicalDeviceSurfaceFormatsKHR, device, surface);
 
     toy::debugf("checking physical device {}:", device_properties.deviceName);
     bool unsupport = false;
@@ -44,8 +44,7 @@ auto pickPhysicalDevice(VkInstance                          instance,
     try {
       checkAvaliableSupports(
         required_extensions,
-        getVkResource(vkEnumerateDeviceExtensionProperties, device, nullptr),
-        "device extensions",
+        getVkResources(vkEnumerateDeviceExtensionProperties, device, nullptr),
         [](auto& extension) { return extension.extensionName; });
     } catch (const std::exception& e) {
       toy::debug(e.what());
@@ -87,7 +86,7 @@ auto getQueueFamilyIndices(VkPhysicalDevice                    device,
   -> std::optional<QueueIndexes> {
 
   auto queue_families =
-    getVkResource(vkGetPhysicalDeviceQueueFamilyProperties, device);
+    getVkResources(vkGetPhysicalDeviceQueueFamilyProperties, device);
 
   auto family_size = queue_families.size();
   auto request_size = queue_chekers.size();

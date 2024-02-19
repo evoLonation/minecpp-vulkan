@@ -21,10 +21,8 @@ auto createDescriptorSetLayout(VkDevice device) -> VkDescriptorSetLayout {
     .bindingCount = 1,
     .pBindings = &descriptor_set_binding,
   };
-  auto descriptor_set_layout = createVkResource(vkCreateDescriptorSetLayout,
-                                                "descriptor set layout",
-                                                device,
-                                                &descriptor_set_layout_info);
+  auto descriptor_set_layout = createVkResource(
+    vkCreateDescriptorSetLayout, device, &descriptor_set_layout_info);
   return descriptor_set_layout;
 }
 
@@ -48,8 +46,7 @@ auto createDescriptorPool(uint32_t size, VkDevice device) -> VkDescriptorPool {
     .poolSizeCount = 1,
     .pPoolSizes = &poolSize,
   };
-  return createVkResource(
-    vkCreateDescriptorPool, "descriptor pool", device, &pool_create_info);
+  return createVkResource(vkCreateDescriptorPool, device, &pool_create_info);
 }
 
 void destroyDescriptorPool(VkDescriptorPool descriptor_pool,

@@ -6,53 +6,109 @@ import toy;
 
 export namespace vk {
 
-template <typename Func, typename... Args>
-  requires std::invocable<Func,
-                          Args&&...,
-                          uint32_t*,
-                          toy::FuncArg<sizeof...(Args) + 1, Func>>
-auto getVkResource(Func func, Args&&... args) {
-  uint32_t count;
-  func(std::forward<Args>(args)..., &count, nullptr);
-  std::vector<std::remove_pointer_t<toy::FuncArg<sizeof...(Args) + 1, Func>>>
-    resources;
-  resources.resize(count);
-  func(args..., &count, resources.data());
-  return resources;
+template <typename Resource>
+consteval auto getResourceName() -> const char* {
+  if (std::same_as<Resource, VkInstance>) {
+    return "instance";
+  } else if (std::same_as<Resource, VkDebugUtilsMessengerEXT>) {
+    return "debug messenger";
+  } else if (std::same_as<Resource, VkPhysicalDevice>) {
+    return "physical device";
+  } else if (std::same_as<Resource, VkSurfaceKHR>) {
+    return "surface";
+  } else if (std::same_as<Resource, VkSwapchainKHR>) {
+    return "swapchain";
+  } else if (std::same_as<Resource, VkShaderModule>) {
+    return "shader module";
+  } else if (std::same_as<Resource, VkPipeline>) {
+    return "pipeline";
+  } else if (std::same_as<Resource, VkPipelineLayout>) {
+    return "pipeline layout";
+  } else if (std::same_as<Resource, VkRenderPass>) {
+    return "render pass";
+  } else if (std::same_as<Resource, VkPresentModeKHR>) {
+    return "present mode";
+  } else if (std::same_as<Resource, VkSurfaceFormatKHR>) {
+    return "surface format";
+  } else if (std::same_as<Resource, VkExtensionProperties>) {
+    return "extension properties";
+  } else if (std::same_as<Resource, VkLayerProperties>) {
+    return "layer properties";
+  } else if (std::same_as<Resource, VkQueueFamilyProperties>) {
+    return "queue family properties";
+  } else if (std::same_as<Resource, VkImage>) {
+    return "image";
+  } else if (std::same_as<Resource, VkImageView>) {
+    return "image view";
+  } else if (std::same_as<Resource, VkDescriptorSetLayout>) {
+    return "descriptor set layout";
+  } else if (std::same_as<Resource, VkDescriptorSet>) {
+    return "descriptor set";
+  } else if (std::same_as<Resource, VkDescriptorPool>) {
+    return "descriptor pool";
+  } else if (std::same_as<Resource, VkCommandBuffer>) {
+    return "command buffer";
+  } else if (std::same_as<Resource, VkCommandPool>) {
+    return "command pool";
+  } else if (std::same_as<Resource, VkDeviceMemory>) {
+    return "device memory";
+  } else if (std::same_as<Resource, VkBuffer>) {
+    return "buffer";
+  } else if (std::same_as<Resource, VkFramebuffer>) {
+    return "frame buffer";
+  } else {
+    std::unreachable();
+  }
 }
 
 void checkVkResult(VkResult vk_result, std::string_view action) {
   if (vk_result != VK_SUCCESS) {
-    toy::throwf("failed to {}", action);
+    toy::throwf(
+      "failed to {}, VkResult: {}", action, static_cast<int32_t>(vk_result));
   }
 }
 
-template <typename F, typename... Args>
-  requires std::same_as<toy::FuncArg<sizeof...(Args), F>,
-                        const VkAllocationCallbacks*> &&
-           std::invocable<F,
-                          Args&&...,
-                          const VkAllocationCallbacks*,
-                          toy::FuncArg<sizeof...(Args) + 1, F>>
-auto createVkResource(F func, std::string_view name, Args&&... args) {
-  using ResourceTypeHandle =
-    std::remove_pointer_t<toy::FuncArg<sizeof...(Args) + 1, F>>;
-  ResourceTypeHandle resource;
-  checkVkResult(func(std::forward<Args>(args)..., nullptr, &resource),
-                std::format("create {}", name));
-  return resource;
-}
 template <typename Func, typename... Args>
-  requires std::is_invocable_r_v<VkResult,
-                                 Func,
-                                 Args&&...,
-                                 toy::FuncArg<sizeof...(Args), Func>>
-auto createVkResource(Func func, std::string_view name, Args&&... args) {
-  using ResourceTypeHandle =
-    std::remove_pointer_t<toy::FuncArg<sizeof...(Args), Func>>;
-  ResourceTypeHandle resource;
-  checkVkResult(func(std::forward<Args>(args)..., &resource),
-                std::format("create {}", name));
+  requires std::is_invocable_v<Func,
+                               std::remove_reference_t<Args>...,
+                               uint32_t*,
+                               toy::FuncArg<toy::FuncArgCount<Func> - 1, Func>>
+auto getVkResources(Func func, Args&&... args) {
+  using Resource =
+    std::remove_pointer_t<toy::FuncArg<toy::FuncArgCount<Func> - 1, Func>>;
+  uint32_t count;
+
+  constexpr bool need_check = std::same_as<toy::FuncRet<Func>, VkResult>;
+  if constexpr (need_check) {
+    checkVkResult(
+      func(std::forward<Args>(args)..., &count, nullptr),
+      std::format("retain number of resource {}", getResourceName<Resource>()));
+  } else {
+    func(std::forward<Args>(args)..., &count, nullptr);
+  }
+  std::vector<Resource> resources(count);
+  if constexpr (need_check) {
+    checkVkResult(func(args..., &count, resources.data()),
+                  std::format("get {} resources", getResourceName<Resource>()));
+  } else {
+    func(args..., &count, resources.data());
+  }
+  return resources;
+}
+
+template <typename Func, typename... Args>
+  requires std::is_invocable_r_v<
+    VkResult,
+    Func,
+    std::remove_reference_t<Args>...,
+    const VkAllocationCallbacks*,
+    toy::FuncArg<toy::FuncArgCount<Func> - 1, Func>>
+auto createVkResource(Func func, Args&&... args) {
+  using Resource =
+    std::remove_pointer_t<toy::FuncArg<toy::FuncArgCount<Func> - 1, Func>>;
+  Resource resource;
+  checkVkResult(func(std::forward<Args>(args)..., nullptr, &resource),
+                std::format("create {}", getResourceName<Resource>()));
   return resource;
 }
 
@@ -62,15 +118,16 @@ template <ranges::contiguous_range AvailableRange, typename Mapper>
                                  ranges::range_reference_t<AvailableRange>>
 void checkAvaliableSupports(std::span<const char* const> requiress,
                             AvailableRange&&             availables,
-                            std::string_view             support_name,
                             Mapper&&                     mapper) {
-  toy::debugf("the required {} {} are :\n {::}",
+  using Resource = ranges::range_value_t<AvailableRange>;
+  constexpr const char* resource_name = getResourceName<Resource>();
+  toy::debugf("the required {} {} resources are :\n {::}",
               requiress.size(),
-              support_name,
+              resource_name,
               requiress);
-  toy::debugf("the available {} {} are :\n {::}",
+  toy::debugf("the available {} {} resources are :\n {::}",
               availables.size(),
-              support_name,
+              resource_name,
               availables);
   auto unsupported_range =
     requiress | views::filter([&availables, &mapper](const auto& required) {
@@ -82,8 +139,8 @@ void checkAvaliableSupports(std::span<const char* const> requiress,
         });
     });
   if (!unsupported_range.empty()) {
-    toy::throwf("these {} requested but not available: \n{::}",
-                support_name,
+    toy::throwf("these {} resources requested but not available: \n{::}",
+                resource_name,
                 unsupported_range);
   }
 }

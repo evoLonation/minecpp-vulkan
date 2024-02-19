@@ -69,8 +69,7 @@ auto createRenderPass(VkDevice device, VkFormat format) -> VkRenderPass {
     .pDependencies = &dependency,
   };
 
-  return createVkResource(
-    vkCreateRenderPass, "render pass", device, &render_pass_create_info);
+  return createVkResource(vkCreateRenderPass, device, &render_pass_create_info);
 }
 
 void destroyRenderPass(VkRenderPass render_pass, VkDevice device) noexcept {
@@ -92,8 +91,7 @@ auto createShaderModule(std::string_view filepath, VkDevice device)
     .codeSize = content.size(),
     .pCode = reinterpret_cast<uint32_t*>(content.data()),
   };
-  return createVkResource(
-    vkCreateShaderModule, "shader module", device, &create_info);
+  return createVkResource(vkCreateShaderModule, device, &create_info);
 }
 
 auto createGraphicsPipeline(
@@ -235,8 +233,8 @@ auto createGraphicsPipeline(
     .setLayoutCount = (uint32_t)descriptor_set_layouts.size(),
     .pSetLayouts = descriptor_set_layouts.data(),
   };
-  VkPipelineLayout pipeline_layout = createVkResource(
-    vkCreatePipelineLayout, "pipeline layout", device, &pipeline_layout_info);
+  VkPipelineLayout pipeline_layout =
+    createVkResource(vkCreatePipelineLayout, device, &pipeline_layout_info);
   VkGraphicsPipelineCreateInfo pipeline_create_info{
     .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
     .stageCount = shader_stage_infos.size(),
@@ -258,7 +256,6 @@ auto createGraphicsPipeline(
   };
 
   VkPipeline pipeline = createVkResource(vkCreateGraphicsPipelines,
-                                         "graphics pipeline",
                                          device,
                                          VK_NULL_HANDLE,
                                          1,
@@ -290,8 +287,7 @@ auto createFramebuffers(VkRenderPass                 render_pass,
              .height = extent.height,
              .layers = 1,
            };
-           return createVkResource(
-             vkCreateFramebuffer, "framebuffer", device, &create_info);
+           return createVkResource(vkCreateFramebuffer, device, &create_info);
          }) |
          ranges::to<std::vector>();
 }
@@ -313,8 +309,7 @@ auto createCommandPool(VkDevice device, uint32_t graphic_family_index)
     .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
     .queueFamilyIndex = graphic_family_index,
   };
-  return createVkResource(
-    vkCreateCommandPool, "command pool", device, &pool_create_info);
+  return createVkResource(vkCreateCommandPool, device, &pool_create_info);
 }
 
 auto allocateCommandBuffers(VkDevice      device,
