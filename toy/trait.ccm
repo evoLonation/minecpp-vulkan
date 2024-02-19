@@ -4,48 +4,17 @@ import std;
 
 export namespace toy {
 
-template <uint32_t index, typename Callable>
-struct FuncArgT;
-// todo: 对于重载函数而言有bug
-template <uint32_t index, typename Func>
-using FuncArg = typename FuncArgT<index, Func>::type;
-
-// 用于成员函数类型 (需要考虑 const 和非 const)
-template <uint32_t index, typename C, typename R, typename... Args>
-struct FuncArgT<index, R (C::*)(Args...) const> {
-  using type = std::tuple_element_t<index, std::tuple<Args...>>;
-};
-template <uint32_t index, typename C, typename R, typename... Args>
-struct FuncArgT<index, R (C::*)(Args...)> {
-  using type = std::tuple_element_t<index, std::tuple<Args...>>;
-};
-
-// 用于函数指针
-template <uint32_t index, typename R, typename... Args>
-struct FuncArgT<index, R (*)(Args...)> {
-  using type = std::tuple_element_t<index, std::tuple<Args...>>;
-};
-// 用于函数
-template <uint32_t index, typename R, typename... Args>
-struct FuncArgT<index, R(Args...)> {
-  using type = std::tuple_element_t<index, std::tuple<Args...>>;
-};
-
-// 用于持有 operator() 的类
-template <uint32_t index, typename Callable>
-struct FuncArgT {
-  using type = FuncArgT<index, decltype(&Callable::operator())>::type;
-};
-
-// type list
 template <typename... P>
 struct TypePack {
   // 这种模板嵌套说明 T 可以是一个模板
   template <template <typename...> typename T>
   using apply = T<P...>;
 
-  template <typename... T>
-  using merge = TypePack<P..., T...>;
+  template <size_t N>
+  using at =
+    std::tuple_element_t<N, typename TypePack::template apply<std::tuple>>;
+
+  static constexpr size_t size = sizeof...(P);
 };
 
 template <typename T, typename Seq>
@@ -58,10 +27,6 @@ struct RepeatS<T, std::index_sequence<Is...>> {
 };
 template <typename T, size_t N>
 using Repeat = RepeatS<T, std::make_index_sequence<N>>::type;
-
-template <typename TypePack, size_t N>
-using Index = typename std::
-  tuple_element<N, typename TypePack::template apply<std::tuple>>::type;
 
 template <typename TypePack, typename T>
 struct InsertS;
@@ -112,4 +77,94 @@ struct RemoveFrontS<TypePack<Arg, Args...>, index> {
   using type = RemoveFront<TypePack<Args...>, index - 1>;
 };
 
+/**
+ * @brief get type information of a function
+ * can not use for a overload function!
+ */
+template <typename Callable>
+struct FuncInfoT;
+template <typename Func>
+using FuncInfo = typename FuncInfoT<Func>::type;
+
+// 用于成员函数类型 (需要考虑 const 和非 const)
+template <typename C, typename R, typename... Args>
+struct FuncInfoT<R (C::*)(Args...) const> {
+  using type = TypePack<R, Args...>;
+};
+template <typename C, typename R, typename... Args>
+struct FuncInfoT<R (C::*)(Args...)> {
+  using type = TypePack<R, Args...>;
+};
+// 用于函数指针和函数
+template <typename R, typename... Args>
+struct FuncInfoT<R (*)(Args...)> {
+  using type = TypePack<R, Args...>;
+};
+template <typename R, typename... Args>
+struct FuncInfoT<R(Args...)> {
+  using type = TypePack<R, Args...>;
+};
+// 用于持有 operator() 的类
+template <typename Callable>
+struct FuncInfoT {
+  using type = FuncInfoT<decltype(&Callable::operator())>::type;
+};
+
+/**
+ * @brief get the parameter type of a function with index
+ * can not use for a overload function!
+ */
+template <uint32_t index, typename Func>
+using FuncArg = FuncInfo<Func>::template at<index + 1>;
+
+/**
+ * @brief get the parameter type count of a function
+ * can not use for a overload function!
+ */
+template <typename Func>
+constexpr int FuncArgCount = FuncInfo<Func>::size - 1;
+
+/**
+ * @brief get the return type of a function with index
+ * can not use for a overload function!
+ */
+template <typename Func>
+using FuncRet = FuncInfo<Func>::template at<0>;
+
+} // namespace toy
+
+namespace test_FuncArgRet {
+using namespace toy;
+void foo(int, float);
+// function foo can not overload
+// void foo(int a);
+
+struct A {
+  auto operator()(char, int, float) const -> std::string_view;
+
+  auto foo(int, char, float) -> int;
+
+  static auto bar(int, char, float, char[5]) -> float;
+};
+void test() {
+  static_assert(std::same_as<int, FuncArg<0, decltype(foo)>>);
+  static_assert(std::same_as<float, FuncArg<1, std::decay_t<decltype(foo)>>>);
+  static_assert(std::same_as<int, FuncArg<0, decltype(&A::foo)>>);
+  static_assert(std::same_as<float, FuncArg<2, A>>);
+  // the type is decay
+  static_assert(std::same_as<char*, FuncArg<3, decltype(&A::bar)>>);
+
+  static_assert(2 == FuncArgCount<decltype(foo)>);
+  static_assert(2 == FuncArgCount<std::decay_t<decltype(foo)>>);
+  static_assert(3 == FuncArgCount<decltype(&A::foo)>);
+  static_assert(3 == FuncArgCount<A>);
+  static_assert(4 == FuncArgCount<decltype(&A::bar)>);
+
+  static_assert(std::same_as<void, FuncRet<decltype(foo)>>);
+  static_assert(std::same_as<void, FuncRet<std::decay_t<decltype(foo)>>>);
+  static_assert(std::same_as<int, FuncRet<decltype(&A::foo)>>);
+  static_assert(std::same_as<std::string_view, FuncRet<A>>);
+  static_assert(std::same_as<float, FuncRet<decltype(&A::bar)>>);
 }
+
+} // namespace test_FuncArgRet
