@@ -4,6 +4,14 @@ import "vulkan_config.h";
 import std;
 import toy;
 
+/**
+ * @brief 构造函数：context and create info, 直接调用
+ * 成员： context
+ * 析构函数：用到context
+ * 需要知道： vkCreate, vkDestroy, isMulti
+ * single: context+createinfo+nullptr
+ * multi: context+createinfo, createinfo里面有数量
+ */
 export namespace vk {
 
 template <typename Resource>
@@ -56,6 +64,10 @@ consteval auto getResourceName() -> const char* {
     return "buffer";
   } else if (std::same_as<Resource, VkFramebuffer>) {
     return "frame buffer";
+  } else if (std::same_as<Resource, VkSemaphore>) {
+    return "semaphore";
+  } else if (std::same_as<Resource, VkFence>) {
+    return "fence";
   } else {
     std::unreachable();
   }
@@ -163,17 +175,17 @@ private:
     }
   }
 
+public:
+  VkHandle get() const { return handle_; }
+
 protected:
+  using CRTPBase = Resource;
+
   auto operator=(VkHandle handle) -> Derived& {
     destroyResource_();
     handle_ = handle;
     return self();
   }
-
-public:
-  using CRTPBase = Resource;
-
-  VkHandle get() const { return handle_; }
 
   Resource(const Resource&) = delete;
   Resource(Resource&& resource) {
