@@ -17,7 +17,7 @@
 	// }
 	"Copy and Move sematic": {
 		"prefix": "cpmv",
-		"body": "$1(const $1&) = delete;\n$1($1&&) = delete;\nauto operator=(const $1&) -> $1& = delete;\nauto operator=($1&&) -> $1& = delete;",
+		"body": "$1(const $1&) = delete$2;\n$1($1&&) = delete$3;\nauto operator=(const $1&) -> $1& = delete$4;\nauto operator=($1&&) -> $1& = delete$5;",
 	},
 	"perfect forward": {
 		"prefix": "fwd_auto",
