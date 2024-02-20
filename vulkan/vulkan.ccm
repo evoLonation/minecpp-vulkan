@@ -1,5 +1,6 @@
 export module vulkan;
 export import vulkan.tool;
+export import vulkan.resource;
 export import vulkan.glfw;
 export import vulkan.instance;
 export import vulkan.device;

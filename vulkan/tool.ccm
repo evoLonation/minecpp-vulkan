@@ -14,64 +14,64 @@ import toy;
  */
 export namespace vk {
 
-// template <typename Resource>
-// consteval auto getResourceName() -> const char* {
-//   if (std::same_as<Resource, VkInstance>) {
-//     return "instance";
-//   } else if (std::same_as<Resource, VkDebugUtilsMessengerEXT>) {
-//     return "debug messenger";
-//   } else if (std::same_as<Resource, VkPhysicalDevice>) {
-//     return "physical device";
-//   } else if (std::same_as<Resource, VkSurfaceKHR>) {
-//     return "surface";
-//   } else if (std::same_as<Resource, VkSwapchainKHR>) {
-//     return "swapchain";
-//   } else if (std::same_as<Resource, VkShaderModule>) {
-//     return "shader module";
-//   } else if (std::same_as<Resource, VkPipeline>) {
-//     return "pipeline";
-//   } else if (std::same_as<Resource, VkPipelineLayout>) {
-//     return "pipeline layout";
-//   } else if (std::same_as<Resource, VkRenderPass>) {
-//     return "render pass";
-//   } else if (std::same_as<Resource, VkPresentModeKHR>) {
-//     return "present mode";
-//   } else if (std::same_as<Resource, VkSurfaceFormatKHR>) {
-//     return "surface format";
-//   } else if (std::same_as<Resource, VkExtensionProperties>) {
-//     return "extension properties";
-//   } else if (std::same_as<Resource, VkLayerProperties>) {
-//     return "layer properties";
-//   } else if (std::same_as<Resource, VkQueueFamilyProperties>) {
-//     return "queue family properties";
-//   } else if (std::same_as<Resource, VkImage>) {
-//     return "image";
-//   } else if (std::same_as<Resource, VkImageView>) {
-//     return "image view";
-//   } else if (std::same_as<Resource, VkDescriptorSetLayout>) {
-//     return "descriptor set layout";
-//   } else if (std::same_as<Resource, VkDescriptorSet>) {
-//     return "descriptor set";
-//   } else if (std::same_as<Resource, VkDescriptorPool>) {
-//     return "descriptor pool";
-//   } else if (std::same_as<Resource, VkCommandBuffer>) {
-//     return "command buffer";
-//   } else if (std::same_as<Resource, VkCommandPool>) {
-//     return "command pool";
-//   } else if (std::same_as<Resource, VkDeviceMemory>) {
-//     return "device memory";
-//   } else if (std::same_as<Resource, VkBuffer>) {
-//     return "buffer";
-//   } else if (std::same_as<Resource, VkFramebuffer>) {
-//     return "frame buffer";
-//   } else if (std::same_as<Resource, VkSemaphore>) {
-//     return "semaphore";
-//   } else if (std::same_as<Resource, VkFence>) {
-//     return "fence";
-//   } else {
-//     std::unreachable();
-//   }
-// }
+template <typename Resource>
+consteval auto getResourceName() -> const char* {
+  if (std::same_as<Resource, VkInstance>) {
+    return "instance";
+  } else if (std::same_as<Resource, VkDebugUtilsMessengerEXT>) {
+    return "debug messenger";
+  } else if (std::same_as<Resource, VkPhysicalDevice>) {
+    return "physical device";
+  } else if (std::same_as<Resource, VkSurfaceKHR>) {
+    return "surface";
+  } else if (std::same_as<Resource, VkSwapchainKHR>) {
+    return "swapchain";
+  } else if (std::same_as<Resource, VkShaderModule>) {
+    return "shader module";
+  } else if (std::same_as<Resource, VkPipeline>) {
+    return "pipeline";
+  } else if (std::same_as<Resource, VkPipelineLayout>) {
+    return "pipeline layout";
+  } else if (std::same_as<Resource, VkRenderPass>) {
+    return "render pass";
+  } else if (std::same_as<Resource, VkPresentModeKHR>) {
+    return "present mode";
+  } else if (std::same_as<Resource, VkSurfaceFormatKHR>) {
+    return "surface format";
+  } else if (std::same_as<Resource, VkExtensionProperties>) {
+    return "extension properties";
+  } else if (std::same_as<Resource, VkLayerProperties>) {
+    return "layer properties";
+  } else if (std::same_as<Resource, VkQueueFamilyProperties>) {
+    return "queue family properties";
+  } else if (std::same_as<Resource, VkImage>) {
+    return "image";
+  } else if (std::same_as<Resource, VkImageView>) {
+    return "image view";
+  } else if (std::same_as<Resource, VkDescriptorSetLayout>) {
+    return "descriptor set layout";
+  } else if (std::same_as<Resource, VkDescriptorSet>) {
+    return "descriptor set";
+  } else if (std::same_as<Resource, VkDescriptorPool>) {
+    return "descriptor pool";
+  } else if (std::same_as<Resource, VkCommandBuffer>) {
+    return "command buffer";
+  } else if (std::same_as<Resource, VkCommandPool>) {
+    return "command pool";
+  } else if (std::same_as<Resource, VkDeviceMemory>) {
+    return "device memory";
+  } else if (std::same_as<Resource, VkBuffer>) {
+    return "buffer";
+  } else if (std::same_as<Resource, VkFramebuffer>) {
+    return "frame buffer";
+  } else if (std::same_as<Resource, VkSemaphore>) {
+    return "semaphore";
+  } else if (std::same_as<Resource, VkFence>) {
+    return "fence";
+  } else {
+    std::unreachable();
+  }
+}
 
 void checkVkResult(VkResult vk_result, std::string_view action) {
   if (vk_result != VK_SUCCESS) {

@@ -73,7 +73,7 @@ template <typename VkHandle>
 consteval auto getResourceInfo();
 
 template <typename VkHandle>
-consteval auto getResourceName() -> const char* {
+consteval auto getResourceName_() -> const char* {
   return getResourceInfo<VkHandle>().resource_name;
 }
 
@@ -92,7 +92,7 @@ private:
   auto self() -> Derived& { return static_cast<Derived&>(*this); }
   void destroyResource_() {
     self().destroyResource(handle_);
-    toy::debugf("destroy resource{}", getResourceName<VkHandle>());
+    toy::debugf("destroy resource{}", getResourceName_<VkHandle>());
   }
 
 public:
@@ -140,7 +140,7 @@ public:
     VkInstance handle;
     checkVkResult(
       creator(&create_info, allocator, &handle),
-      std::format("create resource {}", getResourceName<VkHandle>()));
+      std::format("create resource {}", getResourceName_<VkHandle>()));
     Base::operator=(handle);
   }
   ~NoContextResource() = default;
@@ -206,7 +206,7 @@ public:
     VkHandle handle;
     checkVkResult(
       creator(context, &create_info, allocator, &handle),
-      std::format("create resource {}", getResourceName<VkHandle>()));
+      std::format("create resource {}", getResourceName_<VkHandle>()));
     Base::operator=(Base{ context, handle });
   }
   NormalResource() = default;
@@ -256,7 +256,7 @@ public:
     handles_.resize(allocate_info.*count_member);
     checkVkResult(
       creator(context, &allocate_info, handles_.data()),
-      std::format("allocate resources {}", getResourceName<VkHandle>()));
+      std::format("allocate resources {}", getResourceName_<VkHandle>()));
   }
 };
 
@@ -342,7 +342,7 @@ class PipelineFactory : public SingleResource<VkPipeline> {
               create_infos.data(),
               allocator,
               handles.data()),
-      std::format("create resources {}", getResourceName<VkPipeline>()));
+      std::format("create resources {}", getResourceName_<VkPipeline>()));
     return handles | views::transform([device](auto handle) {
              return Pipeline{ device, handle };
            }) |

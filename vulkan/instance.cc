@@ -59,9 +59,26 @@ debugHandler(VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
   return VK_FALSE;
 }
 
-Instance::Instance(
-  std::string_view                                  appName,
-  std::optional<VkDebugUtilsMessengerCreateInfoEXT> debug_messenger_info) {
+auto getDebugMessengerInfo(const DebugMessengerConfig& config)
+  -> VkDebugUtilsMessengerCreateInfoEXT {
+  return {
+    .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+    .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                       VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+                       VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                       VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+    .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                   VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                   VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+    .pfnUserCallback = debugHandler,
+    .pUserData =
+      reinterpret_cast<void*>(const_cast<DebugMessengerConfig*>(&config)),
+  };
+}
+
+auto createInstance(
+  std::string_view                                  app_name,
+  std::optional<VkDebugUtilsMessengerCreateInfoEXT> debug_info) -> Instance {
   /*
    * 1. 创建appInfo
    * 2. 创建createInfo（指向appInfo）
@@ -73,7 +90,7 @@ Instance::Instance(
 
   auto app_info = VkApplicationInfo{
     .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-    .pApplicationName = appName.data(),
+    .pApplicationName = app_name.data(),
     .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
     .engineVersion = VK_MAKE_VERSION(1, 0, 0),
     .apiVersion = VK_API_VERSION_1_0,
@@ -90,7 +107,7 @@ Instance::Instance(
 
   std::vector<const char*> required_layers;
 
-  if (debug_messenger_info.has_value()) {
+  if (debug_info.has_value()) {
     required_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     required_layers.push_back("VK_LAYER_KHRONOS_validation");
   }
@@ -106,8 +123,7 @@ Instance::Instance(
 
   auto create_info = VkInstanceCreateInfo{
     .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-    .pNext = debug_messenger_info.has_value() ? &debug_messenger_info.value()
-                                              : nullptr,
+    .pNext = debug_info.has_value() ? &debug_info.value() : nullptr,
     .pApplicationInfo = &app_info,
     .enabledLayerCount = (uint32_t)required_layers.size(),
     .ppEnabledLayerNames = required_layers.data(),
@@ -115,24 +131,22 @@ Instance::Instance(
     .ppEnabledExtensionNames = required_extensions.data(),
   };
 
-  *this = createVkResource(vkCreateInstance, &create_info);
+  return { create_info };
 }
 
-auto DebugMessenger::getDebugMessengerInfo(const DebugMessengerConfig& config)
-  -> VkDebugUtilsMessengerCreateInfoEXT {
-  return {
-    .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-    .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                       VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
-                       VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                       VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-    .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                   VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                   VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-    .pfnUserCallback = debugHandler,
-    .pUserData =
-      reinterpret_cast<void*>(const_cast<DebugMessengerConfig*>(&config)),
-  };
+auto createInstance(std::string_view            app_name,
+                    const DebugMessengerConfig& config) -> Instance {
+  return createInstance(app_name, getDebugMessengerInfo(config));
+}
+
+auto createInstance(std::string_view app_name) -> Instance {
+  return createInstance(app_name, std::nullopt);
+}
+
+auto createDebugMessenger(VkInstance                  instance,
+                          const DebugMessengerConfig& config)
+  -> DebugMessenger {
+  return { instance, getDebugMessengerInfo(config) };
 }
 
 } // namespace vk

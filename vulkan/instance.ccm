@@ -5,7 +5,8 @@
 export module vulkan.instance;
 
 import "vulkan_config.h";
-import vulkan.tool;
+// import vulkan.tool;
+import vulkan.resource;
 import toy;
 import std;
 
@@ -16,85 +17,15 @@ struct DebugMessengerConfig {
   VkDebugUtilsMessageTypeFlagsEXT        message_type_flags;
 };
 
-class Instance : public Resource<Instance, VkInstance> {
-private:
-  friend CRTPBase;
-  using CRTPBase::operator=;
-
-  Instance(
-    std::string_view                                  appName,
-    std::optional<VkDebugUtilsMessengerCreateInfoEXT> debug_messenger_info);
-
-  void destroyResource(VkInstance instance);
-
-public:
-  Instance(const Instance&) = delete;
-  Instance(Instance&&) = default;
-  auto operator=(const Instance&) -> Instance& = delete;
-  auto operator=(Instance&&) -> Instance& = default;
-
-public:
-  Instance() = default;
-  Instance(std::string_view            appName,
-           const DebugMessengerConfig& debug_messenger_config);
-
-  Instance(std::string_view appName) : Instance(appName, std::nullopt) {}
-};
-
-class DebugMessenger
-  : public Resource<DebugMessenger, VkDebugUtilsMessengerEXT> {
-private:
-  friend CRTPBase;
-  using CRTPBase::operator=;
-
-  VkInstance instance_;
-
-  void destroyResource(VkDebugUtilsMessengerEXT handle);
-
-public:
-  DebugMessenger(const DebugMessenger&) = delete;
-  DebugMessenger(DebugMessenger&&) = default;
-  auto operator=(const DebugMessenger&) -> DebugMessenger& = delete;
-  auto operator=(DebugMessenger&&) -> DebugMessenger& = default;
-
-public:
-  static auto getDebugMessengerInfo(const DebugMessengerConfig& config)
-    -> VkDebugUtilsMessengerCreateInfoEXT;
-
-  DebugMessenger() = default;
-  DebugMessenger(const DebugMessengerConfig& debug_messenger_config,
-                 VkInstance                  instance);
-};
-
-void Instance::destroyResource(VkInstance instance) {
-  vkDestroyInstance(instance, nullptr);
-}
-
 /**
  * @brief Extension and layer needed by debug messenger will be enabled, and
  * there is debug messenger when constructing and destroying the object.
- *
- * @param debug_messenger_config The lifetime must longer than constructed
- * object
+ * @param config The lifetime must longer than constructed object
  */
-Instance::Instance(std::string_view            appName,
-                   const DebugMessengerConfig& debug_messenger_config)
-  : Instance(appName,
-             DebugMessenger::getDebugMessengerInfo(debug_messenger_config)) {}
+auto createInstance(std::string_view            app_name,
+                    const DebugMessengerConfig& config) -> Instance;
+auto createInstance(std::string_view app_name) -> Instance;
 
-void DebugMessenger::destroyResource(VkDebugUtilsMessengerEXT handle) {
-  vkDestroyDebugUtilsMessengerEXT(instance_, handle, nullptr);
-}
-
-/**
- * @param debug_messenger_config The lifetime must longer than constructed
- * object
- */
-DebugMessenger::DebugMessenger(
-  const DebugMessengerConfig& debug_messenger_config, VkInstance instance) {
-  auto debug_messenger_info = getDebugMessengerInfo(debug_messenger_config);
-  *this = createVkResource(
-    vkCreateDebugUtilsMessengerEXT, instance, &debug_messenger_info);
-}
-
+auto createDebugMessenger(VkInstance                  instance,
+                          const DebugMessengerConfig& config) -> DebugMessenger;
 } // namespace vk

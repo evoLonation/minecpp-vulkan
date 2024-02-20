@@ -210,21 +210,21 @@ private:
 
 VulkanApplication::VulkanApplication(uint32_t         width,
                                      uint32_t         height,
-                                     std::string_view appName)
+                                     std::string_view app_name)
   : window_(), instance_(), surface_(nullptr), in_flight_index_(0),
     last_present_failed_(false) {
-  window_ = Window(width, height, appName);
+  window_ = Window(width, height, app_name);
 
   if constexpr (toy::enable_debug) {
     instance_.debug_config = DebugMessengerConfig{
       .message_severity_level = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT,
       .message_type_flags = VK_DEBUG_UTILS_MESSAGE_TYPE_FLAG_BITS_MAX_ENUM_EXT,
     };
-    instance_.instance = Instance{ appName, instance_.debug_config };
+    instance_.instance = createInstance(app_name, instance_.debug_config);
     instance_.debug_messenger =
-      DebugMessenger{ instance_.debug_config, instance_.instance.get() };
+      createDebugMessenger(instance_.instance.get(), instance_.debug_config);
   } else {
-    instance_.instance = Instance{ appName };
+    instance_.instance = createInstance(app_name);
   }
 
   surface_ = createSurface(instance_.instance.get(), window_.get());
