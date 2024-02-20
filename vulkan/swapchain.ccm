@@ -1,6 +1,7 @@
 export module vulkan.swapchain;
 
 import "vulkan_config.h";
+import vulkan.resource;
 import std;
 
 export namespace vk {
@@ -9,8 +10,7 @@ export namespace vk {
  * surface 相关
  * 借助 instance 创建 surface
  */
-auto createSurface(VkInstance instance, GLFWwindow* p_window) -> VkSurfaceKHR;
-void destroySurface(VkSurfaceKHR surface, VkInstance instance) noexcept;
+auto createSurface(VkInstance instance, GLFWwindow* p_window) -> Surface;
 
 /*
  * swap chain 相关
@@ -26,14 +26,10 @@ auto createSwapchain(VkSurfaceKHR                    surface,
                      GLFWwindow*                     p_window,
                      std::span<const uint32_t>       sharing_family_indices,
                      VkSwapchainKHR                  old_swapchain)
-  -> std::expected<std::pair<VkSwapchainKHR, VkExtent2D>, SwapchainCreateError>;
-
-void destroySwapchain(VkSwapchainKHR swapchain, VkDevice device) noexcept;
+  -> std::expected<std::pair<Swapchain, VkExtent2D>, SwapchainCreateError>;
 
 auto createImageViews(VkDevice       device,
                       VkSwapchainKHR swapchain,
-                      VkFormat       format) -> std::vector<VkImageView>;
-void destroyImageViews(std::span<const VkImageView> image_views,
-                       VkDevice                     device) noexcept;
+                      VkFormat       format) -> std::vector<ImageView>;
 
 } // namespace vk

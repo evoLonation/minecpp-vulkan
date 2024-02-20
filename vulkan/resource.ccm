@@ -91,12 +91,14 @@ private:
 
   auto self() -> Derived& { return static_cast<Derived&>(*this); }
   void destroyResource_() {
-    self().destroyResource(handle_);
-    toy::debugf("destroy resource{}", getResourceName_<VkHandle>());
+    if (handle_ != VK_NULL_HANDLE) {
+      self().destroyResource(handle_);
+      toy::debugf("destroy resource {}", getResourceName_<VkHandle>());
+    }
   }
 
 public:
-  VkHandle get() const { return handle_; }
+  auto get() const -> const VkHandle& { return handle_; }
 
   BaseResource(const BaseResource&) = delete;
   BaseResource(BaseResource&& resource) {
@@ -297,6 +299,15 @@ REGISTER_NORMAL(DebugMessenger,
                 vkCreateDebugUtilsMessengerEXT,
                 vkDestroyDebugUtilsMessengerEXT)
 REGISTER_NORMAL(Buffer, VkBuffer, vkCreateBuffer, vkDestroyBuffer)
+REGISTER_NORMAL(Surface,
+                VkSurfaceKHR,
+                vkCreateWin32SurfaceKHR,
+                vkDestroySurfaceKHR)
+REGISTER_NORMAL(Swapchain,
+                VkSwapchainKHR,
+                vkCreateSwapchainKHR,
+                vkDestroySwapchainKHR)
+REGISTER_NORMAL(ImageView, VkImageView, vkCreateImageView, vkDestroyImageView)
 REGISTER_POOL(CommandBuffer,
               VkCommandBuffer,
               vkAllocateCommandBuffers,

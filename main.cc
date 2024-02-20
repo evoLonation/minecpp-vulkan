@@ -146,16 +146,16 @@ private:
 
   PhysicalDeviceInfo physical_device_info_;
 
-  VkSurfaceKHR surface_;
+  Surface surface_;
 
   VkDevice device_;
   VkQueue  graphic_queue_;
   VkQueue  present_queue_;
 
-  VkSwapchainKHR swapchain_;
-  VkExtent2D     extent_;
-
-  std::vector<VkImageView> image_views_;
+  Swapchain                swapchain_;
+  VkExtent2D               extent_;
+  std::vector<ImageView>   image_views_;
+  std::vector<VkImageView> image_view_handles_;
 
   VkRenderPass render_pass_;
 
@@ -211,7 +211,7 @@ private:
 VulkanApplication::VulkanApplication(uint32_t         width,
                                      uint32_t         height,
                                      std::string_view app_name)
-  : window_(), instance_(), surface_(nullptr), in_flight_index_(0),
+  : window_(), instance_(), surface_(), in_flight_index_(0),
     last_present_failed_(false) {
   window_ = Window(width, height, app_name);
 
@@ -234,7 +234,7 @@ VulkanApplication::VulkanApplication(uint32_t         width,
     std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME };
   physical_device_info_ = pickPhysicalDevice(
     instance_.instance.get(),
-    surface_,
+    surface_.get(),
     required_device_extensions,
     checkPhysicalDeviceSupport,
     checkSurfaceSupport,
@@ -259,7 +259,7 @@ VulkanApplication::VulkanApplication(uint32_t         width,
   };
 
   std::tie(swapchain_, extent_) =
-    createSwapchain(surface_,
+    createSwapchain(surface_.get(),
                     device_,
                     physical_device_info_.capabilities,
                     physical_device_info_.surface_format,
@@ -269,11 +269,15 @@ VulkanApplication::VulkanApplication(uint32_t         width,
                     VK_NULL_HANDLE)
       .value();
   image_views_ = createImageViews(
-    device_, swapchain_, physical_device_info_.surface_format.format);
+    device_, swapchain_.get(), physical_device_info_.surface_format.format);
+  image_view_handles_ =
+    views::transform(image_views_,
+                     [](const auto& image_view) { return image_view.get(); }) |
+    ranges::to<std::vector>();
   render_pass_ =
     createRenderPass(device_, physical_device_info_.surface_format.format);
   framebuffers_ =
-    createFramebuffers(render_pass_, device_, extent_, image_views_);
+    createFramebuffers(render_pass_, device_, extent_, image_view_handles_);
   descriptor_set_layout_ = createDescriptorSetLayout(device_);
   auto vertex_info = Vertex2D::getVertexInfo();
   pipeline_resource_ =
@@ -407,10 +411,7 @@ VulkanApplication::~VulkanApplication() {
   destroyGraphicsPipeline(pipeline_resource_, device_);
   destroyDescriptorSetLayout(descriptor_set_layout_, device_);
   destroyRenderPass(render_pass_, device_);
-  destroyImageViews(image_views_, device_);
-  destroySwapchain(swapchain_, device_);
   destroyLogicalDevice(device_);
-  destroySurface(surface_, instance_.instance.get());
 }
 
 auto VulkanApplication::recreateSwapchain() -> bool {
@@ -418,37 +419,39 @@ auto VulkanApplication::recreateSwapchain() -> bool {
   vkDeviceWaitIdle(device_);
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
     physical_device_info_.device,
-    surface_,
+    surface_.get(),
     &physical_device_info_.capabilities);
-  auto old_swap_chain = swapchain_;
+  auto old_swap_chain = std::move(swapchain_);
+  auto old_image_views = std::move(image_views_);
+  auto old_framebuffers = std::move(framebuffers_);
   auto queue_family_indices = physical_device_info_.queue_indices |
                               views::transform([](auto a) { return a.first; }) |
                               ranges::to<std::vector>();
-  if (auto ret = createSwapchain(surface_,
+  if (auto ret = createSwapchain(surface_.get(),
                                  device_,
                                  physical_device_info_.capabilities,
                                  physical_device_info_.surface_format,
                                  physical_device_info_.present_mode,
                                  window_.get(),
                                  std::span(queue_family_indices),
-                                 old_swap_chain);
+                                 old_swap_chain.get());
       ret.has_value()) {
-    std::tie(swapchain_, extent_) = ret.value();
+    std::tie(swapchain_, extent_) = std::move(ret.value());
   } else if (ret.error() == SwapchainCreateError::EXTENT_ZERO) {
     return false;
   } else {
     toy::throwf("create swapchain return some error different to "
                 "SwapchainCreateError::EXTENT_ZERO");
   }
-  auto old_image_views = std::move(image_views_);
-  auto old_framebuffers = std::move(framebuffers_);
   image_views_ = createImageViews(
-    device_, swapchain_, physical_device_info_.surface_format.format);
+    device_, swapchain_.get(), physical_device_info_.surface_format.format);
+  image_view_handles_ =
+    views::transform(image_views_,
+                     [](const auto& image_view) { return image_view.get(); }) |
+    ranges::to<std::vector>();
   framebuffers_ =
-    createFramebuffers(render_pass_, device_, extent_, image_views_);
+    createFramebuffers(render_pass_, device_, extent_, image_view_handles_);
   destroyFramebuffers(old_framebuffers, device_);
-  destroyImageViews(old_image_views, device_);
-  destroySwapchain(old_swap_chain, device_);
   return true;
 }
 
@@ -478,7 +481,7 @@ void VulkanApplication::drawFrame() {
   auto     worker = workers_[in_flight_index_];
   uint32_t image_index;
   if (auto result = vkAcquireNextImageKHR(device_,
-                                          swapchain_,
+                                          swapchain_.get(),
                                           std::numeric_limits<uint64_t>::max(),
                                           worker.image_available_sema,
                                           VK_NULL_HANDLE,
@@ -537,7 +540,7 @@ void VulkanApplication::drawFrame() {
     .waitSemaphoreCount = 1,
     .pWaitSemaphores = &worker.render_finished_sema,
     .swapchainCount = 1,
-    .pSwapchains = &swapchain_,
+    .pSwapchains = &swapchain_.get(),
     .pImageIndices = &image_index,
     // .pResults: 当有多个 swapchain 时检查每个的result
   };

@@ -8,23 +8,13 @@ import toy;
 
 namespace vk {
 
-auto createSurface(VkInstance instance, GLFWwindow* p_window) -> VkSurfaceKHR {
-  VkSurfaceKHR                surface;
-  VkWin32SurfaceCreateInfoKHR createInfo{
+auto createSurface(VkInstance instance, GLFWwindow* p_window) -> Surface {
+  auto create_info = VkWin32SurfaceCreateInfoKHR{
     .sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
     .hinstance = GetModuleHandle(nullptr),
     .hwnd = glfwGetWin32Window(p_window),
   };
-
-  if (vkCreateWin32SurfaceKHR(instance, &createInfo, nullptr, &surface) !=
-      VK_SUCCESS) {
-    toy::throwf("failed to create surface!");
-  }
-  return surface;
-}
-
-void destroySurface(VkSurfaceKHR surface, VkInstance instance) noexcept {
-  vkDestroySurfaceKHR(instance, surface, nullptr);
+  return { instance, create_info };
 }
 
 auto createSwapchain(VkSurfaceKHR                    surface,
@@ -35,12 +25,11 @@ auto createSwapchain(VkSurfaceKHR                    surface,
                      GLFWwindow*                     p_window,
                      std::span<const uint32_t>       sharing_family_indices,
                      VkSwapchainKHR                  old_swapchain)
-  -> std::expected<std::pair<VkSwapchainKHR, VkExtent2D>,
-                   SwapchainCreateError> {
-  uint32_t imageCount = capabilities.minImageCount + 1;
+  -> std::expected<std::pair<Swapchain, VkExtent2D>, SwapchainCreateError> {
+  uint32_t image_count = capabilities.minImageCount + 1;
   // maxImageCount == 0意味着没有最大值
   if (capabilities.maxImageCount != 0) {
-    imageCount = std::min(imageCount, capabilities.maxImageCount);
+    image_count = std::min(image_count, capabilities.maxImageCount);
   }
 
   VkExtent2D extent{};
@@ -67,10 +56,10 @@ auto createSwapchain(VkSurfaceKHR                    surface,
     return std::unexpected(SwapchainCreateError::EXTENT_ZERO);
   }
 
-  VkSwapchainCreateInfoKHR createInfo{
+  auto create_info = VkSwapchainCreateInfoKHR{
     .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
     .surface = surface,
-    .minImageCount = imageCount,
+    .minImageCount = image_count,
     .imageFormat = surface_format.format,
     .imageColorSpace = surface_format.colorSpace,
     .imageExtent = extent,
@@ -105,71 +94,51 @@ auto createSwapchain(VkSurfaceKHR                    surface,
     views::transform([](auto subrange) { return *subrange.begin(); }) |
     ranges::to<std::vector>();
   if (diff_indices.size() >= 2) {
-    createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-    createInfo.queueFamilyIndexCount = diff_indices.size();
-    createInfo.pQueueFamilyIndices = diff_indices.data();
+    create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+    create_info.queueFamilyIndexCount = diff_indices.size();
+    create_info.pQueueFamilyIndices = diff_indices.data();
   } else {
-    createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    createInfo.queueFamilyIndexCount = 0;
-    createInfo.pQueueFamilyIndices = nullptr;
-  }
-
-  VkSwapchainKHR swapchain;
-
-  if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapchain) !=
-      VK_SUCCESS) {
-    throw std::runtime_error("failed to create swap chain");
+    create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    create_info.queueFamilyIndexCount = 0;
+    create_info.pQueueFamilyIndices = nullptr;
   }
 
   toy::debugf("the info of created swap chain:");
-  toy::debugf("image count:{}", imageCount);
+  toy::debugf("image count:{}", image_count);
   toy::debugf("extent:({},{})", extent.width, extent.height);
 
-  return std::pair{ swapchain, extent };
-}
-
-void destroySwapchain(VkSwapchainKHR swapchain, VkDevice device) noexcept {
-  vkDestroySwapchainKHR(device, swapchain, nullptr);
+  return std::pair{ Swapchain{ device, create_info }, extent };
 }
 
 auto createImageViews(VkDevice       device,
                       VkSwapchainKHR swapchain,
-                      VkFormat       format) -> std::vector<VkImageView> {
+                      VkFormat       format) -> std::vector<ImageView> {
   auto images = getVkResources(vkGetSwapchainImagesKHR, device, swapchain);
-  auto image_views =
-    images | views::transform([device, format](VkImage image) {
-      auto create_info = VkImageViewCreateInfo{
-                          .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                          .image = image,
-                          .viewType = VK_IMAGE_VIEW_TYPE_2D,
-                          .format = format,
-                          // 颜色通道映射
-                          .components = {
-                            .r = VK_COMPONENT_SWIZZLE_IDENTITY,
-                            .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-                            .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-                            .a = VK_COMPONENT_SWIZZLE_IDENTITY,
-                          },
-                          // view 访问 image 资源的范围
-                          .subresourceRange = {
-                            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                            .baseMipLevel = 0,
-                            .levelCount = 1,
-                            .baseArrayLayer = 0,
-                            .layerCount = 1,
-                          },
-                        };
-      return createVkResource(vkCreateImageView, device, &create_info);
-    }) |
-    ranges::to<std::vector>();
-  return image_views;
-}
-
-void destroyImageViews(std::span<const VkImageView> image_views,
-                       VkDevice                     device) noexcept {
-  for (auto image_view : image_views) {
-    vkDestroyImageView(device, image_view, nullptr);
-  }
+  return images | views::transform([device, format](VkImage image) {
+           auto create_info = VkImageViewCreateInfo{
+              .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+              .image = image,
+              .viewType = VK_IMAGE_VIEW_TYPE_2D,
+              .format = format,
+              // 颜色通道映射
+              .components = {
+                .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+              },
+              // view 访问 image 资源的范围
+              .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+              },
+            };
+           return ImageView{ device, create_info };
+         }) |
+         ranges::to<std::vector>();
 }
 
 } // namespace vk
