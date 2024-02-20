@@ -1,5 +1,6 @@
 vulkan.ccm
 tool.ccm
+resource.ccm
 glfw.ccm
 instance.ccm
 instance.cc

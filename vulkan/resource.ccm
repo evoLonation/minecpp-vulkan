@@ -1,0 +1,356 @@
+export module vulkan.resource;
+
+import "vulkan_config.h";
+import vulkan.tool;
+import std;
+import toy;
+
+export namespace vk {
+
+struct ResourceName {
+  const char* resource_name;
+};
+template <typename Creator, typename Destroyer>
+struct NoContextResourceInfo : ResourceName {
+  using VkHandle = std::remove_pointer_t<toy::FuncArg<2, Creator>>;
+  using CreateInfo =
+    std::remove_const_t<std::remove_pointer_t<toy::FuncArg<0, Creator>>>;
+  Creator   creator;
+  Destroyer destroyer;
+  constexpr NoContextResourceInfo(Creator     creator,
+                                  Destroyer   destroyer,
+                                  const char* resource_name)
+    : ResourceName(resource_name), creator(creator), destroyer(destroyer) {}
+};
+template <typename Destroyer>
+struct SingleResourceInfo : ResourceName {
+  using VkHandle = std::remove_pointer_t<toy::FuncArg<1, Destroyer>>;
+  using Context = toy::FuncArg<0, Destroyer>;
+  Destroyer destroyer;
+  constexpr SingleResourceInfo(Destroyer destroyer, const char* resource_name)
+    : ResourceName(resource_name), destroyer(destroyer) {}
+};
+template <typename Creator, typename Destroyer>
+struct NormalResourceInfo : SingleResourceInfo<Destroyer> {
+  using typename SingleResourceInfo<Destroyer>::VkHandle;
+  using typename SingleResourceInfo<Destroyer>::Context;
+  using CreateInfo =
+    std::remove_const_t<std::remove_pointer_t<toy::FuncArg<1, Creator>>>;
+  Creator creator;
+  constexpr NormalResourceInfo(Creator     creator,
+                               Destroyer   destroyer,
+                               const char* resource_name)
+    : SingleResourceInfo<Destroyer>(destroyer, resource_name),
+      creator(creator) {}
+};
+template <typename Creator, typename Destroyer>
+struct PoolResourceInfo : ResourceName {
+  using Context = toy::FuncArg<0, Destroyer>;
+  using Pool = toy::FuncArg<1, Destroyer>;
+  using AllocateInfo =
+    std::remove_const_t<std::remove_pointer_t<toy::FuncArg<1, Creator>>>;
+  using VkHandle = std::remove_pointer_t<toy::FuncArg<1, Destroyer>>;
+  Creator   creator;
+  Destroyer destroyer;
+  uint32_t AllocateInfo::*count_member;
+  Pool AllocateInfo::*pool_member;
+
+  constexpr PoolResourceInfo(Creator   creator,
+                             Destroyer destroyer,
+                             uint32_t AllocateInfo::*count_member,
+                             Pool AllocateInfo::*pool_member,
+                             const char*         resource_name)
+    : ResourceName(resource_name), creator(creator), destroyer(destroyer),
+      count_member(count_member), pool_member(pool_member) {}
+};
+
+template <typename Creator, typename Destroyer>
+struct PoolResourceMeta {
+  Creator   creator;
+  Destroyer destroyer;
+};
+template <typename VkHandle>
+consteval auto getResourceInfo();
+
+template <typename VkHandle>
+consteval auto getResourceName() -> const char* {
+  return getResourceInfo<VkHandle>().resource_name;
+}
+
+constexpr VkAllocationCallbacks* allocator = nullptr;
+
+/**
+ * @brief CRTP类，帮助子类管理单个 resource 的销毁
+ * 需要子类提供 destroyResource
+ */
+template <typename Derived, typename VkHandle>
+  requires std::is_pointer_v<VkHandle>
+class BaseResource {
+private:
+  VkHandle handle_ = VK_NULL_HANDLE;
+
+  auto self() -> Derived& { return static_cast<Derived&>(*this); }
+  void destroyResource_() {
+    self().destroyResource(handle_);
+    toy::debugf("destroy resource{}", getResourceName<VkHandle>());
+  }
+
+public:
+  VkHandle get() const { return handle_; }
+
+  BaseResource(const BaseResource&) = delete;
+  BaseResource(BaseResource&& resource) {
+    handle_ = resource.handle_;
+    resource.handle_ = VK_NULL_HANDLE;
+  }
+  auto operator=(const BaseResource&) -> BaseResource& = delete;
+  auto operator=(BaseResource&& resource) -> BaseResource& {
+    destroyResource_();
+    handle_ = resource.handle_;
+    resource.handle_ = VK_NULL_HANDLE;
+    return *this;
+  }
+
+  BaseResource(VkHandle handle) : handle_(handle) {}
+  BaseResource() = default;
+  ~BaseResource() { destroyResource_(); }
+};
+
+template <typename VkHandle>
+class NoContextResource
+  : public BaseResource<NoContextResource<VkHandle>, VkHandle> {
+private:
+  using Base = BaseResource<NoContextResource<VkHandle>, VkHandle>;
+  friend Base;
+
+  static constexpr auto info = getResourceInfo<VkHandle>();
+  static constexpr auto creator = info.creator;
+  static constexpr auto destroyer = info.destroyer;
+
+  void destroyResource(VkHandle handle) { destroyer(handle, allocator); }
+
+public:
+  NoContextResource(const NoContextResource&) = delete;
+  NoContextResource(NoContextResource&& resource) = default;
+  auto operator=(const NoContextResource&) -> NoContextResource& = delete;
+  auto operator=(NoContextResource&& resource) -> NoContextResource& = default;
+
+  NoContextResource() = default;
+  NoContextResource(const VkInstanceCreateInfo& create_info) {
+    VkInstance handle;
+    checkVkResult(
+      creator(&create_info, allocator, &handle),
+      std::format("create resource {}", getResourceName<VkHandle>()));
+    Base::operator=(handle);
+  }
+  ~NoContextResource() = default;
+};
+
+/**
+ * @brief 抽象了创建时具有 context 的单个 resource 的销毁
+ */
+template <typename VkHandle>
+class SingleResource : public BaseResource<SingleResource<VkHandle>, VkHandle> {
+private:
+  using Base = BaseResource<SingleResource<VkHandle>, VkHandle>;
+  friend Base;
+
+protected:
+  static constexpr auto info = getResourceInfo<VkHandle>();
+  using Info = decltype(info);
+  static constexpr auto destroyer = info.destroyer;
+  using Context = Info::Context;
+
+private:
+  Context context_;
+
+  void destroyResource(VkHandle handle) {
+    destroyer(context_, handle, allocator);
+  }
+
+public:
+  SingleResource(const SingleResource&) = delete;
+  SingleResource(SingleResource&& resource)
+    : Base(std::move(resource)), context_(resource.context_) {}
+  auto operator=(const SingleResource&) -> SingleResource& = delete;
+  auto operator=(SingleResource&& resource) -> SingleResource& {
+    Base::operator=(std::move(resource));
+    context_ = resource.context_;
+    return *this;
+  }
+
+  SingleResource(Context context, VkHandle handle)
+    : Base(handle), context_(context) {}
+  SingleResource() = default;
+  ~SingleResource() = default;
+};
+
+/**
+ * @brief 在SingleResource基础上抽象了基于context和createinfo的创建
+ */
+template <typename VkHandle>
+class NormalResource : public SingleResource<VkHandle> {
+private:
+  using Base = SingleResource<VkHandle>;
+  static constexpr auto creator = Base::info.creator;
+  using typename Base::Context;
+  using CreateInfo = typename Base::Info::CreateInfo;
+
+public:
+  NormalResource(const NormalResource&) = delete;
+  NormalResource(NormalResource&&) = default;
+  auto operator=(const NormalResource&) -> NormalResource& = delete;
+  auto operator=(NormalResource&&) -> NormalResource& = default;
+
+  NormalResource(Context context, const CreateInfo& create_info) {
+    VkHandle handle;
+    checkVkResult(
+      creator(context, &create_info, allocator, &handle),
+      std::format("create resource {}", getResourceName<VkHandle>()));
+    Base::operator=(Base{ context, handle });
+  }
+  NormalResource() = default;
+  ~NormalResource() = default;
+};
+
+template <typename VkHandle>
+class PoolResources {
+private:
+  static constexpr auto info = getResourceInfo<VkHandle>();
+  using Info = decltype(info);
+
+  static constexpr auto destroyer = info.destroyer;
+  static constexpr auto creator = info.creator;
+
+  using Context = Info::Context;
+  using Pool = Info::Pool;
+  using AllocateInfo = Info::AllocateInfo;
+  static constexpr auto AllocateInfo::*count_member = info.count_member;
+  static constexpr auto AllocateInfo::*pool_member = info.pool_member;
+
+  Context               context_;
+  Pool                  pool_;
+  std::vector<VkHandle> handles_;
+
+  void freeResources() {
+    if (handles_.size() != 0) {
+      destroyer(context_, pool_, handles_.size(), handles_.data());
+    }
+  }
+
+public:
+  PoolResources(const PoolResources&) = delete;
+  PoolResources(PoolResources&&) = default;
+  auto operator=(const PoolResources&) -> PoolResources& = delete;
+  auto operator=(PoolResources&& resource) -> PoolResources& {
+    freeResources();
+    context_ = resource.context_;
+    pool_ = resource.pool_;
+    handles_ = resource.handles_;
+    return *this;
+  }
+
+  PoolResources(Context context, const AllocateInfo& allocate_info) {
+    context_ = context;
+    pool_ = allocate_info.*pool_member;
+    handles_.resize(allocate_info.*count_member);
+    checkVkResult(
+      creator(context, &allocate_info, handles_.data()),
+      std::format("allocate resources {}", getResourceName<VkHandle>()));
+  }
+};
+
+#define REGISTER_RESOURCE(type, resource_info)                                 \
+  template <>                                                                  \
+  consteval auto getResourceInfo<type>() {                                     \
+    return resource_info;                                                      \
+  }
+#define TEMPLATE_INSTANTIATION(name, handle_type, resource_type)               \
+  template class resource_type<handle_type>;                                   \
+  using name = resource_type<handle_type>;
+
+#define REGISTER_NO_CONTEXT(name, handle_type, creator, destroyer)             \
+  REGISTER_RESOURCE(handle_type,                                               \
+                    NoContextResourceInfo(creator, destroyer, #handle_type))   \
+  TEMPLATE_INSTANTIATION(name, handle_type, NoContextResource)
+
+#define REGISTER_ONLY_DESTROYER(name, handle_type, destroyer)                  \
+  REGISTER_RESOURCE(handle_type, SingleResourceInfo(destroyer, #handle_type))  \
+  TEMPLATE_INSTANTIATION(name, handle_type, SingleResource)
+
+#define REGISTER_NORMAL(name, handle_type, creator, destroyer)                 \
+  REGISTER_RESOURCE(handle_type,                                               \
+                    NormalResourceInfo(creator, destroyer, #handle_type))      \
+  TEMPLATE_INSTANTIATION(name, handle_type, NormalResource)
+
+#define REGISTER_POOL(                                                         \
+  name, handle_type, creator, destroyer, count_member, pool_member)            \
+  REGISTER_RESOURCE(                                                           \
+    handle_type,                                                               \
+    PoolResourceInfo(                                                          \
+      creator, destroyer, count_member, pool_member, #handle_type))            \
+  TEMPLATE_INSTANTIATION(name, handle_type, PoolResources)
+
+REGISTER_NO_CONTEXT(Instance, VkInstance, vkCreateInstance, vkDestroyInstance)
+REGISTER_NORMAL(DebugMessenger,
+                VkDebugUtilsMessengerEXT,
+                vkCreateDebugUtilsMessengerEXT,
+                vkDestroyDebugUtilsMessengerEXT)
+REGISTER_NORMAL(Buffer, VkBuffer, vkCreateBuffer, vkDestroyBuffer)
+REGISTER_POOL(CommandBuffer,
+              VkCommandBuffer,
+              vkAllocateCommandBuffers,
+              vkFreeCommandBuffers,
+              &VkCommandBufferAllocateInfo::commandBufferCount,
+              &VkCommandBufferAllocateInfo::commandPool)
+REGISTER_ONLY_DESTROYER(Pipeline, VkPipeline, vkDestroyPipeline)
+
+#undef REGISTER_NO_CONTEXT
+#undef REGISTER_NORMAL
+#undef REGISTER_ONLY_DESTROYER
+#undef REGISTER_RESOURCE
+
+enum class PipelineType {
+  GRAPHICS,
+  COMPUTE,
+};
+template <PipelineType type>
+consteval auto getPipelineCreator() {
+  if constexpr (type == PipelineType::GRAPHICS) {
+    return vkCreateGraphicsPipelines;
+  } else if constexpr (type == PipelineType::COMPUTE) {
+    return vkCreateComputePipelines;
+  } else {
+    std::unreachable();
+  }
+}
+template <PipelineType type>
+class PipelineFactory : public SingleResource<VkPipeline> {
+  static constexpr auto creator = getPipelineCreator<type>();
+  using CreateInfo = std::remove_const_t<
+    std::remove_pointer_t<toy::FuncArg<3, decltype(creator)>>>;
+  static auto createGraphics(VkDevice                    device,
+                             VkPipelineCache             pipelineCache,
+                             std::span<const CreateInfo> create_infos)
+    -> std::vector<Pipeline> {
+
+    std::vector<VkPipeline> handles(create_infos.size());
+    checkVkResult(
+      creator(device,
+              pipelineCache,
+              create_infos.size(),
+              create_infos.data(),
+              allocator,
+              handles.data()),
+      std::format("create resources {}", getResourceName<VkPipeline>()));
+    return handles | views::transform([device](auto handle) {
+             return Pipeline{ device, handle };
+           }) |
+           ranges::to<std::vector>();
+  }
+};
+
+template class PipelineFactory<PipelineType::GRAPHICS>;
+template class PipelineFactory<PipelineType::COMPUTE>;
+
+} // namespace vk
