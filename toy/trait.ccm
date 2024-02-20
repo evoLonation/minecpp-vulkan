@@ -132,7 +132,7 @@ using FuncRet = FuncInfo<Func>::template at<0>;
 
 namespace test_FuncArgRet {
 using namespace toy;
-void foo(int, float);
+void foo(int, float) {}
 // function foo can not overload
 // void foo(int a);
 void (*const bar)(int, float) = foo;
