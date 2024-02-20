@@ -19,25 +19,80 @@ struct TypePack {
 
 template <typename T, typename Seq>
 struct RepeatS;
+template <typename T, size_t N>
+using Repeat = RepeatS<T, std::make_index_sequence<N>>::type;
+
 template <typename T, size_t... Is>
 struct RepeatS<T, std::index_sequence<Is...>> {
   template <size_t N>
   using element = T;
   using type = TypePack<element<Is>...>;
 };
-template <typename T, size_t N>
-using Repeat = RepeatS<T, std::make_index_sequence<N>>::type;
 
-template <typename TypePack, typename T>
-struct InsertS;
-
-template <typename TypePack, typename T>
-using Insert = InsertS<TypePack, T>::type;
-
-template <typename... TypeList, typename T>
-struct InsertS<TypePack<TypeList...>, T> {
-  using type = TypePack<TypeList..., T>;
+template <typename T>
+struct ToTypePackS;
+template <typename T>
+using ToTypePack = ToTypePackS<T>::type;
+template <template <typename...> typename T, typename... Args>
+struct ToTypePackS<T<Args...>> {
+  using type = TypePack<Args...>;
 };
+
+template <typename... TypePacks>
+struct MergeS;
+template <typename... TypePacks>
+using Merge = ToTypePack<decltype(std::tuple_cat(
+  std::declval<typename TypePacks::template apply<std::tuple>>()...))>;
+
+template <typename TypePack, typename Seq, size_t I>
+struct IndexS;
+template <typename TypePack, size_t I>
+using Index =
+  IndexS<TypePack, std::make_index_sequence<TypePack::size>, I>::type;
+template <typename... Args, size_t... Is, size_t I>
+struct IndexS<TypePack<Args...>, std::index_sequence<Is...>, I> {
+  template <typename TypePack>
+  struct SingleTypePackArg;
+  template <typename T>
+  struct SingleTypePackArg<TypePack<T>> {
+    using type = T;
+  };
+  using type = SingleTypePackArg<
+    Merge<std::conditional_t<Is == I, TypePack<Args>, TypePack<>>...>>::type;
+};
+
+template <typename TypePack, typename Seq, size_t I>
+struct TakeS;
+template <typename TypePack, size_t I>
+using Take = TakeS<TypePack, std::make_index_sequence<TypePack::size>, I>::type;
+template <typename... Args, size_t... Is, size_t I>
+struct TakeS<TypePack<Args...>, std::index_sequence<Is...>, I> {
+  using type = Merge < std::conditional_t<Is<I, TypePack<Args>, TypePack<>>...>;
+};
+
+template <typename TypePack, typename Seq, size_t I>
+struct DropS;
+template <typename TypePack, size_t I>
+using Drop = DropS<TypePack, std::make_index_sequence<TypePack::size>, I>::type;
+template <typename... Args, size_t... Is, size_t I>
+struct DropS<TypePack<Args...>, std::index_sequence<Is...>, I> {
+  using type =
+    Merge<std::conditional_t<I <= Is, TypePack<Args>, TypePack<>>...>;
+};
+
+template <typename TypePackT, typename T, size_t I>
+struct InsertS {
+  using type = Merge<Take<TypePackT, I>, TypePack<T>, Drop<TypePackT, I>>;
+};
+template <typename TypePack, typename T, size_t I = TypePack::size>
+using Insert = InsertS<TypePack, T, I>::type;
+
+template <typename TypePackT, size_t I>
+struct RemoveS {
+  using type = Merge<Take<TypePackT, I>, Drop<TypePackT, I + 1>>;
+};
+template <typename TypePack, size_t I = TypePack::size - 1>
+using Remove = RemoveS<TypePack, I>::type;
 
 template <typename TypePack, template <typename...> typename Mapper>
 struct MapToS;
@@ -50,35 +105,19 @@ struct MapToS<TypePack<TypeList...>, Mapper> {
   using type = TypePack<Mapper<TypeList>...>;
 };
 
-template <typename TypePack1, typename TypePack2>
-struct MergeS;
-
-template <typename TypePack1, typename TypePack2>
-using Merge = MergeS<TypePack1, TypePack2>::type;
-
-template <typename... TypeList1, typename... TypeList2>
-struct MergeS<TypePack<TypeList1...>, TypePack<TypeList2...>> {
-  using type = TypePack<TypeList1..., TypeList2...>;
-};
-
-template <typename TypePack, size_t index>
-struct RemoveFrontS;
-
-template <typename TypePack, size_t index>
-using RemoveFront = RemoveFrontS<TypePack, index>::type;
-
-template <typename Arg, typename... Args>
-struct RemoveFrontS<TypePack<Arg, Args...>, 1> {
-  using type = TypePack<Args...>;
-};
-
-template <size_t index, typename Arg, typename... Args>
-struct RemoveFrontS<TypePack<Arg, Args...>, index> {
-  using type = RemoveFront<TypePack<Args...>, index - 1>;
+template <typename TypePack, template <typename> typename Condition>
+struct FilterS;
+template <typename TypePack, template <typename> typename Condition>
+using Filter = FilterS<TypePack, Condition>::type;
+template <typename... Args, template <typename> typename Condition>
+struct FilterS<TypePack<Args...>, Condition> {
+  using type = Merge<
+    std::conditional_t<Condition<Args>::value, TypePack<Args>, TypePack<>>...>;
 };
 
 /**
  * @brief get type information of a function
+ * is a TypePack contains Return Type and Parameter Types
  * can not use for a overload function!
  * the type is decay
  */
@@ -129,6 +168,51 @@ template <typename Func>
 using FuncRet = FuncInfo<Func>::template at<0>;
 
 } // namespace toy
+
+namespace test_TypePack {
+using namespace toy;
+
+template <typename T>
+struct Condition {
+  static constexpr bool value = std::same_as<T, char>;
+};
+
+void test() {
+  using type_pack_1 = TypePack<int, float, double, char>;
+  // Repeat
+  static_assert(std::same_as<TypePack<int, int, int>, Repeat<int, 3>>);
+  // ToTypePack
+  static_assert(
+    std::same_as<TypePack<int, float>, ToTypePack<std::pair<int, float>>>);
+  // Merge
+  static_assert(std::same_as<
+                type_pack_1,
+                Merge<TypePack<int>, TypePack<float, double>, TypePack<char>>>);
+  // Index
+  static_assert(std::same_as<char, Index<type_pack_1, 3>>);
+  // Take, Drop
+  static_assert(
+    std::same_as<TypePack<int, float, double>, Take<type_pack_1, 3>>);
+  static_assert(
+    std::same_as<TypePack<float, double, char>, Drop<type_pack_1, 1>>);
+  // Insert
+  static_assert(std::same_as<TypePack<int, float, double>,
+                             Insert<TypePack<int, float>, double>>);
+  static_assert(std::same_as<TypePack<int, float, double>,
+                             Insert<TypePack<int, double>, float, 1>>);
+  // Remove
+  static_assert(
+    std::same_as<TypePack<float, double, char>, Remove<type_pack_1, 0>>);
+  static_assert(
+    std::same_as<TypePack<int, float, double>, Remove<type_pack_1>>);
+  // MapTo
+  static_assert(std::same_as<TypePack<std::vector<int>, std::vector<float>>,
+                             MapTo<TypePack<int, float>, std::vector>>);
+  // Filter
+  static_assert(std::same_as<TypePack<char>, Filter<type_pack_1, Condition>>);
+}
+
+} // namespace test_TypePack
 
 namespace test_FuncArgRet {
 using namespace toy;
