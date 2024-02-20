@@ -5,7 +5,6 @@
 export module vulkan.instance;
 
 import "vulkan_config.h";
-// import vulkan.tool;
 import vulkan.resource;
 import toy;
 import std;
