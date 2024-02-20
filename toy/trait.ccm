@@ -45,23 +45,6 @@ using Merge = ToTypePack<decltype(std::tuple_cat(
   std::declval<typename TypePacks::template apply<std::tuple>>()...))>;
 
 template <typename TypePack, typename Seq, size_t I>
-struct IndexS;
-template <typename TypePack, size_t I>
-using Index =
-  IndexS<TypePack, std::make_index_sequence<TypePack::size>, I>::type;
-template <typename... Args, size_t... Is, size_t I>
-struct IndexS<TypePack<Args...>, std::index_sequence<Is...>, I> {
-  template <typename TypePack>
-  struct SingleTypePackArg;
-  template <typename T>
-  struct SingleTypePackArg<TypePack<T>> {
-    using type = T;
-  };
-  using type = SingleTypePackArg<
-    Merge<std::conditional_t<Is == I, TypePack<Args>, TypePack<>>...>>::type;
-};
-
-template <typename TypePack, typename Seq, size_t I>
 struct TakeS;
 template <typename TypePack, size_t I>
 using Take = TakeS<TypePack, std::make_index_sequence<TypePack::size>, I>::type;
@@ -147,6 +130,13 @@ struct FuncInfoT {
 };
 
 /**
+ * @brief get parameter types of a function
+ * can not use for a overload function!
+ */
+template <typename Func>
+using FuncArgs = Remove<FuncInfo<Func>, 0>;
+
+/**
  * @brief get the parameter type of a function with index
  * can not use for a overload function!
  */
@@ -188,8 +178,8 @@ void test() {
   static_assert(std::same_as<
                 type_pack_1,
                 Merge<TypePack<int>, TypePack<float, double>, TypePack<char>>>);
-  // Index
-  static_assert(std::same_as<char, Index<type_pack_1, 3>>);
+  // At
+  static_assert(std::same_as<char, type_pack_1::at<3>>);
   // Take, Drop
   static_assert(
     std::same_as<TypePack<int, float, double>, Take<type_pack_1, 3>>);
