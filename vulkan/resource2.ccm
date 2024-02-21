@@ -1,0 +1,402 @@
+export module vulkan.resource2;
+
+import "vulkan_config.h";
+import std;
+import toy;
+
+export namespace vk2 {
+
+template <typename VkHandle, typename Destroyer, bool is_multi>
+struct DestroyContextS;
+template <typename VkHandle, typename Destroyer, bool is_multi>
+using DestroyContextImpl =
+  DestroyContextS<VkHandle, std::decay_t<Destroyer>, is_multi>::type;
+
+template <bool is_multi, typename VkHandle, typename... Args>
+struct DestroyContextS<VkHandle, void (*)(Args...), is_multi> {
+  template <typename Arg>
+  struct Condition {
+    static constexpr bool value =
+      !std::same_as<Arg, const VkAllocationCallbacks*> &&
+      (is_multi
+         ? !std::same_as<Arg, const VkHandle*> && !std::same_as<Arg, uint32_t>
+         : !std::same_as<Arg, VkHandle>);
+  };
+  using type =
+    toy::Filter<toy::TypePack<Args...>, Condition>::template apply<std::tuple>;
+};
+
+template <typename VkHandle, typename Creator>
+struct CreateContextS;
+template <typename VkHandle, typename Creator>
+using CreateContextImpl = CreateContextS<VkHandle, std::decay_t<Creator>>::type;
+
+template <typename VkHandle, typename... Args>
+struct CreateContextS<VkHandle, VkResult (*)(Args...)> {
+  template <typename Arg>
+  struct Condition {
+    static constexpr bool value =
+      !std::same_as<Arg, const VkAllocationCallbacks*> &&
+      !std::same_as<Arg, VkHandle*>;
+  };
+  using type =
+    toy::Filter<toy::TypePack<Args...>, Condition>::template apply<std::tuple>;
+};
+
+template <typename VkHandle>
+struct RegisterMeta;
+
+template <typename VkHandle>
+using DestroyContext =
+  DestroyContextImpl<VkHandle,
+                     decltype(RegisterMeta<VkHandle>::destroyer),
+                     RegisterMeta<VkHandle>::destroy_multi>;
+template <typename VkHandle>
+using CreateContext =
+  CreateContextImpl<VkHandle, decltype(RegisterMeta<VkHandle>::creator)>;
+
+template <typename Arg>
+concept AllocatorArg = std::same_as<Arg, const VkAllocationCallbacks*>;
+
+template <typename VkHandle, bool is_creator>
+concept has_allocator =
+  std::same_as<typename toy::FuncArgs<std::conditional_t<
+                 is_creator,
+                 decltype(RegisterMeta<VkHandle>::creator),
+                 decltype(RegisterMeta<VkHandle>::destroyer)>>::
+                 template at<(is_creator ? -2 : -1)>,
+               const VkAllocationCallbacks*>;
+
+template <typename VkHandle>
+class DestroyManager2 {
+private:
+  static constexpr auto destroyer = RegisterMeta<VkHandle>::destroyer;
+  static constexpr auto destroy_multi = RegisterMeta<VkHandle>::destroy_multi;
+  template <typename Arg>
+  struct Condition {
+    static constexpr bool value =
+      !AllocatorArg<Arg> &&
+      (destroy_multi
+         ? !std::same_as<Arg, const VkHandle*> && !std::same_as<Arg, uint32_t>
+         : !std::same_as<Arg, VkHandle>);
+  };
+  using Context = toy::Filter<toy::FuncArgs<decltype(destroyer)>,
+                              Condition>::template apply<std::tuple>;
+  using HandleContainer =
+    std::conditional_t<destroy_multi, std::vector<VkHandle>, VkHandle>;
+
+protected:
+  HandleContainer handle_;
+  Context         context_;
+
+public:
+  ~DestroyManager2() {
+    if constexpr (!destroy_multi) {
+      if constexpr (has_allocator<VkHandle, false>) {
+        std::apply([handle = handle_](
+                     auto... args) { destroyer(args..., handle, nullptr); },
+                   context_);
+      } else {
+        std::apply(
+          [handle = handle_](auto... args) { destroyer(args..., handle); },
+          context_);
+      }
+    } else {
+      if constexpr (has_allocator<VkHandle, false>) {
+        std::apply(
+          [&handles = handle_](const auto&... args) {
+            destroyer(args..., handles.size(), handles.data(), nullptr);
+          },
+          context_);
+      } else {
+        std::apply(
+          [&handles = handle_](const auto&... args) {
+            destroyer(args..., handles.size(), handles.data());
+          },
+          context_);
+      }
+    }
+  }
+};
+template <typename VkHandle, typename Context = DestroyContext<VkHandle>>
+void destroyMulti(std::span<const VkHandle> handles, const Context& context) {
+  constexpr auto destroyer = RegisterMeta<VkHandle>::destroyer;
+  if constexpr (has_allocator<VkHandle, false>) {
+    std::apply(
+      [handles](const auto&... args) {
+        destroyer(args..., handles.size(), handles.data(), nullptr);
+      },
+      context);
+  } else {
+    std::apply(
+      [handles](const auto&... args) {
+        destroyer(args..., handles.size(), handles.data());
+      },
+      context);
+  }
+}
+
+template <typename VkHandle,
+          typename Meta = RegisterMeta<VkHandle>,
+          typename CreateContext = CreateContext<VkHandle>,
+          typename DestroyContext = DestroyContext<VkHandle>>
+auto createMulti(const CreateContext& context)
+  -> std::pair<std::vector<VkHandle>, DestroyContext> {
+  constexpr auto creator = Meta::creator;
+  constexpr auto mapper = Meta::mapper;
+
+  auto                  pair = mapper(context);
+  std::vector<VkHandle> handles(pair.second);
+  if constexpr (has_allocator<VkHandle, true>) {
+    std::apply(
+      [&handles](const auto&... args) {
+        creator(args..., nullptr, handles.data());
+      },
+      context);
+  } else {
+    std::apply(
+      [&handles](const auto&... args) { creator(args..., handles.data()); },
+      context);
+  }
+  return { std::move(handles), pair.first };
+}
+
+template <typename VkHandle,
+          typename Meta = RegisterMeta<VkHandle>,
+          typename CreateContext = CreateContext<VkHandle>,
+          typename DestroyContext = DestroyContext<VkHandle>>
+auto createSingle(const CreateContext& context)
+  -> std::pair<VkHandle, DestroyContext> {
+  constexpr auto creator = Meta::creator;
+  constexpr auto mapper = Meta::mapper;
+
+  VkHandle handle;
+  if constexpr (has_allocator<VkHandle, true>) {
+    std::apply(
+      [&handle](const auto&... args) { creator(args..., nullptr, &handle); },
+      context);
+  } else {
+    std::apply([&handle](const auto&... args) { creator(args..., &handle); },
+               context);
+  }
+  return { handle, mapper(context) };
+}
+
+enum class FactoryIdentity {
+  DEFAULT,
+  GRAPHIC,
+};
+
+template <typename Destroyer, typename Creator, typename Mapper>
+struct ResourceMeta {
+  Creator   creator;
+  bool      create_muitl;
+  Destroyer destroyer;
+  bool      destroy_muitl;
+  Mapper    mapper;
+};
+template <typename Destroyer, typename Creator, typename Mapper>
+consteval auto createMeta(Creator   creator,
+                          bool      create_muitl,
+                          Destroyer destroyer,
+                          bool      destroy_muitl,
+                          Mapper    mapper)
+  -> ResourceMeta<Destroyer, Creator, Mapper> {
+  return ResourceMeta<Destroyer, Creator, Mapper>{
+    creator, create_muitl, destroyer, destroy_muitl, mapper
+  };
+}
+
+// template <typename VkHandle,
+//           typename TypePack,
+//           typename Seq,
+//           typename CreateContext = CreateContext<VkHandle>>
+// CreateContext CustomConstructorImpl(Args... args) {}
+
+template <typename CustomPack,
+          typename ContextPack,
+          typename Seq = std::make_index_sequence<CustomPack::size>>
+struct DiffIndices;
+template <typename... CustomArgs, typename... ContextArgs, size_t... Is>
+// requires((std::is_pointer_v<ContextArgs>
+//             ? std::same_as<std::remove_reference_t<CustomArgs>,
+//                            std::remove_pointer_t<ContextArgs>>
+//             : std::same_as<CustomArgs, ContextArgs>) &&
+//          ...)
+struct DiffIndices<toy::TypePack<CustomArgs...>,
+                   toy::TypePack<ContextArgs...>,
+                   std::index_sequence<Is...>> {
+  template <typename T>
+  struct IsInt {
+    static constexpr auto value = std::same_as<T, int>;
+  };
+  template <typename... Args>
+  struct Indices {
+    static constexpr auto value =
+      std::array{ (std::same_as<int, Args> ? true : false)... };
+  };
+  static constexpr auto value = toy::TypePack<
+    std::conditional_t<std::same_as<CustomArgs, ContextArgs>, int, void>...>::
+    template apply<Indices>::value;
+};
+template <bool to_pointer>
+auto pointerMapper(auto&& arg) {
+  if constexpr (to_pointer) {
+    return &arg;
+  } else {
+    return arg;
+  }
+};
+
+template <typename VkHandle,
+          typename... Args,
+          size_t... Is,
+          typename CreateContext = CreateContext<VkHandle>>
+CreateContext CustomConstructorImpl(std::tuple<Args...>        args,
+                                    std::index_sequence<Is...> sequence) {
+  constexpr auto indices =
+    DiffIndices<toy::TypePack<Args...>, toy::ToTypePack<CreateContext>>::value;
+  return CreateContext{ pointerMapper<!indices[Is]>(std::get<Is>(args))... };
+}
+
+template <typename VkHandle, typename>
+struct CustomConstructor {};
+template <>
+struct RegisterMeta<VkBuffer> {
+  static constexpr auto creator = vkCreateBuffer;
+  static constexpr auto create_multi = false;
+  static constexpr auto destroyer = vkDestroyBuffer;
+  static constexpr auto destroy_multi = false;
+  static constexpr auto customConstructor =
+    [](VkDevice device, const VkBufferCreateInfo& create_info) {
+      return CreateContext<VkBuffer>{ device, &create_info };
+    };
+  static constexpr auto mapper = [](const CreateContext<VkBuffer>& context) {
+    return std::tuple{ std::get<0>(context) };
+  };
+};
+template <>
+struct RegisterMeta<VkCommandBuffer> {
+  static constexpr auto creator = vkAllocateCommandBuffers;
+  static constexpr auto create_multi = true;
+  static constexpr auto destroyer = vkFreeCommandBuffers;
+  static constexpr auto destroy_multi = true;
+  static constexpr auto mapper =
+    [](const CreateContext<VkCommandBuffer>& context) {
+      auto& [device, create_info] = context;
+      return std::pair{ std::tuple{ device, create_info->commandPool },
+                        create_info->commandBufferCount };
+    };
+};
+template <typename VkHandle, FactoryIdentity identity>
+struct FactoryMeta;
+template <>
+struct FactoryMeta<VkPipeline, FactoryIdentity::GRAPHIC> {
+  static constexpr auto creator = vkCreateGraphicsPipelines;
+  static constexpr auto create_multi = true;
+  static constexpr auto destroyer = vkDestroyPipeline;
+  static constexpr auto destroy_multi = false;
+  static constexpr auto mapper = [](auto device, auto _, auto __, auto ___) {
+    return std::tuple{ device };
+  };
+};
+
+template <typename VkHandle, typename DestroyContext, bool is_multi>
+class DestroyManager;
+template <typename VkHandle, typename... DestroyArgs>
+class DestroyManager<VkHandle, std::tuple<DestroyArgs...>, false> {
+protected:
+  VkHandle                   handle_;
+  std::tuple<DestroyArgs...> context_;
+
+public:
+  ~DestroyManager() { destroySingle(handle_, context_); }
+};
+template <typename VkHandle, typename... DestroyArgs>
+class DestroyManager<VkHandle, std::tuple<DestroyArgs...>, true> {
+protected:
+  std::vector<VkHandle>      handles_;
+  std::tuple<DestroyArgs...> context_;
+
+public:
+  ~DestroyManager() { destroyMulti<VkHandle>(handles_, context_); }
+};
+
+template <typename VkHandle,
+          typename CreateContext = CreateContext<VkHandle>,
+          typename DestroyContext = DestroyContext<VkHandle>,
+          bool destroy_multi = RegisterMeta<VkHandle>::destroy_multi>
+class Resource;
+template <typename VkHandle,
+          typename... CreateArgs,
+          typename DestroyContext,
+          bool destroy_multi>
+class Resource<VkHandle,
+               std::tuple<CreateArgs...>,
+               DestroyContext,
+               destroy_multi> : DestroyManager2<VkHandle> {
+private:
+  using CreateContext = CreateContext<VkHandle>;
+
+public:
+  Resource(const CreateArgs&... args) {
+    auto create_context = CreateContext{ args... };
+    if constexpr (destroy_multi) {
+      std::tie(this->handle_, this->context_) =
+        createMulti<VkHandle>(create_context);
+    } else {
+      std::tie(this->handle_, this->context_) =
+        createSingle<VkHandle>(create_context);
+    }
+  }
+};
+
+template <typename VkHandle, FactoryIdentity identity>
+class ResourceFactory;
+
+template class Resource<VkBuffer>;
+using Buffer = Resource<VkBuffer>;
+template class Resource<VkCommandBuffer>;
+using CommandBuffer = Resource<VkCommandBuffer>;
+void test() {
+  static_assert(
+    std::same_as<DestroyContextImpl<VkBuffer, PFN_vkDestroyBuffer, false>,
+                 std::tuple<VkDevice>>);
+  static_assert(
+    std::same_as<DestroyContextImpl<VkInstance, PFN_vkDestroyInstance, false>,
+                 std::tuple<>>);
+  static_assert(
+    std::same_as<
+      DestroyContextImpl<VkCommandBuffer, PFN_vkFreeCommandBuffers, true>,
+      std::tuple<VkDevice, VkCommandPool>>);
+  // destroySingle<VkBuffer, PFN_vkDestroyBuffer, vkDestroyBuffer>(0, { 0 });
+  // destroyMulti<VkCommandBuffer, PFN_vkFreeCommandBuffers,
+  // vkFreeCommandBuffers>(
+  // std::array{ VkCommandBuffer(0) }, { 0, 0 });
+  auto info = VkBufferCreateInfo{};
+  auto a = Buffer{ VkDevice(), &info };
+  CustomConstructorImpl<VkBuffer>(
+    std::tuple<VkDevice, const VkBufferCreateInfo&>{ VkDevice(),
+                                                     VkBufferCreateInfo{} },
+    std::make_index_sequence<2>());
+  // vkAllocateCommandBuffers(VkDevice                           device,
+  //                          const VkCommandBufferAllocateInfo*
+  //                          pAllocateInfo, VkCommandBuffer*
+  //                          pCommandBuffers);
+  // vkCreateGraphicsPipelines(VkDevice                            device,
+  //                           VkPipelineCache pipelineCache, uint32_t
+  //                           createInfoCount, const
+  //                           VkGraphicsPipelineCreateInfo* pCreateInfos,
+  //                           const VkAllocationCallbacks*        pAllocator,
+  //                           VkPipeline* pPipelines);
+  // vkCreateDevice(VkPhysicalDevice             physicalDevice,
+  //                const VkDeviceCreateInfo*    pCreateInfo,
+  //                const VkAllocationCallbacks* pAllocator,
+  //                VkDevice*                    pDevice);
+  // vkFreeCommandBuffers(VkDevice               device,
+  //                      VkCommandPool          commandPool,
+  //                      uint32_t               commandBufferCount,
+  //                      const VkCommandBuffer* pCommandBuffers);
+}
+
+} // namespace vk2
