@@ -10,11 +10,16 @@ struct TypePack {
   template <template <typename...> typename T>
   using apply = T<P...>;
 
-  template <size_t N>
-  using at =
-    std::tuple_element_t<N, typename TypePack::template apply<std::tuple>>;
-
   static constexpr size_t size = sizeof...(P);
+
+  template <int Index>
+  static constexpr size_t RealIndex =
+    Index >= 0 ? Index : TypePack::size + Index;
+
+  template <int N>
+  using at =
+    std::tuple_element_t<RealIndex<N>,
+                         typename TypePack::template apply<std::tuple>>;
 };
 
 template <typename T, typename Seq>
@@ -46,8 +51,10 @@ using Merge = ToTypePack<decltype(std::tuple_cat(
 
 template <typename TypePack, typename Seq, size_t I>
 struct TakeS;
-template <typename TypePack, size_t I>
-using Take = TakeS<TypePack, std::make_index_sequence<TypePack::size>, I>::type;
+template <typename TypePack, int I>
+using Take = TakeS<TypePack,
+                   std::make_index_sequence<TypePack::size>,
+                   TypePack::template RealIndex<I>>::type;
 template <typename... Args, size_t... Is, size_t I>
 struct TakeS<TypePack<Args...>, std::index_sequence<Is...>, I> {
   using type = Merge < std::conditional_t<Is<I, TypePack<Args>, TypePack<>>...>;
@@ -55,8 +62,10 @@ struct TakeS<TypePack<Args...>, std::index_sequence<Is...>, I> {
 
 template <typename TypePack, typename Seq, size_t I>
 struct DropS;
-template <typename TypePack, size_t I>
-using Drop = DropS<TypePack, std::make_index_sequence<TypePack::size>, I>::type;
+template <typename TypePack, int I>
+using Drop = DropS<TypePack,
+                   std::make_index_sequence<TypePack::size>,
+                   TypePack::template RealIndex<I>>::type;
 template <typename... Args, size_t... Is, size_t I>
 struct DropS<TypePack<Args...>, std::index_sequence<Is...>, I> {
   using type =
@@ -67,15 +76,15 @@ template <typename TypePackT, typename T, size_t I>
 struct InsertS {
   using type = Merge<Take<TypePackT, I>, TypePack<T>, Drop<TypePackT, I>>;
 };
-template <typename TypePack, typename T, size_t I = TypePack::size>
-using Insert = InsertS<TypePack, T, I>::type;
+template <typename TypePack, typename T, int I = TypePack::size>
+using Insert = InsertS<TypePack, T, TypePack::template RealIndex<I>>::type;
 
 template <typename TypePackT, size_t I>
 struct RemoveS {
   using type = Merge<Take<TypePackT, I>, Drop<TypePackT, I + 1>>;
 };
-template <typename TypePack, size_t I = TypePack::size - 1>
-using Remove = RemoveS<TypePack, I>::type;
+template <typename TypePack, int I = -1>
+using Remove = RemoveS<TypePack, TypePack::template RealIndex<I>>::type;
 
 template <typename TypePack, template <typename...> typename Mapper>
 struct MapToS;
@@ -85,7 +94,7 @@ using MapTo = MapToS<TypePack, Mapper>::type;
 
 template <typename... TypeList, template <typename...> typename Mapper>
 struct MapToS<TypePack<TypeList...>, Mapper> {
-  using type = TypePack<Mapper<TypeList>...>;
+  using type = TypePack<typename Mapper<TypeList>::type...>;
 };
 
 template <typename TypePack, template <typename> typename Condition>
@@ -96,6 +105,39 @@ template <typename... Args, template <typename> typename Condition>
 struct FilterS<TypePack<Args...>, Condition> {
   using type = Merge<
     std::conditional_t<Condition<Args>::value, TypePack<Args>, TypePack<>>...>;
+};
+
+template <typename TypePack,
+          typename Seq,
+          template <typename>
+          typename Condition>
+struct FilterIndicesS;
+template <typename TypePack, template <typename> typename Condition>
+constexpr auto FilterIndices =
+  FilterIndicesS<TypePack,
+                 std::make_index_sequence<TypePack::size>,
+                 Condition>::value;
+template <typename... Args,
+          size_t... Is,
+          template <typename>
+          typename Condition>
+struct FilterIndicesS<TypePack<Args...>,
+                      std::index_sequence<Is...>,
+                      Condition> {
+  static constexpr auto all_indices =
+    std::array{ (Condition<Args>::value ? int(Is) : -1)... };
+  static consteval auto getIndicesNumber() -> size_t {
+    auto target = std::array<size_t, sizeof...(Args)>{};
+    return ranges::remove_copy(all_indices, target.begin(), -1).out -
+           target.begin();
+  }
+  template <size_t N>
+  static consteval auto getIndices() {
+    auto indices = std::array<size_t, N>{};
+    ranges::remove_copy(all_indices, indices.begin(), -1);
+    return indices;
+  }
+  static constexpr auto value = getIndices<getIndicesNumber()>();
 };
 
 /**
@@ -140,8 +182,8 @@ using FuncArgs = Remove<FuncInfo<Func>, 0>;
  * @brief get the parameter type of a function with index
  * can not use for a overload function!
  */
-template <uint32_t index, typename Func>
-using FuncArg = FuncInfo<Func>::template at<index + 1>;
+// template <uint32_t index, typename Func>
+// using FuncArg = FuncInfo<Func>::template at<index + 1>;
 
 /**
  * @brief get the parameter type count of a function
@@ -166,6 +208,10 @@ template <typename T>
 struct Condition {
   static constexpr bool value = std::same_as<T, char>;
 };
+template <typename T>
+struct Mapper {
+  using type = std::vector<T>;
+};
 
 void test() {
   using type_pack_1 = TypePack<int, float, double, char>;
@@ -180,16 +226,18 @@ void test() {
                 Merge<TypePack<int>, TypePack<float, double>, TypePack<char>>>);
   // At
   static_assert(std::same_as<char, type_pack_1::at<3>>);
+  static_assert(std::same_as<char, type_pack_1::at<-1>>);
+  static_assert(std::same_as<double, type_pack_1::at<-2>>);
   // Take, Drop
   static_assert(
-    std::same_as<TypePack<int, float, double>, Take<type_pack_1, 3>>);
+    std::same_as<TypePack<int, float, double>, Take<type_pack_1, -1>>);
   static_assert(
     std::same_as<TypePack<float, double, char>, Drop<type_pack_1, 1>>);
   // Insert
   static_assert(std::same_as<TypePack<int, float, double>,
                              Insert<TypePack<int, float>, double>>);
   static_assert(std::same_as<TypePack<int, float, double>,
-                             Insert<TypePack<int, double>, float, 1>>);
+                             Insert<TypePack<int, double>, float, -1>>);
   // Remove
   static_assert(
     std::same_as<TypePack<float, double, char>, Remove<type_pack_1, 0>>);
@@ -197,9 +245,11 @@ void test() {
     std::same_as<TypePack<int, float, double>, Remove<type_pack_1>>);
   // MapTo
   static_assert(std::same_as<TypePack<std::vector<int>, std::vector<float>>,
-                             MapTo<TypePack<int, float>, std::vector>>);
+                             MapTo<TypePack<int, float>, Mapper>>);
   // Filter
   static_assert(std::same_as<TypePack<char>, Filter<type_pack_1, Condition>>);
+  static_assert(std::array<size_t, 1>{ 3 } ==
+                FilterIndices<type_pack_1, Condition>);
 }
 
 } // namespace test_TypePack
@@ -218,13 +268,19 @@ struct A {
   static auto bar(int, char, float, char[5]) -> float;
 };
 void test() {
-  static_assert(std::same_as<int, FuncArg<0, decltype(foo)>>);
-  static_assert(std::same_as<int, FuncArg<0, decltype(bar)>>);
-  static_assert(std::same_as<float, FuncArg<1, std::decay_t<decltype(foo)>>>);
-  static_assert(std::same_as<int, FuncArg<0, decltype(&A::foo)>>);
-  static_assert(std::same_as<float, FuncArg<2, A>>);
+  static_assert(
+    std::same_as<TypePack<void, int, float>, FuncInfo<decltype(foo)>>);
+  static_assert(
+    std::same_as<TypePack<void, int, float>, FuncInfo<decltype(bar)>>);
+  static_assert(std::same_as<TypePack<void, int, float>,
+                             FuncInfo<std::decay_t<decltype(foo)>>>);
+  static_assert(
+    std::same_as<TypePack<int, int, char, float>, FuncInfo<decltype(&A::foo)>>);
+  static_assert(
+    std::same_as<TypePack<std::string_view, char, int, float>, FuncInfo<A>>);
   // the type is decay
-  static_assert(std::same_as<char*, FuncArg<3, decltype(&A::bar)>>);
+  static_assert(std::same_as<TypePack<float, int, char, float, char*>,
+                             FuncInfo<decltype(&A::bar)>>);
 
   static_assert(2 == FuncArgCount<decltype(foo)>);
   static_assert(2 == FuncArgCount<std::decay_t<decltype(foo)>>);
