@@ -13,29 +13,31 @@ enum class FactoryIdentity {
 
 template <typename VkHandle>
 struct RegisterMeta;
+template <typename VkHandle, FactoryIdentity identity>
+struct FactoryMeta;
 
-template <typename VkHandle>
-constexpr auto creator = RegisterMeta<VkHandle>::creator;
-template <typename VkHandle>
-constexpr bool create_multi = RegisterMeta<VkHandle>::create_multi;
+template <typename VkHandle,
+          FactoryIdentity identity = FactoryIdentity::DEFAULT>
+using Meta = std::conditional_t<identity == FactoryIdentity::DEFAULT,
+                                RegisterMeta<VkHandle>,
+                                FactoryMeta<VkHandle, identity>>;
 template <typename VkHandle>
 constexpr auto destroyer = RegisterMeta<VkHandle>::destroyer;
 template <typename VkHandle>
 constexpr bool destroy_multi = RegisterMeta<VkHandle>::destroy_multi;
-template <typename VkHandle>
-constexpr auto destroy_ctx_mapper = RegisterMeta<VkHandle>::destroy_ctx_mapper;
-template <typename VkHandle>
-  requires requires() { RegisterMeta<VkHandle>::constructor_mapper; }
-constexpr auto constructor_mapper = RegisterMeta<VkHandle>::constructor_mapper;
+template <typename VkHandle, FactoryIdentity identity>
+constexpr auto creator = Meta<VkHandle, identity>::creator;
+template <typename VkHandle, FactoryIdentity identity>
+constexpr bool create_multi = Meta<VkHandle, identity>::create_multi;
 
 template <typename VkHandle, FactoryIdentity identity>
-struct FactoryMeta;
-
+constexpr auto destroy_ctx_mapper =
+  Meta<VkHandle, identity>::mapper::destroy_ctx_mapper;
 template <typename VkHandle, FactoryIdentity identity>
-constexpr auto creator_factory = FactoryMeta<VkHandle, identity>::creator;
+constexpr auto constructor_mapper =
+  Meta<VkHandle, identity>::mapper::constructor_mapper;
 template <typename VkHandle, FactoryIdentity identity>
-constexpr auto destroy_ctx_mapper_factory =
-  FactoryMeta<VkHandle, identity>::destroy_ctx_mapper;
+constexpr auto count_mapper = Meta<VkHandle, identity>::mapper::count_mapper;
 
 template <typename Arg>
 concept AllocatorArg = std::same_as<Arg, const VkAllocationCallbacks*>;
@@ -43,6 +45,8 @@ concept AllocatorArg = std::same_as<Arg, const VkAllocationCallbacks*>;
 template <typename VkHandle>
 class DestroyManager {
 private:
+  template <typename, FactoryIdentity, typename>
+  friend class OriginFactory;
   static constexpr auto destroyer_ = destroyer<VkHandle>;
   static constexpr auto destroy_multi_ = destroy_multi<VkHandle>;
   template <typename Arg>
@@ -125,181 +129,133 @@ public:
   ~DestroyManager() { destroyResource(); }
 };
 
-template <typename VkHandle>
-struct OriginArgPackS {
-  using Creator = decltype(creator<VkHandle>);
+template <typename VkHandle,
+          FactoryIdentity identity = FactoryIdentity::DEFAULT,
+          typename ConstructArgPack =
+            toy::FuncArgs<decltype(constructor_mapper<VkHandle, identity>)>>
+class OriginFactory;
+template <typename VkHandle,
+          FactoryIdentity identity,
+          typename... ConstructArgs>
+class OriginFactory<VkHandle, identity, toy::TypePack<ConstructArgs...>> {
+private:
+  static constexpr auto creator_ = creator<VkHandle, identity>;
+  static constexpr auto create_multi_ = create_multi<VkHandle, identity>;
+  static constexpr auto destroy_multi_ = destroy_multi<VkHandle>;
+  static constexpr auto destroy_ctx_mapper_ =
+    destroy_ctx_mapper<VkHandle, identity>;
+  static constexpr auto constructor_mapper_ =
+    constructor_mapper<VkHandle, identity>;
+  static constexpr bool has_allocator_ =
+    AllocatorArg<typename toy::FuncArgs<decltype(creator_)>::template at<-2>>;
+
+  using Resource = DestroyManager<VkHandle>;
+
+public:
+  OriginFactory() = delete;
+  static auto create(ConstructArgs... args) {
+    auto origin_args = constructor_mapper_(args...);
+    auto context = destroy_ctx_mapper_(args...);
+    if constexpr (!create_multi_) {
+      return std::apply(
+        // 这里使用auto是因为这里的args是直接传给vkApi的，
+        // 用值传递的开销是最小的（即使是CreateInfo也已经转成了指针）
+        [&context](auto... args) {
+          auto resource = Resource{};
+          auto handle = VkHandle{};
+          if constexpr (has_allocator_) {
+            creator_(args..., nullptr, &handle);
+          } else {
+            creator_(args..., &handle);
+          }
+          if constexpr (destroy_multi_) {
+            resource.handle_.push_back(handle);
+          } else {
+            resource.handle_ = handle;
+          }
+          resource.context_ = std::forward<decltype(context)>(context);
+          return resource;
+        },
+        origin_args);
+    } else {
+      return std::apply(
+        [&context,
+         count = count_mapper<VkHandle, identity>(args...)](auto... args) {
+          auto handles = std::vector<VkHandle>(count);
+          if constexpr (has_allocator_) {
+            creator_(args..., nullptr, handles.data());
+          } else {
+            creator_(args..., handles.data());
+          }
+          if constexpr (destroy_multi_) {
+            auto resource = Resource{};
+            resource.handle_ = std::move(handles);
+            resource.context_ = std::forward<decltype(context)>(context);
+            return resource;
+          } else {
+            auto resources = std::vector<Resource>(count);
+            for (auto [handle, resource] : views::zip(handles, resources)) {
+              resource.handle_ = handle;
+              resource.context_ = context;
+            }
+            return resources;
+          }
+        },
+        origin_args);
+    }
+  }
+};
+
+template <typename Arg>
+concept IsConstPointer =
+  std::is_pointer_v<Arg> && std::is_const_v<std::remove_pointer_t<Arg>>;
+
+template <typename VkHandle, FactoryIdentity identity>
+struct ConstructArgPackS {
+private:
+  using Creator = decltype(creator<VkHandle, identity>);
   template <typename Arg>
   struct Condition {
     static constexpr bool value =
       !AllocatorArg<Arg> && !std::same_as<Arg, VkHandle*>;
   };
-  using type = toy::Filter<toy::FuncArgs<Creator>, Condition>;
-};
-template <typename VkHandle>
-using OriginArgPack = OriginArgPackS<VkHandle>::type;
-template <typename VkHandle>
-struct ConstructArgPackS;
-template <typename VkHandle>
-  requires(!requires() { constructor_mapper<VkHandle>(); })
-struct ConstructArgPackS<VkHandle> {
-private:
   template <typename Arg>
   struct Mapper {
     using type =
-      std::conditional_t<std::is_pointer_v<Arg> &&
-                           std::is_const_v<std::remove_pointer_t<Arg>>,
-                         std::remove_pointer_t<Arg>&,
-                         Arg>;
+      std::conditional_t<IsConstPointer<Arg>, std::remove_pointer_t<Arg>&, Arg>;
+    ;
   };
 
 public:
-  using type = toy::MapTo<OriginArgPack<VkHandle>, Mapper>;
+  using type =
+    toy::MapTo<toy::Filter<toy::FuncArgs<Creator>, Condition>, Mapper>;
 };
-
-template <typename VkHandle>
-  requires requires() { constructor_mapper<VkHandle>(); }
-struct ConstructArgPackS<VkHandle> {
-  using type = toy::FuncArgs<decltype(constructor_mapper<VkHandle>)>;
-};
-template <typename VkHandle>
-using ConstructArgPack = ConstructArgPackS<VkHandle>::type;
-
-template <
-  typename VkHandle,
-  typename OriginArgTuple = OriginArgPack<VkHandle>::template apply<std::tuple>>
-  requires(create_multi<VkHandle> && destroy_multi<VkHandle>) ||
-          (!create_multi<VkHandle> && !destroy_multi<VkHandle>)
-class OriginConstructor : public DestroyManager<VkHandle> {
-private:
-  static constexpr auto creator_ = creator<VkHandle>;
-  static constexpr auto create_multi_ = create_multi<VkHandle>;
-  static constexpr auto destroy_ctx_mapper_ = destroy_ctx_mapper<VkHandle>;
-  static constexpr bool has_allocator_ =
-    AllocatorArg<typename toy::FuncArgs<decltype(creator_)>::template at<-2>>;
-
-public:
-  OriginConstructor(const OriginConstructor&) = delete;
-  OriginConstructor(OriginConstructor&&) = default;
-  auto operator=(const OriginConstructor&) -> OriginConstructor& = delete;
-  auto operator=(OriginConstructor&&) -> OriginConstructor& = default;
-  OriginConstructor() = default;
-  ~OriginConstructor() = default;
-  OriginConstructor(OriginArgTuple args) {
-    std::apply(
-      [this](auto&... args) {
-        if constexpr (!create_multi_) {
-          if constexpr (has_allocator_) {
-            creator_(args..., nullptr, &this->handle_);
-          } else {
-            creator_(args..., &this->handle_);
-          }
-        } else {
-          if constexpr (has_allocator_) {
-            creator_(args..., nullptr, this->handle_.data());
-          } else {
-            creator_(args..., this->handle_.data());
-          }
-        }
-      },
-      args);
-  }
-};
-// template <typename VkHandle,
-//           FactoryIdentity identity,
-//           typename OriginArgTuple =
-//             OriginArgPack<VkHandle>::template apply<std::tuple>>
-//   requires(create_multi<VkHandle> && !destroy_multi<VkHandle>)
-// class OriginFactory {
-// private:
-//   static constexpr auto creator_ = creator_factory<VkHandle, identity>;
-//   static constexpr auto destroy_ctx_mapper_ =
-//     destroy_ctx_mapper_factory<VkHandle, identity>;
-//   static constexpr bool has_allocator_ =
-//     AllocatorArg<typename toy::FuncArgs<decltype(creator_)>::template at<-2>>;
-
-//   using Resource = DestroyManager<VkHandle>;
-// public:
-//   OriginFactory() = delete;
-//   static Resource create(OriginArgTuple args) {
-//     Resource resource;
-//     std::apply(
-//       [this](auto&... args) {
-//         if constexpr (!create_multi_) {
-//           if constexpr (has_allocator_) {
-//             creator_(args..., nullptr, &this->handle_);
-//           } else {
-//             creator_(args..., &this->handle_);
-//           }
-//         } else {
-//           if constexpr (has_allocator_) {
-//             creator_(args..., nullptr, this->handle_.data());
-//           } else {
-//             creator_(args..., this->handle_.data());
-//           }
-//         }
-//       },
-//       args);
-//   }
-// };
-
+template <typename VkHandle, FactoryIdentity identity>
+using ConstructArgPack = ConstructArgPackS<VkHandle, identity>::type;
+/**
+ * @brief 根据提供的creator得到construct_mapper，实现为将引用转换为指针
+ */
 template <typename VkHandle,
           FactoryIdentity identity = FactoryIdentity::DEFAULT,
-          typename ConstructArgPack = ConstructArgPack<VkHandle>>
-class CustomConstructor;
-
+          typename ConstructArgPack = ConstructArgPack<VkHandle, identity>>
+struct AutoConstructorMapper;
 template <typename VkHandle,
           FactoryIdentity identity,
           typename... ConstructArgs>
-  requires requires() { constructor_mapper<VkHandle>; }
-class CustomConstructor<VkHandle, identity, toy::TypePack<ConstructArgs...>>
-  : public OriginConstructor<VkHandle> {
-private:
-  using Base = OriginConstructor<VkHandle>;
-  static constexpr auto constructor_mapper_ = constructor_mapper<VkHandle>;
-  static constexpr auto create_multi_ = create_multi<VkHandle>;
-
-public:
-  CustomConstructor(ConstructArgs... args) {
-    if constexpr (!create_multi_) {
-      this->context_ = destroy_ctx_mapper_(args...);
+struct AutoConstructorMapper<VkHandle,
+                             identity,
+                             toy::TypePack<ConstructArgs...>> {
+  template <typename ConstructArg>
+  static auto argMapper(ConstructArg arg) {
+    if constexpr (std::is_lvalue_reference_v<ConstructArg>) {
+      return &arg;
     } else {
-      uint32_t resource_count;
-      std::tie(this->context_, resource_count) = destroy_ctx_mapper_(args...);
-      this->handle_.resize(resource_count);
+      return arg;
     }
-    Base::operator=(Base(constructor_mapper_(args...)));
   }
-};
-template <typename VkHandle,
-          FactoryIdentity identity,
-          typename... ConstructArgs>
-  requires(!requires() { constructor_mapper<VkHandle>; })
-class CustomConstructor<VkHandle, identity, toy::TypePack<ConstructArgs...>>
-  : public OriginConstructor<VkHandle> {
-private:
-  using Base = OriginConstructor<VkHandle>;
-
-  template <typename OriginArgPack>
-  struct ConstructMapper;
-  template <typename... OriginArgs>
-  struct ConstructMapper<toy::TypePack<OriginArgs...>> {
-    template <typename ConstructArg, typename ContextArg>
-    static auto argMapper(ConstructArg arg) -> ContextArg {
-      if constexpr (std::same_as<ConstructArg, ContextArg>) {
-        return arg;
-      } else if constexpr (std::same_as<std::remove_reference_t<ConstructArg>,
-                                        std::remove_pointer_t<ContextArg>>) {
-        return &arg;
-      }
-    }
-    static constexpr auto operator()(ConstructArgs... args) {
-      return std::tuple{ argMapper<ConstructArgs, OriginArgs>(args)... };
-    }
-  };
-
-public:
-  CustomConstructor(ConstructArgs... args)
-    : Base(ConstructMapper<OriginArgPack<VkHandle>>{}(args...)) {}
+  static constexpr auto operator()(ConstructArgs... args) {
+    return std::tuple{ argMapper<ConstructArgs>(args)... };
+  }
 };
 
 consteval auto normalMapper() {
@@ -317,13 +273,68 @@ consteval auto poolMapper(uint32_t CreateInfo::*count_member,
     };
 }
 
+template <typename VkHandle>
+struct NormalMapper {
+  static constexpr auto destroy_ctx_mapper = normalMapper();
+  static constexpr auto constructor_mapper = AutoConstructorMapper<VkHandle>{};
+};
+
+template <typename VkHandle, auto count_member, auto pool_member>
+struct PoolMapper;
+template <typename VkHandle,
+          typename AllocateInfo,
+          typename PoolHandle,
+          uint32_t AllocateInfo::*count_member,
+          PoolHandle AllocateInfo::*pool_member>
+struct PoolMapper<VkHandle, count_member, pool_member> {
+  template <bool is_count>
+  consteval static auto generic_mapper() {
+    return [](auto context_handle, const AllocateInfo& allocate_info) {
+      if constexpr (!is_count) {
+        return std::tuple{ context_handle, allocate_info.*pool_member };
+      } else {
+        return allocate_info.*count_member;
+      }
+    };
+  }
+  static constexpr auto destroy_ctx_mapper = generic_mapper<false>();
+  static constexpr auto count_mapper = generic_mapper<true>();
+  static constexpr auto constructor_mapper = AutoConstructorMapper<VkHandle>{};
+};
+
+template <typename VkHandle, FactoryIdentity identity>
+struct PipelineMapper {
+  using CreateInfo = std::remove_pointer_t<typename toy::FuncArgs<
+    decltype(creator<VkHandle, identity>)>::template at<3>>;
+
+  template <int type>
+  consteval static auto generic_mapper() {
+    return [](VkDevice              context_handle,
+              VkPipelineCache       cache,
+              std::span<CreateInfo> create_infos) {
+      if constexpr (type == 1) {
+        return std::tuple{ context_handle };
+      } else if constexpr (type == 2) {
+        return create_infos.size();
+      } else {
+        return std::tuple{
+          context_handle, cache, create_infos.size(), create_infos.data()
+        };
+      }
+    };
+  }
+  static constexpr auto destroy_ctx_mapper = generic_mapper<1>();
+  static constexpr auto count_mapper = generic_mapper<2>();
+  static constexpr auto constructor_mapper = generic_mapper<3>();
+};
+
 template <>
 struct RegisterMeta<VkBuffer> {
   static constexpr auto creator = vkCreateBuffer;
   static constexpr auto create_multi = false;
   static constexpr auto destroyer = vkDestroyBuffer;
   static constexpr auto destroy_multi = false;
-  static constexpr auto destroy_ctx_mapper = normalMapper();
+  using mapper = NormalMapper<VkBuffer>;
 };
 template <>
 struct RegisterMeta<VkCommandBuffer> {
@@ -331,9 +342,9 @@ struct RegisterMeta<VkCommandBuffer> {
   static constexpr auto create_multi = true;
   static constexpr auto destroyer = vkFreeCommandBuffers;
   static constexpr auto destroy_multi = true;
-  static constexpr auto destroy_ctx_mapper =
-    poolMapper(&VkCommandBufferAllocateInfo::commandBufferCount,
-               &VkCommandBufferAllocateInfo::commandPool);
+  using mapper = PoolMapper<VkCommandBuffer,
+                            &VkCommandBufferAllocateInfo::commandBufferCount,
+                            &VkCommandBufferAllocateInfo::commandPool>;
 };
 template <>
 struct RegisterMeta<VkPipeline> {
@@ -341,9 +352,6 @@ struct RegisterMeta<VkPipeline> {
   static constexpr auto create_multi = true;
   static constexpr auto destroyer = vkDestroyPipeline;
   static constexpr auto destroy_multi = false;
-  static constexpr auto destroy_ctx_mapper =
-    poolMapper(&VkCommandBufferAllocateInfo::commandBufferCount,
-               &VkCommandBufferAllocateInfo::commandPool);
 };
 template <typename VkHandle, FactoryIdentity identity>
 struct FactoryMeta;
@@ -351,16 +359,12 @@ template <>
 struct FactoryMeta<VkPipeline, FactoryIdentity::GRAPHIC> {
   static constexpr auto creator = vkCreateGraphicsPipelines;
   static constexpr auto create_multi = true;
+  using mapper = PipelineMapper<VkPipeline, FactoryIdentity::GRAPHIC>;
 };
-
-template <typename VkHandle, FactoryIdentity identity>
-class ResourceFactory;
-
-// template class CreateManager<VkBuffer>;
-using Buffer = CustomConstructor<VkBuffer>;
-// template class CreateManager<VkCommandBuffer>;
-using CommandBuffer = CustomConstructor<VkCommandBuffer>;
-using Pipeline = OriginConstructor<VkPipeline>;
+using Buffer = OriginFactory<VkBuffer>;
+using CommandBuffer = OriginFactory<VkCommandBuffer>;
+using GraphicPipelineFactory =
+  OriginFactory<VkPipeline, FactoryIdentity::GRAPHIC>;
 void test() {
   bool a =
     std::same_as<toy::FuncArgs<decltype(RegisterMeta<VkPipeline>::destroyer)>::
@@ -376,10 +380,17 @@ void test() {
   // vkFreeCommandBuffers>(
   // std::array{ VkCommandBuffer(0) }, { 0, 0 });
   auto info = VkBufferCreateInfo{};
-  auto d = Buffer{ VkDevice(), info };
+  auto d = Buffer::create(VkDevice(), info);
+  auto e = CommandBuffer::create(VkDevice(), VkCommandBufferAllocateInfo{});
+  auto f = GraphicPipelineFactory::create(
+    VkDevice(), VkPipelineCache(),
+    std::vector<VkGraphicsPipelineCreateInfo>{});
+  // auto e = create_multi<VkBuffer, FactoryIdentity::DEFAULT>;
+  // auto d = Buffer::create();
+
   // auto info = VkCommandBufferAllocateInfo{};
-  auto e = CommandBuffer{ VkDevice(), VkCommandBufferAllocateInfo{} };
-  auto f = Pipeline{};
+  // auto e = CommandBuffer{ VkDevice(), VkCommandBufferAllocateInfo{} };
+  // auto f = Pipeline{};
 
   // CustomConstructorImpl<VkBuffer>(
   // std::tuple<VkDevice, const VkBufferCreateInfo&>{ VkDevice(),
