@@ -4,73 +4,46 @@ import "vulkan_config.h";
 import std;
 import toy;
 
-/**
- * @brief 构造函数：context and create info, 直接调用
- * 成员： context
- * 析构函数：用到context
- * 需要知道： vkCreate, vkDestroy, isMulti
- * single: context+createinfo+nullptr
- * multi: context+createinfo, createinfo里面有数量
- */
 export namespace vk {
 
 template <typename Resource>
 consteval auto getResourceName() -> const char* {
-  if (std::same_as<Resource, VkInstance>) {
-    return "instance";
-  } else if (std::same_as<Resource, VkDebugUtilsMessengerEXT>) {
-    return "debug messenger";
-  } else if (std::same_as<Resource, VkPhysicalDevice>) {
-    return "physical device";
-  } else if (std::same_as<Resource, VkSurfaceKHR>) {
-    return "surface";
-  } else if (std::same_as<Resource, VkSwapchainKHR>) {
-    return "swapchain";
-  } else if (std::same_as<Resource, VkShaderModule>) {
-    return "shader module";
-  } else if (std::same_as<Resource, VkPipeline>) {
-    return "pipeline";
-  } else if (std::same_as<Resource, VkPipelineLayout>) {
-    return "pipeline layout";
-  } else if (std::same_as<Resource, VkRenderPass>) {
-    return "render pass";
-  } else if (std::same_as<Resource, VkPresentModeKHR>) {
-    return "present mode";
-  } else if (std::same_as<Resource, VkSurfaceFormatKHR>) {
-    return "surface format";
-  } else if (std::same_as<Resource, VkExtensionProperties>) {
-    return "extension properties";
-  } else if (std::same_as<Resource, VkLayerProperties>) {
-    return "layer properties";
-  } else if (std::same_as<Resource, VkQueueFamilyProperties>) {
-    return "queue family properties";
-  } else if (std::same_as<Resource, VkImage>) {
-    return "image";
-  } else if (std::same_as<Resource, VkImageView>) {
-    return "image view";
-  } else if (std::same_as<Resource, VkDescriptorSetLayout>) {
-    return "descriptor set layout";
-  } else if (std::same_as<Resource, VkDescriptorSet>) {
-    return "descriptor set";
-  } else if (std::same_as<Resource, VkDescriptorPool>) {
-    return "descriptor pool";
-  } else if (std::same_as<Resource, VkCommandBuffer>) {
-    return "command buffer";
-  } else if (std::same_as<Resource, VkCommandPool>) {
-    return "command pool";
-  } else if (std::same_as<Resource, VkDeviceMemory>) {
-    return "device memory";
-  } else if (std::same_as<Resource, VkBuffer>) {
-    return "buffer";
-  } else if (std::same_as<Resource, VkFramebuffer>) {
-    return "frame buffer";
-  } else if (std::same_as<Resource, VkSemaphore>) {
-    return "semaphore";
-  } else if (std::same_as<Resource, VkFence>) {
-    return "fence";
-  } else {
-    std::unreachable();
+#define REGISTER(type)                                                         \
+  if (std::same_as<Resource, type>) {                                          \
+    return #type;                                                              \
   }
+  REGISTER(VkInstance)
+  REGISTER(VkDebugUtilsMessengerEXT)
+  REGISTER(VkDevice)
+  REGISTER(VkPhysicalDevice)
+  REGISTER(VkSurfaceKHR)
+  REGISTER(VkSwapchainKHR)
+  REGISTER(VkPresentModeKHR)
+  REGISTER(VkSurfaceFormatKHR)
+
+  REGISTER(VkExtensionProperties)
+  REGISTER(VkLayerProperties)
+
+  REGISTER(VkImageView)
+  REGISTER(VkImage)
+
+  REGISTER(VkRenderPass)
+
+  REGISTER(VkShaderModule)
+  REGISTER(VkPipeline)
+  REGISTER(VkPipelineLayout)
+  REGISTER(VkQueueFamilyProperties)
+  REGISTER(VkDescriptorSetLayout)
+  REGISTER(VkDescriptorSet)
+  REGISTER(VkDescriptorPool)
+  REGISTER(VkCommandBuffer)
+  REGISTER(VkCommandPool)
+  REGISTER(VkDeviceMemory)
+  REGISTER(VkBuffer)
+  REGISTER(VkFramebuffer)
+  REGISTER(VkSemaphore)
+  REGISTER(VkFence)
+  std::unreachable();
 }
 
 void checkVkResult(VkResult vk_result, std::string_view action) {
@@ -84,10 +57,10 @@ template <typename Func, typename... Args>
   requires std::is_invocable_v<Func,
                                std::remove_reference_t<Args>...,
                                uint32_t*,
-                               toy::FuncArg<toy::FuncArgCount<Func> - 1, Func>>
+                               typename toy::FuncArgs<Func>::template at<-1>>
 auto getVkResources(Func func, Args&&... args) {
   using Resource =
-    std::remove_pointer_t<toy::FuncArg<toy::FuncArgCount<Func> - 1, Func>>;
+    std::remove_pointer_t<typename toy::FuncArgs<Func>::template at<-1>>;
   uint32_t count;
 
   constexpr bool need_check = std::same_as<toy::FuncRet<Func>, VkResult>;
@@ -109,15 +82,14 @@ auto getVkResources(Func func, Args&&... args) {
 }
 
 template <typename Func, typename... Args>
-  requires std::is_invocable_r_v<
-    VkResult,
-    Func,
-    std::remove_reference_t<Args>...,
-    const VkAllocationCallbacks*,
-    toy::FuncArg<toy::FuncArgCount<Func> - 1, Func>>
+  requires std::is_invocable_r_v<VkResult,
+                                 Func,
+                                 std::remove_reference_t<Args>...,
+                                 const VkAllocationCallbacks*,
+                                 typename toy::FuncArgs<Func>::template at<-1>>
 auto createVkResource(Func func, Args&&... args) {
   using Resource =
-    std::remove_pointer_t<toy::FuncArg<toy::FuncArgCount<Func> - 1, Func>>;
+    std::remove_pointer_t<typename toy::FuncArgs<Func>::template at<-1>>;
   Resource resource;
   checkVkResult(func(std::forward<Args>(args)..., nullptr, &resource),
                 std::format("create {}", getResourceName<Resource>()));
@@ -160,48 +132,6 @@ void checkAvaliableSupports(std::span<const char* const> requiress,
 template <typename T>
 concept CustomFormatter = std::is_same_v<T, VkExtensionProperties> ||
                           std::is_same_v<T, VkLayerProperties>;
-
-template <typename Derived, typename VkHandle>
-  requires std::is_pointer_v<VkHandle>
-class Resource {
-private:
-  VkHandle handle_ = VK_NULL_HANDLE;
-
-  auto self() -> Derived& { return static_cast<Derived&>(*this); }
-
-  void destroyResource_() {
-    if (handle_ != VK_NULL_HANDLE) {
-      this->self().destroyResource(handle_);
-    }
-  }
-
-public:
-  VkHandle get() const { return handle_; }
-
-protected:
-  using CRTPBase = Resource;
-
-  auto operator=(VkHandle handle) -> Derived& {
-    destroyResource_();
-    handle_ = handle;
-    return self();
-  }
-
-  Resource(const Resource&) = delete;
-  Resource(Resource&& resource) {
-    handle_ = resource.handle_;
-    resource.handle_ = VK_NULL_HANDLE;
-  }
-  auto operator=(const Resource&) -> Resource& = delete;
-  auto operator=(Resource&& resource) -> Resource& {
-    destroyResource_();
-    handle_ = resource.handle_;
-    resource.handle_ = VK_NULL_HANDLE;
-    return *this;
-  }
-  Resource(VkHandle handle) : handle_(handle) {}
-  Resource() = default;
-};
 
 } // namespace vk
 
