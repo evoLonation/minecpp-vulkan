@@ -9,18 +9,36 @@ export namespace vk {
 
 void checkGlfwError();
 
-class Window : public Resource<Window, GLFWwindow*> {
+class Window {
 private:
-  friend CRTPBase;
-  using CRTPBase::operator=;
+  void        destroyResource();
+  GLFWwindow* window_;
 
 public:
-  Window() = default;
-  Window(uint32_t width, uint32_t height, std::string_view title);
+  auto get() const -> GLFWwindow* { return window_; }
+  operator GLFWwindow*() const { return get(); }
 
-private:
-  void destroyResource(GLFWwindow* p_window);
+  Window(const Window&) = delete;
+  Window(Window&& window) : window_(window.window_) {
+    window.window_ = nullptr;
+  }
+  auto operator=(const Window&) -> Window& = delete;
+  auto operator=(Window&& window) -> Window& {
+    destroyResource();
+    window_ = window.window_;
+    window.window_ = nullptr;
+    return *this;
+  }
+  Window() : window_(nullptr) {}
+  Window(uint32_t width, uint32_t height, std::string_view title);
 };
+
+void Window::destroyResource() {
+  if (window_ != nullptr) {
+    glfwDestroyWindow(window_);
+    glfwTerminate();
+  }
+}
 
 Window::Window(uint32_t width, uint32_t height, std::string_view title) {
   try {
@@ -32,18 +50,13 @@ Window::Window(uint32_t width, uint32_t height, std::string_view title) {
     // 禁用改变窗口尺寸
     // glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
-    *this = glfwCreateWindow(width, height, title.data(), nullptr, nullptr);
+    window_ = glfwCreateWindow(width, height, title.data(), nullptr, nullptr);
 
     checkGlfwError();
   } catch (const std::exception&) {
     glfwTerminate();
     throw;
   }
-}
-
-void Window::destroyResource(GLFWwindow* p_window) {
-  glfwDestroyWindow(p_window);
-  glfwTerminate();
 }
 
 void checkGlfwError() {

@@ -121,7 +121,7 @@ public:
   VulkanApplication& operator=(const VulkanApplication& other) = delete;
   VulkanApplication& operator=(VulkanApplication&& other) noexcept = delete;
 
-  [[nodiscard]] GLFWwindow* pWindow() const { return window_.get(); }
+  [[nodiscard]] GLFWwindow* pWindow() const { return window_; }
 
   auto recreateSwapchain() -> bool;
   void drawFrame();
@@ -148,14 +148,13 @@ private:
 
   Surface surface_;
 
-  VkDevice device_;
-  VkQueue  graphic_queue_;
-  VkQueue  present_queue_;
+  Device  device_;
+  VkQueue graphic_queue_;
+  VkQueue present_queue_;
 
-  Swapchain                swapchain_;
-  VkExtent2D               extent_;
-  std::vector<ImageView>   image_views_;
-  std::vector<VkImageView> image_view_handles_;
+  Swapchain              swapchain_;
+  VkExtent2D             extent_;
+  std::vector<ImageView> image_views_;
 
   VkRenderPass render_pass_;
 
@@ -211,9 +210,9 @@ private:
 VulkanApplication::VulkanApplication(uint32_t         width,
                                      uint32_t         height,
                                      std::string_view app_name)
-  : window_(), instance_(), surface_(), in_flight_index_(0),
+  : window_(), instance_(), surface_(), device_(), in_flight_index_(0),
     last_present_failed_(false) {
-  window_ = Window(width, height, app_name);
+  window_ = Window{ width, height, app_name };
 
   if constexpr (toy::enable_debug) {
     instance_.debug_config = DebugMessengerConfig{
@@ -222,19 +221,19 @@ VulkanApplication::VulkanApplication(uint32_t         width,
     };
     instance_.instance = createInstance(app_name, instance_.debug_config);
     instance_.debug_messenger =
-      createDebugMessenger(instance_.instance.get(), instance_.debug_config);
+      createDebugMessenger(instance_.instance, instance_.debug_config);
   } else {
     instance_.instance = createInstance(app_name);
   }
 
-  surface_ = createSurface(instance_.instance.get(), window_.get());
+  surface_ = createSurface(instance_.instance, window_);
 
   // VK_KHR_SWAPCHAIN_EXTENSION_NAME 对应的扩展用于支持交换链
   auto required_device_extensions =
     std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME };
   physical_device_info_ = pickPhysicalDevice(
-    instance_.instance.get(),
-    surface_.get(),
+    instance_.instance,
+    surface_,
     required_device_extensions,
     checkPhysicalDeviceSupport,
     checkSurfaceSupport,
@@ -249,7 +248,7 @@ VulkanApplication::VulkanApplication(uint32_t         width,
 
   std::vector<VkQueue> queues;
   std::tie(device_, queues) =
-    createLogicalDevice(physical_device_info_, required_device_extensions);
+    createDevice(physical_device_info_, required_device_extensions);
   graphic_queue_ = queues[0];
   present_queue_ = queues[1];
 
@@ -259,25 +258,26 @@ VulkanApplication::VulkanApplication(uint32_t         width,
   };
 
   std::tie(swapchain_, extent_) =
-    createSwapchain(surface_.get(),
+    createSwapchain(surface_,
                     device_,
                     physical_device_info_.capabilities,
                     physical_device_info_.surface_format,
                     physical_device_info_.present_mode,
-                    window_.get(),
+                    window_,
                     std::span(image_sharing_families),
                     VK_NULL_HANDLE)
       .value();
   image_views_ = createImageViews(
-    device_, swapchain_.get(), physical_device_info_.surface_format.format);
-  image_view_handles_ =
-    views::transform(image_views_,
-                     [](const auto& image_view) { return image_view.get(); }) |
-    ranges::to<std::vector>();
+    device_, swapchain_, physical_device_info_.surface_format.format);
   render_pass_ =
     createRenderPass(device_, physical_device_info_.surface_format.format);
-  framebuffers_ =
-    createFramebuffers(render_pass_, device_, extent_, image_view_handles_);
+  framebuffers_ = createFramebuffers(
+    render_pass_,
+    device_,
+    extent_,
+    views::transform(image_views_,
+                     [](const auto& image_view) { return image_view.get(); }) |
+      ranges::to<std::vector>());
   descriptor_set_layout_ = createDescriptorSetLayout(device_);
   auto vertex_info = Vertex2D::getVertexInfo();
   pipeline_resource_ =
@@ -299,7 +299,7 @@ VulkanApplication::VulkanApplication(uint32_t         width,
                              device_,
                              descriptor_pool_)) |
     views::transform(
-      [device = device_,
+      [device = device_.get(),
        descriptor_set_layout = descriptor_set_layout_,
        physical_device = physical_device_info_.device](auto pair) {
         auto [command_buffer, descriptor_set] = pair;
@@ -411,7 +411,7 @@ VulkanApplication::~VulkanApplication() {
   destroyGraphicsPipeline(pipeline_resource_, device_);
   destroyDescriptorSetLayout(descriptor_set_layout_, device_);
   destroyRenderPass(render_pass_, device_);
-  destroyLogicalDevice(device_);
+  toy::debug("你好");
 }
 
 auto VulkanApplication::recreateSwapchain() -> bool {
@@ -419,7 +419,7 @@ auto VulkanApplication::recreateSwapchain() -> bool {
   vkDeviceWaitIdle(device_);
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
     physical_device_info_.device,
-    surface_.get(),
+    surface_,
     &physical_device_info_.capabilities);
   auto old_swap_chain = std::move(swapchain_);
   auto old_image_views = std::move(image_views_);
@@ -427,14 +427,14 @@ auto VulkanApplication::recreateSwapchain() -> bool {
   auto queue_family_indices = physical_device_info_.queue_indices |
                               views::transform([](auto a) { return a.first; }) |
                               ranges::to<std::vector>();
-  if (auto ret = createSwapchain(surface_.get(),
+  if (auto ret = createSwapchain(surface_,
                                  device_,
                                  physical_device_info_.capabilities,
                                  physical_device_info_.surface_format,
                                  physical_device_info_.present_mode,
-                                 window_.get(),
+                                 window_,
                                  std::span(queue_family_indices),
-                                 old_swap_chain.get());
+                                 old_swap_chain);
       ret.has_value()) {
     std::tie(swapchain_, extent_) = std::move(ret.value());
   } else if (ret.error() == SwapchainCreateError::EXTENT_ZERO) {
@@ -444,13 +444,14 @@ auto VulkanApplication::recreateSwapchain() -> bool {
                 "SwapchainCreateError::EXTENT_ZERO");
   }
   image_views_ = createImageViews(
-    device_, swapchain_.get(), physical_device_info_.surface_format.format);
-  image_view_handles_ =
+    device_, swapchain_, physical_device_info_.surface_format.format);
+  framebuffers_ = createFramebuffers(
+    render_pass_,
+    device_,
+    extent_,
     views::transform(image_views_,
                      [](const auto& image_view) { return image_view.get(); }) |
-    ranges::to<std::vector>();
-  framebuffers_ =
-    createFramebuffers(render_pass_, device_, extent_, image_view_handles_);
+      ranges::to<std::vector>());
   destroyFramebuffers(old_framebuffers, device_);
   return true;
 }
@@ -481,7 +482,7 @@ void VulkanApplication::drawFrame() {
   auto     worker = workers_[in_flight_index_];
   uint32_t image_index;
   if (auto result = vkAcquireNextImageKHR(device_,
-                                          swapchain_.get(),
+                                          swapchain_,
                                           std::numeric_limits<uint64_t>::max(),
                                           worker.image_available_sema,
                                           VK_NULL_HANDLE,
@@ -535,12 +536,13 @@ void VulkanApplication::drawFrame() {
   checkVkResult(
     vkQueueSubmit(graphic_queue_, 1, &submit_info, worker.queue_batch_fence),
     "submit queue");
-  VkPresentInfoKHR present_info{
+  auto swapchain_handle = swapchain_.get();
+  auto present_info = VkPresentInfoKHR{
     .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
     .waitSemaphoreCount = 1,
     .pWaitSemaphores = &worker.render_finished_sema,
     .swapchainCount = 1,
-    .pSwapchains = &swapchain_.get(),
+    .pSwapchains = &swapchain_handle,
     .pImageIndices = &image_index,
     // .pResults: 当有多个 swapchain 时检查每个的result
   };

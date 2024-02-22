@@ -67,4 +67,4 @@ void checkThrowf(bool                        condition,
   }
 }
 
-} // namespace log
+} // namespace toy

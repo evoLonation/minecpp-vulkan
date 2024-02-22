@@ -1,6 +1,7 @@
 export module vulkan.device;
 
 import "vulkan_config.h";
+import vulkan.resource;
 import std;
 
 export namespace vk {
@@ -68,10 +69,9 @@ auto checkTransferQueue(const QueueFamilyCheckContext& ctx) -> bool;
  * logical device 相关
  * 创建 logical device, 得到 queue
  */
-auto createLogicalDevice(const PhysicalDeviceInfo& physical_device_info,
+auto createDevice(const PhysicalDeviceInfo& physical_device_info,
                          std::span<const char*>    required_extensions)
-  -> std::pair<VkDevice, std::vector<VkQueue>>;
-void destroyLogicalDevice(VkDevice device) noexcept;
+  -> std::pair<Device, std::vector<VkQueue>>;
 
 } // namespace vk
 

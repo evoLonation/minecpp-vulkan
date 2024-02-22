@@ -2,6 +2,7 @@ module vulkan.device;
 
 import "vulkan_config.h";
 import vulkan.tool;
+import vulkan.resource;
 import std;
 import toy;
 
@@ -206,9 +207,9 @@ auto checkTransferQueue(const QueueFamilyCheckContext& ctx) -> bool {
          (VK_QUEUE_TRANSFER_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_GRAPHICS_BIT);
 }
 
-auto createLogicalDevice(const PhysicalDeviceInfo& physical_device_info,
-                         std::span<const char*>    required_extensions)
-  -> std::pair<VkDevice, std::vector<VkQueue>> {
+auto createDevice(const PhysicalDeviceInfo& physical_device_info,
+                  std::span<const char*>    required_extensions)
+  -> std::pair<Device, std::vector<VkQueue>> {
   /*
    * 1. 创建 VkDeviceQueueCreateInfo 数组, 用于指定 logic device 中的队列
    * 2. 根据 queue create info 和 deviceFeatures_ 创建 device create info
@@ -252,22 +253,16 @@ auto createLogicalDevice(const PhysicalDeviceInfo& physical_device_info,
   // static_cast<uint32_t>(requiredLayers_.size());
   // createInfo.ppEnabledLayerNames = requiredLayers_.data();
 
-  VkDevice device;
-
-  if (vkCreateDevice(
-        physical_device_info.device, &create_info, nullptr, &device) !=
-      VK_SUCCESS) {
-    throw std::runtime_error("failed to create logical device!");
-  }
+  auto device = Device{ physical_device_info.device, create_info };
 
   auto queues = physical_device_info.queue_indices |
-                views::transform([device](auto pair) {
+                views::transform([device = device.get()](auto pair) {
                   VkQueue queue;
                   vkGetDeviceQueue(device, pair.first, pair.second, &queue);
                   return queue;
                 }) |
                 ranges::to<std::vector>();
-  return { device, queues };
+  return { std::move(device), queues };
 }
 
 void destroyLogicalDevice(VkDevice device) noexcept {
