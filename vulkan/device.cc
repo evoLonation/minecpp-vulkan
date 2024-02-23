@@ -2,8 +2,6 @@ module vulkan.device;
 
 import "vulkan_config.h";
 import vulkan.tool;
-import vulkan.resource;
-import std;
 import toy;
 
 namespace vk {

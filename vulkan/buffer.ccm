@@ -1,6 +1,7 @@
 export module vulkan.buffer;
 
 import "vulkan_config.h";
+import vulkan.resource;
 import vulkan.tool;
 import std;
 import glm;
@@ -75,14 +76,14 @@ auto createBuffer(VkDevice              device,
                   VkDeviceSize          buffer_size,
                   VkBufferUsageFlags    usage,
                   VkMemoryPropertyFlags property_flags)
-  -> std::pair<VkBuffer, VkDeviceMemory> {
+  -> std::pair<Buffer, Memory> {
   auto buffer_info = VkBufferCreateInfo{
     .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
     .size = buffer_size,
     .usage = usage,
     .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
   };
-  auto buffer = createVkResource(vkCreateBuffer, device, &buffer_info);
+  auto buffer = Buffer{ device, buffer_info };
   /*
    * alignment: The offset in bytes where the buffer begins in the allocated
    *  region of memory, depends on bufferInfo.usage and bufferInfo.flags.
@@ -114,19 +115,11 @@ auto createBuffer(VkDevice              device,
     .allocationSize = memory_requirements.size,
     .memoryTypeIndex = memory_type_index,
   };
-  auto vertex_buffer_memory =
-    createVkResource(vkAllocateMemory, device, &allocate_info);
+  auto vertex_buffer_memory = Memory{ device, allocate_info };
   // offset 是在一个内存给多个缓冲区用的时候设置的，要除的尽
   // memRequirements.alignment
   vkBindBufferMemory(device, buffer, vertex_buffer_memory, 0);
-  return { buffer, vertex_buffer_memory };
-}
-
-void destroyBuffer(VkBuffer       buffer,
-                   VkDeviceMemory memory,
-                   VkDevice       device) noexcept {
-  vkFreeMemory(device, memory, nullptr);
-  vkDestroyBuffer(device, buffer, nullptr);
+  return { std::move(buffer), std::move(vertex_buffer_memory) };
 }
 
 void copyBuffer(VkBuffer        src_buffer,
@@ -136,7 +129,7 @@ void copyBuffer(VkBuffer        src_buffer,
                 VkQueue         queue,
                 VkCommandBuffer command_buffer,
                 VkFence         fence) {
-  VkCommandBufferBeginInfo begin_info{
+  auto begin_info = VkCommandBufferBeginInfo{
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     .pInheritanceInfo = nullptr,
@@ -174,7 +167,7 @@ auto createDeviceLocalBuffer(std::span<const std::byte> buffer_data,
                              VkQueue                    transfer_queue,
                              VkCommandBuffer            transfer_command_buffer,
                              VkFence                    transfer_fence)
-  -> std::pair<VkBuffer, VkDeviceMemory> {
+  -> std::pair<Buffer, Memory> {
   auto buffer_size = buffer_data.size() * sizeof(byte);
   auto [staging_buffer, staging_memory] = createBuffer(
     device,
@@ -204,9 +197,7 @@ auto createDeviceLocalBuffer(std::span<const std::byte> buffer_data,
              transfer_command_buffer,
              transfer_fence);
 
-  destroyBuffer(staging_buffer, staging_memory, device);
-
-  return { vertex_buffer, vertex_memory };
+  return { std::move(vertex_buffer), std::move(vertex_memory) };
 }
 
 auto createVertexBuffer(ranges::contiguous_range auto&& vertex_data,
@@ -214,8 +205,7 @@ auto createVertexBuffer(ranges::contiguous_range auto&& vertex_data,
                         VkDevice                        device,
                         VkQueue                         transfer_queue,
                         VkCommandBuffer                 transfer_command_buffer,
-                        VkFence                         transfer_fence)
-  -> std::pair<VkBuffer, VkDeviceMemory> {
+                        VkFence transfer_fence) -> std::pair<Buffer, Memory> {
   return createDeviceLocalBuffer(std::as_bytes(std::span{ vertex_data }),
                                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                  physical_device,
@@ -230,8 +220,7 @@ auto createIndexBuffer(std::span<const uint16_t> vertex_indices,
                        VkDevice                  device,
                        VkQueue                   transfer_queue,
                        VkCommandBuffer           transfer_command_buffer,
-                       VkFence                   transfer_fence)
-  -> std::pair<VkBuffer, VkDeviceMemory> {
+                       VkFence transfer_fence) -> std::pair<Buffer, Memory> {
   return createDeviceLocalBuffer(std::as_bytes(vertex_indices),
                                  VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
                                  physical_device,

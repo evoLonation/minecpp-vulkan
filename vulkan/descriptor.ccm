@@ -1,6 +1,7 @@
 export module vulkan.descriptor;
 
 import "vulkan_config.h";
+import vulkan.resource;
 import vulkan.tool;
 import std;
 
@@ -8,7 +9,7 @@ export namespace vk {
 
 constexpr VkDescriptorType descriptor_type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 
-auto createDescriptorSetLayout(VkDevice device) -> VkDescriptorSetLayout {
+auto createDescriptorSetLayout(VkDevice device) -> DescriptorSetLayout {
   auto descriptor_set_binding = VkDescriptorSetLayoutBinding{
     .binding = 0,
     .descriptorType = descriptor_type,
@@ -21,17 +22,10 @@ auto createDescriptorSetLayout(VkDevice device) -> VkDescriptorSetLayout {
     .bindingCount = 1,
     .pBindings = &descriptor_set_binding,
   };
-  auto descriptor_set_layout = createVkResource(
-    vkCreateDescriptorSetLayout, device, &descriptor_set_layout_info);
-  return descriptor_set_layout;
+  return DescriptorSetLayout{ device, descriptor_set_layout_info };
 }
 
-void destroyDescriptorSetLayout(VkDescriptorSetLayout descriptor_set_layout,
-                                VkDevice              device) noexcept {
-  vkDestroyDescriptorSetLayout(device, descriptor_set_layout, nullptr);
-}
-
-auto createDescriptorPool(uint32_t size, VkDevice device) -> VkDescriptorPool {
+auto createDescriptorPool(uint32_t size, VkDevice device) -> DescriptorPool {
   // 每个类型的描述符的数量
   auto poolSize = VkDescriptorPoolSize{
     .type = descriptor_type,
@@ -46,18 +40,13 @@ auto createDescriptorPool(uint32_t size, VkDevice device) -> VkDescriptorPool {
     .poolSizeCount = 1,
     .pPoolSizes = &poolSize,
   };
-  return createVkResource(vkCreateDescriptorPool, device, &pool_create_info);
-}
-
-void destroyDescriptorPool(VkDescriptorPool descriptor_pool,
-                           VkDevice         device) noexcept {
-  vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
+  return DescriptorPool{ device, pool_create_info };
 }
 
 auto allocateDescriptorSets(
   std::span<const VkDescriptorSetLayout> descriptor_set_layouts,
   VkDevice                               device,
-  VkDescriptorPool descriptor_pool) -> std::vector<VkDescriptorSet> {
+  VkDescriptorPool                       descriptor_pool) -> DescriptorSets {
 
   auto allocate_info = VkDescriptorSetAllocateInfo{
     .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -65,21 +54,7 @@ auto allocateDescriptorSets(
     .descriptorSetCount = (uint32_t)descriptor_set_layouts.size(),
     .pSetLayouts = descriptor_set_layouts.data(),
   };
-  auto descriptor_sets =
-    std::vector<VkDescriptorSet>(descriptor_set_layouts.size());
-  checkVkResult(
-    vkAllocateDescriptorSets(device, &allocate_info, descriptor_sets.data()),
-    "allocate descriptor sets");
-  return descriptor_sets;
-}
-
-void freeDescriptorSets(std::span<const VkDescriptorSet> descriptor_sets,
-                        VkDevice                         device,
-                        VkDescriptorPool descriptor_tool) noexcept {
-  checkVkResult(
-    vkFreeDescriptorSets(
-      device, descriptor_tool, descriptor_sets.size(), descriptor_sets.data()),
-    "free descriptor sets");
+  return DescriptorSets{ device, allocate_info };
 }
 
 void updateDescriptorSet(VkDescriptorSet descriptor_set,

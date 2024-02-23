@@ -3,13 +3,12 @@ module vulkan.render;
 import "vulkan_config.h";
 import vulkan.tool;
 import vulkan.buffer;
-import std;
 import toy;
 
 namespace vk {
 
-auto createRenderPass(VkDevice device, VkFormat format) -> VkRenderPass {
-  VkAttachmentDescription color_attachment{
+auto createRenderPass(VkDevice device, VkFormat format) -> RenderPass {
+  auto color_attachment = VkAttachmentDescription{
     .format = format,
     .samples = VK_SAMPLE_COUNT_1_BIT,
     // VK_ATTACHMENT_LOAD_OP_LOAD: 保留 attachment 中现有内容
@@ -26,13 +25,13 @@ auto createRenderPass(VkDevice device, VkFormat format) -> VkRenderPass {
     .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
   };
-  VkAttachmentReference color_attachment_ref{
+  auto color_attachment_ref = VkAttachmentReference{
     // 引用的 attachment 的索引
     .attachment = 0,
     // 用到该 ref 的 subpass 过程中使用的布局，会自动转换
     .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
   };
-  VkSubpassDescription subpass{
+  auto subpass = VkSubpassDescription{
     // 还有 compute、 ray tracing 等等
     .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
     .colorAttachmentCount = 1,
@@ -48,7 +47,7 @@ auto createRenderPass(VkDevice device, VkFormat format) -> VkRenderPass {
   // 如果不主动定义从 VK_SUBPASS_EXTERNAL 到 第一个使用attachment的subpass
   // 的dependency
   // 就会隐式定义一个，VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT到VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
-  VkSubpassDependency dependency{
+  auto dependency = VkSubpassDependency{
     // VK_SUBPASS_EXTERNAL 代表整个render pass之前提交的命令
     // 而vkQueueSubmit中设置的semaphore wait operation就是 renderpass 之前提交的
     // 但是提交的这个命令的执行阶段是在VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT阶段
@@ -59,7 +58,7 @@ auto createRenderPass(VkDevice device, VkFormat format) -> VkRenderPass {
     .srcAccessMask = 0,
     .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
   };
-  VkRenderPassCreateInfo render_pass_create_info{
+  auto render_pass_create_info = VkRenderPassCreateInfo{
     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
     .attachmentCount = 1,
     .pAttachments = &color_attachment,
@@ -69,15 +68,11 @@ auto createRenderPass(VkDevice device, VkFormat format) -> VkRenderPass {
     .pDependencies = &dependency,
   };
 
-  return createVkResource(vkCreateRenderPass, device, &render_pass_create_info);
-}
-
-void destroyRenderPass(VkRenderPass render_pass, VkDevice device) noexcept {
-  vkDestroyRenderPass(device, render_pass, nullptr);
+  return RenderPass{ device, render_pass_create_info };
 }
 
 auto createShaderModule(std::string_view filepath, VkDevice device)
-  -> VkShaderModule {
+  -> ShaderModule {
   std::ifstream istrm{ filepath, std::ios::in | std::ios::binary };
   if (!istrm.is_open()) {
     toy::throwf("Open shader file {} failed!", filepath);
@@ -86,12 +81,12 @@ auto createShaderModule(std::string_view filepath, VkDevice device)
   std::copy(std::istreambuf_iterator<char>{ istrm },
             std::istreambuf_iterator<char>{},
             std::back_inserter(content));
-  VkShaderModuleCreateInfo create_info{
+  auto create_info = VkShaderModuleCreateInfo{
     .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
     .codeSize = content.size(),
     .pCode = reinterpret_cast<uint32_t*>(content.data()),
   };
-  return createVkResource(vkCreateShaderModule, device, &create_info);
+  return ShaderModule{ device, create_info };
 }
 
 auto createGraphicsPipeline(
@@ -108,7 +103,7 @@ auto createGraphicsPipeline(
   auto frag_shader = createShaderModule("frag.spv", device);
   // pSpecializationInfo 可以为 管道 配置着色器的常量，利于编译器优化
   // 类似 constexpr
-  std::array<VkPipelineShaderStageCreateInfo, 2> shader_stage_infos = {
+  auto shader_stage_infos = std::array{
     VkPipelineShaderStageCreateInfo{
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
       .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -126,18 +121,18 @@ auto createGraphicsPipeline(
   // 很多状态必须提前烘焙到管道中
   // 如果某些状态想要动态设置，可以用 VkPipelineDynamicStateCreateInfo
   // 设置 多个 VkDynamicState
-  std::array<VkDynamicState, 2> dynamic_states = {
+  auto dynamic_states = std::array{
     VK_DYNAMIC_STATE_VIEWPORT,
     VK_DYNAMIC_STATE_SCISSOR,
   };
 
-  VkPipelineDynamicStateCreateInfo dynamic_state_info{
+  auto dynamic_state_info = VkPipelineDynamicStateCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
     .dynamicStateCount = dynamic_states.size(),
     .pDynamicStates = dynamic_states.data(),
   };
 
-  VkPipelineVertexInputStateCreateInfo vertex_input_info{
+  auto vertex_input_info = VkPipelineVertexInputStateCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
     .vertexBindingDescriptionCount =
       (uint32_t)vertex_binding_descriptions.size(),
@@ -147,7 +142,7 @@ auto createGraphicsPipeline(
     .pVertexAttributeDescriptions = vertex_attribute_descriptions.data(),
   };
 
-  VkPipelineInputAssemblyStateCreateInfo input_assembly_info{
+  auto input_assembly_info = VkPipelineInputAssemblyStateCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
     // VK_PRIMITIVE_TOPOLOGY_POINT_LIST
     // VK_PRIMITIVE_TOPOLOGY_LINE_LIST: 不复用的线
@@ -160,7 +155,7 @@ auto createGraphicsPipeline(
     .primitiveRestartEnable = VK_FALSE,
   };
 
-  VkPipelineViewportStateCreateInfo viewport_state_info{
+  auto viewport_state_info = VkPipelineViewportStateCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
     // viewport 和 scissor 是动态的，这里设置为nullptr，等记录命令的时候动态设置
     .viewportCount = 1,
@@ -169,7 +164,7 @@ auto createGraphicsPipeline(
     .pScissors = nullptr,
   };
 
-  VkPipelineRasterizationStateCreateInfo rasterizer_state_info{
+  auto rasterizer_state_info = VkPipelineRasterizationStateCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
     // 超过深度范围的会被 clamp， 需要 gpu 支持
     .depthClampEnable = VK_FALSE,
@@ -186,7 +181,7 @@ auto createGraphicsPipeline(
     .lineWidth = 1.0f,
   };
 
-  VkPipelineMultisampleStateCreateInfo multisampling_state_info{
+  auto multisampling_state_info = VkPipelineMultisampleStateCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
     .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
     .sampleShadingEnable = VK_FALSE,
@@ -201,7 +196,7 @@ auto createGraphicsPipeline(
    * }
    * finalColor = finalColor & colorWriteMask;
    */
-  VkPipelineColorBlendAttachmentState color_blend_attachment{
+  auto color_blend_attachment = VkPipelineColorBlendAttachmentState{
     .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                       VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
   };
@@ -218,7 +213,7 @@ auto createGraphicsPipeline(
     color_blend_attachment.blendEnable = VK_FALSE;
   }
 
-  VkPipelineColorBlendStateCreateInfo color_blend_state_info{
+  auto color_blend_state_info = VkPipelineColorBlendStateCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
     // 启用第二种混合方法
     // Combine the old and new value using a bitwise operation
@@ -228,14 +223,14 @@ auto createGraphicsPipeline(
   };
 
   // 指定 uniform 全局变量
-  VkPipelineLayoutCreateInfo pipeline_layout_info{
+  auto pipeline_layout_info = VkPipelineLayoutCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
     .setLayoutCount = (uint32_t)descriptor_set_layouts.size(),
     .pSetLayouts = descriptor_set_layouts.data(),
   };
-  VkPipelineLayout pipeline_layout =
-    createVkResource(vkCreatePipelineLayout, device, &pipeline_layout_info);
-  VkGraphicsPipelineCreateInfo pipeline_create_info{
+  auto pipeline_layout = PipelineLayout{ device, pipeline_layout_info };
+
+  auto pipeline_create_info = VkGraphicsPipelineCreateInfo{
     .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
     .stageCount = shader_stage_infos.size(),
     .pStages = shader_stage_infos.data(),
@@ -255,30 +250,22 @@ auto createGraphicsPipeline(
     .basePipelineHandle = VK_NULL_HANDLE,
   };
 
-  VkPipeline pipeline = createVkResource(vkCreateGraphicsPipelines,
-                                         device,
-                                         VK_NULL_HANDLE,
-                                         1,
-                                         &pipeline_create_info);
-  return { vertex_shader, frag_shader, pipeline_layout, pipeline };
-}
-
-void destroyGraphicsPipeline(PipelineResource pipeline_resource,
-                             VkDevice         device) noexcept {
-  vkDestroyPipeline(device, pipeline_resource.pipeline, nullptr);
-  vkDestroyPipelineLayout(device, pipeline_resource.pipeline_layout, nullptr);
-  vkDestroyShaderModule(device, pipeline_resource.frag_shader, nullptr);
-  vkDestroyShaderModule(device, pipeline_resource.vertex_shader, nullptr);
+  auto pipeline = std::move(GraphicsPipelineFactory::create(
+    device, VK_NULL_HANDLE, std::span{ &pipeline_create_info, 1 })[0]);
+  return { std::move(vertex_shader),
+           std::move(frag_shader),
+           std::move(pipeline_layout),
+           std::move(pipeline) };
 }
 
 auto createFramebuffers(VkRenderPass                 render_pass,
                         VkDevice                     device,
                         VkExtent2D                   extent,
                         std::span<const VkImageView> image_views)
-  -> std::vector<VkFramebuffer> {
+  -> std::vector<Framebuffer> {
   return image_views |
          views::transform([render_pass, device, extent](auto image_view) {
-           VkFramebufferCreateInfo create_info{
+           auto create_info = VkFramebufferCreateInfo{
              .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
              .renderPass = render_pass,
              .attachmentCount = 1,
@@ -287,21 +274,14 @@ auto createFramebuffers(VkRenderPass                 render_pass,
              .height = extent.height,
              .layers = 1,
            };
-           return createVkResource(vkCreateFramebuffer, device, &create_info);
+           return Framebuffer{ device, create_info };
          }) |
          ranges::to<std::vector>();
 }
 
-void destroyFramebuffers(std::span<const VkFramebuffer> framebuffers,
-                         VkDevice                       device) noexcept {
-  for (auto framebuffer : framebuffers) {
-    vkDestroyFramebuffer(device, framebuffer, nullptr);
-  }
-}
-
 auto createCommandPool(VkDevice device, uint32_t graphic_family_index)
-  -> VkCommandPool {
-  VkCommandPoolCreateInfo pool_create_info{
+  -> CommandPool {
+  auto pool_create_info = VkCommandPoolCreateInfo{
     .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
     // VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT：允许重置单个command
     // buffer，否则就要重置命令池里的所有buffer
@@ -309,13 +289,13 @@ auto createCommandPool(VkDevice device, uint32_t graphic_family_index)
     .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
     .queueFamilyIndex = graphic_family_index,
   };
-  return createVkResource(vkCreateCommandPool, device, &pool_create_info);
+  return CommandPool{ device, pool_create_info };
 }
 
 auto allocateCommandBuffers(VkDevice      device,
                             VkCommandPool command_pool,
-                            uint32_t count) -> std::vector<VkCommandBuffer> {
-  VkCommandBufferAllocateInfo cbuffer_alloc_info{
+                            uint32_t      count) -> CommandBuffers {
+  auto cbuffer_alloc_info = VkCommandBufferAllocateInfo{
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
     .commandPool = command_pool,
     // VK_COMMAND_BUFFER_LEVEL_PRIMARY: 主缓冲区，类似于main
@@ -323,21 +303,7 @@ auto allocateCommandBuffers(VkDevice      device,
     .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
     .commandBufferCount = count,
   };
-  std::vector<VkCommandBuffer> command_buffers(count);
-  checkVkResult(vkAllocateCommandBuffers(
-                  device, &cbuffer_alloc_info, command_buffers.data()),
-                "command buffer");
-  return command_buffers;
-}
-
-void destroyCommandPool(VkCommandPool command_pool, VkDevice device) noexcept {
-  vkDestroyCommandPool(device, command_pool, nullptr);
-}
-
-void freeCommandBuffer(VkCommandBuffer command_buffer,
-                       VkDevice        device,
-                       VkCommandPool   command_pool) noexcept {
-  vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
+  return CommandBuffers{ device, cbuffer_alloc_info };
 }
 
 } // namespace vk

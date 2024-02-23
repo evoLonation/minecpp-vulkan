@@ -9,7 +9,8 @@ export namespace vk {
 
 enum class FactoryIdentity {
   DEFAULT,
-  GRAPHIC,
+  GRAPHICS,
+  COMPUTE,
 };
 
 template <typename VkHandle>
@@ -458,13 +459,38 @@ template class Resource<VkDevice>;
 using Device = Resource<VkDevice>;
 
 template <>
-struct ResourceMeta<VkBuffer> {
-  static constexpr auto creator = vkCreateBuffer;
+struct ResourceMeta<VkRenderPass> {
+  static constexpr auto creator = vkCreateRenderPass;
   static constexpr auto create_multi = false;
-  static constexpr auto destroyer = vkDestroyBuffer;
+  static constexpr auto destroyer = vkDestroyRenderPass;
   static constexpr auto destroy_multi = false;
-  using mapper = NormalMapper<VkBuffer>;
+  using mapper = NormalMapper<VkRenderPass>;
 };
+template class Resource<VkRenderPass>;
+using RenderPass = Resource<VkRenderPass>;
+
+template <>
+struct ResourceMeta<VkFramebuffer> {
+  static constexpr auto creator = vkCreateFramebuffer;
+  static constexpr auto create_multi = false;
+  static constexpr auto destroyer = vkDestroyFramebuffer;
+  static constexpr auto destroy_multi = false;
+  using mapper = NormalMapper<VkFramebuffer>;
+};
+template class Resource<VkFramebuffer>;
+using Framebuffer = Resource<VkFramebuffer>;
+
+template <>
+struct ResourceMeta<VkCommandPool> {
+  static constexpr auto creator = vkCreateCommandPool;
+  static constexpr auto create_multi = false;
+  static constexpr auto destroyer = vkDestroyCommandPool;
+  static constexpr auto destroy_multi = false;
+  using mapper = NormalMapper<VkCommandPool>;
+};
+template class Resource<VkCommandPool>;
+using CommandPool = Resource<VkCommandPool>;
+
 template <>
 struct ResourceMeta<VkCommandBuffer> {
   static constexpr auto creator = vkAllocateCommandBuffers;
@@ -475,27 +501,134 @@ struct ResourceMeta<VkCommandBuffer> {
                             &VkCommandBufferAllocateInfo::commandBufferCount,
                             &VkCommandBufferAllocateInfo::commandPool>;
 };
+template class Resource<VkCommandBuffer>;
+using CommandBuffers = Resource<VkCommandBuffer>;
 
 template <>
 struct ResourceMeta<VkPipeline> {
-  static constexpr auto creator = vkCreateGraphicsPipelines;
-  static constexpr auto create_multi = true;
   static constexpr auto destroyer = vkDestroyPipeline;
   static constexpr auto destroy_multi = false;
 };
-template <typename VkHandle, FactoryIdentity identity>
-struct FactoryMeta;
 template <>
-struct FactoryMeta<VkPipeline, FactoryIdentity::GRAPHIC> {
+struct FactoryMeta<VkPipeline, FactoryIdentity::GRAPHICS> {
   static constexpr auto creator = vkCreateGraphicsPipelines;
   static constexpr auto create_multi = true;
-  using mapper = PipelineMapper<VkPipeline, FactoryIdentity::GRAPHIC>;
+  using mapper = PipelineMapper<VkPipeline, FactoryIdentity::GRAPHICS>;
 };
-using Buffer = Resource<VkBuffer>;
-using CommandBuffer = Resource<VkCommandBuffer>;
+template <>
+struct FactoryMeta<VkPipeline, FactoryIdentity::COMPUTE> {
+  static constexpr auto creator = vkCreateComputePipelines;
+  static constexpr auto create_multi = true;
+  using mapper = PipelineMapper<VkPipeline, FactoryIdentity::COMPUTE>;
+};
+template class ResourceManager<VkPipeline>;
 using Pipeline = ResourceManager<VkPipeline>;
-using GraphicPipelineFactory =
-  ResourceFactory<VkPipeline, FactoryIdentity::GRAPHIC>;
+template class ResourceFactory<VkPipeline, FactoryIdentity::GRAPHICS>;
+using GraphicsPipelineFactory =
+  ResourceFactory<VkPipeline, FactoryIdentity::GRAPHICS>;
+template class ResourceFactory<VkPipeline, FactoryIdentity::COMPUTE>;
+using ComputePipelineFactory =
+  ResourceFactory<VkPipeline, FactoryIdentity::COMPUTE>;
 
+template <>
+struct ResourceMeta<VkShaderModule> {
+  static constexpr auto creator = vkCreateShaderModule;
+  static constexpr auto create_multi = false;
+  static constexpr auto destroyer = vkDestroyShaderModule;
+  static constexpr auto destroy_multi = false;
+  using mapper = NormalMapper<VkShaderModule>;
+};
+template class Resource<VkShaderModule>;
+using ShaderModule = Resource<VkShaderModule>;
+
+template <>
+struct ResourceMeta<VkPipelineLayout> {
+  static constexpr auto creator = vkCreatePipelineLayout;
+  static constexpr auto create_multi = false;
+  static constexpr auto destroyer = vkDestroyPipelineLayout;
+  static constexpr auto destroy_multi = false;
+  using mapper = NormalMapper<VkPipelineLayout>;
+};
+template class Resource<VkPipelineLayout>;
+using PipelineLayout = Resource<VkPipelineLayout>;
+
+template <>
+struct ResourceMeta<VkBuffer> {
+  static constexpr auto creator = vkCreateBuffer;
+  static constexpr auto create_multi = false;
+  static constexpr auto destroyer = vkDestroyBuffer;
+  static constexpr auto destroy_multi = false;
+  using mapper = NormalMapper<VkBuffer>;
+};
+template class Resource<VkBuffer>;
+using Buffer = Resource<VkBuffer>;
+
+template <>
+struct ResourceMeta<VkDeviceMemory> {
+  static constexpr auto creator = vkAllocateMemory;
+  static constexpr auto create_multi = false;
+  static constexpr auto destroyer = vkFreeMemory;
+  static constexpr auto destroy_multi = false;
+  using mapper = NormalMapper<VkDeviceMemory>;
+};
+template class Resource<VkDeviceMemory>;
+using Memory = Resource<VkDeviceMemory>;
+
+template <>
+struct ResourceMeta<VkDescriptorPool> {
+  static constexpr auto creator = vkCreateDescriptorPool;
+  static constexpr auto create_multi = false;
+  static constexpr auto destroyer = vkDestroyDescriptorPool;
+  static constexpr auto destroy_multi = false;
+  using mapper = NormalMapper<VkDescriptorPool>;
+};
+template class Resource<VkDescriptorPool>;
+using DescriptorPool = Resource<VkDescriptorPool>;
+
+template <>
+struct ResourceMeta<VkDescriptorSet> {
+  static constexpr auto creator = vkAllocateDescriptorSets;
+  static constexpr auto create_multi = true;
+  static constexpr auto destroyer = vkFreeDescriptorSets;
+  static constexpr auto destroy_multi = true;
+  using mapper = PoolMapper<VkDescriptorSet,
+                            &VkDescriptorSetAllocateInfo::descriptorSetCount,
+                            &VkDescriptorSetAllocateInfo::descriptorPool>;
+};
+template class Resource<VkDescriptorSet>;
+using DescriptorSets = Resource<VkDescriptorSet>;
+
+template <>
+struct ResourceMeta<VkDescriptorSetLayout> {
+  static constexpr auto creator = vkCreateDescriptorSetLayout;
+  static constexpr auto create_multi = false;
+  static constexpr auto destroyer = vkDestroyDescriptorSetLayout;
+  static constexpr auto destroy_multi = false;
+  using mapper = NormalMapper<VkDescriptorSetLayout>;
+};
+template class Resource<VkDescriptorSetLayout>;
+using DescriptorSetLayout = Resource<VkDescriptorSetLayout>;
+
+template <>
+struct ResourceMeta<VkSemaphore> {
+  static constexpr auto creator = vkCreateSemaphore;
+  static constexpr auto create_multi = false;
+  static constexpr auto destroyer = vkDestroySemaphore;
+  static constexpr auto destroy_multi = false;
+  using mapper = NormalMapper<VkSemaphore>;
+};
+template class Resource<VkSemaphore>;
+using Semaphore = Resource<VkSemaphore>;
+
+template <>
+struct ResourceMeta<VkFence> {
+  static constexpr auto creator = vkCreateFence;
+  static constexpr auto create_multi = false;
+  static constexpr auto destroyer = vkDestroyFence;
+  static constexpr auto destroy_multi = false;
+  using mapper = NormalMapper<VkFence>;
+};
+template class Resource<VkFence>;
+using Fence = Resource<VkFence>;
 
 } // namespace vk

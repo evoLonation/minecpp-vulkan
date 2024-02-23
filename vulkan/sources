@@ -13,3 +13,4 @@ render.cc
 buffer.ccm
 descriptor.ccm
 loader.cc
+sync.ccm

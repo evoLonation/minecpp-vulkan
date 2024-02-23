@@ -1,24 +1,18 @@
 export module vulkan.render;
 
 import "vulkan_config.h";
+import vulkan.resource;
 import std;
 
 export namespace vk {
 
-/*
- * render pass 相关
- */
-auto createRenderPass(VkDevice device, VkFormat format) -> VkRenderPass;
-void destroyRenderPass(VkRenderPass render_pass, VkDevice device) noexcept;
+auto createRenderPass(VkDevice device, VkFormat format) -> RenderPass;
 
-/*
- * pipeline 相关
- */
 struct PipelineResource {
-  VkShaderModule   vertex_shader;
-  VkShaderModule   frag_shader;
-  VkPipelineLayout pipeline_layout;
-  VkPipeline       pipeline;
+  ShaderModule   vertex_shader;
+  ShaderModule   frag_shader;
+  PipelineLayout pipeline_layout;
+  Pipeline       pipeline;
 };
 
 auto createGraphicsPipeline(
@@ -29,31 +23,17 @@ auto createGraphicsPipeline(
                                          vertex_attribute_descriptions,
   std::span<const VkDescriptorSetLayout> descriptor_set_layouts)
   -> PipelineResource;
-void destroyGraphicsPipeline(PipelineResource pipeline_resource,
-                             VkDevice         device) noexcept;
 
-/*
- * framebuffer 相关
- */
 auto createFramebuffers(VkRenderPass                 render_pass,
                         VkDevice                     device,
                         VkExtent2D                   extent,
                         std::span<const VkImageView> image_views)
-  -> std::vector<VkFramebuffer>;
-void destroyFramebuffers(std::span<const VkFramebuffer> framebuffers,
-                         VkDevice                       device) noexcept;
+  -> std::vector<Framebuffer>;
 
-/*
- * command buffer 相关
- */
 auto createCommandPool(VkDevice device, uint32_t graphic_family_index)
-  -> VkCommandPool;
-void destroyCommandPool(VkCommandPool command_pool, VkDevice device) noexcept;
+  -> CommandPool;
 auto allocateCommandBuffers(VkDevice      device,
                             VkCommandPool command_pool,
-                            uint32_t count) -> std::vector<VkCommandBuffer>;
-void freeCommandBuffer(VkCommandBuffer command_buffer,
-                       VkDevice        device,
-                       VkCommandPool   command_pool) noexcept;
+                            uint32_t      count) -> CommandBuffers;
 
 } // namespace vk

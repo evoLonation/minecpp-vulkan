@@ -1,0 +1,26 @@
+export module vulkan.sync;
+
+import "vulkan_config.h";
+import vulkan.resource;
+import std;
+
+export namespace vk {
+
+auto createSemaphore(VkDevice device) -> Semaphore {
+  VkSemaphoreCreateInfo create_info{
+    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+
+  };
+  return Semaphore{ device, create_info };
+}
+auto createFence(VkDevice device, bool signaled) -> Fence {
+  VkFenceCreateInfo create_info{
+    .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+  };
+  if (signaled) {
+    create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+  }
+  return Fence{ device, create_info };
+}
+
+} // namespace vk
