@@ -43,12 +43,12 @@ third_party_module_dir = ospath.join(third_party_dir, 'module')
 
 
 flags = [
-  'C:/Users/18389/msys2/mingw64/bin/clang', 
+  'clang', 
   '-std=c++23', 
   '-fexperimental-library', 
   '-nostdinc++', 
   '-nostdlib++', 
-  '-isystem', 'C:/Users/18389/msys2/mingw64/include/c++/v1', 
+  '-isystem', 'C:/Users/ZhengyangZhao/msys64/mingw64/include/c++/v1', 
   '-Wno-unused-command-line-argument',
   # for std module 
   '-Wno-reserved-module-identifier',
@@ -141,7 +141,7 @@ def exec_scan_deps(files):
       compile_database = []
       for file in files:
         output = file + '.o'
-        command = compile_flags + [file, '-o', output, '-IC:/Users/18389/msys64/mingw64/lib/clang/17/include']
+        command = compile_flags + [file, '-o', output, '-IC:/Users/ZhengyangZhao/msys64/mingw64/lib/clang/17/include']
         compile_database.append({
             'file': file,
             'directory': ospath.abspath('.'),

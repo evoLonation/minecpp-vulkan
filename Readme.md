@@ -1,5 +1,6 @@
 ## 环境配置
 - 安装cmake（用于构建第三方库）
+- 安装ninja
 - 安装msys2
 - 在msys2 mingw64中执行:
   - `pacman -S mingw-w64-x86_64-clang`
