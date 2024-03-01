@@ -25,6 +25,7 @@ target_name = 'hello.exe'
 
 # build产物相关
 build_dir = ospath.join(root_dir, 'build')
+gen_dir = ospath.join(root_dir, 'gen')
 os.makedirs(build_dir, exist_ok=True)
 ninja_build_file = ospath.join(build_dir, 'build.ninja')
 target_dir = ospath.join(build_dir, 'out')
@@ -110,6 +111,26 @@ def build_header_unit():
   print('header unit precompile done')
   return header_unit_outputs
 header_unit_outputs = build_header_unit()
+
+def gen_shader_code():
+  shader_src_dir = ospath.join(root_dir, 'shader')
+  array_decl = ''
+  map_init = 'export auto shader_code_map = std::map<std::string_view, std::span<std::byte>>{\n'
+  for shader_filename in os.listdir(shader_src_dir):
+    shader_file = ospath.join(shader_src_dir, shader_filename)
+    result = sp.run(f'glslc {shader_file} -o -', check=True, stdout=sp.PIPE)
+    shader_codes = list(result.stdout)
+    
+    arr = f"{{{', '.join(list(map(lambda x: f'std::byte{{{x}}}', shader_codes)))}}}"
+    variable_name = shader_filename.replace('.', '_')
+    array_decl += f"export auto {variable_name} = std::array<std::byte, {len(shader_codes)}>{arr};\n"
+    map_init += f"{{\"{shader_filename}\", {variable_name}}}, \n"
+  map_init += '};'
+  code = 'export module gen.shader_code;\nimport std;\n' + array_decl + map_init
+  with open(ospath.join(gen_dir, 'shader_code.ccm'), 'wt') as f:
+    f.write(code)
+
+gen_shader_code()
 
 # 所有文件路径都是相对于 root_dir 的规范化相对路径
 input_files = []

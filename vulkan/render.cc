@@ -3,6 +3,7 @@ module vulkan.render;
 import "vulkan_config.h";
 import vulkan.tool;
 import vulkan.buffer;
+import gen.shader_code;
 import toy;
 
 namespace vk {
@@ -71,17 +72,9 @@ auto createRenderPass(VkDevice device, VkFormat format) -> RenderPass {
   return RenderPass{ device, render_pass_create_info };
 }
 
-auto createShaderModule(std::string_view filepath, VkDevice device) -> ShaderModule {
-  std::ifstream istrm{ filepath, std::ios::in | std::ios::binary };
-  if (!istrm.is_open()) {
-    toy::throwf("Open shader file {} failed!", filepath);
-  }
-  std::vector<byte> content;
-  std::copy(
-    std::istreambuf_iterator<char>{ istrm },
-    std::istreambuf_iterator<char>{},
-    std::back_inserter(content)
-  );
+auto createShaderModule(std::string_view filename, VkDevice device) -> ShaderModule {
+  toy::checkThrowf(shader_code_map.contains(filename), "the shader file {} not exist", filename);
+  auto content = shader_code_map[filename];
   auto create_info = VkShaderModuleCreateInfo{
     .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
     .codeSize = content.size(),
@@ -99,8 +92,8 @@ auto createGraphicsPipeline(
 ) -> PipelineResource {
   constexpr bool enable_blending_color = false;
 
-  auto vertex_shader = createShaderModule("vert.spv", device);
-  auto frag_shader = createShaderModule("frag.spv", device);
+  auto vertex_shader = createShaderModule("hello.vert", device);
+  auto frag_shader = createShaderModule("hello.frag", device);
   // pSpecializationInfo 可以为 管道 配置着色器的常量，利于编译器优化
   // 类似 constexpr
   auto shader_stage_infos = std::array{
