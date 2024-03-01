@@ -108,9 +108,9 @@ private:
   }
 
 public:
-  auto get() const {
+  decltype(auto) get() const {
     if constexpr (!destroy_multi_) {
-      return handle_;
+      return static_cast<const VkHandle&>(handle_);
     } else {
       return std::span<const VkHandle>{ handle_ };
     }
@@ -439,6 +439,28 @@ struct ResourceMeta<VkImageView> {
 };
 template class Resource<VkImageView>;
 using ImageView = Resource<VkImageView>;
+
+template <>
+struct ResourceMeta<VkImage> {
+  static constexpr auto creator = vkCreateImage;
+  static constexpr auto create_multi = false;
+  static constexpr auto destroyer = vkDestroyImage;
+  static constexpr auto destroy_multi = false;
+  using mapper = NormalMapper<VkImage>;
+};
+template class Resource<VkImage>;
+using Image = Resource<VkImage>;
+
+template <>
+struct ResourceMeta<VkSampler> {
+  static constexpr auto creator = vkCreateSampler;
+  static constexpr auto create_multi = false;
+  static constexpr auto destroyer = vkDestroySampler;
+  static constexpr auto destroy_multi = false;
+  using mapper = NormalMapper<VkSampler>;
+};
+template class Resource<VkSampler>;
+using Sampler = Resource<VkSampler>;
 
 template <>
 struct ResourceMeta<VkDevice> {

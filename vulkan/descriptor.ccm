@@ -4,17 +4,19 @@ import "vulkan_config.h";
 import vulkan.resource;
 import vulkan.tool;
 import std;
+import toy;
 
 export namespace vk {
 
-constexpr VkDescriptorType descriptor_type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-
-auto createDescriptorSetLayout(VkDevice device) -> DescriptorSetLayout {
+auto createDescriptorSetLayout(VkDevice           device,
+                               VkDescriptorType   descriptor_type,
+                               VkShaderStageFlags stage)
+  -> DescriptorSetLayout {
   auto descriptor_set_binding = VkDescriptorSetLayoutBinding{
     .binding = 0,
     .descriptorType = descriptor_type,
     .descriptorCount = 1,
-    .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+    .stageFlags = stage,
     .pImmutableSamplers = nullptr,
   };
   auto descriptor_set_layout_info = VkDescriptorSetLayoutCreateInfo{
@@ -25,28 +27,39 @@ auto createDescriptorSetLayout(VkDevice device) -> DescriptorSetLayout {
   return DescriptorSetLayout{ device, descriptor_set_layout_info };
 }
 
-auto createDescriptorPool(uint32_t size, VkDevice device) -> DescriptorPool {
-  // 每个类型的描述符的数量
-  auto poolSize = VkDescriptorPoolSize{
-    .type = descriptor_type,
-    .descriptorCount = size,
-  };
+auto createUniformDescriptorSetLayout(VkDevice device) -> DescriptorSetLayout {
+  return createDescriptorSetLayout(
+    device, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT);
+}
+
+auto createSamplerDescriptorSetLayout(VkDevice device) -> DescriptorSetLayout {
+  return createDescriptorSetLayout(device,
+                                   VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                   VK_SHADER_STAGE_FRAGMENT_BIT);
+}
+
+auto createDescriptorPool(VkDevice                              device,
+                          uint32_t                              max_set_count,
+                          std::span<const VkDescriptorPoolSize> type_counts)
+  -> DescriptorPool {
+
   auto pool_create_info = VkDescriptorPoolCreateInfo{
     .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
     // VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT: 允许freeDescriptorSets
     .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
     // 会分配描述符集的最大数量
-    .maxSets = size,
-    .poolSizeCount = 1,
-    .pPoolSizes = &poolSize,
+    .maxSets = max_set_count,
+    .poolSizeCount = (uint32_t)type_counts.size(),
+    .pPoolSizes = type_counts.data(),
   };
   return DescriptorPool{ device, pool_create_info };
 }
 
 auto allocateDescriptorSets(
-  std::span<const VkDescriptorSetLayout> descriptor_set_layouts,
   VkDevice                               device,
-  VkDescriptorPool                       descriptor_pool) -> DescriptorSets {
+  VkDescriptorPool                       descriptor_pool,
+  std::span<const VkDescriptorSetLayout> descriptor_set_layouts)
+  -> DescriptorSets {
 
   auto allocate_info = VkDescriptorSetAllocateInfo{
     .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -57,14 +70,29 @@ auto allocateDescriptorSets(
   return DescriptorSets{ device, allocate_info };
 }
 
-void updateDescriptorSet(VkDescriptorSet descriptor_set,
-                         VkBuffer        buffer,
-                         VkDevice        device) {
-  auto src_buffer_info = VkDescriptorBufferInfo{
-    .buffer = buffer,
-    .offset = 0,
-    .range = VK_WHOLE_SIZE,
+void updateDescriptorSet(
+  VkDevice                                                  device,
+  VkDescriptorSet                                           descriptor_set,
+  std::variant<VkBuffer, std::pair<VkImageView, VkSampler>> source) {
+  using InfoVariant =
+    std::variant<VkDescriptorBufferInfo, VkDescriptorImageInfo>;
+  auto buffer_info_getter = [](VkBuffer buffer) -> InfoVariant {
+    return VkDescriptorBufferInfo{
+      .buffer = buffer,
+      .offset = 0,
+      .range = VK_WHOLE_SIZE,
+    };
   };
+  auto image_info_getter =
+    [](std::pair<VkImageView, VkSampler> image) -> InfoVariant {
+    return VkDescriptorImageInfo{
+      .sampler = image.second,
+      .imageView = image.first,
+      .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    };
+  };
+  auto src_info = std::visit(
+    toy::OverloadLambda{ buffer_info_getter, image_info_getter }, source);
   auto descriptor_set_write_info = VkWriteDescriptorSet{
     .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
     .dstSet = descriptor_set,
@@ -72,10 +100,17 @@ void updateDescriptorSet(VkDescriptorSet descriptor_set,
     // 数组起始索引
     .dstArrayElement = 0,
     .descriptorCount = 1,
-    .descriptorType = descriptor_type,
-    // 是descriptorCount个，一个对应一个descriptor
-    .pBufferInfo = &src_buffer_info,
   };
+  if (src_info.index() == 0) {
+    // 是descriptorCount个，一个对应一个descriptor
+    descriptor_set_write_info.pBufferInfo = &std::get<0>(src_info);
+    descriptor_set_write_info.descriptorType =
+      VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  } else {
+    descriptor_set_write_info.pImageInfo = &std::get<1>(src_info);
+    descriptor_set_write_info.descriptorType =
+      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  }
   vkUpdateDescriptorSets(device, 1, &descriptor_set_write_info, 0, nullptr);
 }
 

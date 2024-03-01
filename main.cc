@@ -17,23 +17,6 @@ void recordCommandBuffer(VkCommandBuffer                  command_buffer,
                          uint32_t                         index_count,
                          VkPipelineLayout                 pipeline_layout,
                          std::span<const VkDescriptorSet> descriptor_sets) {
-  VkCommandBufferBeginInfo begin_info{
-    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-    /** \param VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT specifies that each
-     * recording of the command buffer will only be submitted once, and the
-     * command buffer will be reset and recorded again between each submission.
-     * \param VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT specifies that a
-     * secondary command buffer is considered to be entirely inside a render
-     * pass. If this is a primary command buffer, then this bit is ignored.
-     * \param VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT specifies that a
-     * command buffer can be resubmitted to any queue of the same queue family
-     * while it is in the pending state, and recorded into multiple primary
-     * command buffers.*/
-    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    .pInheritanceInfo = nullptr,
-  };
-  checkVkResult(vkBeginCommandBuffer(command_buffer, &begin_info),
-                "begin command buffer");
   VkClearValue clearColor = { .color = {
                                 .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } };
   VkRenderPassBeginInfo render_pass_begin_info {
@@ -84,7 +67,6 @@ void recordCommandBuffer(VkCommandBuffer                  command_buffer,
                           nullptr);
   vkCmdDrawIndexed(command_buffer, index_count, 1, 0, 0, 0);
   vkCmdEndRenderPass(command_buffer);
-  checkVkResult(vkEndCommandBuffer(command_buffer), "end command buffer");
 }
 
 class VulkanApplication {
@@ -137,7 +119,8 @@ private:
 
   std::vector<Framebuffer> framebuffers_;
 
-  DescriptorSetLayout descriptor_set_layout_;
+  DescriptorSetLayout uniform_set_layout_;
+  DescriptorSetLayout sampler_set_layout_;
   PipelineResource    pipeline_resource_;
 
   CommandPool    graphics_command_pool_;
@@ -145,6 +128,8 @@ private:
 
   CommandBuffers graphics_command_buffers_;
   DescriptorSets descriptor_sets_;
+
+  VkDescriptorSet sampler_set_;
   struct Worker {
     VkCommandBuffer command_buffer;
     Semaphore       image_available_sema;
@@ -153,7 +138,7 @@ private:
     Buffer          uniform_buffer;
     Memory          uniform_memory;
     void*           uniform_memory_map;
-    VkDescriptorSet descriptor_set;
+    VkDescriptorSet uniform_set;
   };
   std::vector<Worker> workers_;
 
@@ -163,7 +148,7 @@ private:
 
   bool last_present_failed_;
 
-  using Vertex2D = Vertex<glm::vec2, glm::vec3>;
+  using Vertex2D = Vertex<glm::vec2, glm::vec3, glm::vec2>;
   std::vector<Vertex2D> vertex_data_;
   VkQueue               transfer_queue_;
   CommandPool           transfer_command_pool_;
@@ -177,10 +162,15 @@ private:
   Memory                index_buffer_memory_;
 
   struct UniformBufferObject {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
+    alignas(16) glm::mat4 model;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 proj;
   };
+
+  Image     texture_image_;
+  ImageView texture_image_view_;
+  Memory    texture_memory_;
+  Sampler   texture_sampler_;
 };
 
 VulkanApplication::VulkanApplication(uint32_t         width,
@@ -242,7 +232,7 @@ VulkanApplication::VulkanApplication(uint32_t         width,
                     std::span(image_sharing_families),
                     VK_NULL_HANDLE)
       .value();
-  image_views_ = createImageViews(
+  image_views_ = createSwapchainImageViews(
     device_, swapchain_, physical_device_info_.surface_format.format);
   render_pass_ =
     createRenderPass(device_, physical_device_info_.surface_format.format);
@@ -253,36 +243,55 @@ VulkanApplication::VulkanApplication(uint32_t         width,
     views::transform(image_views_,
                      [](const auto& image_view) { return image_view.get(); }) |
       ranges::to<std::vector>());
-  descriptor_set_layout_ = createDescriptorSetLayout(device_);
+  uniform_set_layout_ = createUniformDescriptorSetLayout(device_);
+  sampler_set_layout_ = createSamplerDescriptorSetLayout(device_);
+
   auto vertex_info = Vertex2D::getVertexInfo();
-  auto descriptor_set_layout_handle = descriptor_set_layout_.get();
-  pipeline_resource_ =
-    createGraphicsPipeline(device_,
-                           render_pass_,
-                           std::span{ &vertex_info.binding_description, 1 },
-                           vertex_info.attribute_descriptions,
-                           std::span{ &descriptor_set_layout_handle, 1 });
+  pipeline_resource_ = createGraphicsPipeline(
+    device_,
+    render_pass_,
+    std::array{ vertex_info.binding_description },
+    vertex_info.attribute_descriptions,
+    std::array{ uniform_set_layout_.get(), sampler_set_layout_.get() });
   graphics_command_pool_ =
     createCommandPool(device_, physical_device_info_.queue_indices[0].first);
-  int worker_count = 2;
-  descriptor_pool_ = createDescriptorPool(worker_count, device_);
+  int  worker_count = 2;
+  auto descriptor_type_counts =
+    std::array{ VkDescriptorPoolSize{
+                  .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                  .descriptorCount = (uint32_t)worker_count,
+                },
+                VkDescriptorPoolSize{
+                  .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                  .descriptorCount = 1,
+                } };
+  descriptor_pool_ =
+    createDescriptorPool(device_, worker_count + 1, descriptor_type_counts);
   graphics_command_buffers_ =
     allocateCommandBuffers(device_, graphics_command_pool_, worker_count);
-  descriptor_sets_ = allocateDescriptorSets(
-    views::repeat(descriptor_set_layout_.get(), worker_count) |
-      ranges::to<std::vector>(),
-    device_,
-    descriptor_pool_);
+  auto uniform_set_layouts =
+    views::repeat(uniform_set_layout_.get(), worker_count) |
+    ranges::to<std::vector>();
+
+  auto descriptor_set_layouts =
+    views::join(
+      std::array{ views::repeat(sampler_set_layout_.get(), 1),
+                  views::repeat(uniform_set_layout_.get(), worker_count) }) |
+    ranges::to<std::vector>();
+  descriptor_sets_ =
+    allocateDescriptorSets(device_, descriptor_pool_, descriptor_set_layouts);
+  sampler_set_ = descriptor_sets_.get()[0];
+  auto uniform_sets = descriptor_sets_.get() | views::drop(1);
   workers_ =
-    views::zip(graphics_command_buffers_.get(), descriptor_sets_.get()) |
+    views::zip(graphics_command_buffers_.get(), uniform_sets) |
     views::transform(
       [device = device_.get(),
-       descriptor_set_layout = descriptor_set_layout_.get(),
+       descriptor_set_layout = uniform_set_layout_.get(),
        physical_device = physical_device_info_.device](auto pair) {
         auto [command_buffer, descriptor_set] = pair;
         auto [uniform_buffer, uniform_memory] =
-          createBuffer(device,
-                       physical_device,
+          createBuffer(physical_device,
+                       device,
                        sizeof(UniformBufferObject),
                        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
@@ -298,15 +307,15 @@ VulkanApplication::VulkanApplication(uint32_t         width,
           .uniform_buffer = std::move(uniform_buffer),
           .uniform_memory = std::move(uniform_memory),
           .uniform_memory_map = map,
-          .descriptor_set = descriptor_set,
+          .uniform_set = descriptor_set,
         };
       }) |
     ranges::to<std::vector>();
   vertex_data_ = {
-    { { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
-    { { +0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f } },
-    { { +0.5f, +0.5f }, { 0.0f, 0.0f, 1.0f } },
-    { { -0.5f, +0.5f }, { 1.0f, 1.0f, 1.0f } },
+    { { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
+    { { +0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
+    { { +0.5f, +0.5f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
+    { { -0.5f, +0.5f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
   };
   vertex_indices = {
     0, 1, 2, 2, 3, 0,
@@ -319,19 +328,33 @@ VulkanApplication::VulkanApplication(uint32_t         width,
   transfer_command_buffer_ = transfer_command_buffer_container_.get()[0];
   transfer_fence_ = createFence(device_, false);
   std::tie(vertex_buffer_, vertex_buffer_memory_) =
-    createVertexBuffer(vertex_data_,
-                       physical_device_info_.device,
+    createVertexBuffer(physical_device_info_.device,
                        device_,
                        transfer_queue_,
                        transfer_command_buffer_,
+                       vertex_data_,
                        transfer_fence_);
   std::tie(index_buffer_, index_buffer_memory_) =
-    createIndexBuffer(vertex_indices,
-                      physical_device_info_.device,
+    createIndexBuffer(physical_device_info_.device,
                       device_,
                       transfer_queue_,
                       transfer_command_buffer_,
+                      vertex_indices,
                       transfer_fence_);
+  auto max_anisotropy =
+    physical_device_info_.properties.limits.maxSamplerAnisotropy;
+  std::tie(
+    this->texture_image_, this->texture_memory_, this->texture_image_view_) =
+    createTextureImage(physical_device_info_.device,
+                       device_,
+                       graphic_queue_,
+                       transfer_command_buffer_,
+                       transfer_fence_);
+  this->texture_sampler_ = createSampler(device_, max_anisotropy);
+  updateDescriptorSet(
+    device_,
+    sampler_set_,
+    std::pair{ this->texture_image_view_.get(), this->texture_sampler_.get() });
   // uniform_buffers_.resize(worker_count);
   // uniform_buffer_maps_.resize(worker_count);
   // for (int i = 0; i < worker_count; i++) {
@@ -392,7 +415,7 @@ auto VulkanApplication::recreateSwapchain() -> bool {
     toy::throwf("create swapchain return some error different to "
                 "SwapchainCreateError::EXTENT_ZERO");
   }
-  image_views_ = createImageViews(
+  image_views_ = createSwapchainImageViews(
     device_, swapchain_, physical_device_info_.surface_format.format);
   framebuffers_ = createFramebuffers(
     render_pass_,
@@ -423,12 +446,17 @@ void VulkanApplication::updateUniformBuffer(const Worker& worker) {
   ubo.proj[1][1] *= -1;
   std::memcpy(
     worker.uniform_memory_map, reinterpret_cast<void*>(&ubo), sizeof(ubo));
-  updateDescriptorSet(worker.descriptor_set, worker.uniform_buffer, device_);
+  updateDescriptorSet(device_, worker.uniform_set, worker.uniform_buffer);
 }
 
 void VulkanApplication::drawFrame() {
   auto&    worker = workers_[in_flight_index_];
   uint32_t image_index;
+
+  auto wait_fence = worker.queue_batch_fence.get();
+  vkWaitForFences(
+    device_, 1, &wait_fence, VK_TRUE, std::numeric_limits<uint64_t>::max());
+
   if (auto result = vkAcquireNextImageKHR(device_,
                                           swapchain_,
                                           std::numeric_limits<uint64_t>::max(),
@@ -448,48 +476,41 @@ void VulkanApplication::drawFrame() {
   } else {
     checkVkResult(result, "acquire next image");
   }
-  auto wait_fence = worker.queue_batch_fence.get();
-  vkWaitForFences(
-    device_, 1, &wait_fence, VK_TRUE, std::numeric_limits<uint64_t>::max());
+  // why vkResetFences after acquire image?
+  // because acquire image maybe call drawFrame() recursively, if vkResetFences
+  // befor acquire image, vkResetFences maybe call twice with only one signal
+  // operation by vkQueueSubmit
   vkResetFences(device_, 1, &wait_fence);
   updateUniformBuffer(worker);
-  vkResetCommandBuffer(worker.command_buffer, 0);
-  recordCommandBuffer(worker.command_buffer,
-                      render_pass_,
-                      pipeline_resource_.pipeline,
-                      extent_,
-                      framebuffers_[image_index],
-                      vertex_buffer_,
-                      index_buffer_,
-                      vertex_indices.size(),
-                      pipeline_resource_.pipeline_layout,
-                      std::span{ &worker.descriptor_set, 1 });
-  VkPipelineStageFlags wait_stage_mask =
-    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-  auto image_available_sema = worker.image_available_sema.get();
-  auto render_finished_sema = worker.render_finished_sema.get();
-  auto submit_info = VkSubmitInfo{
-    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-    .waitSemaphoreCount = 1,
-    // 对 pWaitSemaphores 中的每个 semaphore 都定义了 semaphore wait operation
-    // 触发阶段由 dst stage mask 定义
-    .pWaitSemaphores = &image_available_sema,
-    .pWaitDstStageMask = &wait_stage_mask,
-    .commandBufferCount = 1,
-    .pCommandBuffers = &worker.command_buffer,
-    .signalSemaphoreCount = 1,
-    .pSignalSemaphores = &render_finished_sema,
-  };
-  checkVkResult(
-    vkQueueSubmit(graphic_queue_, 1, &submit_info, worker.queue_batch_fence),
-    "submit queue");
-  auto swapchain_handle = swapchain_.get();
+  // vkBeginCommandBuffer 会隐式执行vkResetCommandBuffer
+  // vkResetCommandBuffer(worker.command_buffer, 0);
+  recordAndSubmit(
+    worker.command_buffer,
+    graphic_queue_,
+    [&]() {
+      recordCommandBuffer(worker.command_buffer,
+                          render_pass_,
+                          pipeline_resource_.pipeline,
+                          extent_,
+                          framebuffers_[image_index],
+                          vertex_buffer_,
+                          index_buffer_,
+                          vertex_indices.size(),
+                          pipeline_resource_.pipeline_layout,
+                          std::array{ worker.uniform_set, sampler_set_ });
+    },
+    std::array<std::pair<VkSemaphore, VkPipelineStageFlags>, 1>{
+      std::pair{ worker.image_available_sema.get(),
+                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT } },
+    std::array{ worker.render_finished_sema.get() },
+    worker.queue_batch_fence);
+
   auto present_info = VkPresentInfoKHR{
     .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
     .waitSemaphoreCount = 1,
-    .pWaitSemaphores = &render_finished_sema,
+    .pWaitSemaphores = &worker.render_finished_sema.get(),
     .swapchainCount = 1,
-    .pSwapchains = &swapchain_handle,
+    .pSwapchains = &swapchain_.get(),
     .pImageIndices = &image_index,
     // .pResults: 当有多个 swapchain 时检查每个的result
   };

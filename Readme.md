@@ -44,3 +44,6 @@ cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=cl
 - 直接在libc++目录中用cmake构建得到std的模块接口文件
 - 放到third_party中试探性构建，并注释掉会报错的#include和using
 - todo：详细步骤
+
+## stb_image
+- 直接github搜，把stb_image.h放third_party即可

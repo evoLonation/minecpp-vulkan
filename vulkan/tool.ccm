@@ -26,6 +26,7 @@ consteval auto getResourceName() -> const char* {
 
   REGISTER(VkImageView)
   REGISTER(VkImage)
+  REGISTER(VkSampler)
 
   REGISTER(VkRenderPass)
 

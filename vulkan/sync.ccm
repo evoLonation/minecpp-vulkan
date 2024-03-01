@@ -2,6 +2,7 @@ export module vulkan.sync;
 
 import "vulkan_config.h";
 import vulkan.resource;
+import vulkan.tool;
 import std;
 
 export namespace vk {
@@ -21,6 +22,17 @@ auto createFence(VkDevice device, bool signaled) -> Fence {
     create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
   }
   return Fence{ device, create_info };
+}
+
+/**
+ * @brief 等待一个fence，等待结束后reset
+ */
+void consumeFence(VkDevice device, VkFence fence) {
+  checkVkResult(
+    vkWaitForFences(
+      device, 1, &fence, VK_TRUE, std::numeric_limits<uint64_t>::max()),
+    "wait fences");
+  checkVkResult(vkResetFences(device, 1, &fence), "reset fence");
 }
 
 } // namespace vk

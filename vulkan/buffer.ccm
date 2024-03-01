@@ -3,6 +3,8 @@ export module vulkan.buffer;
 import "vulkan_config.h";
 import vulkan.resource;
 import vulkan.tool;
+import vulkan.command;
+import vulkan.sync;
 import std;
 import glm;
 import toy;
@@ -71,19 +73,13 @@ consteval auto Vertex<DataTypes...>::getVertexInfo()
   return { binding_description, attribute_descriptions };
 }
 
-auto createBuffer(VkDevice              device,
-                  VkPhysicalDevice      physical_device,
-                  VkDeviceSize          buffer_size,
-                  VkBufferUsageFlags    usage,
-                  VkMemoryPropertyFlags property_flags)
-  -> std::pair<Buffer, Memory> {
-  auto buffer_info = VkBufferCreateInfo{
-    .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-    .size = buffer_size,
-    .usage = usage,
-    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-  };
-  auto buffer = Buffer{ device, buffer_info };
+template <typename MemoryOwner>
+  requires std::same_as<MemoryOwner, VkBuffer> ||
+           std::same_as<MemoryOwner, VkImage>
+auto createMemory(VkPhysicalDevice      physical_device,
+                  VkDevice              device,
+                  MemoryOwner           owner,
+                  VkMemoryPropertyFlags property_flags) -> Memory {
   /*
    * alignment: The offset in bytes where the buffer begins in the allocated
    *  region of memory, depends on bufferInfo.usage and bufferInfo.flags.
@@ -91,7 +87,13 @@ auto createBuffer(VkDevice              device,
    *  buffer.
    */
   VkMemoryRequirements memory_requirements;
-  vkGetBufferMemoryRequirements(device, buffer, &memory_requirements);
+  if constexpr (std::same_as<MemoryOwner, VkBuffer>) {
+    vkGetBufferMemoryRequirements(device, owner, &memory_requirements);
+  } else if constexpr (std::same_as<MemoryOwner, VkImage>) {
+    vkGetImageMemoryRequirements(device, owner, &memory_requirements);
+  } else {
+    std::unreachable();
+  }
 
   VkPhysicalDeviceMemoryProperties memory_properties;
   vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
@@ -115,118 +117,134 @@ auto createBuffer(VkDevice              device,
     .allocationSize = memory_requirements.size,
     .memoryTypeIndex = memory_type_index,
   };
-  auto vertex_buffer_memory = Memory{ device, allocate_info };
+  return Memory{ device, allocate_info };
+}
+
+void copyToMemory(VkDevice                   device,
+                  VkDeviceMemory             memory,
+                  std::span<const std::byte> buffer_data) {
+  void* data;
+  auto  buffer_size = buffer_data.size();
+  checkVkResult(vkMapMemory(device, memory, 0, buffer_size, 0, &data),
+                "map memory");
+  std::memcpy(data, buffer_data.data(), buffer_size);
+  vkUnmapMemory(device, memory);
+}
+
+auto createBuffer(VkPhysicalDevice      physical_device,
+                  VkDevice              device,
+                  VkDeviceSize          buffer_size,
+                  VkBufferUsageFlags    usage,
+                  VkMemoryPropertyFlags property_flags)
+  -> std::pair<Buffer, Memory> {
+  auto buffer_info = VkBufferCreateInfo{
+    .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+    .size = buffer_size,
+    .usage = usage,
+    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+  };
+  auto buffer = Buffer{ device, buffer_info };
+  auto memory =
+    createMemory(physical_device, device, buffer.get(), property_flags);
   // offset 是在一个内存给多个缓冲区用的时候设置的，要除的尽
   // memRequirements.alignment
-  vkBindBufferMemory(device, buffer, vertex_buffer_memory, 0);
-  return { std::move(buffer), std::move(vertex_buffer_memory) };
+  vkBindBufferMemory(device, buffer, memory, 0);
+  return { std::move(buffer), std::move(memory) };
 }
 
-void copyBuffer(VkBuffer        src_buffer,
-                VkBuffer        dst_buffer,
-                VkDeviceSize    buffer_size,
-                VkDevice        device,
-                VkQueue         queue,
-                VkCommandBuffer command_buffer,
-                VkFence         fence) {
-  auto begin_info = VkCommandBufferBeginInfo{
-    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    .pInheritanceInfo = nullptr,
-  };
-  checkVkResult(vkBeginCommandBuffer(command_buffer, &begin_info),
-                "begin record copy buffer");
-  auto copy_info = VkBufferCopy{
-    // this offset is about buffer, not about memory
-    .srcOffset = 0,
-    .dstOffset = 0,
-    .size = buffer_size,
-  };
-  vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_info);
-  checkVkResult(vkEndCommandBuffer(command_buffer), "end record copy buffer");
-
-  auto submit_info = VkSubmitInfo{
-    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-    .waitSemaphoreCount = 0,
-    .commandBufferCount = 1,
-    .pCommandBuffers = &command_buffer,
-    .signalSemaphoreCount = 0,
-  };
-  checkVkResult(vkQueueSubmit(queue, 1, &submit_info, fence), "submit queue");
-  checkVkResult(
-    vkWaitForFences(
-      device, 1, &fence, VK_TRUE, std::numeric_limits<uint64_t>::max()),
-    "wait fences");
-  checkVkResult(vkResetFences(device, 1, &fence), "reset fence");
-}
-
-auto createDeviceLocalBuffer(std::span<const std::byte> buffer_data,
-                             VkBufferUsageFlagBits      usage,
-                             VkPhysicalDevice           physical_device,
-                             VkDevice                   device,
-                             VkQueue                    transfer_queue,
-                             VkCommandBuffer            transfer_command_buffer,
-                             VkFence                    transfer_fence)
+auto createStagingBuffer(VkPhysicalDevice           physical_device,
+                         VkDevice                   device,
+                         std::span<const std::byte> buffer_data)
   -> std::pair<Buffer, Memory> {
   auto buffer_size = buffer_data.size() * sizeof(byte);
   auto [staging_buffer, staging_memory] = createBuffer(
-    device,
     physical_device,
+    device,
     buffer_size,
     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+  copyToMemory(device, staging_memory, buffer_data);
+  return std::pair{ std::move(staging_buffer), std::move(staging_memory) };
+}
 
-  void* data;
-  checkVkResult(vkMapMemory(device, staging_memory, 0, buffer_size, 0, &data),
-                "map memory");
-  std::memcpy(data, buffer_data.data(), buffer_size);
-  vkUnmapMemory(device, staging_memory);
+void copyBuffer(VkDevice        device,
+                VkQueue         queue,
+                VkCommandBuffer command_buffer,
+                VkBuffer        src_buffer,
+                VkBuffer        dst_buffer,
+                VkDeviceSize    buffer_size,
+                VkFence         fence) {
+  auto recorder = [=]() {
+    auto copy_info = VkBufferCopy{
+      // this offset is about buffer, not about memory
+      .srcOffset = 0,
+      .dstOffset = 0,
+      .size = buffer_size,
+    };
+    vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_info);
+  };
+  recordAndSubmit(command_buffer, queue, recorder, {}, {}, fence);
+  consumeFence(device, fence);
+}
+
+auto createDeviceLocalBuffer(VkPhysicalDevice           physical_device,
+                             VkDevice                   device,
+                             VkQueue                    transfer_queue,
+                             VkCommandBuffer            transfer_command_buffer,
+                             std::span<const std::byte> buffer_data,
+                             VkBufferUsageFlagBits      usage,
+                             VkFence                    transfer_fence)
+  -> std::pair<Buffer, Memory> {
+  auto [staging_buffer, staging_memory] =
+    createStagingBuffer(physical_device, device, buffer_data);
+
+  auto buffer_size = buffer_data.size() * sizeof(byte);
 
   auto [vertex_buffer, vertex_memory] =
-    createBuffer(device,
-                 physical_device,
+    createBuffer(physical_device,
+                 device,
                  buffer_size,
                  VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage,
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-  copyBuffer(staging_buffer,
-             vertex_buffer,
-             buffer_size,
-             device,
+  copyBuffer(device,
              transfer_queue,
              transfer_command_buffer,
+             staging_buffer,
+             vertex_buffer,
+             buffer_size,
              transfer_fence);
 
   return { std::move(vertex_buffer), std::move(vertex_memory) };
 }
 
-auto createVertexBuffer(ranges::contiguous_range auto&& vertex_data,
-                        VkPhysicalDevice                physical_device,
+auto createVertexBuffer(VkPhysicalDevice                physical_device,
                         VkDevice                        device,
                         VkQueue                         transfer_queue,
                         VkCommandBuffer                 transfer_command_buffer,
+                        ranges::contiguous_range auto&& vertex_data,
                         VkFence transfer_fence) -> std::pair<Buffer, Memory> {
-  return createDeviceLocalBuffer(std::as_bytes(std::span{ vertex_data }),
-                                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                 physical_device,
+  return createDeviceLocalBuffer(physical_device,
                                  device,
                                  transfer_queue,
                                  transfer_command_buffer,
+                                 std::as_bytes(std::span{ vertex_data }),
+                                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                  transfer_fence);
 }
 
-auto createIndexBuffer(std::span<const uint16_t> vertex_indices,
-                       VkPhysicalDevice          physical_device,
+auto createIndexBuffer(VkPhysicalDevice          physical_device,
                        VkDevice                  device,
                        VkQueue                   transfer_queue,
                        VkCommandBuffer           transfer_command_buffer,
+                       std::span<const uint16_t> vertex_indices,
                        VkFence transfer_fence) -> std::pair<Buffer, Memory> {
-  return createDeviceLocalBuffer(std::as_bytes(vertex_indices),
-                                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                                 physical_device,
+  return createDeviceLocalBuffer(physical_device,
                                  device,
                                  transfer_queue,
                                  transfer_command_buffer,
+                                 std::as_bytes(vertex_indices),
+                                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
                                  transfer_fence);
 }
 

@@ -28,8 +28,8 @@ auto createSwapchain(VkSurfaceKHR                    surface,
                      VkSwapchainKHR                  old_swapchain)
   -> std::expected<std::pair<Swapchain, VkExtent2D>, SwapchainCreateError>;
 
-auto createImageViews(VkDevice       device,
-                      VkSwapchainKHR swapchain,
-                      VkFormat       format) -> std::vector<ImageView>;
+auto createSwapchainImageViews(VkDevice       device,
+                               VkSwapchainKHR swapchain,
+                               VkFormat       format) -> std::vector<ImageView>;
 
 } // namespace vk

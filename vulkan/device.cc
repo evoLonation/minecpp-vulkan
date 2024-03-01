@@ -159,7 +159,9 @@ auto checkPhysicalDeviceSupport(const DeviceCheckContext& ctx) -> bool {
            ctx.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
            "device not satisfied VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU") &&
          toy::checkDebugf(ctx.features.geometryShader == VK_TRUE,
-                          "device not support geometryShader feature");
+                          "device not support geometryShader feature") &&
+         toy::checkDebugf(ctx.features.samplerAnisotropy == VK_TRUE,
+                          "device not support samplerAnisotropy feature");
 }
 
 auto checkSurfaceSupport(const SurfaceCheckContext& ctx)

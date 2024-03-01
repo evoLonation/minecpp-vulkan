@@ -2,6 +2,7 @@ module vulkan.swapchain;
 
 import "vulkan_config.h";
 import vulkan.tool;
+import vulkan.image;
 
 import std;
 import toy;
@@ -110,33 +111,12 @@ auto createSwapchain(VkSurfaceKHR                    surface,
   return std::pair{ Swapchain{ device, create_info }, extent };
 }
 
-auto createImageViews(VkDevice       device,
-                      VkSwapchainKHR swapchain,
-                      VkFormat       format) -> std::vector<ImageView> {
+auto createSwapchainImageViews(VkDevice       device,
+                               VkSwapchainKHR swapchain,
+                               VkFormat format) -> std::vector<ImageView> {
   auto images = getVkResources(vkGetSwapchainImagesKHR, device, swapchain);
   return images | views::transform([device, format](VkImage image) {
-           auto create_info = VkImageViewCreateInfo{
-              .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-              .image = image,
-              .viewType = VK_IMAGE_VIEW_TYPE_2D,
-              .format = format,
-              // 颜色通道映射
-              .components = {
-                .r = VK_COMPONENT_SWIZZLE_IDENTITY,
-                .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-                .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-                .a = VK_COMPONENT_SWIZZLE_IDENTITY,
-              },
-              // view 访问 image 资源的范围
-              .subresourceRange = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1,
-              },
-            };
-           return ImageView{ device, create_info };
+           return createImageView(device, image, format);
          }) |
          ranges::to<std::vector>();
 }

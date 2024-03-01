@@ -1,0 +1,12 @@
+export module toy.helper;
+
+import std;
+
+export namespace toy {
+
+template <typename... Lambdas>
+struct OverloadLambda : public Lambdas... {
+  using Lambdas::operator()...;
+};
+
+} // namespace toy

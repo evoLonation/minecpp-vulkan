@@ -9,3 +9,5 @@ export import vulkan.render;
 export import vulkan.buffer;
 export import vulkan.descriptor;
 export import vulkan.sync;
+export import vulkan.command;
+export import vulkan.image;
