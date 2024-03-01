@@ -18,18 +18,18 @@ auto createSurface(VkInstance instance, GLFWwindow* p_window) -> Surface;
 enum class SwapchainCreateError {
   EXTENT_ZERO,
 };
-auto createSwapchain(VkSurfaceKHR                    surface,
-                     VkDevice                        device,
-                     const VkSurfaceCapabilitiesKHR& capabilities,
-                     VkSurfaceFormatKHR              surface_format,
-                     VkPresentModeKHR                present_mode,
-                     GLFWwindow*                     p_window,
-                     std::span<const uint32_t>       sharing_family_indices,
-                     VkSwapchainKHR                  old_swapchain)
-  -> std::expected<std::pair<Swapchain, VkExtent2D>, SwapchainCreateError>;
+auto createSwapchain(
+  VkSurfaceKHR                    surface,
+  VkDevice                        device,
+  const VkSurfaceCapabilitiesKHR& capabilities,
+  VkSurfaceFormatKHR              surface_format,
+  VkPresentModeKHR                present_mode,
+  GLFWwindow*                     p_window,
+  std::span<const uint32_t>       sharing_family_indices,
+  VkSwapchainKHR                  old_swapchain
+) -> std::expected<std::pair<Swapchain, VkExtent2D>, SwapchainCreateError>;
 
-auto createSwapchainImageViews(VkDevice       device,
-                               VkSwapchainKHR swapchain,
-                               VkFormat       format) -> std::vector<ImageView>;
+auto createSwapchainImageViews(VkDevice device, VkSwapchainKHR swapchain, VkFormat format)
+  -> std::vector<ImageView>;
 
 } // namespace vk

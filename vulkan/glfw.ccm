@@ -19,9 +19,7 @@ public:
   operator GLFWwindow*() const { return get(); }
 
   Window(const Window&) = delete;
-  Window(Window&& window) : window_(window.window_) {
-    window.window_ = nullptr;
-  }
+  Window(Window&& window) : window_(window.window_) { window.window_ = nullptr; }
   auto operator=(const Window&) -> Window& = delete;
   auto operator=(Window&& window) -> Window& {
     destroyResource();
@@ -63,10 +61,9 @@ void checkGlfwError() {
   const char* description;
 
   // todo: 使用generator实现
-  auto errors =
-    views::repeat(description) | views::take_while([&description](auto _) {
-      return glfwGetError(&description) != GLFW_NO_ERROR;
-    });
+  auto errors = views::repeat(description) | views::take_while([&description](auto _) {
+                  return glfwGetError(&description) != GLFW_NO_ERROR;
+                });
   if (!errors.empty()) {
     toy::throwf("{::}", errors);
   }

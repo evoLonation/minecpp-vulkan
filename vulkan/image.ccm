@@ -11,8 +11,7 @@ import vulkan.sync;
 
 export namespace vk {
 
-auto createImageView(VkDevice device, VkImage image, VkFormat format)
-  -> ImageView {
+auto createImageView(VkDevice device, VkImage image, VkFormat format) -> ImageView {
   auto create_info = VkImageViewCreateInfo{
     .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
     .pNext = nullptr,
@@ -39,25 +38,24 @@ auto createImageView(VkDevice device, VkImage image, VkFormat format)
   return ImageView{ device, create_info };
 }
 
-auto createTextureImage(VkPhysicalDevice physical_device,
-                        VkDevice         device,
-                        VkQueue          queue,
-                        VkCommandBuffer  command_buffer,
-                        VkFence          wait_fence)
-  -> std::tuple<Image, Memory, ImageView> {
+auto createTextureImage(
+  VkPhysicalDevice physical_device,
+  VkDevice         device,
+  VkQueue          queue,
+  VkCommandBuffer  command_buffer,
+  VkFence          wait_fence
+) -> std::tuple<Image, Memory, ImageView> {
   int   width, height, channels;
   auto* image_path = "textures/texture.jpg";
-  auto* pixels =
-    stbi_load(image_path, &width, &height, &channels, STBI_rgb_alpha);
-  auto image_size = static_cast<VkDeviceSize>(width * height * 4);
+  auto* pixels = stbi_load(image_path, &width, &height, &channels, STBI_rgb_alpha);
+  auto  image_size = static_cast<VkDeviceSize>(width * height * 4);
   if (pixels == nullptr) {
     toy::throwf("failed to load image {}", image_path);
   }
   auto image_data = std::as_bytes(std::span{ pixels, image_size });
   toy::debugf("image {} info: width {}, height {}", image_path, width, height);
 
-  auto [staging_buffer, staging_memory] =
-    createStagingBuffer(physical_device, device, image_data);
+  auto [staging_buffer, staging_memory] = createStagingBuffer(physical_device, device, image_data);
 
   stbi_image_free(pixels);
 
@@ -97,8 +95,8 @@ auto createTextureImage(VkPhysicalDevice physical_device,
     .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
   };
   auto image = Image{ device, image_info };
-  auto memory = createMemory(
-    physical_device, device, image.get(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  auto memory =
+    createMemory(physical_device, device, image.get(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
   vkBindImageMemory(device, image, memory, 0);
 
   auto image_view = createImageView(device, image, format);
@@ -108,55 +106,57 @@ auto createTextureImage(VkPhysicalDevice physical_device,
     VkImageLayout        layout;
   };
 
-  auto image_transitioner = [=](VkImage               image,
-                                const TransitionInfo& src_transition,
-                                const TransitionInfo& dst_transition) {
-    auto image_barrier = VkImageMemoryBarrier{
-      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-      .pNext = nullptr,
-      .srcAccessMask = src_transition.access_mask,
-      .dstAccessMask = dst_transition.access_mask,
-      .oldLayout = src_transition.layout,
-      .newLayout = dst_transition.layout,
-      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .image = image,
-      .subresourceRange =
-        VkImageSubresourceRange{
-          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-          .baseMipLevel = 0,
-          .levelCount = 1,
-          .baseArrayLayer = 0,
-          .layerCount = 1,
-        },
+  auto image_transitioner =
+    [=](VkImage image, const TransitionInfo& src_transition, const TransitionInfo& dst_transition) {
+      auto image_barrier = VkImageMemoryBarrier{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = nullptr,
+        .srcAccessMask = src_transition.access_mask,
+        .dstAccessMask = dst_transition.access_mask,
+        .oldLayout = src_transition.layout,
+        .newLayout = dst_transition.layout,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange =
+          VkImageSubresourceRange{
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+          },
+      };
+      vkCmdPipelineBarrier(
+        command_buffer,
+        src_transition.stage_mask,
+        dst_transition.stage_mask,
+        //  VK_DEPENDENCY_BY_REGION_BIT:
+        //  实现可以分区域进行同步(前面写一部分，后面就可以先读一部分)
+        VK_DEPENDENCY_BY_REGION_BIT,
+        0,
+        nullptr,
+        0,
+        nullptr,
+        1,
+        &image_barrier
+      );
     };
-    vkCmdPipelineBarrier(
-      command_buffer,
-      src_transition.stage_mask,
-      dst_transition.stage_mask,
-      //  VK_DEPENDENCY_BY_REGION_BIT:
-      //  实现可以分区域进行同步(前面写一部分，后面就可以先读一部分)
-      VK_DEPENDENCY_BY_REGION_BIT,
-      0,
-      nullptr,
-      0,
-      nullptr,
-      1,
-      &image_barrier);
-  };
 
   auto recorder = [&]() {
-    image_transitioner(image,
-                       TransitionInfo{
-                         .stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                         .access_mask = 0,
-                         .layout = VK_IMAGE_LAYOUT_UNDEFINED,
-                       },
-                       TransitionInfo{
-                         .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
-                         .layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       });
+    image_transitioner(
+      image,
+      TransitionInfo{
+        .stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        .access_mask = 0,
+        .layout = VK_IMAGE_LAYOUT_UNDEFINED,
+      },
+      TransitionInfo{
+        .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+        .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+      }
+    );
 
     auto image_copy = VkBufferImageCopy{
       .bufferOffset = 0,
@@ -181,31 +181,28 @@ auto createTextureImage(VkPhysicalDevice physical_device,
         .depth = 1,
       },
     };
-    vkCmdCopyBufferToImage(command_buffer,
-                           staging_buffer,
-                           image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                           1,
-                           &image_copy);
+    vkCmdCopyBufferToImage(
+      command_buffer, staging_buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_copy
+    );
 
-    image_transitioner(image,
-                       TransitionInfo{
-                         // 一个伪阶段
-                         .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
-                         .layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       },
-                       TransitionInfo{
-                         .stage_mask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                         .access_mask = VK_ACCESS_SHADER_READ_BIT,
-                         .layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                       });
+    image_transitioner(
+      image,
+      TransitionInfo{
+        // 一个伪阶段
+        .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+        .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+      },
+      TransitionInfo{
+        .stage_mask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        .access_mask = VK_ACCESS_SHADER_READ_BIT,
+        .layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+      }
+    );
   };
   recordAndSubmit(command_buffer, queue, recorder, {}, {}, wait_fence);
   consumeFence(device, wait_fence);
-  return std::tuple{ std::move(image),
-                     std::move(memory),
-                     std::move(image_view) };
+  return std::tuple{ std::move(image), std::move(memory), std::move(image_view) };
 }
 
 auto createSampler(VkDevice device, float max_anisotropy) -> Sampler {

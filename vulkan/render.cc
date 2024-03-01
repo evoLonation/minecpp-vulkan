@@ -71,16 +71,17 @@ auto createRenderPass(VkDevice device, VkFormat format) -> RenderPass {
   return RenderPass{ device, render_pass_create_info };
 }
 
-auto createShaderModule(std::string_view filepath, VkDevice device)
-  -> ShaderModule {
+auto createShaderModule(std::string_view filepath, VkDevice device) -> ShaderModule {
   std::ifstream istrm{ filepath, std::ios::in | std::ios::binary };
   if (!istrm.is_open()) {
     toy::throwf("Open shader file {} failed!", filepath);
   }
   std::vector<byte> content;
-  std::copy(std::istreambuf_iterator<char>{ istrm },
-            std::istreambuf_iterator<char>{},
-            std::back_inserter(content));
+  std::copy(
+    std::istreambuf_iterator<char>{ istrm },
+    std::istreambuf_iterator<char>{},
+    std::back_inserter(content)
+  );
   auto create_info = VkShaderModuleCreateInfo{
     .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
     .codeSize = content.size(),
@@ -90,13 +91,12 @@ auto createShaderModule(std::string_view filepath, VkDevice device)
 }
 
 auto createGraphicsPipeline(
-  VkDevice                                         device,
-  VkRenderPass                                     render_pass,
-  std::span<const VkVertexInputBindingDescription> vertex_binding_descriptions,
-  std::span<const VkVertexInputAttributeDescription>
-                                         vertex_attribute_descriptions,
-  std::span<const VkDescriptorSetLayout> descriptor_set_layouts)
-  -> PipelineResource {
+  VkDevice                                           device,
+  VkRenderPass                                       render_pass,
+  std::span<const VkVertexInputBindingDescription>   vertex_binding_descriptions,
+  std::span<const VkVertexInputAttributeDescription> vertex_attribute_descriptions,
+  std::span<const VkDescriptorSetLayout>             descriptor_set_layouts
+) -> PipelineResource {
   constexpr bool enable_blending_color = false;
 
   auto vertex_shader = createShaderModule("vert.spv", device);
@@ -134,11 +134,9 @@ auto createGraphicsPipeline(
 
   auto vertex_input_info = VkPipelineVertexInputStateCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-    .vertexBindingDescriptionCount =
-      (uint32_t)vertex_binding_descriptions.size(),
+    .vertexBindingDescriptionCount = (uint32_t)vertex_binding_descriptions.size(),
     .pVertexBindingDescriptions = vertex_binding_descriptions.data(),
-    .vertexAttributeDescriptionCount =
-      (uint32_t)vertex_attribute_descriptions.size(),
+    .vertexAttributeDescriptionCount = (uint32_t)vertex_attribute_descriptions.size(),
     .pVertexAttributeDescriptions = vertex_attribute_descriptions.data(),
   };
 
@@ -203,8 +201,7 @@ auto createGraphicsPipeline(
   if constexpr (enable_blending_color) {
     color_blend_attachment.blendEnable = VK_TRUE;
     color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    color_blend_attachment.dstColorBlendFactor =
-      VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    color_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
     color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
     color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
@@ -251,20 +248,21 @@ auto createGraphicsPipeline(
   };
 
   auto pipeline = std::move(GraphicsPipelineFactory::create(
-    device, VK_NULL_HANDLE, std::span{ &pipeline_create_info, 1 })[0]);
+    device, VK_NULL_HANDLE, std::span{ &pipeline_create_info, 1 }
+  )[0]);
   return { std::move(vertex_shader),
            std::move(frag_shader),
            std::move(pipeline_layout),
            std::move(pipeline) };
 }
 
-auto createFramebuffers(VkRenderPass                 render_pass,
-                        VkDevice                     device,
-                        VkExtent2D                   extent,
-                        std::span<const VkImageView> image_views)
-  -> std::vector<Framebuffer> {
-  return image_views |
-         views::transform([render_pass, device, extent](auto image_view) {
+auto createFramebuffers(
+  VkRenderPass                 render_pass,
+  VkDevice                     device,
+  VkExtent2D                   extent,
+  std::span<const VkImageView> image_views
+) -> std::vector<Framebuffer> {
+  return image_views | views::transform([render_pass, device, extent](auto image_view) {
            auto create_info = VkFramebufferCreateInfo{
              .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
              .renderPass = render_pass,
@@ -279,8 +277,7 @@ auto createFramebuffers(VkRenderPass                 render_pass,
          ranges::to<std::vector>();
 }
 
-auto createCommandPool(VkDevice device, uint32_t graphic_family_index)
-  -> CommandPool {
+auto createCommandPool(VkDevice device, uint32_t graphic_family_index) -> CommandPool {
   auto pool_create_info = VkCommandPoolCreateInfo{
     .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
     // VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT：允许重置单个command
@@ -292,9 +289,8 @@ auto createCommandPool(VkDevice device, uint32_t graphic_family_index)
   return CommandPool{ device, pool_create_info };
 }
 
-auto allocateCommandBuffers(VkDevice      device,
-                            VkCommandPool command_pool,
-                            uint32_t      count) -> CommandBuffers {
+auto allocateCommandBuffers(VkDevice device, VkCommandPool command_pool, uint32_t count)
+  -> CommandBuffers {
   auto cbuffer_alloc_info = VkCommandBufferAllocateInfo{
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
     .commandPool = command_pool,

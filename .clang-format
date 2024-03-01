@@ -26,3 +26,9 @@ Cpp11BracedListStyle:	false
 PointerAlignment:	Left
 # 在namespace块的右大括号后自动添加注释
 FixNamespaceComments: true
+# 行长度限制
+ColumnLimit: 100
+# BlockIndent: 如果一行装不下总是换到下一行，同时闭括号也换行
+AlignAfterOpenBracket: BlockIndent
+# lambda 以什么为参照进行对齐
+# LambdaBodyIndentation: OuterScope

@@ -21,10 +21,9 @@ struct DebugMessengerConfig {
  * there is debug messenger when constructing and destroying the object.
  * @param config The lifetime must longer than constructed object
  */
-auto createInstance(std::string_view            app_name,
-                    const DebugMessengerConfig& config) -> Instance;
+auto createInstance(std::string_view app_name, const DebugMessengerConfig& config) -> Instance;
 auto createInstance(std::string_view app_name) -> Instance;
 
-auto createDebugMessenger(VkInstance                  instance,
-                          const DebugMessengerConfig& config) -> DebugMessenger;
+auto createDebugMessenger(VkInstance instance, const DebugMessengerConfig& config)
+  -> DebugMessenger;
 } // namespace vk

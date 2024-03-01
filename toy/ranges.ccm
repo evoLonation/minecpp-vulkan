@@ -85,20 +85,17 @@ public:
   decltype(auto) operator[](difference_type n) const { return *(self() + n); }
 
   friend auto operator-(Derived a, Derived b) -> difference_type {
-    return a.RandomAccessIteratorHelper::base() -
-           b.RandomAccessIteratorHelper::base();
+    return a.RandomAccessIteratorHelper::base() - b.RandomAccessIteratorHelper::base();
   }
 
   // 飞船运算符 = default， 编译器会自动生成所有比较运算符
   // 如果飞船运算符是用户自定义的，则编译器不会自动生成相等比较运算符
   // 考虑到容器类进行相等比较时，如果size不等则可以直接false，而进行三相比较则永远是O(n)的
   friend auto operator<=>(Derived a, Derived b) -> std::strong_ordering {
-    return a.RandomAccessIteratorHelper::base() <=>
-           b.RandomAccessIteratorHelper::base();
+    return a.RandomAccessIteratorHelper::base() <=> b.RandomAccessIteratorHelper::base();
   }
   friend auto operator==(Derived a, Derived b) -> bool {
-    return a.RandomAccessIteratorHelper::base() ==
-           b.RandomAccessIteratorHelper::base();
+    return a.RandomAccessIteratorHelper::base() == b.RandomAccessIteratorHelper::base();
   }
 };
 
@@ -109,10 +106,12 @@ struct AdaptorClosure {
   decltype(auto)      operator()(auto&& range) {
     return std::apply(
       [this, &range](auto&&... args) -> decltype(auto) {
-        return adaptor_(std::forward<decltype(range)>(range),
-                        std::forward<decltype(args)>(args)...);
+        return adaptor_(
+          std::forward<decltype(range)>(range), std::forward<decltype(args)>(args)...
+        );
       },
-      args_);
+      args_
+    );
   }
 
   AdaptorClosure(Adaptor adaptor, auto&&... args)
@@ -160,9 +159,9 @@ struct EnumerateAdaptor : AdaptorClosureHelper<EnumerateAdaptor> {
   }
 };
 
-template <ranges::forward_range                                    View,
-          std::indirect_binary_predicate<ranges::iterator_t<View>,
-                                         ranges::iterator_t<View>> Pred>
+template <
+  ranges::forward_range                                                              View,
+  std::indirect_binary_predicate<ranges::iterator_t<View>, ranges::iterator_t<View>> Pred>
   requires ranges::view<View> && std::is_object_v<Pred>
 class ChunkByView : public ranges::view_interface<ChunkByView<View, Pred>> {
 private:
@@ -198,10 +197,9 @@ public:
     friend SelfOperatorHelper<Iterator>;
     auto selfIncrement() {
       left_ = right_;
-      right_ = ranges::adjacent_find(
-        ranges::subrange(left_, base_->end()), [this](auto&& a, auto&& b) {
-          return !std::invoke(
-            *pred_, std::forward<decltype(a)>(a), std::forward<decltype(b)>(b));
+      right_ =
+        ranges::adjacent_find(ranges::subrange(left_, base_->end()), [this](auto&& a, auto&& b) {
+          return !std::invoke(*pred_, std::forward<decltype(a)>(a), std::forward<decltype(b)>(b));
         });
       if (right_ != base_->end()) {
         ++right_;
@@ -209,14 +207,13 @@ public:
     }
     auto selfDecrement() {
       right_ = left_;
-      left_ = ranges::adjacent_find(
-                ranges::subrange(base_->begin(), left_) | views::reverse,
-                [this](auto&& a, auto&& b) {
-                  return std::invoke(*pred_,
-                                     std::forward<decltype(a)>(a),
-                                     std::forward<decltype(b)>(b));
-                })
-                .base();
+      left_ =
+        ranges::adjacent_find(
+          ranges::subrange(base_->begin(), left_) | views::reverse,
+          [this](auto&& a, auto&& b) {
+            return std::invoke(*pred_, std::forward<decltype(a)>(a), std::forward<decltype(b)>(b));
+          }
+        ).base();
       if (left_ != base_->begin()) {
         --left_;
       }
@@ -230,15 +227,12 @@ public:
       return a.left_ == a.base_->end();
     }
 
-    auto operator*() const -> reference_type {
-      return value_type{ left_, right_ };
-    }
+    auto operator*() const -> reference_type { return value_type{ left_, right_ }; }
   };
   auto begin() { return Iterator{ base_, pred_ }; }
   auto end() { return Sentinel{}; }
 
-  ChunkByView(View view, Pred pred)
-    : base_(std::move(view)), pred_(std::move(pred)) {}
+  ChunkByView(View view, Pred pred) : base_(std::move(view)), pred_(std::move(pred)) {}
 };
 
 struct ChunkByAdaptor {
@@ -254,8 +248,7 @@ inline constexpr ChunkByAdaptor   chunkBy = ChunkByAdaptor{};
 // 给一个range，返回一个排序后的新range，该range为了省空间只会存储排序后的迭代器
 template <typename Range, class Comp = ranges::less, class Proj = std::identity>
   requires ranges::random_access_range<Range> && ranges::viewable_range<Range>
-class SortedView
-  : public ranges::view_interface<SortedView<Range, Comp, Proj>> {
+class SortedView : public ranges::view_interface<SortedView<Range, Comp, Proj>> {
 private:
   using BaseView = views::all_t<Range>;
   using BaseIterator = ranges::iterator_t<Range>;
@@ -284,9 +277,7 @@ public:
 
   private:
     friend RandomAccessIteratorHelper<Iterator>;
-    constexpr static IndexIterator Iterator::*randomAccessMember() {
-      return &Iterator::index_iter;
-    }
+    constexpr static IndexIterator Iterator::*randomAccessMember() { return &Iterator::index_iter; }
 
   public:
     auto operator*() const -> reference_type { return **index_iter; }
@@ -300,13 +291,11 @@ public:
     for (auto i = view_.begin(); i != view_.end(); i++, j++) {
       index_[j] = std::move(i);
     }
-    ranges::sort(
-      index_, std::move(comp), [this, proj](auto iter) { return proj(*iter); });
+    ranges::sort(index_, std::move(comp), [this, proj](auto iter) { return proj(*iter); });
   }
 };
 template <typename Range, class Comp = ranges::less, class Proj = std::identity>
-SortedView(Range&& range, Comp comp = {}, Proj proj = {})
-  -> SortedView<Range, Comp, Proj>;
+SortedView(Range&& range, Comp comp = {}, Proj proj = {}) -> SortedView<Range, Comp, Proj>;
 
 inline void test_EnumerateAdaptor() {
   std::array     arr{ "abc", "eddd" };
@@ -322,31 +311,29 @@ inline void test_EnumerateAdaptor() {
 inline void test_SortedRange() {
   static_assert(ranges::view<SortedView<std::vector<int>>>);
   static_assert(ranges::random_access_range<SortedView<std::vector<int>>>);
-  static_assert(
-    std::random_access_iterator<SortedView<std::vector<int>>::Iterator>);
+  static_assert(std::random_access_iterator<SortedView<std::vector<int>>::Iterator>);
   static_assert(!std::copyable<SortedView<std::vector<int>>>);
   auto view = views::iota(0, 10);
   auto view2 = view | views::reverse;
-  auto view3 = SortedView{ view,
-                           [](auto a, auto b) { return a > b; },
-                           [](auto a) { return a + 10; } };
+  auto view3 =
+    SortedView{ view, [](auto a, auto b) { return a > b; }, [](auto a) { return a + 10; } };
   auto view4 = SortedView{ view, {}, [](auto a) { return 10 - a; } };
   debug(view2);
-  checkThrowf(ranges::all_of(views::zip(view2, std::move(view3)),
-                             [](auto a) { return a.first == a.second; }),
-              "test_SortedRange");
-  checkThrowf(ranges::all_of(views::zip(view2, std::move(view4)),
-                             [](auto a) { return a.first == a.second; }),
-              "test_SortedRange");
+  checkThrowf(
+    ranges::all_of(views::zip(view2, std::move(view3)), [](auto a) { return a.first == a.second; }),
+    "test_SortedRange"
+  );
+  checkThrowf(
+    ranges::all_of(views::zip(view2, std::move(view4)), [](auto a) { return a.first == a.second; }),
+    "test_SortedRange"
+  );
 }
 
 inline void test_ChunkBy() {
-  static_assert(
-    ranges::forward_range<
-      ChunkByView<views::all_t<std::vector<int>>, std::ranges::not_equal_to>>);
-  static_assert(
-    ranges::bidirectional_range<
-      ChunkByView<views::all_t<std::vector<int>>, std::ranges::not_equal_to>>);
+  static_assert(ranges::forward_range<
+                ChunkByView<views::all_t<std::vector<int>>, std::ranges::not_equal_to>>);
+  static_assert(ranges::bidirectional_range<
+                ChunkByView<views::all_t<std::vector<int>>, std::ranges::not_equal_to>>);
   // todo
   // static_assert(ranges::common_range<ChunkByView<views::all_t<std::vector<int>>,
   // std::ranges::not_equal_to>>);
@@ -368,14 +355,13 @@ inline void test_ChunkBy() {
 }
 
 struct FindIf {
-  template <ranges::input_range Rp,
-            class Proj = std::identity,
-            std::indirect_unary_predicate<
-              std::projected<ranges::iterator_t<Rp>, Proj>> Pred>
+  template <
+    ranges::input_range Rp,
+    class Proj = std::identity,
+    std::indirect_unary_predicate<std::projected<ranges::iterator_t<Rp>, Proj>> Pred>
   auto operator()(Rp&& range, Pred pred, Proj proj = {}) const
     -> std::optional<ranges::range_value_t<Rp>> {
-    auto iter = ranges::find_if(
-      std::forward<Rp>(range), std::move(pred), std::move(proj));
+    auto iter = ranges::find_if(std::forward<Rp>(range), std::move(pred), std::move(proj));
     if (iter == ranges::end(range)) {
       return std::nullopt;
     } else {

@@ -7,11 +7,12 @@ import std;
 
 namespace vk {
 
-VKAPI_ATTR VkBool32 VKAPI_CALL
-debugHandler(VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
-             VkDebugUtilsMessageTypeFlagsEXT             message_type,
-             const VkDebugUtilsMessengerCallbackDataEXT* p_callback_data,
-             void*                                       p_user_data) {
+VKAPI_ATTR VkBool32 VKAPI_CALL debugHandler(
+  VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
+  VkDebugUtilsMessageTypeFlagsEXT             message_type,
+  const VkDebugUtilsMessengerCallbackDataEXT* p_callback_data,
+  void*                                       p_user_data
+) {
   auto& info = *reinterpret_cast<DebugMessengerConfig*>(p_user_data);
   /*
    * VkDebugUtilsMessageSeverityFlagBitsEXT : 严重性， VERBOSE, INFO, WARNING,
@@ -51,10 +52,12 @@ debugHandler(VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
       return "OTHER";
     }
   };
-  toy::debugf("validation layer: ({},{}) {}",
-              serverityGetter(message_severity),
-              typeGetter(message_type),
-              p_callback_data->pMessage);
+  toy::debugf(
+    "validation layer: ({},{}) {}",
+    serverityGetter(message_severity),
+    typeGetter(message_type),
+    p_callback_data->pMessage
+  );
 
   return VK_FALSE;
 }
@@ -71,14 +74,13 @@ auto getDebugMessengerInfo(const DebugMessengerConfig& config)
                    VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                    VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
     .pfnUserCallback = debugHandler,
-    .pUserData =
-      reinterpret_cast<void*>(const_cast<DebugMessengerConfig*>(&config)),
+    .pUserData = reinterpret_cast<void*>(const_cast<DebugMessengerConfig*>(&config)),
   };
 }
 
 auto createInstance(
-  std::string_view                                  app_name,
-  std::optional<VkDebugUtilsMessengerCreateInfoEXT> debug_info) -> Instance {
+  std::string_view app_name, std::optional<VkDebugUtilsMessengerCreateInfoEXT> debug_info
+) -> Instance {
   /*
    * 1. 创建appInfo
    * 2. 创建createInfo（指向appInfo）
@@ -100,10 +102,9 @@ auto createInstance(
   // glfw 需要的扩展用于 vulkan 与窗口对接
   // VK_EXT_debug_utils 扩展用于扩展debug功能
   uint32_t glfw_required_count;
-  auto glfw_required = glfwGetRequiredInstanceExtensions(&glfw_required_count);
+  auto     glfw_required = glfwGetRequiredInstanceExtensions(&glfw_required_count);
 
-  required_extensions.append_range(
-    std::span{ glfw_required, glfw_required + glfw_required_count });
+  required_extensions.append_range(std::span{ glfw_required, glfw_required + glfw_required_count });
 
   std::vector<const char*> required_layers;
 
@@ -115,11 +116,14 @@ auto createInstance(
   checkAvaliableSupports(
     required_extensions,
     getVkResources(vkEnumerateInstanceExtensionProperties, nullptr),
-    [](auto& extension) { return extension.extensionName; });
+    [](auto& extension) { return extension.extensionName; }
+  );
 
-  checkAvaliableSupports(required_layers,
-                         getVkResources(vkEnumerateInstanceLayerProperties),
-                         [](auto& layer) { return layer.layerName; });
+  checkAvaliableSupports(
+    required_layers,
+    getVkResources(vkEnumerateInstanceLayerProperties),
+    [](auto& layer) { return layer.layerName; }
+  );
 
   auto create_info = VkInstanceCreateInfo{
     .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -134,8 +138,7 @@ auto createInstance(
   return { create_info };
 }
 
-auto createInstance(std::string_view            app_name,
-                    const DebugMessengerConfig& config) -> Instance {
+auto createInstance(std::string_view app_name, const DebugMessengerConfig& config) -> Instance {
   return createInstance(app_name, getDebugMessengerInfo(config));
 }
 
@@ -143,8 +146,7 @@ auto createInstance(std::string_view app_name) -> Instance {
   return createInstance(app_name, std::nullopt);
 }
 
-auto createDebugMessenger(VkInstance                  instance,
-                          const DebugMessengerConfig& config)
+auto createDebugMessenger(VkInstance instance, const DebugMessengerConfig& config)
   -> DebugMessenger {
   return { instance, getDebugMessengerInfo(config) };
 }

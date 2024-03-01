@@ -16,24 +16,22 @@ struct PipelineResource {
 };
 
 auto createGraphicsPipeline(
-  VkDevice                                         device,
-  VkRenderPass                                     render_pass,
-  std::span<const VkVertexInputBindingDescription> vertex_binding_descriptions,
-  std::span<const VkVertexInputAttributeDescription>
-                                         vertex_attribute_descriptions,
-  std::span<const VkDescriptorSetLayout> descriptor_set_layouts)
-  -> PipelineResource;
+  VkDevice                                           device,
+  VkRenderPass                                       render_pass,
+  std::span<const VkVertexInputBindingDescription>   vertex_binding_descriptions,
+  std::span<const VkVertexInputAttributeDescription> vertex_attribute_descriptions,
+  std::span<const VkDescriptorSetLayout>             descriptor_set_layouts
+) -> PipelineResource;
 
-auto createFramebuffers(VkRenderPass                 render_pass,
-                        VkDevice                     device,
-                        VkExtent2D                   extent,
-                        std::span<const VkImageView> image_views)
-  -> std::vector<Framebuffer>;
+auto createFramebuffers(
+  VkRenderPass                 render_pass,
+  VkDevice                     device,
+  VkExtent2D                   extent,
+  std::span<const VkImageView> image_views
+) -> std::vector<Framebuffer>;
 
-auto createCommandPool(VkDevice device, uint32_t graphic_family_index)
-  -> CommandPool;
-auto allocateCommandBuffers(VkDevice      device,
-                            VkCommandPool command_pool,
-                            uint32_t      count) -> CommandBuffers;
+auto createCommandPool(VkDevice device, uint32_t graphic_family_index) -> CommandPool;
+auto allocateCommandBuffers(VkDevice device, VkCommandPool command_pool, uint32_t count)
+  -> CommandBuffers;
 
 } // namespace vk

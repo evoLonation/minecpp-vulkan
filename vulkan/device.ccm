@@ -50,17 +50,17 @@ using QueueFamilyChecker = std::function<bool(const QueueFamilyCheckContext&)>;
 using SurfaceChecker =
   std::function<std::optional<SelectedSurfaceInfo>(const SurfaceCheckContext&)>;
 
-auto pickPhysicalDevice(VkInstance                          instance,
-                        VkSurfaceKHR                        surface,
-                        std::span<const char*>              required_extensions,
-                        DeviceChecker                       device_checker,
-                        SurfaceChecker                      surface_checker,
-                        std::span<const QueueFamilyChecker> queue_chekers)
-  -> PhysicalDeviceInfo;
+auto pickPhysicalDevice(
+  VkInstance                          instance,
+  VkSurfaceKHR                        surface,
+  std::span<const char*>              required_extensions,
+  DeviceChecker                       device_checker,
+  SurfaceChecker                      surface_checker,
+  std::span<const QueueFamilyChecker> queue_chekers
+) -> PhysicalDeviceInfo;
 
 auto checkPhysicalDeviceSupport(const DeviceCheckContext& ctx) -> bool;
-auto checkSurfaceSupport(const SurfaceCheckContext& ctx)
-  -> std::optional<SelectedSurfaceInfo>;
+auto checkSurfaceSupport(const SurfaceCheckContext& ctx) -> std::optional<SelectedSurfaceInfo>;
 auto checkGraphicQueue(const QueueFamilyCheckContext& ctx) -> bool;
 auto checkPresentQueue(const QueueFamilyCheckContext& ctx) -> bool;
 auto checkTransferQueue(const QueueFamilyCheckContext& ctx) -> bool;
@@ -69,17 +69,16 @@ auto checkTransferQueue(const QueueFamilyCheckContext& ctx) -> bool;
  * logical device 相关
  * 创建 logical device, 得到 queue
  */
-auto createDevice(const PhysicalDeviceInfo& physical_device_info,
-                         std::span<const char*>    required_extensions)
-  -> std::pair<Device, std::vector<VkQueue>>;
+auto createDevice(
+  const PhysicalDeviceInfo& physical_device_info, std::span<const char*> required_extensions
+) -> std::pair<Device, std::vector<VkQueue>>;
 
 } // namespace vk
 
 namespace vk {
 
-auto getQueueFamilyIndices(VkPhysicalDevice                    device,
-                           VkSurfaceKHR                        surface,
-                           std::span<const QueueFamilyChecker> queue_chekers)
-  -> std::optional<QueueIndexes>;
+auto getQueueFamilyIndices(
+  VkPhysicalDevice device, VkSurfaceKHR surface, std::span<const QueueFamilyChecker> queue_chekers
+) -> std::optional<QueueIndexes>;
 
 } // namespace vk

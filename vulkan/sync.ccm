@@ -29,9 +29,8 @@ auto createFence(VkDevice device, bool signaled) -> Fence {
  */
 void consumeFence(VkDevice device, VkFence fence) {
   checkVkResult(
-    vkWaitForFences(
-      device, 1, &fence, VK_TRUE, std::numeric_limits<uint64_t>::max()),
-    "wait fences");
+    vkWaitForFences(device, 1, &fence, VK_TRUE, std::numeric_limits<uint64_t>::max()), "wait fences"
+  );
   checkVkResult(vkResetFences(device, 1, &fence), "reset fence");
 }
 

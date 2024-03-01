@@ -8,9 +8,9 @@ export namespace vk {
 
 template <typename Resource>
 consteval auto getResourceName() -> const char* {
-#define REGISTER(type)                                                         \
-  if (std::same_as<Resource, type>) {                                          \
-    return #type;                                                              \
+#define REGISTER(type)                                                                             \
+  if (std::same_as<Resource, type>) {                                                              \
+    return #type;                                                                                  \
   }
   REGISTER(VkInstance)
   REGISTER(VkDebugUtilsMessengerEXT)
@@ -49,33 +49,35 @@ consteval auto getResourceName() -> const char* {
 
 void checkVkResult(VkResult vk_result, std::string_view action) {
   if (vk_result != VK_SUCCESS) {
-    toy::throwf(
-      "failed to {}, VkResult: {}", action, static_cast<int32_t>(vk_result));
+    toy::throwf("failed to {}, VkResult: {}", action, static_cast<int32_t>(vk_result));
   }
 }
 
 template <typename Func, typename... Args>
-  requires std::is_invocable_v<Func,
-                               std::remove_reference_t<Args>...,
-                               uint32_t*,
-                               typename toy::FuncArgs<Func>::template at<-1>>
+  requires std::is_invocable_v<
+    Func,
+    std::remove_reference_t<Args>...,
+    uint32_t*,
+    typename toy::FuncArgs<Func>::template at<-1>>
 auto getVkResources(Func func, Args&&... args) {
-  using Resource =
-    std::remove_pointer_t<typename toy::FuncArgs<Func>::template at<-1>>;
+  using Resource = std::remove_pointer_t<typename toy::FuncArgs<Func>::template at<-1>>;
   uint32_t count;
 
   constexpr bool need_check = std::same_as<toy::FuncRet<Func>, VkResult>;
   if constexpr (need_check) {
     checkVkResult(
       func(std::forward<Args>(args)..., &count, nullptr),
-      std::format("retain number of resource {}", getResourceName<Resource>()));
+      std::format("retain number of resource {}", getResourceName<Resource>())
+    );
   } else {
     func(std::forward<Args>(args)..., &count, nullptr);
   }
   std::vector<Resource> resources(count);
   if constexpr (need_check) {
-    checkVkResult(func(args..., &count, resources.data()),
-                  std::format("get {} resources", getResourceName<Resource>()));
+    checkVkResult(
+      func(args..., &count, resources.data()),
+      std::format("get {} resources", getResourceName<Resource>())
+    );
   } else {
     func(args..., &count, resources.data());
   }
@@ -83,56 +85,54 @@ auto getVkResources(Func func, Args&&... args) {
 }
 
 template <typename Func, typename... Args>
-  requires std::is_invocable_r_v<VkResult,
-                                 Func,
-                                 std::remove_reference_t<Args>...,
-                                 const VkAllocationCallbacks*,
-                                 typename toy::FuncArgs<Func>::template at<-1>>
+  requires std::is_invocable_r_v<
+    VkResult,
+    Func,
+    std::remove_reference_t<Args>...,
+    const VkAllocationCallbacks*,
+    typename toy::FuncArgs<Func>::template at<-1>>
 auto createVkResource(Func func, Args&&... args) {
-  using Resource =
-    std::remove_pointer_t<typename toy::FuncArgs<Func>::template at<-1>>;
+  using Resource = std::remove_pointer_t<typename toy::FuncArgs<Func>::template at<-1>>;
   Resource resource;
-  checkVkResult(func(std::forward<Args>(args)..., nullptr, &resource),
-                std::format("create {}", getResourceName<Resource>()));
+  checkVkResult(
+    func(std::forward<Args>(args)..., nullptr, &resource),
+    std::format("create {}", getResourceName<Resource>())
+  );
   return resource;
 }
 
 template <ranges::contiguous_range AvailableRange, typename Mapper>
-  requires std::is_invocable_r_v<std::string_view,
-                                 Mapper,
-                                 ranges::range_reference_t<AvailableRange>>
-void checkAvaliableSupports(std::span<const char* const> requiress,
-                            AvailableRange&&             availables,
-                            Mapper&&                     mapper) {
+  requires std::
+    is_invocable_r_v<std::string_view, Mapper, ranges::range_reference_t<AvailableRange>>
+  void checkAvaliableSupports(
+    std::span<const char* const> requiress, AvailableRange&& availables, Mapper&& mapper
+  ) {
   using Resource = ranges::range_value_t<AvailableRange>;
   constexpr const char* resource_name = getResourceName<Resource>();
-  toy::debugf("the required {} {} resources are :\n {::}",
-              requiress.size(),
-              resource_name,
-              requiress);
-  toy::debugf("the available {} {} resources are :\n {::}",
-              availables.size(),
-              resource_name,
-              availables);
+  toy::debugf(
+    "the required {} {} resources are :\n {::}", requiress.size(), resource_name, requiress
+  );
+  toy::debugf(
+    "the available {} {} resources are :\n {::}", availables.size(), resource_name, availables
+  );
   auto unsupported_range =
     requiress | views::filter([&availables, &mapper](const auto& required) {
       return ranges::none_of(
         availables,
         [&required](auto extension) { return extension == required; },
-        [&mapper](auto& extension) {
-          return std::string_view{ mapper(extension) };
-        });
+        [&mapper](auto& extension) { return std::string_view{ mapper(extension) }; }
+      );
     });
   if (!unsupported_range.empty()) {
-    toy::throwf("these {} resources requested but not available: \n{::}",
-                resource_name,
-                unsupported_range);
+    toy::throwf(
+      "these {} resources requested but not available: \n{::}", resource_name, unsupported_range
+    );
   }
 }
 
 template <typename T>
-concept CustomFormatter = std::is_same_v<T, VkExtensionProperties> ||
-                          std::is_same_v<T, VkLayerProperties>;
+concept CustomFormatter =
+  std::is_same_v<T, VkExtensionProperties> || std::is_same_v<T, VkLayerProperties>;
 
 } // namespace vk
 
@@ -154,7 +154,8 @@ private:
         e.layerName,
         e.specVersion,
         e.implementationVersion,
-        e.description);
+        e.description
+      );
     } else {
       throw 0;
     }

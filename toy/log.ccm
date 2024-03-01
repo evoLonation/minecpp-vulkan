@@ -35,9 +35,7 @@ void debugf(std::format_string<Args...> fmt, Args&&... args) {
   }
 }
 template <typename... Args>
-auto checkDebugf(bool                        condition,
-                 std::format_string<Args...> fmt,
-                 Args&&... args) -> bool {
+auto checkDebugf(bool condition, std::format_string<Args...> fmt, Args&&... args) -> bool {
   if (!condition) {
     debugf(fmt, std::forward<Args>(args)...);
   }
@@ -48,8 +46,8 @@ template <typename... Args>
 void debug(Args&&... args) {
   if constexpr (enable_debug) {
     std::println(
-      std::format_string<Args...>(BracesString<sizeof...(Args)>::get()),
-      std::forward<Args>(args)...);
+      std::format_string<Args...>(BracesString<sizeof...(Args)>::get()), std::forward<Args>(args)...
+    );
   }
 }
 
@@ -59,9 +57,7 @@ void throwf(std::format_string<Args...> fmt, Args&&... args) {
 }
 
 template <typename... Args>
-void checkThrowf(bool                        condition,
-                 std::format_string<Args...> fmt,
-                 Args&&... args) {
+void checkThrowf(bool condition, std::format_string<Args...> fmt, Args&&... args) {
   if (!condition) {
     throwf(fmt, std::forward<Args>(args)...);
   }

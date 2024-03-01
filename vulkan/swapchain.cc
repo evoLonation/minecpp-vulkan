@@ -18,15 +18,16 @@ auto createSurface(VkInstance instance, GLFWwindow* p_window) -> Surface {
   return { instance, create_info };
 }
 
-auto createSwapchain(VkSurfaceKHR                    surface,
-                     VkDevice                        device,
-                     const VkSurfaceCapabilitiesKHR& capabilities,
-                     VkSurfaceFormatKHR              surface_format,
-                     VkPresentModeKHR                present_mode,
-                     GLFWwindow*                     p_window,
-                     std::span<const uint32_t>       sharing_family_indices,
-                     VkSwapchainKHR                  old_swapchain)
-  -> std::expected<std::pair<Swapchain, VkExtent2D>, SwapchainCreateError> {
+auto createSwapchain(
+  VkSurfaceKHR                    surface,
+  VkDevice                        device,
+  const VkSurfaceCapabilitiesKHR& capabilities,
+  VkSurfaceFormatKHR              surface_format,
+  VkPresentModeKHR                present_mode,
+  GLFWwindow*                     p_window,
+  std::span<const uint32_t>       sharing_family_indices,
+  VkSwapchainKHR                  old_swapchain
+) -> std::expected<std::pair<Swapchain, VkExtent2D>, SwapchainCreateError> {
   uint32_t image_count = capabilities.minImageCount + 1;
   // maxImageCount == 0意味着没有最大值
   if (capabilities.maxImageCount != 0) {
@@ -39,19 +40,18 @@ auto createSwapchain(VkSurfaceKHR                    surface,
   // currentExtent is the current width and height of the surface, or the
   // special value (0xFFFFFFFF, 0xFFFFFFFF) indicating that the surface size
   // will be determined by the extent of a swapchain targeting the surface
-  if (capabilities.currentExtent.width !=
-      std::numeric_limits<uint32_t>::max()) {
+  if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
     extent = capabilities.currentExtent;
   } else {
     int width, height;
     glfwGetFramebufferSize(p_window, &width, &height);
     extent = { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
-    extent.width = std::clamp(extent.width,
-                              capabilities.minImageExtent.width,
-                              capabilities.maxImageExtent.width);
-    extent.height = std::clamp(extent.height,
-                               capabilities.minImageExtent.height,
-                               capabilities.maxImageExtent.height);
+    extent.width = std::clamp(
+      extent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width
+    );
+    extent.height = std::clamp(
+      extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height
+    );
   }
   if (extent.height == 0 || extent.width == 0) {
     return std::unexpected(SwapchainCreateError::EXTENT_ZERO);
@@ -90,10 +90,9 @@ auto createSwapchain(VkSurfaceKHR                    surface,
    * 一个图像一次由一个队列族所有，在将其用于另一队列族之前，必须明确转移所有权
    * (性能最佳)
    */
-  auto diff_indices =
-    sharing_family_indices | toy::chunkBy(std::equal_to{}) |
-    views::transform([](auto subrange) { return *subrange.begin(); }) |
-    ranges::to<std::vector>();
+  auto diff_indices = sharing_family_indices | toy::chunkBy(std::equal_to{}) |
+                      views::transform([](auto subrange) { return *subrange.begin(); }) |
+                      ranges::to<std::vector>();
   if (diff_indices.size() >= 2) {
     create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
     create_info.queueFamilyIndexCount = diff_indices.size();
@@ -111,9 +110,8 @@ auto createSwapchain(VkSurfaceKHR                    surface,
   return std::pair{ Swapchain{ device, create_info }, extent };
 }
 
-auto createSwapchainImageViews(VkDevice       device,
-                               VkSwapchainKHR swapchain,
-                               VkFormat format) -> std::vector<ImageView> {
+auto createSwapchainImageViews(VkDevice device, VkSwapchainKHR swapchain, VkFormat format)
+  -> std::vector<ImageView> {
   auto images = getVkResources(vkGetSwapchainImagesKHR, device, swapchain);
   return images | views::transform([device, format](VkImage image) {
            return createImageView(device, image, format);

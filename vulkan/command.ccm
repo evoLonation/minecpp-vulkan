@@ -13,7 +13,8 @@ void recordAndSubmit(
   Callable&&                                                    recorder,
   std::span<const std::pair<VkSemaphore, VkPipelineStageFlags>> wait_sema,
   std::span<const VkSemaphore>                                  signal_sema,
-  VkFence                                                       signal_fence) {
+  VkFence                                                       signal_fence
+) {
   auto begin_info = VkCommandBufferBeginInfo{
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     /** \param VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT specifies that each
@@ -29,17 +30,14 @@ void recordAndSubmit(
     .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     .pInheritanceInfo = nullptr,
   };
-  checkVkResult(vkBeginCommandBuffer(command_buffer, &begin_info),
-                "begin command buffer");
+  checkVkResult(vkBeginCommandBuffer(command_buffer, &begin_info), "begin command buffer");
   recorder();
   checkVkResult(vkEndCommandBuffer(command_buffer), "end command buffer");
 
-  auto wait_sema_ =
-    wait_sema | views::transform([](const auto& pair) { return pair.first; }) |
-    ranges::to<std::vector>();
-  auto wait_stage =
-    wait_sema | views::transform([](const auto& pair) { return pair.second; }) |
-    ranges::to<std::vector>();
+  auto wait_sema_ = wait_sema | views::transform([](const auto& pair) { return pair.first; }) |
+                    ranges::to<std::vector>();
+  auto wait_stage = wait_sema | views::transform([](const auto& pair) { return pair.second; }) |
+                    ranges::to<std::vector>();
   auto submit_info = VkSubmitInfo{
     .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
     .pNext = nullptr,
@@ -53,8 +51,7 @@ void recordAndSubmit(
     .signalSemaphoreCount = (uint32_t)signal_sema.size(),
     .pSignalSemaphores = signal_sema.data(),
   };
-  checkVkResult(vkQueueSubmit(queue, 1, &submit_info, signal_fence),
-                "submit queue");
+  checkVkResult(vkQueueSubmit(queue, 1, &submit_info, signal_fence), "submit queue");
 }
 
 } // namespace vk
