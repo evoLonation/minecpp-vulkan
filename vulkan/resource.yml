@@ -1,0 +1,20 @@
+module:
+  vulkan.ccm: vulkan
+  tool.ccm: vulkan.tool
+  resource.ccm: vulkan.resource
+  glfw.ccm: vulkan.glfw
+  instance.ccm: vulkan.instance
+  swapchain.ccm: vulkan.swapchain
+  device.ccm: vulkan.device
+  render.ccm: vulkan.render
+  buffer.ccm: vulkan.buffer
+  descriptor.ccm: vulkan.descriptor
+  sync.ccm: vulkan.sync
+  image.ccm: vulkan.image
+  command.ccm: vulkan.command
+source:
+- instance.cc
+- swapchain.cc
+- device.cc
+- render.cc
+- loader.cc

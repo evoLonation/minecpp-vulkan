@@ -3,7 +3,7 @@ module vulkan.render;
 import "vulkan_config.h";
 import vulkan.tool;
 import vulkan.buffer;
-import gen.shader_code;
+// import gen.shader_code;
 import toy;
 
 namespace vk {
@@ -73,12 +73,12 @@ auto createRenderPass(VkDevice device, VkFormat format) -> RenderPass {
 }
 
 auto createShaderModule(std::string_view filename, VkDevice device) -> ShaderModule {
-  toy::checkThrowf(shader_code_map.contains(filename), "the shader file {} not exist", filename);
-  auto content = shader_code_map[filename];
+  // toy::checkThrowf(shader_code_map.contains(filename), "the shader file {} not exist", filename);
+  // auto content = shader_code_map[filename];
   auto create_info = VkShaderModuleCreateInfo{
     .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-    .codeSize = content.size(),
-    .pCode = reinterpret_cast<uint32_t*>(content.data()),
+    // .codeSize = content.size(),
+    // .pCode = reinterpret_cast<uint32_t*>(content.data()),
   };
   return ShaderModule{ device, create_info };
 }

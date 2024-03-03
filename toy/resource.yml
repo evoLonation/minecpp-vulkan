@@ -1,0 +1,7 @@
+module:
+  toy.ccm: toy
+  log.ccm: toy.log
+  trait.ccm: toy.trait
+  concepts.ccm: toy.concepts
+  ranges.ccm: toy.ranges
+  helper.ccm: toy.helper
