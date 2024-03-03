@@ -106,7 +106,7 @@ auto createTextureImage(
     VkImageLayout        layout;
   };
 
-  auto image_transitioner =
+  auto transition_image =
     [=](VkImage image, const TransitionInfo& src_transition, const TransitionInfo& dst_transition) {
       auto image_barrier = VkImageMemoryBarrier{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -144,7 +144,7 @@ auto createTextureImage(
     };
 
   auto recorder = [&]() {
-    image_transitioner(
+    transition_image(
       image,
       TransitionInfo{
         .stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
@@ -184,8 +184,7 @@ auto createTextureImage(
     vkCmdCopyBufferToImage(
       command_buffer, staging_buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_copy
     );
-
-    image_transitioner(
+    transition_image(
       image,
       TransitionInfo{
         // 一个伪阶段

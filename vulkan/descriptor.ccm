@@ -74,6 +74,8 @@ void updateDescriptorSet(
   VkDescriptorSet                                           descriptor_set,
   std::variant<VkBuffer, std::pair<VkImageView, VkSampler>> source
 ) {
+  // descriptor set是资源的引用
+  // vkUpdateDescriptorSets 只是更新descriptor set对应绑定到哪个资源
   using InfoVariant = std::variant<VkDescriptorBufferInfo, VkDescriptorImageInfo>;
   auto buffer_info_getter = [](VkBuffer buffer) -> InfoVariant {
     return VkDescriptorBufferInfo{
