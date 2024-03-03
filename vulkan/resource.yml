@@ -17,3 +17,4 @@ source:
 - device.cc
 - render.cc
 - loader.cc
+- shader_code.ccm

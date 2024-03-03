@@ -1,16 +1,12 @@
-import json
 import os.path as ospath
 import os
 import subprocess as sp
 import ninja_syntax as ninja
-import tempfile
-import shutil
 import yaml
-import copy
 
 import public as pub
 
-pub.set_root_dir('./')
+pub.set_path('./', 'hello.exe')
 
 def get_all_file():
   # 记录每个resource type的所有资源,资源要么是一个绝对路径，要么是一个(绝对路径，元信息)元组
@@ -109,13 +105,13 @@ def build_source(ninja_writer: ninja.Writer, source, module):
       order_only=dyndep_file,
       variables={'dyndep': dyndep_file},
     )
-  if module:
+  if module is False:
+    build(pub.ninja.compile_rule, source, pub.path.get_obj_file(source))
+  else:
     build(pub.ninja.precompile_rule, source, pub.path.get_pcm_file(module))
     build(pub.ninja.compile_rule, pub.path.get_pcm_file(module), pub.path.get_obj_file(source))
-  else:
-    build(pub.ninja.compile_rule, source, pub.path.get_obj_file(source))
 
-def build_link(ninja_writer: ninja.Writer, sources, link_lib_paths, target):
+def build_link(ninja_writer: ninja.Writer, sources, link_lib_paths):
   dir_set = set()
   link_libs = []
   for path in link_lib_paths:
@@ -126,7 +122,7 @@ def build_link(ninja_writer: ninja.Writer, sources, link_lib_paths, target):
     elif filename[-4:] == '.lib':
       link_libs.append(filename[:-4])
   ninja_writer.rule(pub.ninja.link_rule, pub.Flags().get_link(['$in'], list(dir_set), link_libs, '$out'))
-  ninja_writer.build(target, pub.ninja.link_rule, [pub.path.get_obj_file(source) for source in sources])
+  ninja_writer.build(pub.path.target_file, pub.ninja.link_rule, [pub.path.get_obj_file(source) for source, _ in sources])
 
 def add_sub_ninja(ninja_writer: ninja.Writer, src_ninja, sub_ninja):
   ninja_writer.subninja(ospath.relpath(sub_ninja, ospath.split(src_ninja)[0]))
@@ -140,8 +136,44 @@ def get_module_info(source):
       prefix = '# [MODULE INFO] '
       if line.startswith(prefix):
         info = line[len(prefix):].strip()
-        return '' if info == '[EMPTY]' else info
+        return False if info == '[EMPTY]' else info
   raise RuntimeError(f'the dyndep file {pub.path.get_dyndep_file(source)} not exist module info comment')
+
+def build_shader_code_generate(ninja_writer: ninja.Writer, shader_files):
+  # 生成 single shader_code
+  ninja_writer.rule(
+    name=pub.ninja.shader_code_rule,
+    command=['python', pub.path.shader_generate_script,
+             '--task', 'single',
+             '-c', '$in',
+             '-o', '$out'],
+    description='SHADERCODE single generate $out'
+  )
+  sources = []
+  for file in shader_files:
+    ninja_writer.build(
+      rule=pub.ninja.shader_code_rule,
+      outputs=pub.path.get_shader_code_file(file),
+      inputs=file,
+    )
+    result = sp.run(' '.join(['python', pub.path.shader_generate_script, '--task', 'module', '-c', file]), stdout=sp.PIPE).stdout
+    sources.append((pub.path.get_shader_code_file(file), result.decode('utf-8').strip()))
+
+  # 生成 total shader_code
+  ninja_writer.rule(
+    name=pub.ninja.shader_code_total_rule,
+    command=['python', pub.path.shader_generate_script,
+             '--task', 'total',
+             '-c'] + shader_files +\
+             ['-o', '$out'],
+    description='SHADERCODE total generate $out'
+  )
+  ninja_writer.build(
+    rule=pub.ninja.shader_code_total_rule,
+    outputs=pub.path.shader_code_all_file,
+  )
+  return sources + [(pub.path.shader_code_all_file, False)]
+
 
 if __name__ == '__main__':
   resources_dict, dir_sub_resources_dict = get_all_file()
@@ -159,6 +191,14 @@ if __name__ == '__main__':
     )
 
   sources = resources_dict.get(pub.rsc.type_source, [])
+  # 尚未生成的sources，是一个(source, module)的列表
+  not_exist_sources = []
+
+  # 添加shader generate
+  os.makedirs(ospath.split(pub.path.ninja_shader_code_gen_file)[0], exist_ok=True)
+  with open(pub.path.ninja_shader_code_gen_file, 'wt') as f:
+    ninja_writer = ninja.Writer(f)
+    not_exist_sources +=  build_shader_code_generate(ninja_writer, resources_dict.get(pub.rsc.type_shader, []))
 
   # 创建module scan的ninja文件
   os.makedirs(ospath.split(pub.path.ninja_module_scan_file)[0], exist_ok=True)
@@ -166,32 +206,30 @@ if __name__ == '__main__':
     ninja_writer = ninja.Writer(f)
     add_sub_ninja(ninja_writer, pub.path.ninja_module_scan_file, pub.path.ninja_header_precompile_file)
     add_module_scan_rule(ninja_writer, flag)
-    for source_path in sources:
+    for source_path in sources + [info[0] for info in not_exist_sources]:
       build_module_scan(ninja_writer, source_path)
 
   # 执行module scan ninja来更新源文件的 provided module info
   print('analysis source module info...')
-  execute_ninja(pub.path.ninja_module_scan_file)
+  execute_ninja(pub.path.ninja_module_scan_file, extra=' '.join(pub.path.get_dyndep_file(source) for source in sources))
+
+  # 更新 resources_dict ，为source扩展模块信息
+  sources = list(map(lambda source: (source, get_module_info(source)), sources)) + not_exist_sources
 
   # 创建 compile , precompile 和 link 的 ninja 文件
   os.makedirs(ospath.split(pub.path.ninja_file)[0], exist_ok=True)
   with open(pub.path.ninja_file, 'wt') as f:
     ninja_writer = ninja.Writer(f)
     add_sub_ninja(ninja_writer, pub.path.ninja_file, pub.path.ninja_module_scan_file)
+    add_sub_ninja(ninja_writer, pub.path.ninja_file, pub.path.ninja_shader_code_gen_file)
     flag.add_module_pcm_dir(pub.path.pcm_dir)
     add_compile_rule(ninja_writer, flag)
-    for source_path in sources:
-      build_source(ninja_writer, source_path, get_module_info(source_path))
+    for source_path, module in sources:
+      build_source(ninja_writer, source_path, module)
     
-    build_link(ninja_writer, sources, resources_dict.get(pub.rsc.type_link_file, []), 'hello.exe')
+    build_link(ninja_writer, sources, resources_dict.get(pub.rsc.type_link_file, []))
 
   # 创建 compile_commands.json
   with open('compile_commands.json', 'wb') as f:
     result = execute_ninja(pub.path.ninja_file, extra=f'-t compdb {pub.ninja.compile_rule} {pub.ninja.precompile_rule}', stdout=sp.PIPE).stdout
     f.write(result)
-  
-
-
-
-
-  

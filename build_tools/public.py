@@ -1,8 +1,9 @@
 import os.path as ospath
 
 class Paths:
-  def __init__(self, root_dir_):
+  def __init__(self, root_dir_, target_):
     self.root_dir = ospath.abspath(root_dir_)
+    self.target = target_
     self.build_dir = ospath.join(self.root_dir, 'build')
 
     self.gen_dir = ospath.join(self.build_dir, 'gen')
@@ -14,15 +15,20 @@ class Paths:
     self.ninja_file = ospath.join(self.ninja_dir, 'build.ninja')
     self.ninja_header_precompile_file = ospath.join(self.ninja_dir, 'header_precompile.ninja')
     self.ninja_module_scan_file = ospath.join(self.ninja_dir, 'module_scan.ninja')
+    self.ninja_shader_code_gen_file = ospath.join(self.ninja_dir, 'shader_gen.ninja')
     self.dyndep_dir = ospath.join(self.ninja_dir, 'dyndeps')
 
     self.provide_module_info_file = ospath.join(self.build_dir, 'provide_module.json')
 
     self.target_dir = ospath.join(self.build_dir, 'out')
-    self.target_file = ospath.join(self.target_dir, 'hello.exe')
+    self.target_file = ospath.join(self.target_dir, self.target)
 
     self.build_tools_dir = ospath.join(self.root_dir, 'build_tools')
     self.dyndep_generate_script = ospath.join(self.build_tools_dir, 'dyndep_generate.py')
+    self.shader_generate_script = ospath.join(self.build_tools_dir, 'shader_code_generate.py')
+
+    self.gen_dir = ospath.join(self.build_dir, 'gen')
+    self.shader_code_all_file = ospath.join(self.gen_dir, 'shader_code.cc')
 
   # 得到相对root_dir的路径
   def get_rel_root_path(self, path):
@@ -35,11 +41,13 @@ class Paths:
     return ospath.join(self.header_pcm_dir, ospath.split(path)[1][:-2] + '.pcm')
   def get_dyndep_file(self, path):
     return ospath.join(self.dyndep_dir, self.get_rel_root_path(path) + '.dd')
+  def get_shader_code_file(self, shader_file):
+    return ospath.join(self.gen_dir, self.get_rel_root_path(shader_file)+'.ccm')
 
-path = Paths('./')
-def set_root_dir(root_dir):
+path = Paths('./', 'test.exe')
+def set_path(root_dir, target):
   global path
-  path = Paths(root_dir)
+  path = Paths(root_dir, target)
 
 
 class Flags:
@@ -108,6 +116,7 @@ class Resources:
     self.type_include_dir = 'include'
     self.type_header_unit = 'header_unit'
     self.type_link_file = 'link'
+    self.type_shader = 'shader'
 
 rsc = Resources()
 
@@ -119,6 +128,8 @@ class Ninja:
     self.precompile_rule = 'precompile'
     self.compile_rule = 'compile'
     self.link_rule = 'link'
+    self.shader_code_rule = 'shader_code_generate'
+    self.shader_code_total_rule = 'shader_code_total_generate'
     
 
 ninja = Ninja()

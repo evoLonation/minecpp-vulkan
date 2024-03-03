@@ -3,6 +3,7 @@ sub_dir:
 - third_party
 - vulkan
 - toy
+- shader
 source:
 - main.cc
 - stb_image_impl.cc

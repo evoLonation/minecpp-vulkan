@@ -1,10 +1,7 @@
 import subprocess as sp
-import tempfile
 import argparse
-import os.path as ospath
 import json
 import ninja_syntax as ninja
-import shlex
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-c', type=str, dest='source', required=True, help='the abspath of source')
@@ -14,7 +11,7 @@ parser.add_argument('--compile_flag', type=str, dest='compile_flag', required=Tr
 args = parser.parse_args()
 
 import public as pub
-pub.set_root_dir(args.root_dir)
+pub.set_path(args.root_dir, 'whatever')
 
 command = args.compile_flag + f" {args.source} -o {args.source}.o"
 result = sp.run(f'clang-scan-deps -format=p1689 -- {command}', stdout=sp.PIPE, check=True)
