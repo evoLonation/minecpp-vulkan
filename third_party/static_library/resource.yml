@@ -1,0 +1,4 @@
+link:
+- libglfw3dll.a
+- libglm.a
+- vulkan-1.lib

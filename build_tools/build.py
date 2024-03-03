@@ -6,6 +6,7 @@ import ninja_syntax as ninja
 import tempfile
 import shutil
 import yaml
+import copy
 
 import public as pub
 
@@ -44,26 +45,11 @@ def get_all_file():
         dir_sub_resources_dict[current_dir] = sub_resource_list
   return resources_dict, dir_sub_resources_dict
 
-def get_flag_with_include(include_dirs):
-  base_flag = [
-    pub.path.clang_executable_path,
-    '-std=c++23', 
-    '-fexperimental-library', 
-    '-nostdinc++', 
-    '-nostdlib++', 
-    '-Wno-unused-command-line-argument']
-  for system_include in pub.path.system_include_dirs:
-    base_flag += ['-isystem', system_include]
-  base_flag += list(map(lambda x: '-I'+x, include_dirs))
-  return base_flag
-
-# 返回添加了头文件pcm上下文的flag
-def build_precompile_headers(ninja_writer: ninja.Writer, header_units, flag):
-  # add rule
-  header_unit_flag = flag + ['-fmodule-header', '-xc++-header']
+# 为flag添加header pcms
+def build_precompile_headers(ninja_writer: ninja.Writer, header_units, flag: pub.Flags):
   ninja_writer.rule(pub.ninja.precompile_header_rule,
-                    header_unit_flag + ['$in', '-o', '$out'], 
-                    description=f'PRECOMPILE HEADERUNIT $out')
+                    flag.get_header_precompile('$in', '$out'), 
+                    description=f'HEADERUNIT PRECOMPILE $out')
 
   # add target
   header_pcm_outputs = []
@@ -81,78 +67,131 @@ def build_precompile_headers(ninja_writer: ninja.Writer, header_units, flag):
     inputs=header_pcm_outputs,
   )
   print('header unit build generate done')
-  return flag + \
-    list(map(lambda x: f'-fmodule-file={x}', header_pcm_outputs)) + \
-    ['-Wno-experimental-header-units']
+  flag.add_header_pcm(header_pcm_outputs)
 
-def add_dyndep_rule(ninja_writer: ninja.Writer, flag):
+# 该rule输入一个源文件，会产生对应的dyndep文件，同时产生
+def add_module_scan_rule(ninja_writer: ninja.Writer, flag: pub.Flags):
   dyndep_generate_command = sp.list2cmdline([
-    'python', pub.path.dyndep_generate_script, 
+    'python', pub.path.dyndep_generate_script,
     '-c', '$in',
-    '-m', f'${pub.ninja.dyndep_module_variable}',
     '-o', '$out',
     '--root_dir', pub.path.root_dir, 
-    '--compile_flag', ' '.join(flag),
+    '--compile_flag', ' '.join(flag.get_current_flag()),
   ])
   ninja_writer.rule(
     name=pub.ninja.dyndep_generator_rule,
     command=dyndep_generate_command,
-    description=f"GENERATE MODULE DYNDEP $out",
+    description=f"Module dep scan $out",
+  )
+
+def build_module_scan(ninja_writer: ninja.Writer, source):
+  ninja_writer.build(
+    outputs=pub.path.get_dyndep_file(source),
+    rule=pub.ninja.dyndep_generator_rule,
+    inputs=source,
+    implicit=pub.ninja.header_unit_phony,
   )
 
 # 生成precompile和compile rule
 # 这些rule默认$in和$out是编译单元和对应的目标
-def add_compile_rule(ninja_writer: ninja.Writer, flag):
-  with_pcm_flag = flag + [f'-fprebuilt-module-path={pub.path.pcm_dir}']
-  precompile_flag = with_pcm_flag + ['--precompile', '$in', '-o', '$out']
-  compile_flag = with_pcm_flag + ['-c', '$in', '-o', '$out']
-  ninja_writer.rule(pub.ninja.precompile_rule, precompile_flag, description=f'PRECOMPILE $out')
-  ninja_writer.rule(pub.ninja.compile_rule, compile_flag, description=f'COMPILE $out')
+def add_compile_rule(ninja_writer: ninja.Writer, flag: pub.Flags):
+  ninja_writer.rule(pub.ninja.precompile_rule, flag.get_precompile('$in', '$out'), description=f'PRECOMPILE $out')
+  ninja_writer.rule(pub.ninja.compile_rule, flag.get_compile('$in', '$out'), description=f'COMPILE $out')
 
-def build_source(ninja_writer: ninja.Writer, source, module=None):
+def build_source(ninja_writer: ninja.Writer, source, module):
   dyndep_file = pub.path.get_dyndep_file(source)
-  ninja_writer.build(
-    outputs=dyndep_file,
-    rule=pub.ninja.dyndep_generator_rule,
-    inputs=source,
-    implicit=pub.ninja.header_unit_phony,
-    variables={pub.ninja.dyndep_module_variable: module if module != None else ''},
-  )
-  ninja_writer.build(
-    outputs=pub.path.get_obj_file(source),
-    rule=pub.ninja.compile_rule,
-    inputs=source,
-    implicit=pub.ninja.header_unit_phony,
-    order_only=dyndep_file,
-    variables={'dyndep': dyndep_file},
-  )
-  if module != None:
+  def build(rule, input, output):
     ninja_writer.build(
-      outputs=pub.path.get_pcm_file(module),
-      rule=pub.ninja.precompile_rule,
-      inputs=source,
+      outputs=output,
+      rule=rule,
+      inputs=input,
       implicit=pub.ninja.header_unit_phony,
       order_only=dyndep_file,
       variables={'dyndep': dyndep_file},
     )
-    
+  if module:
+    build(pub.ninja.precompile_rule, source, pub.path.get_pcm_file(module))
+    build(pub.ninja.compile_rule, pub.path.get_pcm_file(module), pub.path.get_obj_file(source))
+  else:
+    build(pub.ninja.compile_rule, source, pub.path.get_obj_file(source))
+
+def build_link(ninja_writer: ninja.Writer, sources, link_lib_paths, target):
+  dir_set = set()
+  link_libs = []
+  for path in link_lib_paths:
+    dir, filename = ospath.split(path)
+    dir_set.add(dir)
+    if filename[:3] == 'lib' and filename[-2:] == '.a':
+      link_libs.append(filename[3:-2])
+    elif filename[-4:] == '.lib':
+      link_libs.append(filename[:-4])
+  ninja_writer.rule(pub.ninja.link_rule, pub.Flags().get_link(['$in'], list(dir_set), link_libs, '$out'))
+  ninja_writer.build(target, pub.ninja.link_rule, [pub.path.get_obj_file(source) for source in sources])
+
+def add_sub_ninja(ninja_writer: ninja.Writer, src_ninja, sub_ninja):
+  ninja_writer.subninja(ospath.relpath(sub_ninja, ospath.split(src_ninja)[0]))
+
+def execute_ninja(ninja_file, extra = '', stdout = None):
+  return sp.run(f'ninja -C {ospath.split(ninja_file)[0]} -f {ospath.split(ninja_file)[1]} {extra}', stdout=stdout)
+
+def get_module_info(source):
+  with open(pub.path.get_dyndep_file(source), 'rt') as f:
+    for line in f:
+      prefix = '# [MODULE INFO] '
+      if line.startswith(prefix):
+        info = line[len(prefix):].strip()
+        return '' if info == '[EMPTY]' else info
+  raise RuntimeError(f'the dyndep file {pub.path.get_dyndep_file(source)} not exist module info comment')
 
 if __name__ == '__main__':
   resources_dict, dir_sub_resources_dict = get_all_file()
 
-  flag_with_include = get_flag_with_include(resources_dict.get(pub.rsc.type_include_dir, []))
+  flag = pub.Flags()
+  flag.add_include_dirs(resources_dict.get(pub.rsc.type_include_dir, []))
+  
+  # 创建header precompile的ninja文件
+  os.makedirs(ospath.split(pub.path.ninja_header_precompile_file)[0], exist_ok=True)
+  with open(pub.path.ninja_header_precompile_file, 'wt') as f:
+    build_precompile_headers(
+      ninja.Writer(f), 
+      resources_dict.get(pub.rsc.type_header_unit, []), 
+      flag
+    )
+
+  sources = resources_dict.get(pub.rsc.type_source, [])
+
+  # 创建module scan的ninja文件
+  os.makedirs(ospath.split(pub.path.ninja_module_scan_file)[0], exist_ok=True)
+  with open(pub.path.ninja_module_scan_file, 'wt') as f:
+    ninja_writer = ninja.Writer(f)
+    add_sub_ninja(ninja_writer, pub.path.ninja_module_scan_file, pub.path.ninja_header_precompile_file)
+    add_module_scan_rule(ninja_writer, flag)
+    for source_path in sources:
+      build_module_scan(ninja_writer, source_path)
+
+  # 执行module scan ninja来更新源文件的 provided module info
+  print('analysis source module info...')
+  execute_ninja(pub.path.ninja_module_scan_file)
+
+  # 创建 compile , precompile 和 link 的 ninja 文件
   os.makedirs(ospath.split(pub.path.ninja_file)[0], exist_ok=True)
   with open(pub.path.ninja_file, 'wt') as f:
     ninja_writer = ninja.Writer(f)
-    flag_with_header_pcms = build_precompile_headers(
-      ninja_writer, 
-      resources_dict.get(pub.rsc.type_header_unit, []), 
-      flag_with_include
-    )
-    print(flag_with_header_pcms)
-    add_dyndep_rule(ninja_writer, flag_with_header_pcms)
-    add_compile_rule(ninja_writer, flag_with_header_pcms)
-    for source_path in resources_dict.get(pub.rsc.type_source, []):
-      build_source(ninja_writer, source_path)
-    for source_path, module in resources_dict.get(pub.rsc.type_module_interface, []):
-      build_source(ninja_writer, source_path, module)
+    add_sub_ninja(ninja_writer, pub.path.ninja_file, pub.path.ninja_module_scan_file)
+    flag.add_module_pcm_dir(pub.path.pcm_dir)
+    add_compile_rule(ninja_writer, flag)
+    for source_path in sources:
+      build_source(ninja_writer, source_path, get_module_info(source_path))
+    
+    build_link(ninja_writer, sources, resources_dict.get(pub.rsc.type_link_file, []), 'hello.exe')
+
+  # 创建 compile_commands.json
+  with open('compile_commands.json', 'wb') as f:
+    result = execute_ninja(pub.path.ninja_file, extra=f'-t compdb {pub.ninja.compile_rule} {pub.ninja.precompile_rule}', stdout=sp.PIPE).stdout
+    f.write(result)
+  
+
+
+
+
+  

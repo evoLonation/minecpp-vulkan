@@ -1,0 +1,5 @@
+include:
+- include
+sub_dir:
+- static_library
+- module

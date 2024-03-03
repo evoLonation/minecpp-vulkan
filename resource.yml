@@ -1,6 +1,6 @@
 sub_dir:
 - include
-- third_party/module
+- third_party
 - vulkan
 - toy
 source:
@@ -8,4 +8,3 @@ source:
 - stb_image_impl.cc
 include:
 - include
-- third_party/include
