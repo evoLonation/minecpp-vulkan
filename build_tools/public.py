@@ -21,7 +21,7 @@ class Paths:
     self.provide_module_info_file = ospath.join(self.build_dir, 'provide_module.json')
 
     self.target_dir = ospath.join(self.build_dir, 'out')
-    self.target_file = ospath.join(self.target_dir, self.target)
+    self.target_file = ospath.join(self.target_dir, self.target+'.exe')
 
     self.build_tools_dir = ospath.join(self.root_dir, 'build_tools')
     self.dyndep_generate_script = ospath.join(self.build_tools_dir, 'dyndep_generate.py')
@@ -43,6 +43,8 @@ class Paths:
     return ospath.join(self.dyndep_dir, self.get_rel_root_path(path) + '.dd')
   def get_shader_code_file(self, shader_file):
     return ospath.join(self.gen_dir, self.get_rel_root_path(shader_file)+'.ccm')
+  def get_dylib_target_file(self, dylib_file):
+    return ospath.join(self.target_dir, ospath.split(dylib_file)[1])
 
 path = Paths('./', 'test.exe')
 def set_path(root_dir, target):
@@ -113,9 +115,10 @@ class Resources:
     self.config_filename = 'resource.yml'
     self.type_sub_dir = 'sub_dir'
     self.type_source = 'source'
-    self.type_include_dir = 'include'
+    self.type_include_dir = 'include_dir'
     self.type_header_unit = 'header_unit'
-    self.type_link_file = 'link'
+    self.type_lib_file = 'lib'
+    self.type_dylib_file = 'dylib'
     self.type_shader = 'shader'
 
 rsc = Resources()
@@ -128,6 +131,7 @@ class Ninja:
     self.precompile_rule = 'precompile'
     self.compile_rule = 'compile'
     self.link_rule = 'link'
+    self.copy_rule = 'copy'
     self.shader_code_rule = 'shader_code_generate'
     self.shader_code_total_rule = 'shader_code_total_generate'
     

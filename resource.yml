@@ -7,5 +7,5 @@ sub_dir:
 source:
 - main.cc
 - stb_image_impl.cc
-include:
+include_dir:
 - include

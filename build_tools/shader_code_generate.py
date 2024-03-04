@@ -19,29 +19,29 @@ if args.task == 'total':
   for shader_file in args.input:
     import_decl += f'import shader_code.{get_shader_identify(shader_file)};\n'
     pair_decl += f'{{"{get_shader_name(shader_file)}", std::as_bytes(std::span{{shader_code::{get_shader_identify(shader_file)}::shader_code_data}})}},\n'
-  code = "module vulkan.shader_code;\n\
-          import std;\n"+\
-          import_decl+\
-         "namespace vk{\n\
-          auto get_shader_code(std::string_view shader) -> std::span<const std::byte> {\n\
-            auto shader_code_map = std::map<std::string_view, std::span<const std::byte>> {\n"+\
-              pair_decl+\
-           "};\n\
-            return shader_code_map.at(shader);\n\
-          }\n\
-          }"
+  code = f'''module vulkan.shader_code;
+          import std;
+          {import_decl}
+          namespace vk{{
+          auto get_shader_code(std::string_view shader) -> std::span<const std::byte> {{
+            auto shader_code_map = std::map<std::string_view, std::span<const std::byte>> {{
+              {pair_decl}
+            }};
+            return shader_code_map.at(shader);
+          }}
+          }}'''
   with open(args.output, 'wt') as f:
     f.write(code)
 elif args.task == 'single':
   shader_file = args.input[0]
   shader_codes = sp.run(f'glslc {shader_file} -o -', check=True, stdout=sp.PIPE).stdout
-  code = f"export module shader_code.{get_shader_identify(shader_file)};\n\
-          import std;\n\
-          export namespace shader_code::{get_shader_identify(shader_file)}{{\n\
-            auto shader_code_data = std::array<const unsigned char, {len(shader_codes)}>{{\n\
-              {str(list(shader_codes))[1:-1]}\n\
-            }};\n\
-          }}"
+  code =  f'''export module shader_code.{get_shader_identify(shader_file)};
+              import std;
+              export namespace shader_code::{get_shader_identify(shader_file)}{{
+                auto shader_code_data = std::array<const unsigned char, {len(shader_codes)}>{{
+                  {str(list(shader_codes))[1:-1]}
+                }};
+              }}'''
   with open(args.output, 'wt') as f:
     f.write(code)
 elif args.task == 'module':
