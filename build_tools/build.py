@@ -100,6 +100,18 @@ def build_source(writer: ninja.Writer, sources, flag: pub.Flags):
     else:
       build(pub.ninja.precompile_rule, source, pub.path.get_pcm_file(module))
       build(pub.ninja.compile_rule, pub.path.get_pcm_file(module), pub.path.get_obj_file(source))
+      writer.build(outputs=ospath.join('mod', module), rule='phony', inputs=pub.path.get_pcm_file(module))
+  dir_sources_dict = {}
+  for source, _ in sources:
+    sub_dir = ospath.dirname(source)
+    while True:
+      dir_sources_dict.setdefault(pub.path.get_rel_root_path(sub_dir), []).append(source)
+      if ospath.samefile(pub.path.root_dir, sub_dir):
+        break
+      sub_dir = ospath.dirname(sub_dir)
+  for dir, sources in dir_sources_dict.items():
+    writer.build(outputs=ospath.join('dir', dir), rule='phony', 
+                 inputs=[pub.path.get_obj_file(source) for source in sources])
 
 def build_link(writer: ninja.Writer, sources, link_lib_paths):
   dir_set = set()
@@ -115,10 +127,10 @@ def build_link(writer: ninja.Writer, sources, link_lib_paths):
   writer.build(pub.path.target_file, pub.ninja.link_rule, [pub.path.get_obj_file(source) for source, _ in sources])
     
 def add_sub_ninja(ninja_writer: ninja.Writer, src_ninja, sub_ninja):
-  ninja_writer.subninja(ospath.relpath(sub_ninja, ospath.split(src_ninja)[0]))
+  ninja_writer.subninja(ospath.relpath(sub_ninja, ospath.dirname(src_ninja)))
 
 def execute_ninja(ninja_file, extra = '', stdout = None):
-  return sp.run(f'ninja -C {ospath.split(ninja_file)[0]} -f {ospath.split(ninja_file)[1]} {extra}', stdout=stdout)
+  return sp.run(f'ninja -C {ospath.dirname(ninja_file)} -f {ospath.basename(ninja_file)} {extra}', stdout=stdout)
 
 def get_module_info(source):
   with open(pub.path.get_dyndep_file(source), 'rt') as f:
@@ -171,7 +183,7 @@ class NinjaWriterContextManager(ninja.Writer):
     self.close()
 
 def open_ninja(path):
-  os.makedirs(ospath.split(path)[0], exist_ok=True)
+  os.makedirs(ospath.dirname(path), exist_ok=True)
   return NinjaWriterContextManager(open(path, 'wt'))
 
 

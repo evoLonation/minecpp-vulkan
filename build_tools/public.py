@@ -38,13 +38,13 @@ class Paths:
   def get_obj_file(self, path):
     return ospath.join(self.obj_dir, self.get_rel_root_path(path) + '.o')
   def get_header_pcm_file(self, path):
-    return ospath.join(self.header_pcm_dir, ospath.split(path)[1][:-2] + '.pcm')
+    return ospath.join(self.header_pcm_dir, ospath.basename(path)[:-2] + '.pcm')
   def get_dyndep_file(self, path):
     return ospath.join(self.dyndep_dir, self.get_rel_root_path(path) + '.dd')
   def get_shader_code_file(self, shader_file):
     return ospath.join(self.gen_dir, self.get_rel_root_path(shader_file)+'.ccm')
   def get_dylib_target_file(self, dylib_file):
-    return ospath.join(self.target_dir, ospath.split(dylib_file)[1])
+    return ospath.join(self.target_dir, ospath.basename(dylib_file))
 
 path = Paths('./', 'test.exe')
 def set_path(root_dir, target):

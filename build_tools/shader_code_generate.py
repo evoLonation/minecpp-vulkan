@@ -8,17 +8,15 @@ parser.add_argument('-c', type=str, dest='input', nargs='+', required=True)
 parser.add_argument('-o', type=str, dest='output', required=False)
 args = parser.parse_args()
 
-def get_shader_name(shader_file):
-  return ospath.split(shader_file)[1]
 def get_shader_identify(shader_file):
-  return get_shader_name(shader_file).replace('.', '_')
+  return ospath.basename(shader_file).replace('.', '_')
 
 if args.task == 'total':
   import_decl = ''
   pair_decl = ''
   for shader_file in args.input:
     import_decl += f'import shader_code.{get_shader_identify(shader_file)};\n'
-    pair_decl += f'{{"{get_shader_name(shader_file)}", std::as_bytes(std::span{{shader_code::{get_shader_identify(shader_file)}::shader_code_data}})}},\n'
+    pair_decl += f'{{"{ospath.basename(shader_file)}", std::as_bytes(std::span{{shader_code::{get_shader_identify(shader_file)}::shader_code_data}})}},\n'
   code = f'''module vulkan.shader_code;
           import std;
           {import_decl}
