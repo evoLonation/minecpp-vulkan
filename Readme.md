@@ -6,6 +6,7 @@
   - `pacman -S mingw-w64-x86_64-clang`
   - `pacman -S mingw-w64-x86_64-libc++`
   - `pacman -S mingw-w64-x86_64-clang-tools-extra`
+  - `pacman -S mingw-w64-x86_64-lldb`
 
 # 第三方库
 ## glfw3

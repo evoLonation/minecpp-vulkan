@@ -76,7 +76,8 @@ class Flags:
       '-fexperimental-library', 
       '-nostdinc++', 
       '-nostdlib++', 
-      '-Wno-unused-command-line-argument']
+      '-Wno-unused-command-line-argument', 
+      '-g']
   
   def get_current_flag(self):
     return self.current_flag
