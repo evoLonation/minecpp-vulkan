@@ -269,4 +269,66 @@ auto createFramebuffers(
          ranges::to<std::vector>();
 }
 
+void recordCommandBuffer(
+  VkCommandBuffer                  command_buffer,
+  VkRenderPass                     render_pass,
+  VkPipeline                       graphics_pipeline,
+  VkExtent2D                       extent,
+  VkFramebuffer                    framebuffer,
+  VertexBuffer&                    vertex_buffer,
+  IndexBuffer&                     index_buffer,
+  VkPipelineLayout                 pipeline_layout,
+  std::span<const VkDescriptorSet> descriptor_sets
+) {
+  VkClearValue clearColor = { .color = { .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } };
+  VkRenderPassBeginInfo render_pass_begin_info {
+    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+    .renderPass = render_pass,
+    .framebuffer = framebuffer,
+    .renderArea = {
+      .offset = {0, 0},
+      .extent = extent,
+    },
+    .clearValueCount = 1,
+    .pClearValues = &clearColor,
+  };
+  // VK_SUBPASS_CONTENTS_INLINE: render pass的command被嵌入主缓冲区
+  // VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS: render pass 命令
+  // 将会从次缓冲区执行
+  vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+  vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
+  // 定义了 viewport 到缓冲区的变换
+  VkViewport viewport{
+    .x = 0,
+    .y = 0,
+    .width = (float)extent.width,
+    .height = (float)extent.height,
+    .minDepth = 0.0f,
+    .maxDepth = 1.0f,
+  };
+  vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+  // 定义了缓冲区实际存储像素的区域
+  VkRect2D scissor{
+    .offset = { .x = 0, .y = 0 },
+    .extent = extent,
+  };
+  vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+  auto offsets = std::array<VkDeviceSize, 1>{ 0 };
+  vertex_buffer.recordBind(command_buffer);
+  index_buffer.recordBind(command_buffer);
+  vkCmdBindDescriptorSets(
+    command_buffer,
+    VK_PIPELINE_BIND_POINT_GRAPHICS,
+    pipeline_layout,
+    // firstSet: 对应着色器中的layout(set=0)
+    0,
+    descriptor_sets.size(),
+    descriptor_sets.data(),
+    0,
+    nullptr
+  );
+  vkCmdDrawIndexed(command_buffer, index_buffer.getIndicesSize(), 1, 0, 0, 0);
+  vkCmdEndRenderPass(command_buffer);
+}
+
 } // namespace vk

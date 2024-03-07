@@ -118,4 +118,70 @@ void recordCopyBuffer(
   vkCmdCopyBuffer(transfer_cmdbuf, src_buffer, dst_buffer, 1, &copy_info);
 }
 
+template <typename Derived>
+class DeviceLocalBuffer {
+protected:
+  Buffer _staging_buffer;
+  Memory _staging_memory;
+
+  Buffer _buffer;
+  Memory _memory;
+
+  std::optional<FamilyTransferInfo> _family_transfer;
+
+  Semaphore _release_sema;
+
+  static constexpr auto getUsePair() -> std::pair<BufferUse, BufferUse> {
+    return std::pair{ BufferUse::COPY_DST, Derived::getDstUse() };
+  }
+
+public:
+  DeviceLocalBuffer() = default;
+
+  DeviceLocalBuffer(
+    VkPhysicalDevice                  pdevice,
+    VkDevice                          device,
+    VkQueue                           transfer_queue,
+    VkCommandBuffer                   transfer_cmdbuf,
+    std::span<const std::byte>        buffer_data,
+    VkBufferUsageFlags                usage,
+    std::optional<FamilyTransferInfo> family_transfer
+  ) {
+    auto buffer_size = (uint32_t)buffer_data.size();
+    std::tie(_staging_buffer, _staging_memory) = createStagingBuffer(pdevice, device, buffer_data);
+    std::tie(_buffer, _memory) = createBuffer(
+      pdevice,
+      device,
+      buffer_size,
+      VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+    );
+    _family_transfer = family_transfer;
+
+    auto recorder = [&](VkCommandBuffer cmdbuf) {
+      recordCopyBuffer(transfer_cmdbuf, _staging_buffer, _buffer, buffer_size);
+      recordBarrier(
+        cmdbuf, _buffer.get(), getUsePair(), family_transfer.transform([](auto transfer) {
+          return std::pair{ transfer, false };
+        })
+      );
+    };
+
+    _release_sema = createSemaphore(device);
+    recordAndSubmit(
+      transfer_cmdbuf, transfer_queue, recorder, {}, { &_release_sema.get(), 1 }, VK_NULL_HANDLE
+    );
+  }
+  void recordDstFamilyTransfer(VkCommandBuffer cmdbuf) {
+    if (_family_transfer.has_value()) {
+      recordBarrier(
+        cmdbuf, _buffer.get(), getUsePair(), std::pair{ _family_transfer.value(), true }
+      );
+    }
+  }
+  auto getNeedWaitInfo() -> std::pair<VkSemaphore, VkPipelineStageFlags> {
+    return { _release_sema, getBufferSyncInfo(getUsePair().second).stage_mask };
+  }
+};
+
 } // namespace vk

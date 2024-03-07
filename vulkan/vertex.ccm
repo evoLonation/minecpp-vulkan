@@ -70,110 +70,72 @@ consteval auto Vertex<DataTypes...>::getVertexInfo() -> VertexInfo<sizeof...(Dat
   return { binding_description, attribute_descriptions };
 }
 
-template <bool is_index>
-class VertexIndexBuffer {
+class VertexBuffer : public DeviceLocalBuffer<VertexBuffer> {
 private:
-  Buffer _staging_buffer;
-  Memory _staging_memory;
-
-  Buffer _buffer;
-  Memory _memory;
-
-  std::optional<FamilyTransferInfo> _family_transfer;
-
-  Semaphore _release_sema;
-
-  static constexpr auto _src_use = BufferUse::COPY_DST;
-  static constexpr auto _dst_use =
-    is_index ? BufferUse::INDEX_BUFFER_DRAW : BufferUse::VERTEX_BUFFER_DRAW;
-  static constexpr auto _use_pair = std::pair{ _src_use, _dst_use };
+  using Base = DeviceLocalBuffer<VertexBuffer>;
+  friend Base;
+  static auto getDstUse() -> BufferUse { return BufferUse::VERTEX_BUFFER_DRAW; }
 
 public:
-  VertexIndexBuffer() = default;
-  template <ranges::contiguous_range Range, bool is_index_ = is_index>
-    requires(!is_index_ && toy::InstantiationOf<ranges::range_value_t<Range>, Vertex>)
-  VertexIndexBuffer(
-    VkPhysicalDevice                  physical_device,
+  VertexBuffer() = default;
+  template <ranges::contiguous_range Range>
+    requires(toy::InstantiationOf<ranges::range_value_t<Range>, Vertex>)
+  VertexBuffer(
+    VkPhysicalDevice                  pdevice,
     VkDevice                          device,
     VkQueue                           transfer_queue,
     VkCommandBuffer                   transfer_cmdbuf,
     Range&&                           vertex_data,
     std::optional<FamilyTransferInfo> family_transfer
   )
-    : VertexIndexBuffer{ physical_device,
-                         device,
-                         transfer_queue,
-                         transfer_cmdbuf,
-                         std::as_bytes(std::span{ vertex_data }),
-                         family_transfer } {}
-
-  template <bool is_index_ = is_index>
-    requires is_index_
-  VertexIndexBuffer(
-    VkPhysicalDevice                  physical_device,
-    VkDevice                          device,
-    VkQueue                           transfer_queue,
-    VkCommandBuffer                   transfer_cmdbuf,
-    std::span<uint16_t>               vertex_indices,
-    std::optional<FamilyTransferInfo> family_transfer
-  )
-    : VertexIndexBuffer{
-        physical_device, device, transfer_queue, transfer_cmdbuf, std::as_bytes(vertex_indices),
+    : DeviceLocalBuffer<VertexBuffer>(
+        pdevice,
+        device,
+        transfer_queue,
+        transfer_cmdbuf,
+        std::as_bytes(std::span{ vertex_data }),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         family_transfer
-      } {}
-
-  VertexIndexBuffer(
-    VkPhysicalDevice                  physical_device,
-    VkDevice                          device,
-    VkQueue                           transfer_queue,
-    VkCommandBuffer                   transfer_cmdbuf,
-    std::span<const std::byte>        buffer_data,
-    std::optional<FamilyTransferInfo> family_transfer
-  ) {
-    auto buffer_size = (uint32_t)buffer_data.size();
-    std::tie(_staging_buffer, _staging_memory) =
-      createStagingBuffer(physical_device, device, buffer_data);
-    std::tie(_buffer, _memory) = createBuffer(
-      physical_device,
-      device,
-      buffer_size,
-      VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-        (is_index ? VK_BUFFER_USAGE_INDEX_BUFFER_BIT : VK_BUFFER_USAGE_VERTEX_BUFFER_BIT),
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-    );
-    _family_transfer = family_transfer;
-
-    auto recorder = [&](VkCommandBuffer cmdbuf) {
-      recordCopyBuffer(transfer_cmdbuf, _staging_buffer, _buffer, buffer_size);
-      recordBarrier(cmdbuf, _buffer.get(), _use_pair, family_transfer.transform([](auto transfer) {
-        return std::pair{ transfer, false };
-      }));
-    };
-
-    _release_sema = createSemaphore(device);
-    recordAndSubmit(
-      transfer_cmdbuf, transfer_queue, recorder, {}, { &_release_sema.get(), 1 }, VK_NULL_HANDLE
-    );
-  }
-  void recordDstFamilyTransfer(VkCommandBuffer cmdbuf) {
-    if (_family_transfer.has_value()) {
-      recordBarrier(cmdbuf, _buffer.get(), _use_pair, std::pair{ _family_transfer.value(), true });
-    }
-  }
-  auto getNeedWaitInfo() -> std::pair<VkSemaphore, VkPipelineStageFlags> {
-    return { _release_sema, getBufferSyncInfo(_dst_use).stage_mask };
-  }
+      ) {}
   void recordBind(VkCommandBuffer cmdbuf) {
-    if constexpr (is_index) {
-      vkCmdBindIndexBuffer(cmdbuf, _buffer, 0, VK_INDEX_TYPE_UINT16);
-    } else {
-      auto offset = (VkDeviceSize)0;
-      vkCmdBindVertexBuffers(cmdbuf, 0, 1, &_buffer.get(), &offset);
-    }
+    auto offset = (VkDeviceSize)0;
+    vkCmdBindVertexBuffers(cmdbuf, 0, 1, &_buffer.get(), &offset);
   }
 };
 
-using IndexBuffer = VertexIndexBuffer<true>;
-using VertexBuffer = VertexIndexBuffer<false>;
+class IndexBuffer : public DeviceLocalBuffer<IndexBuffer> {
+private:
+  using Base = DeviceLocalBuffer<IndexBuffer>;
+  friend Base;
+  static auto getDstUse() -> BufferUse { return BufferUse::VERTEX_BUFFER_DRAW; }
+
+  uint32_t _indices_size;
+
+public:
+  IndexBuffer() = default;
+
+  IndexBuffer(
+    VkPhysicalDevice                  pdevice,
+    VkDevice                          device,
+    VkQueue                           transfer_queue,
+    VkCommandBuffer                   transfer_cmdbuf,
+    std::span<uint16_t>               indices,
+    std::optional<FamilyTransferInfo> family_transfer
+  )
+    : DeviceLocalBuffer<IndexBuffer>(
+        pdevice,
+        device,
+        transfer_queue,
+        transfer_cmdbuf,
+        std::as_bytes(indices),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        family_transfer
+      ),
+      _indices_size(indices.size()) {}
+  void recordBind(VkCommandBuffer cmdbuf) {
+    vkCmdBindIndexBuffer(cmdbuf, _buffer, 0, VK_INDEX_TYPE_UINT16);
+  }
+  auto getIndicesSize() const -> uint32_t { return _indices_size; }
+};
 
 } // namespace vk
