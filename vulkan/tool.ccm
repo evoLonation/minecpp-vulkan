@@ -137,7 +137,7 @@ concept CustomFormatter =
 } // namespace vk
 
 export template <vk::CustomFormatter T>
-class ::std::formatter<T> : public std::formatter<std::string> {
+class std::formatter<T> : public std::formatter<std::string> {
 public:
   template <typename FormatContext, typename... Args>
   auto format(const T& e, FormatContext& ctx) const {

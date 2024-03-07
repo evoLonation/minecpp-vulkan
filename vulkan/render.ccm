@@ -30,8 +30,4 @@ auto createFramebuffers(
   std::span<const VkImageView> image_views
 ) -> std::vector<Framebuffer>;
 
-auto createCommandPool(VkDevice device, uint32_t graphic_family_index) -> CommandPool;
-auto allocateCommandBuffers(VkDevice device, VkCommandPool command_pool, uint32_t count)
-  -> CommandBuffers;
-
 } // namespace vk

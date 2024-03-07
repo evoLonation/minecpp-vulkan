@@ -48,7 +48,7 @@ auto pickPhysicalDevice(
       unsupport = true;
     }
 
-    auto queue_family_indices = getQueueFamilyIndices(device, surface, queue_chekers);
+    auto queue_family_indices = getQueueFamilyIndices(device, surface, queue_chekers, true);
     if (!queue_family_indices.has_value()) {
       unsupport = true;
     }
@@ -74,9 +74,53 @@ auto pickPhysicalDevice(
   return selected_device;
 }
 
+/**
+ * @brief 二分图匹配算法
+ */
+auto hungarian(std::span<const std::span<const int>> graph, int right_count)
+  -> std::optional<std::vector<int>> {
+
+  auto left_count = (int)graph.size();
+  auto match = std::vector<int>(right_count);
+  ranges::fill(match, -1);
+  auto found = std::vector<bool>(right_count);
+
+  auto results = std::vector<int>(left_count);
+
+  std::function<bool(int)> dfs = [&](int u) -> bool {
+    toy::debugf("u: {}", u);
+    for (auto v : graph[u]) {
+      toy::debugf("u {} lookup {}", u, v);
+      if (!found[v]) {
+        found[v] = true;
+        if (match[v] == -1 || dfs(match[v])) {
+          toy::debugf("u {} select {}", u, v);
+          match[v] = u;
+          results[u] = v;
+          return true;
+        }
+      }
+    }
+    toy::debugf("u {} no satisfied select", u);
+    return false;
+  };
+
+  if (!ranges::all_of(views::iota(0u, graph.size()), [&dfs, &found](int u) {
+        ranges::fill(found, false);
+        return dfs(u);
+      })) {
+    return std::nullopt;
+  } else {
+    return results;
+  }
+}
+
 auto getQueueFamilyIndices(
-  VkPhysicalDevice device, VkSurfaceKHR surface, std::span<const QueueFamilyChecker> queue_chekers
-) -> std::optional<QueueIndexes> {
+  VkPhysicalDevice                    device,
+  VkSurfaceKHR                        surface,
+  std::span<const QueueFamilyChecker> queue_chekers,
+  bool                                all_queue_diff
+) -> std::optional<QueueIndices> {
 
   auto queue_families = getVkResources(vkGetPhysicalDeviceQueueFamilyProperties, device);
 
@@ -84,63 +128,54 @@ auto getQueueFamilyIndices(
   auto request_size = queue_chekers.size();
   toy::debugf("queue family size: {}, queue request size: {}", family_size, request_size);
 
-  // 二分图，左半边是所有请求，右半边是所有队列(将队列族展开)
-  std::vector<int> visit(request_size);
-  std::fill(visit.begin(), visit.end(), -1);
+  std::vector<std::vector<int>> graph(request_size);
 
-  std::vector<std::vector<int>> queue2request(family_size);
-  for (auto&& [properties, vector] : ranges::zip_view(queue_families, queue2request)) {
-    vector = std::vector<int>(properties.queueCount);
-    std::fill(vector.begin(), vector.end(), -1);
+  auto family_offsets = std::vector<int>(queue_families.size());
+  int  now_offset = 0;
+  for (auto [properties, offset] : views::zip(queue_families, family_offsets)) {
+    offset = now_offset;
+    now_offset += properties.queueCount;
   }
-  QueueIndexes request2family(request_size);
-
-  std::vector<std::vector<std::pair<int, int>>> graph(request_size);
 
   for (auto [family_i, properties] : queue_families | toy::enumerate) {
-    int request_i = 0;
-    int queue_number = properties.queueCount;
-    toy::debugf("check queue family {}, which has {} queues", family_i, queue_number);
+    auto queue_count = (int)properties.queueCount;
+    toy::debugf("check queue family {}, which has {} queues", family_i, queue_count);
     for (auto&& [request_i, queue_checker] : queue_chekers | toy::enumerate) {
       if (queue_checker(QueueFamilyCheckContext{ device, surface, family_i, properties })) {
-        graph[request_i].append_range(
-          views::zip(views::repeat(family_i, queue_number), views::iota(0, queue_number))
-        );
+        if (!all_queue_diff) {
+          graph[request_i].append_range(
+            views::iota(family_offsets[family_i], family_offsets[family_i] + queue_count)
+          );
+        } else {
+          graph[request_i].push_back(family_i);
+        }
         toy::debugf("queue request {} success", request_i);
       } else {
         toy::debugf("queue request {} failed", request_i);
       }
     }
   }
+  auto graph_span = graph |
+                    views::transform([](const auto& vector) { return std::span{ vector }; }) |
+                    ranges::to<std::vector>();
 
-  std::function<bool(int, int)> dfs =
-    [&graph, &visit, &queue2request, &request2family, &dfs](int u, int tag) -> bool {
-    toy::debugf("u: {}", u);
-    if (visit[u] == tag) {
-      toy::debugf("visit[u] == tag, return false");
-      return false;
+  toy::debugf("family offsets: {}", family_offsets);
+  auto mapper = [&](int v) {
+    // reverse iterator.base() pointer to next element
+    uint32_t family_i =
+      ranges::lower_bound(views::reverse(family_offsets), v, std::greater{}).base() -
+      family_offsets.begin() - 1;
+    uint32_t queue_i = v - family_offsets[family_i];
+    if (all_queue_diff) {
+      family_i = v;
+      queue_i = 0;
     }
-    visit[u] = tag;
-    for (auto [family_i, queue_i] : graph[u]) {
-      toy::debugf("u {} lookup {}", u, std::pair{ family_i, queue_i });
-      if ((queue2request[family_i][queue_i] == -1 || dfs(queue2request[family_i][queue_i], tag))) {
-        queue2request[family_i][queue_i] = u;
-        request2family[u] = { family_i, queue_i };
-        toy::debugf("u {} select {}", u, std::pair{ family_i, queue_i });
-        return true;
-      }
-    }
-    toy::debugf("u {} no satisfied select", u);
-    return false;
+    toy::debugf("edge {} map to {}", v, std::pair{ family_i, queue_i });
+    return std::pair{ family_i, queue_i };
   };
-
-  if (!ranges::all_of(views::iota((decltype(request_size))0, request_size), [&dfs](int u) {
-        return dfs(u, u);
-      })) {
-    return std::nullopt;
-  }
-
-  return request2family;
+  return hungarian(graph_span, now_offset).transform([&](auto results) {
+    return results | views::transform(mapper) | ranges::to<std::vector>();
+  });
 }
 
 auto checkPhysicalDeviceSupport(const DeviceCheckContext& ctx) -> bool {
@@ -198,7 +233,7 @@ auto checkTransferQueue(const QueueFamilyCheckContext& ctx) -> bool {
 
 auto createDevice(
   const PhysicalDeviceInfo& physical_device_info, std::span<const char*> required_extensions
-) -> std::pair<Device, std::vector<VkQueue>> {
+) -> std::pair<Device, std::vector<std::pair<VkQueue, uint32_t>>> {
   /*
    * 1. 创建 VkDeviceQueueCreateInfo 数组, 用于指定 logic device 中的队列
    * 2. 根据 queue create info 和 deviceFeatures_ 创建 device create info
@@ -249,12 +284,10 @@ auto createDevice(
                 views::transform([device = device.get()](auto pair) {
                   VkQueue queue;
                   vkGetDeviceQueue(device, pair.first, pair.second, &queue);
-                  return queue;
+                  return std::pair{ queue, pair.first };
                 }) |
                 ranges::to<std::vector>();
   return { std::move(device), queues };
 }
-
-void destroyLogicalDevice(VkDevice device) noexcept { vkDestroyDevice(device, nullptr); }
 
 } // namespace vk

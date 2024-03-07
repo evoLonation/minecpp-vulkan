@@ -14,7 +14,7 @@ export namespace vk {
  * surface capability, format, present mode 用于创建 swap chain
  */
 
-using QueueIndexes = std::vector<std::pair<uint32_t, uint32_t>>;
+using QueueIndices = std::vector<std::pair<uint32_t, uint32_t>>;
 struct PhysicalDeviceInfo {
   VkPhysicalDevice           device;
   VkPhysicalDeviceProperties properties;
@@ -22,7 +22,7 @@ struct PhysicalDeviceInfo {
   VkSurfaceCapabilitiesKHR   capabilities;
   VkPresentModeKHR           present_mode;
   VkSurfaceFormatKHR         surface_format;
-  QueueIndexes               queue_indices;
+  QueueIndices               queue_indices;
 };
 struct QueueFamilyCheckContext {
   VkPhysicalDevice         device;
@@ -71,14 +71,17 @@ auto checkTransferQueue(const QueueFamilyCheckContext& ctx) -> bool;
  */
 auto createDevice(
   const PhysicalDeviceInfo& physical_device_info, std::span<const char*> required_extensions
-) -> std::pair<Device, std::vector<VkQueue>>;
+) -> std::pair<Device, std::vector<std::pair<VkQueue, uint32_t>>>;
 
 } // namespace vk
 
 namespace vk {
 
 auto getQueueFamilyIndices(
-  VkPhysicalDevice device, VkSurfaceKHR surface, std::span<const QueueFamilyChecker> queue_chekers
-) -> std::optional<QueueIndexes>;
+  VkPhysicalDevice                    device,
+  VkSurfaceKHR                        surface,
+  std::span<const QueueFamilyChecker> queue_chekers,
+  bool                                all_queue_diff
+) -> std::optional<QueueIndices>;
 
 } // namespace vk

@@ -5,6 +5,9 @@ module;
 #define GLM_EXT_INLINE_NAMESPACE
 // #define GLM_GTX_INLINE_NAMESPACE to inline glm::gtx into glm
 
+// by zzy : vulkan 的深度范围是0.0到1.0
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+
 #include <glm/glm.hpp>
 #include <glm/ext.hpp>
 

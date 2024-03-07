@@ -25,7 +25,6 @@ auto createSwapchain(
   VkSurfaceFormatKHR              surface_format,
   VkPresentModeKHR                present_mode,
   GLFWwindow*                     p_window,
-  std::span<const uint32_t>       sharing_family_indices,
   VkSwapchainKHR                  old_swapchain
 ) -> std::expected<std::pair<Swapchain, VkExtent2D>, SwapchainCreateError> {
   uint32_t image_count = capabilities.minImageCount + 1;
@@ -72,6 +71,17 @@ auto createSwapchain(
      * 先渲染到单独的图像上（以便进行后处理），然后传输到交换链图像
      */
     .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+    /*
+     * VK_SHARING_MODE_CONCURRENT:
+     * 图像可以跨多个队列族使用，而无需明确的所有权转移
+     * VK_SHARING_MODE_EXCLUSIVE:
+     * 一个图像一次由一个队列族所有，在将其用于另一队列族之前，必须明确转移所有权
+     * (性能最佳)
+     */
+    .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    .queueFamilyIndexCount = 0,
+    .pQueueFamilyIndices = nullptr,
+
     .preTransform = capabilities.currentTransform,
     // alpha通道是否应用于与窗口系统中的其他窗口混合
     // 简单地忽略alpha通道
@@ -82,26 +92,6 @@ auto createSwapchain(
     // 尚且有效的swapchain，利于进行资源复用
     .oldSwapchain = old_swapchain,
   };
-
-  /*
-   * VK_SHARING_MODE_CONCURRENT:
-   * 图像可以跨多个队列族使用，而无需明确的所有权转移
-   * VK_SHARING_MODE_EXCLUSIVE:
-   * 一个图像一次由一个队列族所有，在将其用于另一队列族之前，必须明确转移所有权
-   * (性能最佳)
-   */
-  auto diff_indices = sharing_family_indices | toy::chunkBy(std::equal_to{}) |
-                      views::transform([](auto subrange) { return *subrange.begin(); }) |
-                      ranges::to<std::vector>();
-  if (diff_indices.size() >= 2) {
-    create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-    create_info.queueFamilyIndexCount = diff_indices.size();
-    create_info.pQueueFamilyIndices = diff_indices.data();
-  } else {
-    create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    create_info.queueFamilyIndexCount = 0;
-    create_info.pQueueFamilyIndices = nullptr;
-  }
 
   toy::debugf("the info of created swap chain:");
   toy::debugf("image count:{}", image_count);

@@ -269,29 +269,4 @@ auto createFramebuffers(
          ranges::to<std::vector>();
 }
 
-auto createCommandPool(VkDevice device, uint32_t graphic_family_index) -> CommandPool {
-  auto pool_create_info = VkCommandPoolCreateInfo{
-    .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-    // VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT：允许重置单个command
-    // buffer，否则就要重置命令池里的所有buffer
-    // VK_COMMAND_POOL_CREATE_TRANSIENT_BIT: 命令缓冲区会很频繁的记录新命令
-    .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-    .queueFamilyIndex = graphic_family_index,
-  };
-  return CommandPool{ device, pool_create_info };
-}
-
-auto allocateCommandBuffers(VkDevice device, VkCommandPool command_pool, uint32_t count)
-  -> CommandBuffers {
-  auto cbuffer_alloc_info = VkCommandBufferAllocateInfo{
-    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-    .commandPool = command_pool,
-    // VK_COMMAND_BUFFER_LEVEL_PRIMARY: 主缓冲区，类似于main
-    // VK_COMMAND_BUFFER_LEVEL_SECONDARY: 次缓冲区，可复用，类似于其他函数
-    .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-    .commandBufferCount = count,
-  };
-  return CommandBuffers{ device, cbuffer_alloc_info };
-}
-
 } // namespace vk

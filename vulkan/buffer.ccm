@@ -11,65 +11,6 @@ import toy;
 
 export namespace vk {
 
-template <int AttributeCount>
-struct VertexInfo {
-  VkVertexInputBindingDescription                               binding_description;
-  std::array<VkVertexInputAttributeDescription, AttributeCount> attribute_descriptions;
-};
-
-template <typename... DataTypes>
-  requires(std::is_trivially_copyable_v<DataTypes> && ...)
-struct Vertex : public std::array<char, (sizeof(DataTypes) + ...)> {
-  using Base = std::array<char, (sizeof(DataTypes) + ...)>;
-  Vertex(DataTypes&&... data) {
-    int offset = 0;
-    ((*reinterpret_cast<DataTypes*>(Base::data() + offset) = data, offset += sizeof(DataTypes)),
-     ...);
-  }
-  static consteval auto getVertexInfo() -> VertexInfo<sizeof...(DataTypes)>;
-};
-
-template <typename Type>
-consteval auto formatMapper() -> VkFormat {
-  if constexpr (std::same_as<Type, glm::vec2>) {
-    return VK_FORMAT_R32G32_SFLOAT;
-  } else if constexpr (std::same_as<Type, glm::vec3>) {
-    return VK_FORMAT_R32G32B32_SFLOAT;
-  } else if constexpr (std::same_as<Type, glm::vec4>) {
-    return VK_FORMAT_R32G32B32A32_SFLOAT;
-  } else if constexpr (std::same_as<Type, float>) {
-    return VK_FORMAT_R32_SFLOAT;
-  }
-}
-
-template <typename... DataTypes>
-  requires(std::is_trivially_copyable_v<DataTypes> && ...)
-consteval auto Vertex<DataTypes...>::getVertexInfo() -> VertexInfo<sizeof...(DataTypes)> {
-  auto binding_description = VkVertexInputBindingDescription{
-    .binding = 0,
-    .stride = sizeof(Vertex),
-    // VK_VERTEX_INPUT_RATE_{VERTEX|INSTANCE}:
-    // 是在每个vertex或者instance后移动到下一个data entry
-    .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-  };
-  auto attribute_descriptions =
-    std::array<VkVertexInputAttributeDescription, sizeof...(DataTypes)>{};
-
-  uint32_t i = 0;
-  uint32_t offset = 0;
-  ((attribute_descriptions[i] =
-      VkVertexInputAttributeDescription{
-        .location = i,
-        .binding = 0,
-        .format = formatMapper<DataTypes>(),
-        .offset = offset,
-      },
-    i++,
-    offset += sizeof(DataTypes)),
-   ...);
-  return { binding_description, attribute_descriptions };
-}
-
 template <typename MemoryOwner>
   requires std::same_as<MemoryOwner, VkBuffer> || std::same_as<MemoryOwner, VkImage>
 auto createMemory(
@@ -162,98 +103,19 @@ auto createStagingBuffer(
   return std::pair{ std::move(staging_buffer), std::move(staging_memory) };
 }
 
-void copyBuffer(
-  VkDevice        device,
-  VkQueue         queue,
-  VkCommandBuffer command_buffer,
+void recordCopyBuffer(
+  VkCommandBuffer transfer_cmdbuf,
   VkBuffer        src_buffer,
   VkBuffer        dst_buffer,
-  VkDeviceSize    buffer_size,
-  VkFence         fence
+  VkDeviceSize    buffer_size
 ) {
-  auto recorder = [=]() {
-    auto copy_info = VkBufferCopy{
-      // this offset is about buffer, not about memory
-      .srcOffset = 0,
-      .dstOffset = 0,
-      .size = buffer_size,
-    };
-    vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_info);
+  auto copy_info = VkBufferCopy{
+    // this offset is about buffer, not about memory
+    .srcOffset = 0,
+    .dstOffset = 0,
+    .size = buffer_size,
   };
-  recordAndSubmit(command_buffer, queue, recorder, {}, {}, fence);
-  consumeFence(device, fence);
-}
-
-auto createDeviceLocalBuffer(
-  VkPhysicalDevice           physical_device,
-  VkDevice                   device,
-  VkQueue                    transfer_queue,
-  VkCommandBuffer            transfer_command_buffer,
-  std::span<const std::byte> buffer_data,
-  VkBufferUsageFlagBits      usage,
-  VkFence                    transfer_fence
-) -> std::pair<Buffer, Memory> {
-  auto [staging_buffer, staging_memory] = createStagingBuffer(physical_device, device, buffer_data);
-
-  auto buffer_size = buffer_data.size() * sizeof(byte);
-
-  auto [vertex_buffer, vertex_memory] = createBuffer(
-    physical_device,
-    device,
-    buffer_size,
-    VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage,
-    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-  );
-
-  copyBuffer(
-    device,
-    transfer_queue,
-    transfer_command_buffer,
-    staging_buffer,
-    vertex_buffer,
-    buffer_size,
-    transfer_fence
-  );
-
-  return { std::move(vertex_buffer), std::move(vertex_memory) };
-}
-
-auto createVertexBuffer(
-  VkPhysicalDevice                physical_device,
-  VkDevice                        device,
-  VkQueue                         transfer_queue,
-  VkCommandBuffer                 transfer_command_buffer,
-  ranges::contiguous_range auto&& vertex_data,
-  VkFence                         transfer_fence
-) -> std::pair<Buffer, Memory> {
-  return createDeviceLocalBuffer(
-    physical_device,
-    device,
-    transfer_queue,
-    transfer_command_buffer,
-    std::as_bytes(std::span{ vertex_data }),
-    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-    transfer_fence
-  );
-}
-
-auto createIndexBuffer(
-  VkPhysicalDevice          physical_device,
-  VkDevice                  device,
-  VkQueue                   transfer_queue,
-  VkCommandBuffer           transfer_command_buffer,
-  std::span<const uint16_t> vertex_indices,
-  VkFence                   transfer_fence
-) -> std::pair<Buffer, Memory> {
-  return createDeviceLocalBuffer(
-    physical_device,
-    device,
-    transfer_queue,
-    transfer_command_buffer,
-    std::as_bytes(vertex_indices),
-    VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-    transfer_fence
-  );
+  vkCmdCopyBuffer(transfer_cmdbuf, src_buffer, dst_buffer, 1, &copy_info);
 }
 
 } // namespace vk

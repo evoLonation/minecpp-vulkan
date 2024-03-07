@@ -7,4 +7,16 @@ export namespace toy {
 template <typename R, typename V>
 concept RangeOf = std::same_as<ranges::range_value_t<R>, V>;
 
+template <typename Type, template <typename...> typename Temp>
+struct IsInstantiationOfS : std::false_type {};
+template <typename Type, template <typename...> typename Temp>
+concept InstantiationOf = IsInstantiationOfS<Type, Temp>::value;
+template <template <typename...> typename Temp, typename... Args>
+struct IsInstantiationOfS<Temp<Args...>, Temp> : std::true_type {};
+
+} // namespace toy
+
+void test() {
+  static_assert(toy::InstantiationOf<std::vector<int>, std::vector>);
+  static_assert(!toy::InstantiationOf<int, std::vector>);
 }

@@ -13,8 +13,8 @@ void recordCommandBuffer(
   VkPipeline                       graphics_pipeline,
   VkExtent2D                       extent,
   VkFramebuffer                    framebuffer,
-  VkBuffer                         vertex_buffer,
-  VkBuffer                         index_buffer,
+  VertexBuffer&                    vertex_buffer,
+  IndexBuffer&                     index_buffer,
   uint32_t                         index_count,
   VkPipelineLayout                 pipeline_layout,
   std::span<const VkDescriptorSet> descriptor_sets
@@ -53,8 +53,8 @@ void recordCommandBuffer(
   };
   vkCmdSetScissor(command_buffer, 0, 1, &scissor);
   auto offsets = std::array<VkDeviceSize, 1>{ 0 };
-  vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffer, offsets.data());
-  vkCmdBindIndexBuffer(command_buffer, index_buffer, 0, VK_INDEX_TYPE_UINT16);
+  vertex_buffer.recordBind(command_buffer);
+  index_buffer.recordBind(command_buffer);
   vkCmdBindDescriptorSets(
     command_buffer,
     VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -91,7 +91,6 @@ private:
 
   template <bool enable_debug_messenger>
   struct InstanceWithDebugMessenger;
-
   template <>
   struct InstanceWithDebugMessenger<true> {
     Instance             instance;
@@ -105,38 +104,41 @@ private:
   InstanceWithDebugMessenger<toy::enable_debug> instance_;
 
   PhysicalDeviceInfo physical_device_info_;
-
-  Surface surface_;
-
-  Device  device_;
-  VkQueue graphic_queue_;
-  VkQueue present_queue_;
+  Surface            surface_;
+  Device             device_;
 
   Swapchain              swapchain_;
   VkExtent2D             extent_;
   std::vector<ImageView> image_views_;
 
-  RenderPass render_pass_;
-
+  RenderPass               render_pass_;
   std::vector<Framebuffer> framebuffers_;
 
   DescriptorSetLayout uniform_set_layout_;
   DescriptorSetLayout sampler_set_layout_;
   PipelineResource    pipeline_resource_;
 
-  CommandPool    graphics_command_pool_;
-  DescriptorPool descriptor_pool_;
-
-  CommandBuffers graphics_command_buffers_;
-  CommandBuffers graphics_command_buffers2_;
-  DescriptorSets descriptor_sets_;
-
+  DescriptorPool  descriptor_pool_;
+  DescriptorSets  descriptor_sets_;
   VkDescriptorSet sampler_set_;
+
+  struct ExecuteContext {
+    VkQueue        queue;
+    uint32_t       family_index;
+    CommandPool    command_pool;
+    CommandBuffers cmdbufs;
+  };
+
+  ExecuteContext graphic_ctx;
+  ExecuteContext present_ctx;
+  ExecuteContext transfer_ctx;
+
   struct Worker {
-    VkCommandBuffer command_buffer;
-    VkCommandBuffer command_buffer2;
+    VkCommandBuffer cmdbuf;
+    VkCommandBuffer cmdbuf_for_signal;
     Semaphore       image_available_sema;
     Semaphore       render_finished_sema;
+    Semaphore       ownership_transfer_finished_sema;
     Fence           queue_batch_fence;
     Buffer          uniform_buffer;
     Memory          uniform_memory;
@@ -151,18 +153,9 @@ private:
 
   bool last_present_failed_;
 
-  using Vertex2D = Vertex<glm::vec2, glm::vec3, glm::vec2>;
-  std::vector<Vertex2D> vertex_data_;
-  VkQueue               transfer_queue_;
-  CommandPool           transfer_command_pool_;
-  CommandBuffers        transfer_command_buffer_container_;
-  VkCommandBuffer       transfer_command_buffer_;
-  Fence                 transfer_fence_;
-  Buffer                vertex_buffer_;
-  Memory                vertex_buffer_memory_;
-  std::vector<uint16_t> vertex_indices;
-  Buffer                index_buffer_;
-  Memory                index_buffer_memory_;
+  VertexBuffer vertex_buffer;
+  IndexBuffer  index_buffer;
+  uint32_t     indices_count;
 
   struct UniformBufferObject {
     alignas(16) glm::mat4 model;
@@ -170,10 +163,7 @@ private:
     alignas(16) glm::mat4 proj;
   };
 
-  Image     texture_image_;
-  ImageView texture_image_view_;
-  Memory    texture_memory_;
-  Sampler   texture_sampler_;
+  SampledTexture sampled_texture;
 };
 
 VulkanApplication::VulkanApplication(uint32_t width, uint32_t height, std::string_view app_name)
@@ -211,15 +201,26 @@ VulkanApplication::VulkanApplication(uint32_t width, uint32_t height, std::strin
       : "!="
   );
 
-  std::vector<VkQueue> queues;
-  std::tie(device_, queues) = createDevice(physical_device_info_, required_device_extensions);
-  graphic_queue_ = queues[0];
-  present_queue_ = queues[1];
+  int worker_count = 2;
+  {
+    auto [device, queues] = createDevice(physical_device_info_, required_device_extensions);
+    this->device_ = std::move(device);
+    auto get_ctx = [&](auto pair, int cmdbuf_count) {
+      auto ret = ExecuteContext{
+        .queue = pair.first,
+        .family_index = pair.second,
+      };
+      if (cmdbuf_count != 0) {
+        ret.command_pool = createCommandPool(this->device_, pair.second);
+        ret.cmdbufs = allocateCommandBuffers(this->device_, ret.command_pool, cmdbuf_count);
+      }
+      return ret;
+    };
 
-  auto image_sharing_families = std::vector<uint32_t>{
-    physical_device_info_.queue_indices[0].first,
-    physical_device_info_.queue_indices[1].first,
-  };
+    this->graphic_ctx = get_ctx(queues[0], worker_count * 2 + 1);
+    this->present_ctx = get_ctx(queues[1], 0);
+    this->transfer_ctx = get_ctx(queues[2], 3);
+  }
 
   std::tie(swapchain_, extent_) = createSwapchain(
                                     surface_,
@@ -228,7 +229,6 @@ VulkanApplication::VulkanApplication(uint32_t width, uint32_t height, std::strin
                                     physical_device_info_.surface_format,
                                     physical_device_info_.present_mode,
                                     window_,
-                                    std::span(image_sharing_families),
                                     VK_NULL_HANDLE
   )
                                     .value();
@@ -245,6 +245,7 @@ VulkanApplication::VulkanApplication(uint32_t width, uint32_t height, std::strin
   uniform_set_layout_ = createUniformDescriptorSetLayout(device_);
   sampler_set_layout_ = createSamplerDescriptorSetLayout(device_);
 
+  using Vertex2D = Vertex<glm::vec3, glm::vec3, glm::vec2>;
   auto vertex_info = Vertex2D::getVertexInfo();
   pipeline_resource_ = createGraphicsPipeline(
     device_,
@@ -253,129 +254,111 @@ VulkanApplication::VulkanApplication(uint32_t width, uint32_t height, std::strin
     vertex_info.attribute_descriptions,
     std::array{ uniform_set_layout_.get(), sampler_set_layout_.get() }
   );
-  graphics_command_pool_ = createCommandPool(device_, physical_device_info_.queue_indices[0].first);
-  int  worker_count = 2;
-  auto descriptor_type_counts = std::array{ VkDescriptorPoolSize{
-                                              .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                                              .descriptorCount = (uint32_t)worker_count,
-                                            },
-                                            VkDescriptorPoolSize{
-                                              .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                                              .descriptorCount = 1,
-                                            } };
-  descriptor_pool_ = createDescriptorPool(device_, worker_count + 1, descriptor_type_counts);
-  graphics_command_buffers_ = allocateCommandBuffers(device_, graphics_command_pool_, worker_count);
-  graphics_command_buffers2_ =
-    allocateCommandBuffers(device_, graphics_command_pool_, worker_count);
-  auto uniform_set_layouts =
-    views::repeat(uniform_set_layout_.get(), worker_count) | ranges::to<std::vector>();
 
-  auto descriptor_set_layouts =
+  descriptor_pool_ = createDescriptorPool(
+    device_,
+    worker_count + 1,
+    std::array{ VkDescriptorPoolSize{
+                  .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                  .descriptorCount = (uint32_t)worker_count,
+                },
+                VkDescriptorPoolSize{
+                  .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                  .descriptorCount = 1,
+                } }
+  );
+  descriptor_sets_ = allocateDescriptorSets(
+    device_,
+    descriptor_pool_,
     views::join(std::array{ views::repeat(sampler_set_layout_.get(), 1),
                             views::repeat(uniform_set_layout_.get(), worker_count) }) |
-    ranges::to<std::vector>();
-  descriptor_sets_ = allocateDescriptorSets(device_, descriptor_pool_, descriptor_set_layouts);
+      ranges::to<std::vector>()
+  );
   sampler_set_ = descriptor_sets_.get()[0];
-  auto uniform_sets = descriptor_sets_.get() | views::drop(1);
-  workers_ =
-    views::zip(
-      views::zip(graphics_command_buffers_.get(), graphics_command_buffers2_.get()), uniform_sets
-    ) |
-    views::transform([device = device_.get(),
-                      descriptor_set_layout = uniform_set_layout_.get(),
-                      physical_device = physical_device_info_.device](auto pair) {
-      auto& [buffer_pair, descriptor_set] = pair;
-      auto& [command_buffer, command_buffer2] = buffer_pair;
-
-      auto [uniform_buffer, uniform_memory] = createBuffer(
-        physical_device,
-        device,
-        sizeof(UniformBufferObject),
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-      );
-      void* map;
-      vkMapMemory(device, uniform_memory, 0, sizeof(UniformBufferObject), 0, &map);
-      return Worker{
-        .command_buffer = command_buffer,
-        .command_buffer2 = command_buffer2,
-        .image_available_sema = createSemaphore(device),
-        .render_finished_sema = createSemaphore(device),
-        .queue_batch_fence = createFence(device, true),
-        .uniform_buffer = std::move(uniform_buffer),
-        .uniform_memory = std::move(uniform_memory),
-        .uniform_memory_map = map,
-        .uniform_set = descriptor_set,
-      };
-    }) |
-    ranges::to<std::vector>();
-  vertex_data_ = {
-    { { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
-    { { +0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
-    { { +0.5f, +0.5f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
-    { { -0.5f, +0.5f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
+  // todo: use chunk
+  auto chunked_cmdbufs =
+    graphic_ctx.cmdbufs.get() | views::drop(1) | toy::enumerate |
+    toy::chunkBy([](auto a, auto b) { return b.first % 2 != 0; }) |
+    views::transform([](const auto& sub_range) {
+      return sub_range | views::transform([](auto pair) { return pair.second; });
+    });
+  workers_ = views::zip(chunked_cmdbufs, descriptor_sets_.get() | views::drop(1)) |
+             views::transform([&](auto pair) {
+               auto& [cmdbufs, descriptor_set] = pair;
+               toy::debugf("size of cmdbufs: {}", cmdbufs.size());
+               auto [uniform_buffer, uniform_memory] = createBuffer(
+                 this->physical_device_info_.device,
+                 this->device_,
+                 sizeof(UniformBufferObject),
+                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+               );
+               void* map;
+               vkMapMemory(this->device_, uniform_memory, 0, sizeof(UniformBufferObject), 0, &map);
+               updateDescriptorSet(this->device_, descriptor_set, uniform_buffer.get());
+               return Worker{
+                 .cmdbuf = cmdbufs[0],
+                 .cmdbuf_for_signal = cmdbufs[1],
+                 .image_available_sema = createSemaphore(this->device_),
+                 .render_finished_sema = createSemaphore(this->device_),
+                 .ownership_transfer_finished_sema = createSemaphore(this->device_),
+                 .queue_batch_fence = createFence(this->device_, true),
+                 .uniform_buffer = std::move(uniform_buffer),
+                 .uniform_memory = std::move(uniform_memory),
+                 .uniform_memory_map = map,
+                 .uniform_set = descriptor_set,
+               };
+             }) |
+             ranges::to<std::vector>();
+  auto vertex_data = std::array<Vertex2D, 8>{
+    Vertex2D{ { -0.5f, -0.5f, +0.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
+    { { +0.5f, -0.5f, +0.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
+    { { +0.5f, +0.5f, +0.0f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
+    { { -0.5f, +0.5f, +0.0f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
+    { { -0.5f, -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
+    { { +0.5f, -0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
+    { { +0.5f, +0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
+    { { -0.5f, +0.5f, -0.5f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
   };
-  vertex_indices = {
-    0, 1, 2, 2, 3, 0,
+  auto vertex_indices = std::array<uint16_t, 12>{
+    0, 1, 2, 2, 3, 0, 0 + 4, 1 + 4, 2 + 4, 2 + 4, 3 + 4, 0 + 4,
   };
-  transfer_command_pool_ = createCommandPool(device_, physical_device_info_.queue_indices[2].first);
-  transfer_queue_ = queues[2];
-  transfer_command_buffer_container_ = allocateCommandBuffers(device_, transfer_command_pool_, 1);
-  transfer_command_buffer_ = transfer_command_buffer_container_.get()[0];
-  transfer_fence_ = createFence(device_, false);
-  std::tie(vertex_buffer_, vertex_buffer_memory_) = createVertexBuffer(
-    physical_device_info_.device,
-    device_,
-    transfer_queue_,
-    transfer_command_buffer_,
-    vertex_data_,
-    transfer_fence_
-  );
-  std::tie(index_buffer_, index_buffer_memory_) = createIndexBuffer(
-    physical_device_info_.device,
-    device_,
-    transfer_queue_,
-    transfer_command_buffer_,
-    vertex_indices,
-    transfer_fence_
-  );
-  auto max_anisotropy = physical_device_info_.properties.limits.maxSamplerAnisotropy;
-  std::tie(this->texture_image_, this->texture_memory_, this->texture_image_view_) =
-    createTextureImage(
-      physical_device_info_.device,
-      device_,
-      graphic_queue_,
-      transfer_command_buffer_,
-      transfer_fence_
-    );
-  this->texture_sampler_ = createSampler(device_, max_anisotropy);
-  updateDescriptorSet(
-    device_,
-    sampler_set_,
-    std::pair{ this->texture_image_view_.get(), this->texture_sampler_.get() }
-  );
-  // uniform_buffers_.resize(worker_count);
-  // uniform_buffer_maps_.resize(worker_count);
-  // for (int i = 0; i < worker_count; i++) {
-  //   uniform_buffers_[i] = createBuffer(device_,
-  //                                      physical_device_info_.device,
-  //                                      sizeof(UniformBufferObject),
-  //                                      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-  //                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-  //                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-  //   vkMapMemory(device_,
-  //               uniform_buffers_[i].second,
-  //               0,
-  //               sizeof(UniformBufferObject),
-  //               0,
-  //               &uniform_buffer_maps_[i]);
-  // }
 
-  // descriptor_sets_ = allocateDescriptorSets(
-  //   views::repeat(descriptor_set_layout_) | views::take(worker_count) |
-  //     ranges::to<std::vector>(),
-  //   device_,
-  //   descriptor_pool_);
+  auto family_transfer = std::optional<FamilyTransferInfo>{};
+  if (transfer_ctx.family_index != graphic_ctx.family_index) {
+    family_transfer = FamilyTransferInfo{ transfer_ctx.family_index, graphic_ctx.family_index };
+  }
+  this->vertex_buffer =
+    VertexBuffer{ this->physical_device_info_.device,  this->device_, this->transfer_ctx.queue,
+                  this->transfer_ctx.cmdbufs.get()[0], vertex_data,   family_transfer };
+  this->index_buffer =
+    IndexBuffer{ this->physical_device_info_.device,  this->device_,  this->transfer_ctx.queue,
+                 this->transfer_ctx.cmdbufs.get()[1], vertex_indices, family_transfer };
+  this->indices_count = vertex_indices.size();
+  this->sampled_texture =
+    SampledTexture{ this->physical_device_info_.device,
+                    this->device_,
+                    this->transfer_ctx.queue,
+                    this->transfer_ctx.cmdbufs.get()[2],
+                    this->sampler_set_,
+                    physical_device_info_.properties.limits.maxSamplerAnisotropy,
+                    family_transfer };
+  recordAndSubmit(
+    this->graphic_ctx.cmdbufs.get()[0],
+    this->graphic_ctx.queue,
+    [&](auto cmdbuf) {
+      this->sampled_texture.recordDstFamilyTransfer(cmdbuf);
+      this->vertex_buffer.recordDstFamilyTransfer(cmdbuf);
+      this->index_buffer.recordDstFamilyTransfer(cmdbuf);
+    },
+    std::array{
+      this->sampled_texture.getNeedWaitInfo(),
+      this->vertex_buffer.getNeedWaitInfo(),
+      this->index_buffer.getNeedWaitInfo(),
+    },
+    {},
+    VK_NULL_HANDLE
+  );
 }
 
 VulkanApplication::~VulkanApplication() {
@@ -404,7 +387,6 @@ auto VulkanApplication::recreateSwapchain() -> bool {
         physical_device_info_.surface_format,
         physical_device_info_.present_mode,
         window_,
-        std::span(queue_family_indices),
         old_swap_chain
       );
       ret.has_value()) {
@@ -443,7 +425,6 @@ void VulkanApplication::updateUniformBuffer(const Worker& worker) {
   };
   ubo.proj[1][1] *= -1;
   std::memcpy(worker.uniform_memory_map, reinterpret_cast<void*>(&ubo), sizeof(ubo));
-  updateDescriptorSet(device_, worker.uniform_set, worker.uniform_buffer);
 }
 
 void VulkanApplication::drawFrame() {
@@ -482,18 +463,18 @@ void VulkanApplication::drawFrame() {
   // vkBeginCommandBuffer 会隐式执行vkResetCommandBuffer
   // vkResetCommandBuffer(worker.command_buffer, 0);
   recordAndSubmit(
-    worker.command_buffer,
-    graphic_queue_,
-    [&]() {
+    worker.cmdbuf,
+    graphic_ctx.queue,
+    [&](VkCommandBuffer cmdbuf) {
       recordCommandBuffer(
-        worker.command_buffer,
+        cmdbuf,
         render_pass_,
         pipeline_resource_.pipeline,
         extent_,
         framebuffers_[image_index],
-        vertex_buffer_,
-        index_buffer_,
-        vertex_indices.size(),
+        this->vertex_buffer,
+        this->index_buffer,
+        this->indices_count,
         pipeline_resource_.pipeline_layout,
         std::array{ worker.uniform_set, sampler_set_ }
       );
@@ -505,9 +486,9 @@ void VulkanApplication::drawFrame() {
   );
   // vkQueueSubmit的fence的signal操作会在提交顺序之前的所有命令执行完毕后执行
   recordAndSubmit(
-    worker.command_buffer2,
-    graphic_queue_,
-    []() {},
+    worker.cmdbuf_for_signal,
+    graphic_ctx.queue,
+    [](auto _) {},
     {},
     std::array{ worker.render_finished_sema.get() },
     worker.queue_batch_fence
@@ -522,7 +503,7 @@ void VulkanApplication::drawFrame() {
     .pImageIndices = &image_index,
     // .pResults: 当有多个 swapchain 时检查每个的result
   };
-  if (auto result = vkQueuePresentKHR(present_queue_, &present_info);
+  if (auto result = vkQueuePresentKHR(present_ctx.queue, &present_info);
       result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
     toy::debugf(
       "the queue present return {}",
@@ -536,6 +517,7 @@ void VulkanApplication::drawFrame() {
 }
 
 int main() {
+  std::print("hello, world!");
   try {
     toy::test_EnumerateAdaptor();
     toy::test_SortedRange();

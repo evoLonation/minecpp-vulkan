@@ -11,3 +11,4 @@ export import vulkan.descriptor;
 export import vulkan.sync;
 export import vulkan.command;
 export import vulkan.image;
+export import vulkan.vertex;

@@ -8,6 +8,7 @@ import vulkan.resource;
 import vulkan.buffer;
 import vulkan.command;
 import vulkan.sync;
+import vulkan.descriptor;
 
 export namespace vk {
 
@@ -36,172 +37,6 @@ auto createImageView(VkDevice device, VkImage image, VkFormat format) -> ImageVi
     },
   };
   return ImageView{ device, create_info };
-}
-
-auto createTextureImage(
-  VkPhysicalDevice physical_device,
-  VkDevice         device,
-  VkQueue          queue,
-  VkCommandBuffer  command_buffer,
-  VkFence          wait_fence
-) -> std::tuple<Image, Memory, ImageView> {
-  int   width, height, channels;
-  auto* image_path = "textures/texture.jpg";
-  auto* pixels = stbi_load(image_path, &width, &height, &channels, STBI_rgb_alpha);
-  auto  image_size = static_cast<VkDeviceSize>(width * height * 4);
-  if (pixels == nullptr) {
-    toy::throwf("failed to load image {}", image_path);
-  }
-  auto image_data = std::as_bytes(std::span{ pixels, image_size });
-  toy::debugf("image {} info: width {}, height {}", image_path, width, height);
-
-  auto [staging_buffer, staging_memory] = createStagingBuffer(physical_device, device, image_data);
-
-  stbi_image_free(pixels);
-
-  auto format = VK_FORMAT_R8G8B8A8_SRGB;
-  // if use for staging image, combine use:
-  // VK_IMAGE_TILING_LINEAR, VK_IMAGE_LAYOUT_PREINITIALIZED,
-  // VK_IMAGE_USAGE_TRANSFER_SRC_BIT
-  auto image_info = VkImageCreateInfo{
-    .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-    .pNext = nullptr,
-    .flags = 0,
-    .imageType = VK_IMAGE_TYPE_2D,
-    .format =  format,
-    .extent = {
-      .width = (uint32_t)width,
-      .height = (uint32_t)height,
-      .depth = 1,
-    },
-    .mipLevels = 1,
-    .arrayLayers = 1,
-    .samples = VK_SAMPLE_COUNT_1_BIT,
-    // VK_IMAGE_TILING_LINEAR: Texels are laid out in row-major 
-    // order like our pixels array
-    // 想要直接访问 image 中的像素的话就用 VK_IMAGE_TILING_LINEAR
-    // VK_IMAGE_TILING_OPTIMAL: Texels are laid out in an implementation
-    // defined order for optimal access
-    .tiling = VK_IMAGE_TILING_OPTIMAL,
-    .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-    // 仅当VK_SHARING_MODE_CONCURRENT时设置
-    .queueFamilyIndexCount = 0,
-    .pQueueFamilyIndices = nullptr,
-    // VK_IMAGE_LAYOUT_UNDEFINED: Not usable by the GPU 
-    // and the very first transition will discard the texels
-    // VK_IMAGE_LAYOUT_PREINITIALIZED: Not usable by the GPU 
-    // but the first transition will preserve the texels
-    .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-  };
-  auto image = Image{ device, image_info };
-  auto memory =
-    createMemory(physical_device, device, image.get(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-  vkBindImageMemory(device, image, memory, 0);
-
-  auto image_view = createImageView(device, image, format);
-  struct TransitionInfo {
-    VkPipelineStageFlags stage_mask;
-    VkAccessFlags        access_mask;
-    VkImageLayout        layout;
-  };
-
-  auto transition_image =
-    [=](VkImage image, const TransitionInfo& src_transition, const TransitionInfo& dst_transition) {
-      auto image_barrier = VkImageMemoryBarrier{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .pNext = nullptr,
-        .srcAccessMask = src_transition.access_mask,
-        .dstAccessMask = dst_transition.access_mask,
-        .oldLayout = src_transition.layout,
-        .newLayout = dst_transition.layout,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = image,
-        .subresourceRange =
-          VkImageSubresourceRange{
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-          },
-      };
-      vkCmdPipelineBarrier(
-        command_buffer,
-        src_transition.stage_mask,
-        dst_transition.stage_mask,
-        //  VK_DEPENDENCY_BY_REGION_BIT:
-        //  实现可以分区域进行同步(前面写一部分，后面就可以先读一部分)
-        VK_DEPENDENCY_BY_REGION_BIT,
-        0,
-        nullptr,
-        0,
-        nullptr,
-        1,
-        &image_barrier
-      );
-    };
-
-  auto recorder = [&]() {
-    transition_image(
-      image,
-      TransitionInfo{
-        .stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-        .access_mask = 0,
-        .layout = VK_IMAGE_LAYOUT_UNDEFINED,
-      },
-      TransitionInfo{
-        .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-        .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-      }
-    );
-
-    auto image_copy = VkBufferImageCopy{
-      .bufferOffset = 0,
-      // bufferRowLength and bufferImageHeight 
-      // 用于更详细的定义buffer的内存如何映射到image
-      .bufferRowLength = 0,
-      .bufferImageHeight = 0,
-      .imageSubresource = VkImageSubresourceLayers{
-        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-        .mipLevel = 0,
-        .baseArrayLayer = 0,
-        .layerCount = 1,
-      },
-      .imageOffset = {
-        .x = 0,
-        .y = 0,
-        .z = 0,
-      },
-      .imageExtent = {
-        .width = (uint32_t)width,
-        .height = (uint32_t)height,
-        .depth = 1,
-      },
-    };
-    vkCmdCopyBufferToImage(
-      command_buffer, staging_buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_copy
-    );
-    transition_image(
-      image,
-      TransitionInfo{
-        // 一个伪阶段
-        .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-        .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-      },
-      TransitionInfo{
-        .stage_mask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        .access_mask = VK_ACCESS_SHADER_READ_BIT,
-        .layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-      }
-    );
-  };
-  recordAndSubmit(command_buffer, queue, recorder, {}, {}, wait_fence);
-  consumeFence(device, wait_fence);
-  return std::tuple{ std::move(image), std::move(memory), std::move(image_view) };
 }
 
 auto createSampler(VkDevice device, float max_anisotropy) -> Sampler {
@@ -236,5 +71,148 @@ auto createSampler(VkDevice device, float max_anisotropy) -> Sampler {
   };
   return Sampler{ device, sampler_info };
 }
+
+class SampledTexture {
+private:
+  Buffer _staging_buffer;
+  Memory _staging_memory;
+
+  Image     _image;
+  Memory    _memory;
+  ImageView _image_view;
+  Sampler   _sampler;
+
+  std::optional<FamilyTransferInfo> _family_transfer;
+
+  Semaphore _release_sema;
+
+  static constexpr auto _src_use = ImageUse::COPY_DST;
+  static constexpr auto _dst_use = ImageUse::FRAGMENT_SAMPLER;
+  static constexpr auto _use_pair = std::pair{ _src_use, _dst_use };
+
+public:
+  SampledTexture() = default;
+  SampledTexture(
+    VkPhysicalDevice                  pdevice,
+    VkDevice                          device,
+    VkQueue                           transfer_queue,
+    VkCommandBuffer                   transfer_cmdbuf,
+    VkDescriptorSet                   descrip_set,
+    float                             max_anisotropy,
+    std::optional<FamilyTransferInfo> family_transfer
+  ) {
+    int   width, height, channels;
+    auto* image_path = "textures/texture.jpg";
+    auto* pixels = stbi_load(image_path, &width, &height, &channels, STBI_rgb_alpha);
+    auto  image_size = static_cast<VkDeviceSize>(width * height * 4);
+    if (pixels == nullptr) {
+      toy::throwf("failed to load image {}", image_path);
+    }
+    auto image_data = std::as_bytes(std::span{ pixels, image_size });
+    toy::debugf("image {} info: width {}, height {}", image_path, width, height);
+
+    std::tie(_staging_buffer, _staging_memory) = createStagingBuffer(pdevice, device, image_data);
+
+    stbi_image_free(pixels);
+
+    auto format = VK_FORMAT_R8G8B8A8_SRGB;
+    // if use for staging image, combine use:
+    // VK_IMAGE_TILING_LINEAR, VK_IMAGE_LAYOUT_PREINITIALIZED,
+    // VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+    auto image_info = VkImageCreateInfo{
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .imageType = VK_IMAGE_TYPE_2D,
+      .format = format,
+      .extent =
+        VkExtent3D{
+          .width = (uint32_t)width,
+          .height = (uint32_t)height,
+          .depth = 1,
+        },
+      .mipLevels = 1,
+      .arrayLayers = 1,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      // VK_IMAGE_TILING_LINEAR: Texels are laid out in row-major
+      // order like our pixels array
+      // 想要直接访问 image 中的像素的话就用 VK_IMAGE_TILING_LINEAR
+      // VK_IMAGE_TILING_OPTIMAL: Texels are laid out in an implementation
+      // defined order for optimal access
+      .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+      // 仅当VK_SHARING_MODE_CONCURRENT时设置
+      .queueFamilyIndexCount = 0,
+      .pQueueFamilyIndices = nullptr,
+      // VK_IMAGE_LAYOUT_UNDEFINED: Not usable by the GPU
+      // and the very first transition will discard the texels
+      // VK_IMAGE_LAYOUT_PREINITIALIZED: Not usable by the GPU
+      // but the first transition will preserve the texels
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    _image = Image{ device, image_info };
+    _memory = createMemory(pdevice, device, _image.get(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    vkBindImageMemory(device, _image, _memory, 0);
+
+    _image_view = createImageView(device, _image, format);
+    _sampler = createSampler(device, max_anisotropy);
+    updateDescriptorSet(device, descrip_set, std::pair{ _image_view.get(), _sampler.get() });
+
+    _family_transfer = family_transfer;
+
+    auto recorder = [&](VkCommandBuffer cmdbuf) {
+      recordBarrier(cmdbuf, _image.get(), { ImageUse::UNDEFINED, _src_use }, std::nullopt);
+
+      auto image_copy = VkBufferImageCopy{
+        .bufferOffset = 0,
+        // bufferRowLength and bufferImageHeight
+        // 用于更详细的定义buffer的内存如何映射到image
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource =
+          VkImageSubresourceLayers{
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+          },
+        .imageOffset =
+          VkOffset3D{
+            .x = 0,
+            .y = 0,
+            .z = 0,
+          },
+        .imageExtent =
+          VkExtent3D{
+            .width = (uint32_t)width,
+            .height = (uint32_t)height,
+            .depth = 1,
+          },
+      };
+      vkCmdCopyBufferToImage(
+        cmdbuf, _staging_buffer, _image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_copy
+      );
+
+      recordBarrier(cmdbuf, _image.get(), _use_pair, family_transfer.transform([](auto transfer) {
+        return std::pair{ transfer, false };
+      }));
+    };
+    _release_sema = createSemaphore(device);
+    recordAndSubmit(
+      transfer_cmdbuf, transfer_queue, recorder, {}, { &_release_sema.get(), 1 }, VK_NULL_HANDLE
+    );
+  }
+
+  auto getNeedWaitInfo() -> std::pair<VkSemaphore, VkPipelineStageFlags> {
+    return { _release_sema, getImageSyncInfo(false, _dst_use).first.stage_mask };
+  }
+
+  void recordDstFamilyTransfer(VkCommandBuffer cmdbuf) {
+    if (_family_transfer.has_value()) {
+      recordBarrier(cmdbuf, _image.get(), _use_pair, std::pair{ _family_transfer.value(), true });
+    }
+  }
+};
 
 } // namespace vk
