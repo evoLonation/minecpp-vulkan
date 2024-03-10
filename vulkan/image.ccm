@@ -12,7 +12,50 @@ import vulkan.descriptor;
 
 export namespace vk {
 
-auto createImageView(VkDevice device, VkImage image, VkFormat format) -> ImageView {
+auto findSupportedFormat(
+  VkPhysicalDevice          pdevice,
+  std::span<const VkFormat> candidates,
+  VkImageTiling             tiling,
+  VkFormatFeatureFlags      feature
+) {
+  auto condition = [&](VkFormat format) {
+    VkFormatProperties properties;
+    vkGetPhysicalDeviceFormatProperties(pdevice, format, &properties);
+    return tiling == VK_IMAGE_TILING_OPTIMAL &&
+             (properties.optimalTilingFeatures & feature) == feature ||
+           tiling == VK_IMAGE_TILING_LINEAR &&
+             (properties.linearTilingFeatures & feature) == feature;
+  };
+  if (auto it = ranges::find_if(candidates, condition); it != candidates.end()) {
+    return *it;
+  } else {
+    toy::throwf("can not found support format");
+  }
+  std::unreachable();
+}
+auto getAspect(VkImageUsageFlagBits usage) -> VkImageAspectFlagBits {
+  switch (usage) {
+  case VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT:
+  case VK_IMAGE_USAGE_SAMPLED_BIT:
+    return VK_IMAGE_ASPECT_COLOR_BIT;
+  case VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT:
+    return VK_IMAGE_ASPECT_DEPTH_BIT;
+  default:
+    std::unreachable();
+  }
+};
+auto getSubResourceRange(VkImageUsageFlagBits usage) -> VkImageSubresourceRange {
+  return {
+    .aspectMask = getAspect(usage),
+    .baseMipLevel = 0,
+    .levelCount = 1,
+    .baseArrayLayer = 0,
+    .layerCount = 1,
+  };
+}
+
+auto createImageView(VkDevice device, VkImage image, VkFormat format, VkImageUsageFlagBits usage)
+  -> ImageView {
   auto create_info = VkImageViewCreateInfo{
     .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
     .pNext = nullptr,
@@ -28,15 +71,113 @@ auto createImageView(VkDevice device, VkImage image, VkFormat format) -> ImageVi
       .a = VK_COMPONENT_SWIZZLE_IDENTITY,
     },
     // view 访问 image 资源的范围
-    .subresourceRange = {
-      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-      .baseMipLevel = 0,
-      .levelCount = 1,
-      .baseArrayLayer = 0,
-      .layerCount = 1,
-    },
+    .subresourceRange = getSubResourceRange(usage),
   };
   return ImageView{ device, create_info };
+}
+
+struct ImageResource {
+  Image     image;
+  Memory    memory;
+  VkFormat  format;
+  ImageView image_view;
+};
+
+auto createImage(
+  VkPhysicalDevice          pdevice,
+  VkDevice                  device,
+  std::span<const VkFormat> formats,
+  uint32_t                  width,
+  uint32_t                  height,
+  VkImageUsageFlagBits      usage
+) -> ImageResource {
+
+  auto get_feature = [](VkImageUsageFlagBits usage) {
+    switch (usage) {
+    case VK_IMAGE_USAGE_SAMPLED_BIT:
+      return VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+    case VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT:
+      return VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    default:
+      std::unreachable();
+    }
+  };
+
+  auto tiling = VK_IMAGE_TILING_OPTIMAL;
+  auto format = findSupportedFormat(pdevice, formats, tiling, get_feature(usage));
+
+  // if use for staging image, combine use:
+  // VK_IMAGE_TILING_LINEAR, VK_IMAGE_LAYOUT_PREINITIALIZED,
+  // VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+  auto image_info = VkImageCreateInfo{
+    .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .imageType = VK_IMAGE_TYPE_2D,
+    .format = format,
+    .extent =
+      VkExtent3D{
+        .width = width,
+        .height = height,
+        .depth = 1,
+      },
+    .mipLevels = 1,
+    .arrayLayers = 1,
+    .samples = VK_SAMPLE_COUNT_1_BIT,
+    // VK_IMAGE_TILING_LINEAR: Texels are laid out in row-major
+    // order like our pixels array
+    // 想要直接访问 image 中的像素的话就用 VK_IMAGE_TILING_LINEAR
+    // VK_IMAGE_TILING_OPTIMAL: Texels are laid out in an implementation
+    // defined order for optimal access
+    .tiling = tiling,
+    .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | (VkImageUsageFlags)usage,
+    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    // 仅当VK_SHARING_MODE_CONCURRENT时设置
+    .queueFamilyIndexCount = 0,
+    .pQueueFamilyIndices = nullptr,
+    // VK_IMAGE_LAYOUT_UNDEFINED: Not usable by the GPU
+    // and the very first transition will discard the texels
+    // VK_IMAGE_LAYOUT_PREINITIALIZED: Not usable by the GPU
+    // but the first transition will preserve the texels
+    .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+  };
+  auto image = Image{ device, image_info };
+  auto memory = createMemory(pdevice, device, image.get(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  vkBindImageMemory(device, image, memory, 0);
+  auto image_view = createImageView(device, image, format, usage);
+  return { std::move(image), std::move(memory), format, std::move(image_view) };
+}
+
+void recordImageBarrier(
+  VkCommandBuffer                                    cmdbuf,
+  VkImage                                            image,
+  std::pair<ImageUse, ImageUse>                      use,
+  std::optional<std::pair<FamilyTransferInfo, bool>> family_transfer,
+  VkImageUsageFlagBits                               usage
+) {
+  auto [src_scope, src_layout] = getImageSyncInfo(false, use.first);
+  auto [dst_scope, dst_layout] = getImageSyncInfo(true, use.second);
+  auto common_info = getBarrierCommonInfo({ src_scope, dst_scope }, family_transfer);
+
+  auto image_barrier = VkImageMemoryBarrier{
+    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+    .pNext = nullptr,
+    .srcAccessMask = common_info.src_scope.access_mask,
+    .dstAccessMask = common_info.dst_scope.access_mask,
+    .oldLayout = src_layout,
+    .newLayout = dst_layout,
+    .srcQueueFamilyIndex = common_info.family_transfer.src_family,
+    .dstQueueFamilyIndex = common_info.family_transfer.dst_family,
+    .image = image,
+    .subresourceRange = getSubResourceRange(usage),
+  };
+  recordPipelineBarrier(
+    cmdbuf,
+    { common_info.src_scope.stage_mask, common_info.dst_scope.stage_mask },
+    {},
+    {},
+    { &image_barrier, 1 }
+  );
 }
 
 auto createSampler(VkDevice device, float max_anisotropy) -> Sampler {
@@ -77,15 +218,14 @@ private:
   Buffer _staging_buffer;
   Memory _staging_memory;
 
-  Image     _image;
-  Memory    _memory;
-  ImageView _image_view;
-  Sampler   _sampler;
+  ImageResource _image_resource;
+  Sampler       _sampler;
 
   std::optional<FamilyTransferInfo> _family_transfer;
 
   Semaphore _release_sema;
 
+  static constexpr auto _image_usage = VK_IMAGE_USAGE_SAMPLED_BIT;
   static constexpr auto _src_use = ImageUse::COPY_DST;
   static constexpr auto _dst_use = ImageUse::FRAGMENT_SAMPLER;
   static constexpr auto _use_pair = std::pair{ _src_use, _dst_use };
@@ -115,54 +255,25 @@ public:
 
     stbi_image_free(pixels);
 
-    auto format = VK_FORMAT_R8G8B8A8_SRGB;
-    // if use for staging image, combine use:
-    // VK_IMAGE_TILING_LINEAR, VK_IMAGE_LAYOUT_PREINITIALIZED,
-    // VK_IMAGE_USAGE_TRANSFER_SRC_BIT
-    auto image_info = VkImageCreateInfo{
-      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-      .pNext = nullptr,
-      .flags = 0,
-      .imageType = VK_IMAGE_TYPE_2D,
-      .format = format,
-      .extent =
-        VkExtent3D{
-          .width = (uint32_t)width,
-          .height = (uint32_t)height,
-          .depth = 1,
-        },
-      .mipLevels = 1,
-      .arrayLayers = 1,
-      .samples = VK_SAMPLE_COUNT_1_BIT,
-      // VK_IMAGE_TILING_LINEAR: Texels are laid out in row-major
-      // order like our pixels array
-      // 想要直接访问 image 中的像素的话就用 VK_IMAGE_TILING_LINEAR
-      // VK_IMAGE_TILING_OPTIMAL: Texels are laid out in an implementation
-      // defined order for optimal access
-      .tiling = VK_IMAGE_TILING_OPTIMAL,
-      .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-      // 仅当VK_SHARING_MODE_CONCURRENT时设置
-      .queueFamilyIndexCount = 0,
-      .pQueueFamilyIndices = nullptr,
-      // VK_IMAGE_LAYOUT_UNDEFINED: Not usable by the GPU
-      // and the very first transition will discard the texels
-      // VK_IMAGE_LAYOUT_PREINITIALIZED: Not usable by the GPU
-      // but the first transition will preserve the texels
-      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-    };
-    _image = Image{ device, image_info };
-    _memory = createMemory(pdevice, device, _image.get(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    vkBindImageMemory(device, _image, _memory, 0);
+    _image_resource = createImage(
+      pdevice, device, std::array{ VK_FORMAT_R8G8B8A8_SRGB }, width, height, _image_usage
+    );
 
-    _image_view = createImageView(device, _image, format);
     _sampler = createSampler(device, max_anisotropy);
-    updateDescriptorSet(device, descrip_set, std::pair{ _image_view.get(), _sampler.get() });
+    updateDescriptorSet(
+      device, descrip_set, std::pair{ _image_resource.image_view.get(), _sampler.get() }
+    );
 
     _family_transfer = family_transfer;
 
     auto recorder = [&](VkCommandBuffer cmdbuf) {
-      recordBarrier(cmdbuf, _image.get(), { ImageUse::UNDEFINED, _src_use }, std::nullopt);
+      recordImageBarrier(
+        cmdbuf,
+        _image_resource.image.get(),
+        { ImageUse::UNDEFINED, _src_use },
+        std::nullopt,
+        _image_usage
+      );
 
       auto image_copy = VkBufferImageCopy{
         .bufferOffset = 0,
@@ -191,12 +302,23 @@ public:
           },
       };
       vkCmdCopyBufferToImage(
-        cmdbuf, _staging_buffer, _image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_copy
+        cmdbuf,
+        _staging_buffer,
+        _image_resource.image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        1,
+        &image_copy
       );
 
-      recordBarrier(cmdbuf, _image.get(), _use_pair, family_transfer.transform([](auto transfer) {
-        return std::pair{ transfer, false };
-      }));
+      recordImageBarrier(
+        cmdbuf,
+        _image_resource.image.get(),
+        _use_pair,
+        family_transfer.transform([](auto transfer) {
+          return std::pair{ transfer, false };
+        }),
+        _image_usage
+      );
     };
     _release_sema = createSemaphore(device);
     recordAndSubmit(
@@ -210,8 +332,34 @@ public:
 
   void recordDstFamilyTransfer(VkCommandBuffer cmdbuf) {
     if (_family_transfer.has_value()) {
-      recordBarrier(cmdbuf, _image.get(), _use_pair, std::pair{ _family_transfer.value(), true });
+      recordImageBarrier(
+        cmdbuf,
+        _image_resource.image.get(),
+        _use_pair,
+        std::pair{ _family_transfer.value(), true },
+        _image_usage
+      );
     }
+  }
+};
+
+class DepthImage {
+private:
+  ImageResource _image_resource;
+
+  static constexpr auto _image_usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+public:
+  DepthImage() = default;
+  DepthImage(VkPhysicalDevice pdevice, VkDevice device, VkExtent2D extent) {
+    _image_resource = createImage(
+      pdevice,
+      device,
+      std::array{ VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT },
+      extent.width,
+      extent.height,
+      _image_usage
+    );
   }
 };
 

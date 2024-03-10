@@ -118,6 +118,35 @@ void recordCopyBuffer(
   vkCmdCopyBuffer(transfer_cmdbuf, src_buffer, dst_buffer, 1, &copy_info);
 }
 
+void recordBufferBarrier(
+  VkCommandBuffer                                    cmdbuf,
+  VkBuffer                                           buffer,
+  std::pair<BufferUse, BufferUse>                    use,
+  std::optional<std::pair<FamilyTransferInfo, bool>> family_transfer
+) {
+  auto common_info = getBarrierCommonInfo(
+    { getBufferSyncInfo(use.first), getBufferSyncInfo(use.second) }, family_transfer
+  );
+  auto buffer_barrier = VkBufferMemoryBarrier{
+    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+    .pNext = nullptr,
+    .srcAccessMask = common_info.src_scope.access_mask,
+    .dstAccessMask = common_info.dst_scope.access_mask,
+    .srcQueueFamilyIndex = common_info.family_transfer.src_family,
+    .dstQueueFamilyIndex = common_info.family_transfer.dst_family,
+    .buffer = buffer,
+    .offset = 0,
+    .size = VK_WHOLE_SIZE,
+  };
+  recordPipelineBarrier(
+    cmdbuf,
+    { common_info.src_scope.stage_mask, common_info.dst_scope.stage_mask },
+    {},
+    { &buffer_barrier, 1 },
+    {}
+  );
+}
+
 template <typename Derived>
 class DeviceLocalBuffer {
 protected:
@@ -160,7 +189,7 @@ public:
 
     auto recorder = [&](VkCommandBuffer cmdbuf) {
       recordCopyBuffer(transfer_cmdbuf, _staging_buffer, _buffer, buffer_size);
-      recordBarrier(
+      recordBufferBarrier(
         cmdbuf, _buffer.get(), getUsePair(), family_transfer.transform([](auto transfer) {
           return std::pair{ transfer, false };
         })
@@ -174,7 +203,7 @@ public:
   }
   void recordDstFamilyTransfer(VkCommandBuffer cmdbuf) {
     if (_family_transfer.has_value()) {
-      recordBarrier(
+      recordBufferBarrier(
         cmdbuf, _buffer.get(), getUsePair(), std::pair{ _family_transfer.value(), true }
       );
     }

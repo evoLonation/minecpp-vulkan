@@ -122,17 +122,21 @@ auto getImageSyncInfo(bool is_dst, ImageUse use) -> std::pair<ScopeInfo, VkImage
 
 template <typename VkHandle>
 using UseEnumOf = std::conditional_t<std::same_as<VkHandle, VkImage>, ImageUse, BufferUse>;
+
+struct BarrierCommonInfo {
+  ScopeInfo          src_scope;
+  ScopeInfo          dst_scope;
+  FamilyTransferInfo family_transfer;
+};
+
 /**
  * @param family_transfer : bool 代表是否在transfer的dst
  */
-template <typename VkHandle, typename UseEnum = UseEnumOf<VkHandle>>
-  requires(std::same_as<VkHandle, VkImage> || std::same_as<VkHandle, VkBuffer>)
-void recordBarrier(
-  VkCommandBuffer                                    cmdbuf,
-  VkHandle                                           handle,
-  std::pair<UseEnum, UseEnum>                        use,
+auto getBarrierCommonInfo(
+  std::pair<ScopeInfo, ScopeInfo>                    scope,
   std::optional<std::pair<FamilyTransferInfo, bool>> family_transfer
-) {
+) -> BarrierCommonInfo {
+
   /**
    * @brief 对于所有权转移，需要分别在src family和dst family处各record一次barrier
    * 要想建立release op到acquire op的同步，只能在第一个submit设置signal sema
@@ -143,23 +147,23 @@ void recordBarrier(
    * - 对于dst family的record：另srcStageMask=dstStageMask
    * 从而实现release->bottom(submit)->target(submit)->target的依赖链
    */
-  auto get_access_mask = [&](bool is_dst, auto access_mask) -> VkAccessFlags {
-    if (family_transfer.has_value() && family_transfer->second != is_dst) {
-      return VK_ACCESS_NONE;
+  auto get_access_mask = [&](auto src_access_mask, auto dst_access_mask) {
+    using ret = std::pair<VkAccessFlags, VkAccessFlags>;
+    if (family_transfer.has_value()) {
+      return family_transfer->second ? ret{ VK_ACCESS_NONE, dst_access_mask }
+                                     : ret{ src_access_mask, VK_ACCESS_NONE };
     }
-    return access_mask;
+    return ret{ src_access_mask, dst_access_mask };
   };
   auto get_stage_mask = [&](
                           auto src_stage_mask, auto dst_stage_mask
                         ) -> std::pair<VkPipelineStageFlags, VkPipelineStageFlags> {
+    using ret = std::pair<VkPipelineStageFlags, VkPipelineStageFlags>;
     if (family_transfer.has_value()) {
-      if (family_transfer->second) {
-        return { dst_stage_mask, dst_stage_mask };
-      } else {
-        return { src_stage_mask, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT };
-      }
+      return family_transfer->second ? ret{ dst_stage_mask, dst_stage_mask }
+                                     : ret{ src_stage_mask, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT };
     }
-    return { src_stage_mask, dst_stage_mask };
+    return ret{ src_stage_mask, dst_stage_mask };
   };
   auto get_family = [&](bool is_dst) -> uint32_t {
     if (family_transfer.has_value()) {
@@ -167,59 +171,30 @@ void recordBarrier(
     }
     return VK_QUEUE_FAMILY_IGNORED;
   };
-  if constexpr (std::same_as<UseEnum, BufferUse>) {
-    auto src_scope = getBufferSyncInfo(use.first);
-    auto dst_scope = getBufferSyncInfo(use.second);
-    auto buffer_barrier = VkBufferMemoryBarrier{
-      .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-      .pNext = nullptr,
-      .srcAccessMask = get_access_mask(false, src_scope.access_mask),
-      .dstAccessMask = get_access_mask(true, dst_scope.access_mask),
-      .srcQueueFamilyIndex = get_family(false),
-      .dstQueueFamilyIndex = get_family(true),
-      .buffer = handle,
-      .offset = 0,
-      .size = VK_WHOLE_SIZE,
-    };
-    recordPipelineBarrier(
-      cmdbuf,
-      get_stage_mask(src_scope.stage_mask, dst_scope.stage_mask),
-      {},
-      { &buffer_barrier, 1 },
-      {}
-    );
-  } else if constexpr (std::same_as<UseEnum, ImageUse>) {
-    auto [src_scope, src_layout] = getImageSyncInfo(false, use.first);
-    auto [dst_scope, dst_layout] = getImageSyncInfo(true, use.second);
-    auto image_barrier = VkImageMemoryBarrier{
-      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-      .pNext = nullptr,
-      .srcAccessMask = get_access_mask(false, src_scope.access_mask),
-      .dstAccessMask = get_access_mask(true, dst_scope.access_mask),
-      .oldLayout = src_layout,
-      .newLayout = dst_layout,
-      .srcQueueFamilyIndex = get_family(false),
-      .dstQueueFamilyIndex = get_family(true),
-      .image = handle,
-      .subresourceRange =
-        VkImageSubresourceRange{
-          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-          .baseMipLevel = 0,
-          .levelCount = 1,
-          .baseArrayLayer = 0,
-          .layerCount = 1,
-        },
-    };
-    recordPipelineBarrier(
-      cmdbuf,
-      get_stage_mask(src_scope.stage_mask, dst_scope.stage_mask),
-      {},
-      {},
-      { &image_barrier, 1 }
-    );
-  } else {
-    static_assert(false);
-  }
+
+  auto [src_access_mask, dst_access_mask] =
+    get_access_mask(scope.first.access_mask, scope.second.access_mask);
+  auto [src_stage_mask, dst_stage_mask] =
+    get_stage_mask(scope.first.stage_mask, scope.second.stage_mask);
+  return {
+    .src_scope =
+      ScopeInfo{
+        .stage_mask = src_stage_mask,
+        .access_mask = src_access_mask,
+      },
+    .dst_scope =
+      ScopeInfo{
+        .stage_mask = dst_stage_mask,
+        .access_mask = dst_access_mask,
+      },
+    .family_transfer =
+      FamilyTransferInfo{
+        .src_family =
+          family_transfer.has_value() ? family_transfer->first.src_family : VK_QUEUE_FAMILY_IGNORED,
+        .dst_family =
+          family_transfer.has_value() ? family_transfer->first.dst_family : VK_QUEUE_FAMILY_IGNORED,
+      },
+  };
 }
 
 } // namespace vk
