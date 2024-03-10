@@ -4,46 +4,80 @@ import "vulkan_config.h";
 import vulkan.tool;
 import vulkan.buffer;
 import vulkan.shader_code;
+import vulkan.sync;
 import toy;
 
 namespace vk {
 
-auto createRenderPass(VkDevice device, VkFormat format) -> RenderPass {
-  auto color_attachment = VkAttachmentDescription{
-    .format = format,
-    .samples = VK_SAMPLE_COUNT_1_BIT,
-    // VK_ATTACHMENT_LOAD_OP_LOAD: 保留 attachment 中现有内容
-    // VK_ATTACHMENT_LOAD_OP_CLEAR: 将其中内容清理为一个常量
-    // VK_ATTACHMENT_LOAD_OP_DONT_CARE: 不在乎
-    .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-    // VK_ATTACHMENT_STORE_OP_STORE: 渲染后内容存入内存稍后使用
-    // VK_ATTACHMENT_STORE_DONT_CARE: 不在乎
-    .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+auto createRenderPass(VkDevice device, VkFormat color_format, VkFormat depth_format) -> RenderPass {
+  auto get_attachment = [](VkFormat format, VkImageLayout final_layout) {
+    return VkAttachmentDescription{
+      .format = format,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      // VK_ATTACHMENT_LOAD_OP_LOAD: 保留 attachment 中现有内容
+      // VK_ATTACHMENT_LOAD_OP_CLEAR: 将其中内容清理为一个常量
+      // VK_ATTACHMENT_LOAD_OP_DONT_CARE: 不在乎
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      // VK_ATTACHMENT_STORE_OP_STORE: 渲染后内容存入内存稍后使用
+      // VK_ATTACHMENT_STORE_DONT_CARE: 不在乎
+      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
 
-    .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-    .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-    // 开启及结束时 要求 的图像布局
-    .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-    .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      // 开启及结束时 要求 的图像布局
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .finalLayout = final_layout,
+    };
   };
-  auto color_attachment_ref = VkAttachmentReference{
+  auto attachments =
+    std::array{ get_attachment(color_format, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR),
+                get_attachment(depth_format, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) };
+  auto color_attach_ref = VkAttachmentReference{
     // 引用的 attachment 的索引
     .attachment = 0,
     // 用到该 ref 的 subpass 过程中使用的布局，会自动转换
     .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+  };
+  auto depth_attach_ref = VkAttachmentReference{
+    .attachment = 1,
+    .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
   };
   auto subpass = VkSubpassDescription{
     // 还有 compute、 ray tracing 等等
     .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
     .colorAttachmentCount = 1,
     // 这里的数组的索引和 着色器里的 layout 数值一一对应
-    .pColorAttachments = &color_attachment_ref,
+    .pColorAttachments = &color_attach_ref,
     // pInputAttachments: Attachments that are read from a shader
     // pResolveAttachments: Attachments used for multisampling color attachments
     // pDepthStencilAttachment: Attachment for depth and stencil data
+    .pDepthStencilAttachment = &depth_attach_ref,
     // pPreserveAttachments: Attachments that are not used by this subpass, but
     // for which the data must be preserved
   };
+  // For color attachment dependency
+  // vkQueueSubmit中设置了image presenting -> color attachment output（外部）的执行依赖
+  // 因此这里只需添加 color attachment output（外部）-> color attachment
+  // output（内部）的内存依赖和布局转换
+  auto src_color_scope = ScopeInfo{
+    .stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    .access_mask = 0,
+  };
+  auto dst_color_scope = ScopeInfo{
+    .stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    .access_mask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+  };
+  // For depth attachment dependency
+  // Multi workers use one depth image, so must sync last worker and current worker with stage
+  // early/late fragment test stage and read/write depth attach access.
+  auto src_depth_scope = ScopeInfo{
+    .stage_mask =
+      VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+    .access_mask =
+      VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+  };
+  auto dst_depth_scope = src_depth_scope;
+
   // attachment 的 layout 转换是在定义的依赖的中间进行的
   // 如果不主动定义从 VK_SUBPASS_EXTERNAL 到 第一个使用attachment的subpass
   // 的dependency
@@ -54,15 +88,17 @@ auto createRenderPass(VkDevice device, VkFormat format) -> RenderPass {
     // 但是提交的这个命令的执行阶段是在VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT阶段
     .srcSubpass = VK_SUBPASS_EXTERNAL,
     .dstSubpass = 0,
-    .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-    .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-    .srcAccessMask = 0,
-    .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+    // Multi workers use one depth image, so must sync last worker and current worker with stage
+    // early/late fragment test stage and read/write depth attach access.
+    .srcStageMask = src_color_scope.stage_mask | src_depth_scope.stage_mask,
+    .dstStageMask = dst_color_scope.stage_mask | dst_depth_scope.stage_mask,
+    .srcAccessMask = src_color_scope.access_mask | src_depth_scope.access_mask,
+    .dstAccessMask = dst_color_scope.access_mask | dst_depth_scope.access_mask,
   };
   auto render_pass_create_info = VkRenderPassCreateInfo{
     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-    .attachmentCount = 1,
-    .pAttachments = &color_attachment,
+    .attachmentCount = attachments.size(),
+    .pAttachments = attachments.data(),
     .subpassCount = 1,
     .pSubpasses = &subpass,
     .dependencyCount = 1,
@@ -70,6 +106,26 @@ auto createRenderPass(VkDevice device, VkFormat format) -> RenderPass {
   };
 
   return RenderPass{ device, render_pass_create_info };
+}
+
+auto createFramebuffer(
+  VkRenderPass render_pass,
+  VkDevice     device,
+  VkExtent2D   extent,
+  VkImageView  color_image,
+  VkImageView  depth_image
+) -> Framebuffer {
+  auto attachments = std::array{ color_image, depth_image };
+  auto create_info = VkFramebufferCreateInfo{
+    .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+    .renderPass = render_pass,
+    .attachmentCount = attachments.size(),
+    .pAttachments = attachments.data(),
+    .width = extent.width,
+    .height = extent.height,
+    .layers = 1,
+  };
+  return Framebuffer{ device, create_info };
 }
 
 auto createShaderModule(std::string_view filename, VkDevice device) -> ShaderModule {
@@ -176,6 +232,25 @@ auto createGraphicsPipeline(
     .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
     .sampleShadingEnable = VK_FALSE,
   };
+
+  auto depth_stencil_info = VkPipelineDepthStencilStateCreateInfo{
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    // new fragment are compared to the depth buffer to see if they should by discard
+    .depthTestEnable = VK_TRUE,
+    // If replace the depth buffer with new fragment if test success
+    .depthWriteEnable = VK_TRUE,
+    // Lower depth of fragment is closer
+    .depthCompareOp = VK_COMPARE_OP_LESS,
+    .depthBoundsTestEnable = VK_FALSE,
+    .stencilTestEnable = VK_FALSE,
+    .front = {},
+    .back = {},
+    .minDepthBounds = 0.0f,
+    .maxDepthBounds = 1.0f,
+  };
+
   // 颜色混合：将片段着色器返回的颜色与缓冲区中的颜色进行混合
   /**
    * if (blendEnable) {
@@ -229,7 +304,7 @@ auto createGraphicsPipeline(
     .pViewportState = &viewport_state_info,
     .pRasterizationState = &rasterizer_state_info,
     .pMultisampleState = &multisampling_state_info,
-    .pDepthStencilState = nullptr,
+    .pDepthStencilState = &depth_stencil_info,
     .pColorBlendState = &color_blend_state_info,
     .pDynamicState = &dynamic_state_info,
     .layout = pipeline_layout,
@@ -248,27 +323,6 @@ auto createGraphicsPipeline(
            std::move(pipeline) };
 }
 
-auto createFramebuffers(
-  VkRenderPass                 render_pass,
-  VkDevice                     device,
-  VkExtent2D                   extent,
-  std::span<const VkImageView> image_views
-) -> std::vector<Framebuffer> {
-  return image_views | views::transform([render_pass, device, extent](auto image_view) {
-           auto create_info = VkFramebufferCreateInfo{
-             .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-             .renderPass = render_pass,
-             .attachmentCount = 1,
-             .pAttachments = &image_view,
-             .width = extent.width,
-             .height = extent.height,
-             .layers = 1,
-           };
-           return Framebuffer{ device, create_info };
-         }) |
-         ranges::to<std::vector>();
-}
-
 void recordCommandBuffer(
   VkCommandBuffer                  command_buffer,
   VkRenderPass                     render_pass,
@@ -280,7 +334,9 @@ void recordCommandBuffer(
   VkPipelineLayout                 pipeline_layout,
   std::span<const VkDescriptorSet> descriptor_sets
 ) {
-  VkClearValue clearColor = { .color = { .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } };
+  auto color_clear = VkClearValue{ .color = { .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } };
+  auto depth_clear = VkClearValue{ .depthStencil = { .depth = 1.0f, .stencil = 0 } };
+  auto clear_values = std::array{ color_clear, depth_clear };
   VkRenderPassBeginInfo render_pass_begin_info {
     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
     .renderPass = render_pass,
@@ -289,8 +345,8 @@ void recordCommandBuffer(
       .offset = {0, 0},
       .extent = extent,
     },
-    .clearValueCount = 1,
-    .pClearValues = &clearColor,
+    .clearValueCount = clear_values.size(),
+    .pClearValues = clear_values.data(),
   };
   // VK_SUBPASS_CONTENTS_INLINE: render pass的command被嵌入主缓冲区
   // VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS: render pass 命令

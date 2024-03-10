@@ -7,7 +7,15 @@ import std;
 
 export namespace vk {
 
-auto createRenderPass(VkDevice device, VkFormat format) -> RenderPass;
+auto createRenderPass(VkDevice device, VkFormat color_format, VkFormat depth_format) -> RenderPass;
+
+auto createFramebuffer(
+  VkRenderPass render_pass,
+  VkDevice     device,
+  VkExtent2D   extent,
+  VkImageView  color_image,
+  VkImageView  depth_image
+) -> Framebuffer;
 
 struct PipelineResource {
   ShaderModule   vertex_shader;
@@ -23,13 +31,6 @@ auto createGraphicsPipeline(
   std::span<const VkVertexInputAttributeDescription> vertex_attribute_descriptions,
   std::span<const VkDescriptorSetLayout>             descriptor_set_layouts
 ) -> PipelineResource;
-
-auto createFramebuffers(
-  VkRenderPass                 render_pass,
-  VkDevice                     device,
-  VkExtent2D                   extent,
-  std::span<const VkImageView> image_views
-) -> std::vector<Framebuffer>;
 
 void recordCommandBuffer(
   VkCommandBuffer                  command_buffer,

@@ -48,6 +48,8 @@ private:
   VkExtent2D             _extent;
   std::vector<ImageView> _image_views;
 
+  ImageResource _depth_image;
+
   RenderPass               _render_pass;
   std::vector<Framebuffer> _framebuffers;
 
@@ -171,14 +173,16 @@ VulkanApplication::VulkanApplication(uint32_t width, uint32_t height, std::strin
                                     .value();
   _image_views =
     createSwapchainImageViews(_device, _swapchain, _physical_device_info.surface_format.format);
-  _render_pass = createRenderPass(_device, _physical_device_info.surface_format.format);
-  _framebuffers = createFramebuffers(
-    _render_pass,
-    _device,
-    _extent,
-    views::transform(_image_views, [](const auto& image_view) { return image_view.get(); }) |
-      ranges::to<std::vector>()
-  );
+  _depth_image = createDepthImage(_physical_device_info.device, _device, _extent);
+
+  _render_pass =
+    createRenderPass(_device, _physical_device_info.surface_format.format, _depth_image.format);
+
+  _framebuffers =
+    _image_views | views::transform([&](const auto& image_view) {
+      return createFramebuffer(_render_pass, _device, _extent, image_view, _depth_image.image_view);
+    }) |
+    ranges::to<std::vector>();
   _uniform_set_layout = createUniformDescriptorSetLayout(_device);
   _sampler_set_layout = createSamplerDescriptorSetLayout(_device);
 
@@ -308,12 +312,7 @@ auto VulkanApplication::recreateSwapchain() -> bool {
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
     _physical_device_info.device, _surface, &_physical_device_info.capabilities
   );
-  auto old_swap_chain = std::move(_swapchain);
-  auto old_image_views = std::move(_image_views);
-  auto old_framebuffers = std::move(_framebuffers);
-  auto queue_family_indices = _physical_device_info.queue_indices |
-                              views::transform([](auto a) { return a.first; }) |
-                              ranges::to<std::vector>();
+
   if (auto ret = createSwapchain(
         _surface,
         _device,
@@ -321,26 +320,33 @@ auto VulkanApplication::recreateSwapchain() -> bool {
         _physical_device_info.surface_format,
         _physical_device_info.present_mode,
         window_,
-        old_swap_chain
+        _swapchain
       );
       ret.has_value()) {
+    // move old resource to sorted declared variable to guarantee destroy order
+    auto old_swap_chain = std::move(_swapchain);
+    auto old_image_views = std::move(_image_views);
+    auto old_depth_image = std::move(_depth_image);
+    auto old_framebuffers = std::move(_framebuffers);
+
     std::tie(_swapchain, _extent) = std::move(ret.value());
+    _image_views =
+      createSwapchainImageViews(_device, _swapchain, _physical_device_info.surface_format.format);
+    _depth_image = createDepthImage(_physical_device_info.device, _device, _extent);
+    _framebuffers = _image_views | views::transform([&](const auto& image_view) {
+                      return createFramebuffer(
+                        _render_pass, _device, _extent, image_view, _depth_image.image_view
+                      );
+                    }) |
+                    ranges::to<std::vector>();
+    return true;
   } else if (ret.error() == SwapchainCreateError::EXTENT_ZERO) {
     return false;
   } else {
     toy::throwf("create swapchain return some error different to "
                 "SwapchainCreateError::EXTENT_ZERO");
   }
-  _image_views =
-    createSwapchainImageViews(_device, _swapchain, _physical_device_info.surface_format.format);
-  _framebuffers = createFramebuffers(
-    _render_pass,
-    _device,
-    _extent,
-    views::transform(_image_views, [](const auto& image_view) { return image_view.get(); }) |
-      ranges::to<std::vector>()
-  );
-  return true;
+  std::unreachable();
 }
 
 void VulkanApplication::updateUniformBuffer(const Worker& worker) {

@@ -343,24 +343,16 @@ public:
   }
 };
 
-class DepthImage {
-private:
-  ImageResource _image_resource;
-
-  static constexpr auto _image_usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-
-public:
-  DepthImage() = default;
-  DepthImage(VkPhysicalDevice pdevice, VkDevice device, VkExtent2D extent) {
-    _image_resource = createImage(
-      pdevice,
-      device,
-      std::array{ VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT },
-      extent.width,
-      extent.height,
-      _image_usage
-    );
-  }
-};
+auto createDepthImage(VkPhysicalDevice pdevice, VkDevice device, VkExtent2D extent)
+  -> ImageResource {
+  return createImage(
+    pdevice,
+    device,
+    std::array{ VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT },
+    extent.width,
+    extent.height,
+    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+  );
+}
 
 } // namespace vk
