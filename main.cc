@@ -4,6 +4,7 @@ import std;
 import toy;
 import vulkan;
 import glm;
+import model;
 
 using namespace vk;
 
@@ -251,7 +252,7 @@ VulkanApplication::VulkanApplication(uint32_t width, uint32_t height, std::strin
                };
              }) |
              ranges::to<std::vector>();
-  auto vertex_data = std::array<Vertex2D, 8>{
+  auto vertex_data = std::vector<Vertex2D>{
     Vertex2D{ { -0.5f, -0.5f, +0.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
     { { +0.5f, -0.5f, +0.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
     { { +0.5f, +0.5f, +0.0f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
@@ -261,10 +262,12 @@ VulkanApplication::VulkanApplication(uint32_t width, uint32_t height, std::strin
     { { +0.5f, +0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
     { { -0.5f, +0.5f, -0.5f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
   };
-  auto vertex_indices = std::array<uint16_t, 12>{
+  vertex_data.append_range(vertex_data | views::reverse);
+  auto vertex_indices = std::vector<uint16_t>{
     0, 1, 2, 2, 3, 0, 0 + 4, 1 + 4, 2 + 4, 2 + 4, 3 + 4, 0 + 4,
   };
-
+  vertex_indices.append_range(vertex_indices | views::transform([](auto index){return index+5;}));
+  std::tie(vertex_data, vertex_indices) = model::getModelInfo("model/viking_room.obj");
   auto family_transfer = std::optional<FamilyTransferInfo>{};
   if (_transfer_ctx.family_index != _graphic_ctx.family_index) {
     family_transfer = FamilyTransferInfo{ _transfer_ctx.family_index, _graphic_ctx.family_index };
@@ -276,6 +279,7 @@ VulkanApplication::VulkanApplication(uint32_t width, uint32_t height, std::strin
   _indices_count = vertex_indices.size();
   _sampled_texture = SampledTexture{ _physical_device_info.device,
                                      _device,
+                                     "model/viking_room.png",
                                      _transfer_ctx.queue,
                                      _transfer_ctx.cmdbufs.get()[2],
                                      _sampler_set,
@@ -456,7 +460,8 @@ void VulkanApplication::drawFrame() {
 }
 
 int main() {
-  std::print("hello, world!");
+  // model::getModelInfo("model/viking_room.obj");
+  // return 0;
   try {
     toy::test_EnumerateAdaptor();
     toy::test_SortedRange();

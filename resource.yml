@@ -6,6 +6,7 @@ sub_dir:
 - shader
 source:
 - main.cc
-- stb_image_impl.cc
+- header_impl.cc
+- model.ccm
 include_dir:
 - include

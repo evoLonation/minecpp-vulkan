@@ -235,6 +235,7 @@ public:
   SampledTexture(
     VkPhysicalDevice                  pdevice,
     VkDevice                          device,
+    const std::string&                path,
     VkQueue                           transfer_queue,
     VkCommandBuffer                   transfer_cmdbuf,
     VkDescriptorSet                   descrip_set,
@@ -242,14 +243,13 @@ public:
     std::optional<FamilyTransferInfo> family_transfer
   ) {
     int   width, height, channels;
-    auto* image_path = "textures/texture.jpg";
-    auto* pixels = stbi_load(image_path, &width, &height, &channels, STBI_rgb_alpha);
+    auto* pixels = stbi_load(path.data(), &width, &height, &channels, STBI_rgb_alpha);
     auto  image_size = static_cast<VkDeviceSize>(width * height * 4);
     if (pixels == nullptr) {
-      toy::throwf("failed to load image {}", image_path);
+      toy::throwf("failed to load image {}", path.data());
     }
     auto image_data = std::as_bytes(std::span{ pixels, image_size });
-    toy::debugf("image {} info: width {}, height {}", image_path, width, height);
+    toy::debugf("image {} info: width {}, height {}", path.data(), width, height);
 
     std::tie(_staging_buffer, _staging_memory) = createStagingBuffer(pdevice, device, image_data);
 
