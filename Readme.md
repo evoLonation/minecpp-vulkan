@@ -48,3 +48,12 @@ cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=cl
 
 ## stb_image
 - 直接github搜，把stb_image.h放third_party即可
+
+## tinyobjloader-c
+
+一个用于导入模型的库
+不直接用tinyobjloader因为存在一些兼容性问题
+
+github: https://github.com/syoyo/tinyobjloader-c
+
+直接将tinyobj_loader_c.h放入third_party/include即可

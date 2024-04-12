@@ -1,3 +1,2 @@
 header_unit:
 - vulkan_config.h
-- stb_image.h
