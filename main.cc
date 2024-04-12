@@ -1,8 +1,10 @@
 import "vulkan_config.h";
+import "glfw_config.h";
 
 import std;
 import toy;
 import vulkan;
+import glfw;
 import glm;
 import model;
 

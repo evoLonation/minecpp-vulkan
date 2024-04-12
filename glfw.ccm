@@ -1,7 +1,6 @@
-export module vulkan.glfw;
+export module glfw;
 
-import "vulkan_config.h";
-import vulkan.tool;
+import "glfw_config.h";
 import toy;
 import std;
 

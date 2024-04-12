@@ -1,6 +1,7 @@
 export module vulkan.swapchain;
 
 import "vulkan_config.h";
+import "glfw_config.h";
 import vulkan.resource;
 import std;
 

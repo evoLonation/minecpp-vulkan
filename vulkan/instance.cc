@@ -1,6 +1,7 @@
 module vulkan.instance;
 
 import "vulkan_config.h";
+import "glfw_config.h";
 import vulkan.tool;
 import toy;
 import std;

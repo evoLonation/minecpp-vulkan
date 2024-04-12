@@ -2,7 +2,6 @@ source:
 - vulkan.ccm 
 - tool.ccm
 - resource.ccm
-- glfw.ccm
 - instance.ccm
 - swapchain.ccm
 - device.ccm
