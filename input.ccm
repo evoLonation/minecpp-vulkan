@@ -1,0 +1,125 @@
+export module input;
+
+import "glfw_config.h";
+
+import std;
+
+export namespace input {
+
+class InputProcessor {
+private:
+  inline static std::map<GLFWwindow*, InputProcessor*> _instance_map;
+
+  GLFWwindow* _window;
+
+  using KeyDownHandler = std::function<void()>;
+  using KeyHoldHandler = std::function<void(int holdMilli)>;
+  using KeyReleaseHandler = std::function<void(int holdMilli)>;
+  using CursorMoveHandler = std::function<void(double x, double y)>;
+
+  std::map<int, std::chrono::high_resolution_clock::time_point> _pressed_keys;
+  std::map<int, std::vector<KeyDownHandler>>                    _key_down_handlers;
+  std::map<int, std::vector<KeyReleaseHandler>>                 _key_release_handlers;
+  std::map<int, std::vector<KeyHoldHandler>>                    _key_hold_handlers;
+  std::vector<CursorMoveHandler>                                _cursor_move_handlers;
+
+  double _last_x;
+  double _last_y;
+  bool   _cursor_visible;
+
+  InputProcessor(const InputProcessor&) = delete;
+  InputProcessor(InputProcessor&&) = delete;
+  auto operator=(const InputProcessor&) -> InputProcessor& = delete;
+  auto operator=(InputProcessor&&) -> InputProcessor& = delete;
+
+public:
+  InputProcessor(GLFWwindow* window) {
+    _window = window;
+    _instance_map.insert({ window, this });
+    // 须在创建窗口后、开始渲染前注册回调函数
+    glfwSetKeyCallback(window, [](GLFWwindow* window, int key, int scancode, int action, int mods) {
+      auto& instance = *_instance_map[window];
+      if (action == GLFW_PRESS) {
+        if (instance._key_down_handlers.contains(key)) {
+          for (auto& handler : instance._key_down_handlers[key]) {
+            handler();
+          }
+        }
+        auto start_time = std::chrono::high_resolution_clock::now();
+        instance._pressed_keys.insert({ key, start_time });
+      } else if (action == GLFW_RELEASE) {
+        if (instance._key_release_handlers.contains(key)) {
+          auto start_time = instance._pressed_keys[key];
+          auto end_time = std::chrono::high_resolution_clock::now();
+          auto duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+          for (auto& handler : instance._key_release_handlers[key]) {
+            handler(duration.count());
+          }
+        }
+        instance._pressed_keys.erase(key);
+      }
+    });
+    glfwGetCursorPos(window, &_last_x, &_last_y);
+    glfwSetCursorPosCallback(window, [](GLFWwindow* window, double x, double y) {
+      auto& instance = *_instance_map[window];
+      for (auto& handler : instance._cursor_move_handlers) {
+        handler(x - instance._last_x, y - instance._last_y);
+      }
+      instance._last_x = x;
+      instance._last_y = y;
+    });
+    _cursor_visible = false;
+    setCursorVisible(true);
+  };
+
+  void addKeyDownHandler(int key, KeyDownHandler handler) {
+    _key_down_handlers[key].push_back(handler);
+  }
+  void addKeyHoldHandler(int key, KeyHoldHandler handler) {
+    _key_hold_handlers[key].push_back(handler);
+  }
+  void addKeyReleaseHandler(int key, KeyReleaseHandler handler) {
+    _key_release_handlers[key].push_back(handler);
+  }
+  void addCursorMoveHandler(int key, CursorMoveHandler handler) {
+    _cursor_move_handlers.push_back(handler);
+  }
+
+  void setCursorVisible(bool visible) {
+    if (_cursor_visible == visible) {
+      return;
+    }
+    _cursor_visible = visible;
+    if (visible) {
+      glfwSetInputMode(_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    } else {
+      glfwSetInputMode(_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    }
+  }
+  bool isCursorVisible() const { return _cursor_visible; }
+
+  void processInput() {
+    glfwPollEvents();
+
+    bool hasAny = false;
+    for (const auto& pair : _pressed_keys) {
+      auto _key = pair.first;
+      auto end_time = std::chrono::high_resolution_clock::time_point{};
+      if (_key_hold_handlers.contains(_key)) {
+        if (!hasAny) {
+          end_time = std::chrono::high_resolution_clock::now();
+          hasAny = true;
+        }
+        auto start_time = pair.second;
+        auto duration =
+          std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        for (auto& handler : _key_hold_handlers[_key]) {
+          handler(duration.count());
+        }
+      }
+    }
+  }
+};
+
+} // namespace input

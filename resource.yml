@@ -9,5 +9,6 @@ source:
 - header_impl.cc
 - glfw.ccm
 - model.ccm
+- input.ccm
 include_dir:
 - include

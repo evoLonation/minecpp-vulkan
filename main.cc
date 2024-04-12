@@ -7,6 +7,7 @@ import vulkan;
 import glfw;
 import glm;
 import model;
+import input;
 
 using namespace vk;
 
@@ -268,7 +269,9 @@ VulkanApplication::VulkanApplication(uint32_t width, uint32_t height, std::strin
   auto vertex_indices = std::vector<uint16_t>{
     0, 1, 2, 2, 3, 0, 0 + 4, 1 + 4, 2 + 4, 2 + 4, 3 + 4, 0 + 4,
   };
-  vertex_indices.append_range(vertex_indices | views::transform([](auto index){return index+5;}));
+  vertex_indices.append_range(vertex_indices | views::transform([](auto index) {
+                                return index + 5;
+                              }));
   std::tie(vertex_data, vertex_indices) = model::getModelInfo("model/viking_room.obj");
   auto family_transfer = std::optional<FamilyTransferInfo>{};
   if (_transfer_ctx.family_index != _graphic_ctx.family_index) {
@@ -472,18 +475,27 @@ int main() {
     uint32_t          width = 800;
     uint32_t          height = 600;
     VulkanApplication application{ width, height, applicationName };
-
-    glfwSetKeyCallback(
-      application.pWindow(),
-      [](GLFWwindow* pWindow, int key, int scancode, int action, int mods) {
-        if (action == GLFW_PRESS) {
-          std::cout << "press key!" << std::endl;
-        }
-      }
-    );
+    auto              input_processor = input::InputProcessor{ application.pWindow() };
+    // glfwSetKeyCallback(
+    //   application.pWindow(),
+    //   [](GLFWwindow* pWindow, int key, int scancode, int action, int mods) {
+    //     if (action == GLFW_PRESS) {
+    //       std::cout << "press key!" << std::endl;
+    //     }
+    //   }
+    // );
+    input_processor.addKeyDownHandler(GLFW_KEY_A, [](){
+      toy::debug("press down A");
+    });
+    input_processor.addKeyHoldHandler(GLFW_KEY_A, [](int time){
+      toy::debugf("press hold A {}", time);
+    });
+    input_processor.addKeyReleaseHandler(GLFW_KEY_A, [](int time){
+      toy::debugf("press release A when hold {}", time);
+    });
 
     while (!glfwWindowShouldClose(application.pWindow())) {
-      glfwPollEvents();
+      input_processor.processInput();
       application.drawFrame();
     }
 
