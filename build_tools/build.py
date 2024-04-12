@@ -106,7 +106,7 @@ def build_source(writer: ninja.Writer, sources, flag: pub.Flags):
     sub_dir = ospath.dirname(source)
     while True:
       dir_sources_dict.setdefault(pub.path.get_rel_root_path(sub_dir), []).append(source)
-      if ospath.samefile(pub.path.root_dir, sub_dir):
+      if pub.path.root_dir == sub_dir:
         break
       sub_dir = ospath.dirname(sub_dir)
   for dir, sources in dir_sources_dict.items():
