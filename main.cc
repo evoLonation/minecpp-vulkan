@@ -52,6 +52,7 @@ private:
   VkExtent2D             _extent;
   std::vector<ImageView> _image_views;
 
+  VkFormat      _depth_format;
   ImageResource _depth_image;
 
   RenderPass               _render_pass;
@@ -177,10 +178,11 @@ VulkanApplication::VulkanApplication(int width, int height, const std::string& a
                                     .value();
   _image_views =
     createSwapchainImageViews(_device, _swapchain, _physical_device_info.surface_format.format);
-  _depth_image = createDepthImage(_physical_device_info.device, _device, _extent);
+  _depth_format = findDepthFormat(_physical_device_info.device);
+  _depth_image = createDepthImage(_physical_device_info.device, _device, _depth_format, _extent);
 
   _render_pass =
-    createRenderPass(_device, _physical_device_info.surface_format.format, _depth_image.format);
+    createRenderPass(_device, _physical_device_info.surface_format.format, _depth_format);
 
   _framebuffers =
     _image_views | views::transform([&](const auto& image_view) {
@@ -338,7 +340,7 @@ auto VulkanApplication::recreateSwapchain() -> bool {
     std::tie(_swapchain, _extent) = std::move(ret.value());
     _image_views =
       createSwapchainImageViews(_device, _swapchain, _physical_device_info.surface_format.format);
-    _depth_image = createDepthImage(_physical_device_info.device, _device, _extent);
+    _depth_image = createDepthImage(_physical_device_info.device, _device, _depth_format, _extent);
     _framebuffers = _image_views | views::transform([&](const auto& image_view) {
                       return createFramebuffer(
                         _render_pass, _device, _extent, image_view, _depth_image.image_view

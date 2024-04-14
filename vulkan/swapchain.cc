@@ -106,7 +106,7 @@ auto createSwapchainImageViews(VkDevice device, VkSwapchainKHR swapchain, VkForm
   -> std::vector<ImageView> {
   auto images = getVkResources(vkGetSwapchainImagesKHR, device, swapchain);
   return images | views::transform([device, format](VkImage image) {
-           return createImageView(device, image, format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+           return createImageView(device, image, format, ImageType::COLOR_ATTACHMENT);
          }) |
          ranges::to<std::vector>();
 }
