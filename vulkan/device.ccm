@@ -19,25 +19,23 @@ struct PhysicalDeviceInfo {
   VkPhysicalDevice           device;
   VkPhysicalDeviceProperties properties;
   VkPhysicalDeviceFeatures   features;
-  VkSurfaceCapabilitiesKHR   capabilities;
   VkPresentModeKHR           present_mode;
   VkSurfaceFormatKHR         surface_format;
   QueueIndices               queue_indices;
 };
 struct QueueFamilyCheckContext {
-  VkPhysicalDevice         device;
-  VkSurfaceKHR             surface;
-  size_t                   index;
-  VkQueueFamilyProperties& properties;
+  VkPhysicalDevice        device;
+  VkSurfaceKHR            surface;
+  size_t                  index;
+  VkQueueFamilyProperties properties;
 };
 struct DeviceCheckContext {
-  VkPhysicalDeviceProperties& properties;
-  VkPhysicalDeviceFeatures&   features;
+  VkPhysicalDeviceProperties properties;
+  VkPhysicalDeviceFeatures   features;
 };
 struct SurfaceCheckContext {
-  VkSurfaceCapabilitiesKHR&                         capabilities;
-  ranges::ref_view<std::vector<VkPresentModeKHR>>   present_modes;
-  ranges::ref_view<std::vector<VkSurfaceFormatKHR>> surface_formats;
+  std::vector<VkPresentModeKHR>   present_modes;
+  std::vector<VkSurfaceFormatKHR> surface_formats;
 };
 struct SelectedSurfaceInfo {
   VkPresentModeKHR   present_mode;

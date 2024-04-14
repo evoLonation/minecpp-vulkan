@@ -20,13 +20,13 @@ enum class SwapchainCreateError {
   EXTENT_ZERO,
 };
 auto createSwapchain(
-  VkSurfaceKHR                    surface,
-  VkDevice                        device,
-  const VkSurfaceCapabilitiesKHR& capabilities,
-  VkSurfaceFormatKHR              surface_format,
-  VkPresentModeKHR                present_mode,
-  GLFWwindow*                     p_window,
-  VkSwapchainKHR                  old_swapchain
+  VkPhysicalDevice   pdevice,
+  VkSurfaceKHR       surface,
+  VkDevice           device,
+  VkSurfaceFormatKHR surface_format,
+  VkPresentModeKHR   present_mode,
+  GLFWwindow*        p_window,
+  VkSwapchainKHR     old_swapchain
 ) -> std::expected<std::pair<Swapchain, VkExtent2D>, SwapchainCreateError>;
 
 auto createSwapchainImageViews(VkDevice device, VkSwapchainKHR swapchain, VkFormat format)

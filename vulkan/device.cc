@@ -21,8 +21,6 @@ auto pickPhysicalDevice(
     vkGetPhysicalDeviceProperties(device, &device_properties);
     VkPhysicalDeviceFeatures device_features;
     vkGetPhysicalDeviceFeatures(device, &device_features);
-    VkSurfaceCapabilitiesKHR capabilities;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &capabilities);
     auto presentModes = getVkResources(vkGetPhysicalDeviceSurfacePresentModesKHR, device, surface);
     auto formats = getVkResources(vkGetPhysicalDeviceSurfaceFormatsKHR, device, surface);
 
@@ -32,7 +30,7 @@ auto pickPhysicalDevice(
       unsupport = true;
     }
     auto selected_surface =
-      surface_checker(SurfaceCheckContext{ capabilities, presentModes, formats });
+      surface_checker(SurfaceCheckContext{ std::move(presentModes), std::move(formats) });
     if (!selected_surface.has_value()) {
       unsupport = true;
     }
@@ -57,7 +55,6 @@ auto pickPhysicalDevice(
       supported_devices.push_back({ .device = device,
                                     .properties = device_properties,
                                     .features = device_features,
-                                    .capabilities = capabilities,
                                     .present_mode = selected_surface->present_mode,
                                     .surface_format = selected_surface->surface_format,
                                     .queue_indices = queue_family_indices.value() });

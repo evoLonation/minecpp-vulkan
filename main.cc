@@ -13,7 +13,7 @@ using namespace vk;
 
 class VulkanApplication {
 public:
-  VulkanApplication(uint32_t width, uint32_t height, std::string_view appName);
+  VulkanApplication(int width, int height, const std::string& appName);
 
   ~VulkanApplication();
 
@@ -109,7 +109,7 @@ private:
   SampledTexture _sampled_texture;
 };
 
-VulkanApplication::VulkanApplication(uint32_t width, uint32_t height, std::string_view app_name)
+VulkanApplication::VulkanApplication(int width, int height, const std::string& app_name)
   : _in_flight_index(0), _last_present_failed(false) {
   window_ = Window{ width, height, app_name };
 
@@ -166,9 +166,9 @@ VulkanApplication::VulkanApplication(uint32_t width, uint32_t height, std::strin
   }
 
   std::tie(_swapchain, _extent) = createSwapchain(
+                                    _physical_device_info.device,
                                     _surface,
                                     _device,
-                                    _physical_device_info.capabilities,
                                     _physical_device_info.surface_format,
                                     _physical_device_info.present_mode,
                                     window_,
@@ -318,14 +318,11 @@ VulkanApplication::~VulkanApplication() {
 auto VulkanApplication::recreateSwapchain() -> bool {
   // todo: 换成范围更小的约束
   vkDeviceWaitIdle(_device);
-  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
-    _physical_device_info.device, _surface, &_physical_device_info.capabilities
-  );
 
   if (auto ret = createSwapchain(
+        _physical_device_info.device,
         _surface,
         _device,
-        _physical_device_info.capabilities,
         _physical_device_info.surface_format,
         _physical_device_info.present_mode,
         window_,
@@ -471,11 +468,11 @@ int main() {
     toy::test_EnumerateAdaptor();
     toy::test_SortedRange();
     toy::test_ChunkBy();
-    std::string       applicationName = "hello, vulkan!";
-    uint32_t          width = 800;
-    uint32_t          height = 600;
-    VulkanApplication application{ width, height, applicationName };
-    auto              input_processor = input::InputProcessor{ application.pWindow() };
+    auto applicationName = "hello, vulkan!";
+    auto width = 800;
+    auto height = 600;
+    auto application = VulkanApplication{ width, height, applicationName };
+    auto input_processor = input::InputProcessor{ application.pWindow() };
     // glfwSetKeyCallback(
     //   application.pWindow(),
     //   [](GLFWwindow* pWindow, int key, int scancode, int action, int mods) {
@@ -484,13 +481,11 @@ int main() {
     //     }
     //   }
     // );
-    input_processor.addKeyDownHandler(GLFW_KEY_A, [](){
-      toy::debug("press down A");
-    });
-    input_processor.addKeyHoldHandler(GLFW_KEY_A, [](int time){
+    input_processor.addKeyDownHandler(GLFW_KEY_A, []() { toy::debug("press down A"); });
+    input_processor.addKeyHoldHandler(GLFW_KEY_A, [](int time) {
       toy::debugf("press hold A {}", time);
     });
-    input_processor.addKeyReleaseHandler(GLFW_KEY_A, [](int time){
+    input_processor.addKeyReleaseHandler(GLFW_KEY_A, [](int time) {
       toy::debugf("press release A when hold {}", time);
     });
 

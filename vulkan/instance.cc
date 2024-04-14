@@ -80,7 +80,7 @@ auto getDebugMessengerInfo(const DebugMessengerConfig& config)
 }
 
 auto createInstance(
-  std::string_view app_name, std::optional<VkDebugUtilsMessengerCreateInfoEXT> debug_info
+  const std::string& app_name, std::optional<VkDebugUtilsMessengerCreateInfoEXT> debug_info
 ) -> Instance {
   /*
    * 1. 创建appInfo
@@ -139,11 +139,11 @@ auto createInstance(
   return { create_info };
 }
 
-auto createInstance(std::string_view app_name, const DebugMessengerConfig& config) -> Instance {
+auto createInstance(const std::string& app_name, const DebugMessengerConfig& config) -> Instance {
   return createInstance(app_name, getDebugMessengerInfo(config));
 }
 
-auto createInstance(std::string_view app_name) -> Instance {
+auto createInstance(const std::string& app_name) -> Instance {
   return createInstance(app_name, std::nullopt);
 }
 

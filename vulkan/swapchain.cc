@@ -19,14 +19,16 @@ auto createSurface(VkInstance instance, GLFWwindow* p_window) -> Surface {
 }
 
 auto createSwapchain(
-  VkSurfaceKHR                    surface,
-  VkDevice                        device,
-  const VkSurfaceCapabilitiesKHR& capabilities,
-  VkSurfaceFormatKHR              surface_format,
-  VkPresentModeKHR                present_mode,
-  GLFWwindow*                     p_window,
-  VkSwapchainKHR                  old_swapchain
+  VkPhysicalDevice   pdevice,
+  VkSurfaceKHR       surface,
+  VkDevice           device,
+  VkSurfaceFormatKHR surface_format,
+  VkPresentModeKHR   present_mode,
+  GLFWwindow*        p_window,
+  VkSwapchainKHR     old_swapchain
 ) -> std::expected<std::pair<Swapchain, VkExtent2D>, SwapchainCreateError> {
+  VkSurfaceCapabilitiesKHR capabilities;
+  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(pdevice, surface, &capabilities);
   uint32_t image_count = capabilities.minImageCount + 1;
   // maxImageCount == 0意味着没有最大值
   if (capabilities.maxImageCount != 0) {

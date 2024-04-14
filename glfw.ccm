@@ -27,7 +27,7 @@ public:
     return *this;
   }
   Window() : window_(nullptr) {}
-  Window(uint32_t width, uint32_t height, std::string_view title);
+  Window(int width, int height, const std::string& title);
 };
 
 void Window::destroyResource() {
@@ -37,7 +37,7 @@ void Window::destroyResource() {
   }
 }
 
-Window::Window(uint32_t width, uint32_t height, std::string_view title) {
+Window::Window(int width, int height, const std::string& title) {
   try {
     if (glfwInit() != GLFW_TRUE) {
       throw std::runtime_error("glfw init failed");
