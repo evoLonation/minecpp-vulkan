@@ -1,5 +1,6 @@
 ---
 # https://www.cnblogs.com/__tudou__/p/13322854.html#%E4%BD%BF%E7%94%A8clang-format%E6%96%87%E4%BB%B6
+# https://clang.llvm.org/docs/ClangFormatStyleOptions.html
 # 语言: None, Cpp, Java, JavaScript, ObjC, Proto, TableGen, TextProto
 Language:	Cpp
 # 连续声明时，对齐所有声明的变量名
@@ -32,3 +33,5 @@ ColumnLimit: 100
 AlignAfterOpenBracket: BlockIndent
 # lambda 以什么为参照进行对齐
 # LambdaBodyIndentation: OuterScope
+# 将ReturnType放在同一行的惩罚，这里尽量大，使得其尽量放在同一行
+PenaltyReturnTypeOnItsOwnLine: 200
