@@ -163,38 +163,6 @@ auto createImage(
   return { std::move(image), std::move(memory), std::move(image_view) };
 }
 
-void recordImageBarrier(
-  VkCommandBuffer                                    cmdbuf,
-  VkImage                                            image,
-  std::pair<ImageUse, ImageUse>                      use,
-  std::optional<std::pair<FamilyTransferInfo, bool>> family_transfer,
-  ImageType                                          type
-) {
-  auto [src_scope, src_layout] = getImageSyncInfo(false, use.first);
-  auto [dst_scope, dst_layout] = getImageSyncInfo(true, use.second);
-  auto common_info = getBarrierCommonInfo({ src_scope, dst_scope }, family_transfer);
-
-  auto image_barrier = VkImageMemoryBarrier{
-    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-    .pNext = nullptr,
-    .srcAccessMask = common_info.src_scope.access_mask,
-    .dstAccessMask = common_info.dst_scope.access_mask,
-    .oldLayout = src_layout,
-    .newLayout = dst_layout,
-    .srcQueueFamilyIndex = common_info.family_transfer.src_family,
-    .dstQueueFamilyIndex = common_info.family_transfer.dst_family,
-    .image = image,
-    .subresourceRange = getSubResourceRange(type),
-  };
-  recordPipelineBarrier(
-    cmdbuf,
-    { common_info.src_scope.stage_mask, common_info.dst_scope.stage_mask },
-    {},
-    {},
-    { &image_barrier, 1 }
-  );
-}
-
 auto createSampler(VkDevice device, float max_anisotropy) -> Sampler {
   toy::debugf("max_anisotropy: {}", max_anisotropy);
   auto sampler_info = VkSamplerCreateInfo{
@@ -236,26 +204,19 @@ private:
   ImageResource _image_resource;
   Sampler       _sampler;
 
-  std::optional<FamilyTransferInfo> _family_transfer;
-
-  Semaphore _release_sema;
-
   static constexpr auto _image_type = ImageType::SAMPLED_IMAGE;
   static constexpr auto _src_use = ImageUse::COPY_DST;
   static constexpr auto _dst_use = ImageUse::FRAGMENT_SAMPLER;
-  static constexpr auto _use_pair = std::pair{ _src_use, _dst_use };
 
 public:
   SampledTexture() = default;
   SampledTexture(
-    VkPhysicalDevice                  pdevice,
-    VkDevice                          device,
-    const std::string&                path,
-    VkQueue                           transfer_queue,
-    VkCommandBuffer                   transfer_cmdbuf,
-    VkDescriptorSet                   descrip_set,
-    float                             max_anisotropy,
-    std::optional<FamilyTransferInfo> family_transfer
+    VkPhysicalDevice   pdevice,
+    VkDevice           device,
+    const std::string& path,
+    VkQueue            transfer_queue,
+    VkCommandBuffer    transfer_cmdbuf,
+    float              max_anisotropy
   ) {
     int   width, height, channels;
     auto* pixels = stbi_load(path.data(), &width, &height, &channels, STBI_rgb_alpha);
@@ -275,19 +236,16 @@ public:
     _image_resource = createImage(pdevice, device, format, width, height, _image_type);
 
     _sampler = createSampler(device, max_anisotropy);
-    updateDescriptorSet(
-      device, descrip_set, std::pair{ _image_resource.image_view.get(), _sampler.get() }
-    );
-
-    _family_transfer = family_transfer;
 
     auto recorder = [&](VkCommandBuffer cmdbuf) {
       recordImageBarrier(
         cmdbuf,
         _image_resource.image.get(),
-        { ImageUse::UNDEFINED, _src_use },
-        std::nullopt,
-        _image_type
+        getAspect(_image_type),
+        ImageBarrierUseInfo{
+          .src_use = ImageUse::UNDEFINED,
+          .dst_use = _src_use,
+        }
       );
 
       auto image_copy = VkBufferImageCopy{
@@ -298,7 +256,7 @@ public:
         .bufferImageHeight = 0,
         .imageSubresource =
           VkImageSubresourceLayers{
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .aspectMask = getAspect(_image_type),
             .mipLevel = 0,
             .baseArrayLayer = 0,
             .layerCount = 1,
@@ -324,37 +282,23 @@ public:
         1,
         &image_copy
       );
-
-      recordImageBarrier(
-        cmdbuf,
-        _image_resource.image.get(),
-        _use_pair,
-        family_transfer.transform([](auto transfer) {
-          return std::pair{ transfer, false };
-        }),
-        _image_type
-      );
     };
-    _release_sema = createSemaphore(device);
-    recordAndSubmit(
-      transfer_cmdbuf, transfer_queue, recorder, {}, { &_release_sema.get(), 1 }, VK_NULL_HANDLE
+    recordAndSubmit(transfer_cmdbuf, transfer_queue, recorder, {}, {}, VK_NULL_HANDLE);
+  }
+
+  auto getTransfer(TransferFamilyInfo family_info) -> Transfer {
+    return getImageTransfer(
+      _image_resource.image,
+      getAspect(_image_type),
+      {
+        .src_use = _src_use,
+        .dst_use = _dst_use,
+      },
+      family_info
     );
   }
-
-  auto getNeedWaitInfo() -> std::pair<VkSemaphore, VkPipelineStageFlags> {
-    return { _release_sema, getImageSyncInfo(false, _dst_use).first.stage_mask };
-  }
-
-  void recordDstFamilyTransfer(VkCommandBuffer cmdbuf) {
-    if (_family_transfer.has_value()) {
-      recordImageBarrier(
-        cmdbuf,
-        _image_resource.image.get(),
-        _use_pair,
-        std::pair{ _family_transfer.value(), true },
-        _image_type
-      );
-    }
+  auto getDescriptorResource() -> DescriptorResource {
+    return std::pair{ _image_resource.image_view.get(), _sampler.get() };
   }
 };
 

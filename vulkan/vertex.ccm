@@ -70,67 +70,43 @@ consteval auto Vertex<DataTypes...>::getVertexInfo() -> VertexInfo<sizeof...(Dat
   return { binding_description, attribute_descriptions };
 }
 
-class VertexBuffer : public DeviceLocalBuffer<VertexBuffer> {
+class VertexBuffer : public DeviceLocalBuffer<BufferType::VERTEX_BUFFER> {
 private:
-  using Base = DeviceLocalBuffer<VertexBuffer>;
-  friend Base;
-  static auto getDstUse() -> BufferUse { return BufferUse::VERTEX_BUFFER_DRAW; }
+  using Base = DeviceLocalBuffer<BufferType::VERTEX_BUFFER>;
 
 public:
   VertexBuffer() = default;
-  template <ranges::contiguous_range Range>
-    requires(toy::InstantiationOf<ranges::range_value_t<Range>, Vertex>)
+  template <toy::InstantiationOf<Vertex> VertexT>
   VertexBuffer(
-    VkPhysicalDevice                  pdevice,
-    VkDevice                          device,
-    VkQueue                           transfer_queue,
-    VkCommandBuffer                   transfer_cmdbuf,
-    Range&&                           vertex_data,
-    std::optional<FamilyTransferInfo> family_transfer
+    VkPhysicalDevice         pdevice,
+    VkDevice                 device,
+    VkQueue                  transfer_queue,
+    VkCommandBuffer          transfer_cmdbuf,
+    std::span<const VertexT> vertex_data
   )
-    : DeviceLocalBuffer<VertexBuffer>(
-        pdevice,
-        device,
-        transfer_queue,
-        transfer_cmdbuf,
-        std::as_bytes(std::span{ vertex_data }),
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        family_transfer
-      ) {}
+    : Base(pdevice, device, transfer_queue, transfer_cmdbuf, std::as_bytes(vertex_data)) {}
   void recordBind(VkCommandBuffer cmdbuf) {
     auto offset = (VkDeviceSize)0;
     vkCmdBindVertexBuffers(cmdbuf, 0, 1, &_buffer.get(), &offset);
   }
 };
 
-class IndexBuffer : public DeviceLocalBuffer<IndexBuffer> {
+class IndexBuffer : public DeviceLocalBuffer<BufferType::INDEX_BUFFER> {
 private:
-  using Base = DeviceLocalBuffer<IndexBuffer>;
-  friend Base;
-  static auto getDstUse() -> BufferUse { return BufferUse::VERTEX_BUFFER_DRAW; }
-
+  using Base = DeviceLocalBuffer<BufferType::INDEX_BUFFER>;
   uint32_t _indices_size;
 
 public:
   IndexBuffer() = default;
 
   IndexBuffer(
-    VkPhysicalDevice                  pdevice,
-    VkDevice                          device,
-    VkQueue                           transfer_queue,
-    VkCommandBuffer                   transfer_cmdbuf,
-    std::span<uint16_t>               indices,
-    std::optional<FamilyTransferInfo> family_transfer
+    VkPhysicalDevice          pdevice,
+    VkDevice                  device,
+    VkQueue                   transfer_queue,
+    VkCommandBuffer           transfer_cmdbuf,
+    std::span<const uint16_t> indices
   )
-    : DeviceLocalBuffer<IndexBuffer>(
-        pdevice,
-        device,
-        transfer_queue,
-        transfer_cmdbuf,
-        std::as_bytes(indices),
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        family_transfer
-      ),
+    : Base(pdevice, device, transfer_queue, transfer_cmdbuf, std::as_bytes(indices)),
       _indices_size(indices.size()) {}
   void recordBind(VkCommandBuffer cmdbuf) {
     vkCmdBindIndexBuffer(cmdbuf, _buffer, 0, VK_INDEX_TYPE_UINT16);

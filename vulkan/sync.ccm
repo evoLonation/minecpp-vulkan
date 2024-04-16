@@ -35,36 +35,9 @@ void consumeFence(VkDevice device, VkFence fence) {
   checkVkResult(vkResetFences(device, 1, &fence), "reset fence");
 }
 
-void recordPipelineBarrier(
-  VkCommandBuffer                                       cmdbuf,
-  std::pair<VkPipelineStageFlags, VkPipelineStageFlags> stage_mask,
-  std::span<const VkMemoryBarrier>                      memory_barriers,
-  std::span<const VkBufferMemoryBarrier>                buffer_barriers,
-  std::span<const VkImageMemoryBarrier>                 image_barriers
-) {
-  vkCmdPipelineBarrier(
-    cmdbuf,
-    stage_mask.first,
-    stage_mask.second,
-    //  VK_DEPENDENCY_BY_REGION_BIT:
-    //  实现可以分区域进行同步(前面写一部分，后面就可以先读一部分)
-    VK_DEPENDENCY_BY_REGION_BIT,
-    memory_barriers.size(),
-    memory_barriers.data(),
-    buffer_barriers.size(),
-    buffer_barriers.data(),
-    image_barriers.size(),
-    image_barriers.data()
-  );
-};
-
 struct ScopeInfo {
   VkPipelineStageFlags stage_mask;
   VkAccessFlags        access_mask;
-};
-struct FamilyTransferInfo {
-  uint32_t src_family;
-  uint32_t dst_family;
 };
 enum class ImageUse {
   UNDEFINED,
@@ -91,9 +64,6 @@ auto getBufferSyncInfo(BufferUse use) -> ScopeInfo {
     return { .stage_mask = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
              .access_mask = VK_ACCESS_INDEX_READ_BIT };
     break;
-  default:
-    std::unreachable();
-    break;
   }
 }
 auto getImageSyncInfo(bool is_dst, ImageUse use) -> std::pair<ScopeInfo, VkImageLayout> {
@@ -114,86 +84,267 @@ auto getImageSyncInfo(bool is_dst, ImageUse use) -> std::pair<ScopeInfo, VkImage
                .access_mask = VK_ACCESS_SHADER_READ_BIT },
              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     break;
-  default:
-    std::unreachable();
-    break;
   }
 }
 
-template <typename VkHandle>
-using UseEnumOf = std::conditional_t<std::same_as<VkHandle, VkImage>, ImageUse, BufferUse>;
+void recordPipelineBarrier(
+  VkCommandBuffer                                       cmdbuf,
+  std::pair<VkPipelineStageFlags, VkPipelineStageFlags> stage_mask,
+  std::span<const VkMemoryBarrier>                      memory_barriers,
+  std::span<const VkBufferMemoryBarrier>                buffer_barriers,
+  std::span<const VkImageMemoryBarrier>                 image_barriers
+) {
+  vkCmdPipelineBarrier(
+    cmdbuf,
+    stage_mask.first,
+    stage_mask.second,
+    //  VK_DEPENDENCY_BY_REGION_BIT:
+    //  实现可以分区域进行同步(前面写一部分，后面就可以先读一部分)
+    VK_DEPENDENCY_BY_REGION_BIT,
+    memory_barriers.size(),
+    memory_barriers.data(),
+    buffer_barriers.size(),
+    buffer_barriers.data(),
+    image_barriers.size(),
+    image_barriers.data()
+  );
+};
+void recordBufferBarrier_(
+  VkCommandBuffer cmdbuf,
+  VkBuffer        buffer,
+  ScopeInfo       src_scope,
+  ScopeInfo       dst_scope,
+  uint32_t        src_family,
+  uint32_t        dst_family
+) {
+  auto buffer_barrier = VkBufferMemoryBarrier{
+    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+    .pNext = nullptr,
+    .srcAccessMask = src_scope.access_mask,
+    .dstAccessMask = dst_scope.access_mask,
+    .srcQueueFamilyIndex = src_family,
+    .dstQueueFamilyIndex = dst_family,
+    .buffer = buffer,
+    .offset = 0,
+    .size = VK_WHOLE_SIZE,
+  };
+  recordPipelineBarrier(
+    cmdbuf, { src_scope.stage_mask, dst_scope.stage_mask }, {}, { &buffer_barrier, 1 }, {}
+  );
+}
+void recordImageBarrier_(
+  VkCommandBuffer       cmdbuf,
+  VkImage               image,
+  VkImageAspectFlagBits aspect,
+  VkImageLayout         src_layout,
+  VkImageLayout         dst_layout,
+  ScopeInfo             src_scope,
+  ScopeInfo             dst_scope,
+  uint32_t              src_family,
+  uint32_t              dst_family
+) {
+  auto image_barrier = VkImageMemoryBarrier{
+    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+    .pNext = nullptr,
+    .srcAccessMask = src_scope.access_mask,
+    .dstAccessMask = dst_scope.access_mask,
+    .oldLayout = src_layout,
+    .newLayout = dst_layout,
+    .srcQueueFamilyIndex = src_family,
+    .dstQueueFamilyIndex = dst_family,
+    .image = image,
+    .subresourceRange =
+      VkImageSubresourceRange{
+        .aspectMask = aspect,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+      },
+  };
+  recordPipelineBarrier(
+    cmdbuf, { src_scope.stage_mask, dst_scope.stage_mask }, {}, {}, { &image_barrier, 1 }
+  );
+}
 
-struct BarrierCommonInfo {
-  ScopeInfo          src_scope;
-  ScopeInfo          dst_scope;
-  FamilyTransferInfo family_transfer;
+struct BarrierScopeInfo {
+  ScopeInfo src_scope;
+  ScopeInfo dst_scope;
 };
 
 /**
- * @param family_transfer : bool 代表是否在transfer的dst
+ * @brief 对于所有权转移，需要分别在src family和dst family处各record一次barrier
+ * 要想建立release op到acquire op的同步，只能在第一个submit设置signal sema
+ * 并对应设置wait sema到第二个submit；
+ * 而signal sema只有所有命令执行完后进行signal，wait sema可以设置wait的stage
+ * 因此：
+ * - 对于src family的record：将dstStageMask设置为BOTTOM即可；
+ * - 对于dst family的record：另srcStageMask=dstStageMask
+ * 从而实现release->bottom(submit)->target(submit)->target的依赖链
  */
-auto getBarrierCommonInfo(
-  std::pair<ScopeInfo, ScopeInfo>                    scope,
-  std::optional<std::pair<FamilyTransferInfo, bool>> family_transfer
-) -> BarrierCommonInfo {
+struct TransferScopeInfo {
+  BarrierScopeInfo src_barrier;
+  BarrierScopeInfo dst_barrier;
 
-  /**
-   * @brief 对于所有权转移，需要分别在src family和dst family处各record一次barrier
-   * 要想建立release op到acquire op的同步，只能在第一个submit设置signal sema
-   * 并对应设置wait sema到第二个submit；
-   * 而signal sema只有所有命令执行完后进行signal，wait sema可以设置wait的stage
-   * 因此：
-   * - 对于src family的record：将dstStageMask设置为BOTTOM即可；
-   * - 对于dst family的record：另srcStageMask=dstStageMask
-   * 从而实现release->bottom(submit)->target(submit)->target的依赖链
-   */
-  auto get_access_mask = [&](auto src_access_mask, auto dst_access_mask) {
-    using ret = std::pair<VkAccessFlags, VkAccessFlags>;
-    if (family_transfer.has_value()) {
-      return family_transfer->second ? ret{ VK_ACCESS_NONE, dst_access_mask }
-                                     : ret{ src_access_mask, VK_ACCESS_NONE };
-    }
-    return ret{ src_access_mask, dst_access_mask };
-  };
-  auto get_stage_mask = [&](
-                          auto src_stage_mask, auto dst_stage_mask
-                        ) -> std::pair<VkPipelineStageFlags, VkPipelineStageFlags> {
-    using ret = std::pair<VkPipelineStageFlags, VkPipelineStageFlags>;
-    if (family_transfer.has_value()) {
-      return family_transfer->second ? ret{ dst_stage_mask, dst_stage_mask }
-                                     : ret{ src_stage_mask, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT };
-    }
-    return ret{ src_stage_mask, dst_stage_mask };
-  };
-  auto get_family = [&](bool is_dst) -> uint32_t {
-    if (family_transfer.has_value()) {
-      return is_dst ? family_transfer->first.dst_family : family_transfer->first.src_family;
-    }
-    return VK_QUEUE_FAMILY_IGNORED;
-  };
+  TransferScopeInfo(BarrierScopeInfo scope_info) {
+    auto [src_scope, dst_scope] = scope_info;
+    src_barrier = BarrierScopeInfo{
+      .src_scope =
+        ScopeInfo{
+          .stage_mask = src_scope.stage_mask,
+          .access_mask = src_scope.access_mask,
+        },
+      .dst_scope =
+        ScopeInfo{
+          .stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+          .access_mask = 0,
+        },
+    };
+    dst_barrier = BarrierScopeInfo{
+      .src_scope =
+        ScopeInfo{
+          .stage_mask = dst_scope.stage_mask,
+          .access_mask = 0,
+        },
+      .dst_scope =
+        ScopeInfo{
+          .stage_mask = dst_scope.stage_mask,
+          .access_mask = dst_scope.access_mask,
+        },
+    };
+  }
+};
 
-  auto [src_access_mask, dst_access_mask] =
-    get_access_mask(scope.first.access_mask, scope.second.access_mask);
-  auto [src_stage_mask, dst_stage_mask] =
-    get_stage_mask(scope.first.stage_mask, scope.second.stage_mask);
-  return {
-    .src_scope =
-      ScopeInfo{
-        .stage_mask = src_stage_mask,
-        .access_mask = src_access_mask,
+struct ImageBarrierUseInfo {
+  ImageUse src_use;
+  ImageUse dst_use;
+};
+
+struct BufferBarrierUseInfo {
+  BufferUse src_use;
+  BufferUse dst_use;
+};
+
+struct TransferFamilyInfo {
+  uint32_t src_family;
+  uint32_t dst_family;
+};
+
+struct Transfer {
+  std::function<void(VkCommandBuffer)> src_recorder;
+  std::function<void(VkCommandBuffer)> dst_recorder;
+  VkPipelineStageFlags                 dst_wait_stage;
+};
+
+void recordBufferBarrier(VkCommandBuffer cmdbuf, VkBuffer buffer, BufferBarrierUseInfo use_info) {
+  recordBufferBarrier_(
+    cmdbuf,
+    buffer,
+    getBufferSyncInfo(use_info.src_use),
+    getBufferSyncInfo(use_info.dst_use),
+    VK_QUEUE_FAMILY_IGNORED,
+    VK_QUEUE_FAMILY_IGNORED
+  );
+}
+
+auto getBufferTransfer(
+  VkBuffer buffer, BufferBarrierUseInfo use_info, TransferFamilyInfo family_info
+) -> Transfer {
+  auto scope_info = TransferScopeInfo{ {
+    .src_scope = getBufferSyncInfo(use_info.src_use),
+    .dst_scope = getBufferSyncInfo(use_info.dst_use),
+  } };
+  return Transfer{
+    .src_recorder =
+      [scope_info = scope_info.src_barrier, buffer, family_info](VkCommandBuffer cmdbuf) {
+        recordBufferBarrier_(
+          cmdbuf,
+          buffer,
+          scope_info.src_scope,
+          scope_info.dst_scope,
+          family_info.src_family,
+          family_info.dst_family
+        );
       },
-    .dst_scope =
-      ScopeInfo{
-        .stage_mask = dst_stage_mask,
-        .access_mask = dst_access_mask,
+    .dst_recorder =
+      [scope_info = scope_info.dst_barrier, buffer, family_info](VkCommandBuffer cmdbuf) {
+        recordBufferBarrier_(
+          cmdbuf,
+          buffer,
+          scope_info.src_scope,
+          scope_info.dst_scope,
+          family_info.src_family,
+          family_info.dst_family
+        );
       },
-    .family_transfer =
-      FamilyTransferInfo{
-        .src_family =
-          family_transfer.has_value() ? family_transfer->first.src_family : VK_QUEUE_FAMILY_IGNORED,
-        .dst_family =
-          family_transfer.has_value() ? family_transfer->first.dst_family : VK_QUEUE_FAMILY_IGNORED,
+    .dst_wait_stage = scope_info.dst_barrier.src_scope.stage_mask
+  };
+}
+
+void recordImageBarrier(
+  VkCommandBuffer cmdbuf, VkImage image, VkImageAspectFlagBits aspect, ImageBarrierUseInfo use_info
+) {
+  auto [src_scope, src_layout] = getImageSyncInfo(false, use_info.src_use);
+  auto [dst_scope, dst_layout] = getImageSyncInfo(true, use_info.dst_use);
+  recordImageBarrier_(
+    cmdbuf,
+    image,
+    aspect,
+    src_layout,
+    dst_layout,
+    src_scope,
+    dst_scope,
+    VK_QUEUE_FAMILY_IGNORED,
+    VK_QUEUE_FAMILY_IGNORED
+  );
+}
+
+auto getImageTransfer(
+  VkImage               image,
+  VkImageAspectFlagBits aspect,
+  ImageBarrierUseInfo   use_info,
+  TransferFamilyInfo    family_info
+) -> Transfer {
+  auto [src_scope, src_layout] = getImageSyncInfo(false, use_info.src_use);
+  auto [dst_scope, dst_layout] = getImageSyncInfo(true, use_info.dst_use);
+  auto scope_info = TransferScopeInfo{ {
+    .src_scope = src_scope,
+    .dst_scope = dst_scope,
+  } };
+  return Transfer{
+    .src_recorder =
+      [scope_info = scope_info.src_barrier, image, family_info, src_layout, dst_layout, aspect](
+        VkCommandBuffer cmdbuf
+      ) {
+        recordImageBarrier_(
+          cmdbuf,
+          image,
+          aspect,
+          src_layout,
+          dst_layout,
+          scope_info.src_scope,
+          scope_info.dst_scope,
+          family_info.src_family,
+          family_info.dst_family
+        );
       },
+    .dst_recorder =
+      [scope_info = scope_info.dst_barrier, image, family_info, src_layout, dst_layout, aspect](
+        VkCommandBuffer cmdbuf
+      ) {
+        recordImageBarrier_(
+          cmdbuf,
+          image,
+          aspect,
+          src_layout,
+          dst_layout,
+          scope_info.src_scope,
+          scope_info.dst_scope,
+          family_info.src_family,
+          family_info.dst_family
+        );
+      },
+    .dst_wait_stage = scope_info.dst_barrier.src_scope.stage_mask
   };
 }
 

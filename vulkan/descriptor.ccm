@@ -69,11 +69,14 @@ auto allocateDescriptorSets(
   return DescriptorSets{ device, allocate_info };
 }
 
-void updateDescriptorSet(
-  VkDevice                                                  device,
-  VkDescriptorSet                                           descriptor_set,
-  std::variant<VkBuffer, std::pair<VkImageView, VkSampler>> source
-) {
+using DescriptorResource = std::variant<VkBuffer, std::pair<VkImageView, VkSampler>>;
+
+struct DescriptorSetUpdate {
+  VkDescriptorSet    descriptor_set;
+  DescriptorResource resource;
+};
+
+void updateDescriptorSet(VkDevice device, std::span<const DescriptorSetUpdate> updates) {
   // descriptor set是资源的引用
   // vkUpdateDescriptorSets 只是更新descriptor set对应绑定到哪个资源
   using InfoVariant = std::variant<VkDescriptorBufferInfo, VkDescriptorImageInfo>;
@@ -91,24 +94,33 @@ void updateDescriptorSet(
       .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
     };
   };
-  auto src_info = std::visit(toy::OverloadLambda{ buffer_info_getter, image_info_getter }, source);
-  auto descriptor_set_write_info = VkWriteDescriptorSet{
-    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-    .dstSet = descriptor_set,
-    .dstBinding = 0,
-    // 数组起始索引
-    .dstArrayElement = 0,
-    .descriptorCount = 1,
-  };
-  if (src_info.index() == 0) {
-    // 是descriptorCount个，一个对应一个descriptor
-    descriptor_set_write_info.pBufferInfo = &std::get<0>(src_info);
-    descriptor_set_write_info.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  } else {
-    descriptor_set_write_info.pImageInfo = &std::get<1>(src_info);
-    descriptor_set_write_info.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  auto write_infos = std::vector<VkWriteDescriptorSet>{};
+  auto sub_infos = std::vector<InfoVariant>{};
+  sub_infos.reserve(updates.size());
+  for (auto update : updates) {
+    auto descriptor_set_write_info = VkWriteDescriptorSet{
+      .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+      .dstSet = update.descriptor_set,
+      .dstBinding = 0,
+      // 数组起始索引
+      .dstArrayElement = 0,
+      .descriptorCount = 1,
+    };
+    sub_infos.push_back(
+      std::visit(toy::OverloadLambda{ buffer_info_getter, image_info_getter }, update.resource)
+    );
+    auto& src_info = sub_infos.back();
+    if (src_info.index() == 0) {
+      // 是descriptorCount个，一个对应一个descriptor
+      descriptor_set_write_info.pBufferInfo = &std::get<0>(src_info);
+      descriptor_set_write_info.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    } else {
+      descriptor_set_write_info.pImageInfo = &std::get<1>(src_info);
+      descriptor_set_write_info.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    }
+    write_infos.push_back(descriptor_set_write_info);
   }
-  vkUpdateDescriptorSets(device, 1, &descriptor_set_write_info, 0, nullptr);
+  vkUpdateDescriptorSets(device, write_infos.size(), write_infos.data(), 0, nullptr);
 }
 
 } // namespace vk

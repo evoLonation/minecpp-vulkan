@@ -4,7 +4,7 @@ import "glfw_config.h";
 import toy;
 import std;
 
-export namespace vk {
+export namespace glfw {
 
 void checkGlfwError();
 

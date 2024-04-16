@@ -10,6 +10,7 @@ import model;
 import input;
 
 using namespace vk;
+using namespace glfw;
 
 class VulkanApplication {
 public:
@@ -108,6 +109,8 @@ private:
   };
 
   SampledTexture _sampled_texture;
+
+  Semaphore _ownership_transfer_sema;
 };
 
 VulkanApplication::VulkanApplication(int width, int height, const std::string& app_name)
@@ -135,7 +138,8 @@ VulkanApplication::VulkanApplication(int width, int height, const std::string& a
     required_device_extensions,
     checkPhysicalDeviceSupport,
     checkSurfaceSupport,
-    std::array<QueueFamilyChecker, 3>{ checkGraphicQueue, checkPresentQueue, checkTransferQueue }
+    std::array<QueueFamilyChecker, 3>{ checkGraphicQueue, checkPresentQueue, checkTransferQueue },
+    true
   );
   toy::debug(_physical_device_info.queue_indices);
   toy::debugf(
@@ -163,7 +167,7 @@ VulkanApplication::VulkanApplication(int width, int height, const std::string& a
 
     _graphic_ctx = get_ctx(queues[0], worker_count * 2 + 1);
     _present_ctx = get_ctx(queues[1], 0);
-    _transfer_ctx = get_ctx(queues[2], 3);
+    _transfer_ctx = get_ctx(queues[2], 4);
   }
 
   std::tie(_swapchain, _extent) = createSwapchain(
@@ -197,6 +201,8 @@ VulkanApplication::VulkanApplication(int width, int height, const std::string& a
   _pipeline_resource = createGraphicsPipeline(
     _device,
     _render_pass,
+    "hello.vert",
+    "hello.frag",
     std::array{ vertex_info.binding_description },
     vertex_info.attribute_descriptions,
     std::array{ _uniform_set_layout.get(), _sampler_set_layout.get() }
@@ -242,7 +248,9 @@ VulkanApplication::VulkanApplication(int width, int height, const std::string& a
                );
                void* map;
                vkMapMemory(_device, uniform_memory, 0, sizeof(UniformBufferObject), 0, &map);
-               updateDescriptorSet(_device, descriptor_set, uniform_buffer.get());
+               updateDescriptorSet(
+                 _device, std::array{ DescriptorSetUpdate{ descriptor_set, uniform_buffer.get() } }
+               );
                return Worker{
                  .cmdbuf = cmdbufs[0],
                  .cmdbuf_for_signal = cmdbufs[1],
@@ -275,35 +283,56 @@ VulkanApplication::VulkanApplication(int width, int height, const std::string& a
                                 return index + 5;
                               }));
   std::tie(vertex_data, vertex_indices) = model::getModelInfo("model/viking_room.obj");
-  auto family_transfer = std::optional<FamilyTransferInfo>{};
-  if (_transfer_ctx.family_index != _graphic_ctx.family_index) {
-    family_transfer = FamilyTransferInfo{ _transfer_ctx.family_index, _graphic_ctx.family_index };
-  }
-  _vertex_buffer = VertexBuffer{ _physical_device_info.device,   _device,     _transfer_ctx.queue,
-                                 _transfer_ctx.cmdbufs.get()[0], vertex_data, family_transfer };
-  _index_buffer = IndexBuffer{ _physical_device_info.device,   _device,        _transfer_ctx.queue,
-                               _transfer_ctx.cmdbufs.get()[1], vertex_indices, family_transfer };
+  _vertex_buffer = VertexBuffer{ _physical_device_info.device,
+                                 _device,
+                                 _transfer_ctx.queue,
+                                 _transfer_ctx.cmdbufs.get()[0],
+                                 std::span<const Vertex2D>{ vertex_data } };
+  _index_buffer = IndexBuffer{ _physical_device_info.device,
+                               _device,
+                               _transfer_ctx.queue,
+                               _transfer_ctx.cmdbufs.get()[1],
+                               vertex_indices };
   _indices_count = vertex_indices.size();
-  _sampled_texture = SampledTexture{ _physical_device_info.device,
-                                     _device,
-                                     "model/viking_room.png",
-                                     _transfer_ctx.queue,
-                                     _transfer_ctx.cmdbufs.get()[2],
-                                     _sampler_set,
-                                     _physical_device_info.properties.limits.maxSamplerAnisotropy,
-                                     family_transfer };
+  _sampled_texture = SampledTexture{
+    _physical_device_info.device,   _device,
+    "model/viking_room.png",        _transfer_ctx.queue,
+    _transfer_ctx.cmdbufs.get()[2], _physical_device_info.properties.limits.maxSamplerAnisotropy
+  };
+  updateDescriptorSet(
+    _device,
+    std::array{ DescriptorSetUpdate{ _sampler_set, _sampled_texture.getDescriptorResource() } }
+  );
+  _ownership_transfer_sema = createSemaphore(_device);
+  auto family_transfer =
+    TransferFamilyInfo{ _transfer_ctx.family_index, _graphic_ctx.family_index };
+  auto vertex_transfer = _vertex_buffer.getTransfer(family_transfer);
+  auto index_transfer = _index_buffer.getTransfer(family_transfer);
+  auto sampled_transfer = _sampled_texture.getTransfer(family_transfer);
+  recordAndSubmit(
+    _transfer_ctx.cmdbufs.get()[3],
+    _transfer_ctx.queue,
+    [&](auto cmdbuf) {
+      vertex_transfer.src_recorder(cmdbuf);
+      index_transfer.src_recorder(cmdbuf);
+      sampled_transfer.src_recorder(cmdbuf);
+    },
+    {},
+    { &_ownership_transfer_sema.get(), 1 },
+    VK_NULL_HANDLE
+  );
   recordAndSubmit(
     _graphic_ctx.cmdbufs.get()[0],
     _graphic_ctx.queue,
     [&](auto cmdbuf) {
-      _sampled_texture.recordDstFamilyTransfer(cmdbuf);
-      _vertex_buffer.recordDstFamilyTransfer(cmdbuf);
-      _index_buffer.recordDstFamilyTransfer(cmdbuf);
+      vertex_transfer.dst_recorder(cmdbuf);
+      index_transfer.dst_recorder(cmdbuf);
+      sampled_transfer.dst_recorder(cmdbuf);
     },
     std::array{
-      _sampled_texture.getNeedWaitInfo(),
-      _vertex_buffer.getNeedWaitInfo(),
-      _index_buffer.getNeedWaitInfo(),
+      std::pair{ _ownership_transfer_sema.get(),
+                 vertex_transfer.dst_wait_stage | index_transfer.dst_wait_stage |
+                   sampled_transfer.dst_wait_stage },
     },
     {},
     VK_NULL_HANDLE
@@ -318,8 +347,6 @@ VulkanApplication::~VulkanApplication() {
 }
 
 auto VulkanApplication::recreateSwapchain() -> bool {
-  // todo: 换成范围更小的约束
-  vkDeviceWaitIdle(_device);
 
   if (auto ret = createSwapchain(
         _physical_device_info.device,
@@ -331,6 +358,8 @@ auto VulkanApplication::recreateSwapchain() -> bool {
         _swapchain
       );
       ret.has_value()) {
+    // todo: 换成范围更小的约束
+    vkDeviceWaitIdle(_device);
     // move old resource to sorted declared variable to guarantee destroy order
     auto old_swap_chain = std::move(_swapchain);
     auto old_image_views = std::move(_image_views);

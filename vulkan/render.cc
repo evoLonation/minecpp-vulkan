@@ -141,14 +141,16 @@ auto createShaderModule(std::string_view filename, VkDevice device) -> ShaderMod
 auto createGraphicsPipeline(
   VkDevice                                           device,
   VkRenderPass                                       render_pass,
+  std::string_view                                   vertex_shader_name,
+  std::string_view                                   frag_shader_name,
   std::span<const VkVertexInputBindingDescription>   vertex_binding_descriptions,
   std::span<const VkVertexInputAttributeDescription> vertex_attribute_descriptions,
   std::span<const VkDescriptorSetLayout>             descriptor_set_layouts
 ) -> PipelineResource {
   constexpr bool enable_blending_color = false;
 
-  auto vertex_shader = createShaderModule("hello.vert", device);
-  auto frag_shader = createShaderModule("hello.frag", device);
+  auto vertex_shader = createShaderModule(vertex_shader_name, device);
+  auto frag_shader = createShaderModule(frag_shader_name, device);
   // pSpecializationInfo 可以为 管道 配置着色器的常量，利于编译器优化
   // 类似 constexpr
   auto shader_stage_infos = std::array{

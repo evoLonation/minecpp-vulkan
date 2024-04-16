@@ -12,7 +12,8 @@ auto pickPhysicalDevice(
   std::span<const char*>              required_extensions,
   DeviceChecker                       device_checker,
   SurfaceChecker                      surface_checker,
-  std::span<const QueueFamilyChecker> queue_chekers
+  std::span<const QueueFamilyChecker> queue_chekers,
+  bool                                all_queue_diff
 ) -> PhysicalDeviceInfo {
   std::vector<VkPhysicalDevice>   devices = getVkResources(vkEnumeratePhysicalDevices, instance);
   std::vector<PhysicalDeviceInfo> supported_devices;
@@ -46,7 +47,8 @@ auto pickPhysicalDevice(
       unsupport = true;
     }
 
-    auto queue_family_indices = getQueueFamilyIndices(device, surface, queue_chekers, true);
+    auto queue_family_indices =
+      getQueueFamilyIndices(device, surface, queue_chekers, all_queue_diff);
     if (!queue_family_indices.has_value()) {
       unsupport = true;
     }
