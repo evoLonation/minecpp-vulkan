@@ -1,0 +1,89 @@
+export module render.uniform;
+
+import render.context;
+import render.resource;
+
+import vulkan;
+
+import <vulkan_config.h>;
+import std;
+import glm;
+import toy;
+
+export namespace render {
+
+class BaseUniform : public DescriptorResource {
+public:
+  virtual void update(int worker_index) = 0;
+};
+
+template <typename DataType>
+  requires std::is_trivial_v<DataType>
+// struct DataType {
+//   alignas(16) glm::mat4 model;
+//   alignas(16) glm::mat4 view;
+//   alignas(16) glm::mat4 proj;
+// };
+class Uniform : public BaseUniform {
+private:
+  DataType        _cache_data;
+  const DataType* _p_data;
+  struct WorkerResource {
+    vk::Buffer buffer;
+    vk::Memory memory;
+    void*      map;
+    bool       dirty;
+  };
+  std::vector<WorkerResource> _resources;
+
+public:
+  Uniform(const DataType& data) {
+    auto& ctx = Context::getInstance();
+    _p_data = &data;
+    for (int i = 0; i < ctx.worker_count; i++) {
+      auto resource = WorkerResource{};
+      std::tie(resource.buffer, resource.memory) = createBuffer(
+        ctx.pdevice_info.device,
+        ctx.device,
+        sizeof(DataType),
+        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+      );
+      vkMapMemory(ctx.device, resource.memory, 0, sizeof(DataType), 0, &resource.map);
+      resource.dirty = true;
+      _resources.push_back(std::move(resource));
+    }
+  }
+  ~Uniform() {
+    auto& ctx = Context::getInstance();
+    for (auto& resource : _resources) {
+      vkUnmapMemory(ctx.device, resource.memory);
+    }
+  }
+
+  void update(int worker_index) override {
+    if (std::memcmp(reinterpret_cast<const void*>(_p_data), reinterpret_cast<const void*>(&_cache_data), sizeof(DataType)) != 0) {
+      for (auto& resource : _resources) {
+        resource.dirty = true;
+      }
+      std::memcpy(
+        reinterpret_cast<void*>(&_cache_data),
+        reinterpret_cast<const void*>(_p_data),
+        sizeof(DataType)
+      );
+    }
+    auto& resource = _resources[worker_index];
+    std::memcpy(resource.map, reinterpret_cast<void*>(&_cache_data), sizeof(DataType));
+    resource.dirty = false;
+  }
+
+  auto getDescriptorResource() const
+    -> std::variant<vk::DescriptorResource, std::vector<vk::DescriptorResource>> override {
+    return _resources | views::transform([](auto& resource) {
+             return vk::DescriptorResource{ resource.buffer };
+           }) |
+           ranges::to<std::vector>();
+  }
+};
+
+} // namespace render

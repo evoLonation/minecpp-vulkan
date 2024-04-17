@@ -331,8 +331,9 @@ void recordCommandBuffer(
   VkPipeline                       graphics_pipeline,
   VkExtent2D                       extent,
   VkFramebuffer                    framebuffer,
-  VertexBuffer&                    vertex_buffer,
-  IndexBuffer&                     index_buffer,
+  VkBuffer                         vertex_buffer,
+  VkBuffer                         index_buffer,
+  uint32_t                         count,
   VkPipelineLayout                 pipeline_layout,
   std::span<const VkDescriptorSet> descriptor_sets
 ) {
@@ -371,9 +372,9 @@ void recordCommandBuffer(
     .extent = extent,
   };
   vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-  auto offsets = std::array<VkDeviceSize, 1>{ 0 };
-  vertex_buffer.recordBind(command_buffer);
-  index_buffer.recordBind(command_buffer);
+  auto offset = (VkDeviceSize)0;
+  vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffer, &offset);
+  vkCmdBindIndexBuffer(command_buffer, index_buffer, 0, VK_INDEX_TYPE_UINT16);
   vkCmdBindDescriptorSets(
     command_buffer,
     VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -385,7 +386,7 @@ void recordCommandBuffer(
     0,
     nullptr
   );
-  vkCmdDrawIndexed(command_buffer, index_buffer.getIndicesSize(), 1, 0, 0, 0);
+  vkCmdDrawIndexed(command_buffer, count, 1, 0, 0, 0);
   vkCmdEndRenderPass(command_buffer);
 }
 

@@ -58,16 +58,13 @@ private:
   };
   using HandleContainer = std::conditional_t<destroy_multi_, std::vector<VkHandle>, VkHandle>;
 
-public:
   using Context =
     toy::MapTo<typename toy::Filter<toy::FuncArgs<decltype(destroyer_)>, Condition>, std::decay>::
       template apply<std::tuple>;
 
-protected:
   HandleContainer handle_;
   Context         context_;
 
-private:
   static constexpr bool has_allocator_ =
     AllocatorArg<typename toy::FuncArgs<decltype(destroyer_)>::template at<-1>>;
 
@@ -111,7 +108,11 @@ public:
       return std::span<const VkHandle>{ handle_ };
     }
   }
+
+private:
   using HandleView = std::conditional_t<destroy_multi_, std::span<const VkHandle>, VkHandle>;
+
+public:
   operator HandleView() const { return get(); }
   ResourceManager() {
     if constexpr (!destroy_multi_) {

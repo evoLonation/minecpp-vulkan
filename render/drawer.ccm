@@ -1,0 +1,142 @@
+export module render.drawer;
+
+import render.context;
+import render.draw_unit;
+import render.uniform;
+import render.pipeline;
+import render.resource;
+
+import vulkan;
+
+import <vulkan_config.h>;
+import std;
+import toy;
+
+export namespace render {
+
+class Drawer {
+private:
+  const Pipeline* _pipeline;
+
+  struct Worker {
+    VkCommandBuffer cmdbuf;
+    vk::Semaphore   image_available_sema;
+    vk::Semaphore   render_finished_sema;
+    vk::Fence       queue_batch_fence;
+  };
+  vk::CommandBuffers  _worker_cmdbufs;
+  std::vector<Worker> _workers;
+
+  int  _in_flight_index;
+  bool _last_present_failed;
+
+  std::vector<const DrawUnit*> _draw_units;
+  std::vector<BaseUniform*>    _uniforms;
+
+public:
+  Drawer(const Pipeline& pipeline) {
+    _pipeline = &pipeline;
+    auto& ctx = Context::getInstance();
+    _worker_cmdbufs =
+      vk::allocateCommandBuffers(ctx.device, ctx.graphic_ctx.command_pool, ctx.worker_count);
+    for (int i = 0; i < ctx.worker_count; i++) {
+      _workers.push_back(Worker{
+        .cmdbuf = _worker_cmdbufs.get()[i],
+        .image_available_sema = vk::createSemaphore(ctx.device),
+        .render_finished_sema = vk::createSemaphore(ctx.device),
+        .queue_batch_fence = vk::createFence(ctx.device, true),
+      });
+    }
+    _in_flight_index = 0;
+    _last_present_failed = false;
+  }
+
+  void registerUnit(const DrawUnit& draw_unit) { _draw_units.push_back(&draw_unit); }
+  void registerUniform(BaseUniform& uniform) { _uniforms.push_back(&uniform); }
+
+  void draw() {
+    auto&    ctx = Context::getInstance();
+    auto&    worker = _workers[_in_flight_index];
+    uint32_t image_index;
+
+    for (auto* uniform : _uniforms) {
+      uniform->update(_in_flight_index);
+    }
+
+    auto wait_fence = worker.queue_batch_fence.get();
+    vkWaitForFences(ctx.device, 1, &wait_fence, VK_TRUE, std::numeric_limits<uint64_t>::max());
+
+    if (auto result = vkAcquireNextImageKHR(
+          ctx.device,
+          ctx.swapchain,
+          std::numeric_limits<uint64_t>::max(),
+          worker.image_available_sema,
+          VK_NULL_HANDLE,
+          &image_index
+        );
+        result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || _last_present_failed) {
+      if (ctx.tryRecreate()) {
+        _last_present_failed = false;
+        draw();
+        return;
+      } else {
+        toy::debugf("recreate swapchain failed, draw frame return");
+        return;
+      }
+    } else {
+      vk::checkVkResult(result, "acquire next image");
+    }
+    // why vkResetFences after acquire image?
+    // because acquire image maybe call drawFrame() recursively, if vkResetFences
+    // befor acquire image, vkResetFences maybe call twice with only one signal
+    // operation by vkQueueSubmit
+    vkResetFences(ctx.device, 1, &wait_fence);
+    // vkBeginCommandBuffer 会隐式执行vkResetCommandBuffer
+    // vkResetCommandBuffer(worker.command_buffer, 0);
+    for (auto* draw_unit : _draw_units) {
+      vk::recordAndSubmit(
+        worker.cmdbuf,
+        ctx.graphic_ctx.queue,
+        [&](VkCommandBuffer cmdbuf) {
+          recordCommandBuffer(
+            cmdbuf,
+            ctx.render_pass,
+            _pipeline->getPipelineResource().pipeline,
+            ctx.extent,
+            ctx.framebuffers[image_index],
+            draw_unit->getVertexBuffer(),
+            draw_unit->getIndexBuffer(),
+            draw_unit->getIndexBuffer().getIndexNumber(),
+            _pipeline->getPipelineResource().pipeline_layout,
+            draw_unit->getDescriptorSets(_in_flight_index)
+          );
+        },
+        std::array<std::pair<VkSemaphore, VkPipelineStageFlags>, 1>{ std::pair{
+          worker.image_available_sema.get(), VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT } },
+        std::array{ worker.render_finished_sema.get() },
+        worker.queue_batch_fence
+      );
+    }
+    auto present_info = VkPresentInfoKHR{
+      .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+      .waitSemaphoreCount = 1,
+      .pWaitSemaphores = &worker.render_finished_sema.get(),
+      .swapchainCount = 1,
+      .pSwapchains = &ctx.swapchain.get(),
+      .pImageIndices = &image_index,
+      // .pResults: 当有多个 swapchain 时检查每个的result
+    };
+    if (auto result = vkQueuePresentKHR(ctx.present_ctx.queue, &present_info);
+        result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+      toy::debugf(
+        "the queue present return {}",
+        result == VK_ERROR_OUT_OF_DATE_KHR ? "out of date error" : "sub optimal"
+      );
+      _last_present_failed = true;
+    } else {
+      vk::checkVkResult(result, "present");
+    }
+    _in_flight_index = (_in_flight_index + 1) % _workers.size();
+  }
+};
+} // namespace render

@@ -3,14 +3,14 @@ export module model;
 import <tinyobj_loader_c.h>;
 import std;
 import toy;
-import vulkan;
+import render;
 import glm;
 
 namespace fs = std::filesystem;
 
 export namespace model {
 
-using Vertex = vk::Vertex<glm::vec3, glm::vec3, glm::vec2>;
+using Vertex = render::Vertex<glm::vec3, glm::vec3, glm::vec2>;
 
 struct MeshInfo {
   std::vector<Vertex> vertex_data;

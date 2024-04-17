@@ -1,0 +1,102 @@
+export module render.sampler;
+
+import render.context;
+import render.resource;
+
+import vulkan;
+
+import "vulkan_config.h";
+import "stb_image.h";
+import std;
+import toy;
+
+export namespace render {
+
+class SampledTexture : public DescriptorResource, public DeviceLocalResource {
+private:
+  vk::Buffer _staging_buffer;
+  vk::Memory _staging_memory;
+
+  vk::ImageResource _image_resource;
+  vk::Sampler       _sampler;
+
+  vk::CommandBuffers _transfer_cmdbuf;
+
+  static constexpr auto _image_type = vk::ImageType::SAMPLED_IMAGE;
+  // static constexpr auto _src_use = vk::ImageUse::COPY_DST;
+  // static constexpr auto _dst_use = vk::ImageUse::FRAGMENT_SAMPLER;
+
+public:
+  SampledTexture() = default;
+  SampledTexture(const std::string& path) {
+    auto& ctx = Context::getInstance();
+
+    int   width, height, channels;
+    auto* pixels = stbi_load(path.data(), &width, &height, &channels, STBI_rgb_alpha);
+    auto  image_size = static_cast<VkDeviceSize>(width * height * 4);
+    if (pixels == nullptr) {
+      toy::throwf("failed to load image {}", path.data());
+    }
+    auto image_data = std::as_bytes(std::span{ pixels, image_size });
+    toy::debugf("image {} info: width {}, height {}", path.data(), width, height);
+
+    std::tie(_staging_buffer, _staging_memory) =
+      vk::createStagingBuffer(ctx.pdevice_info.device, ctx.device, image_data);
+
+    stbi_image_free(pixels);
+
+    auto format = vk::findSupportedFormat(
+      ctx.pdevice_info.device, std::array{ VK_FORMAT_R8G8B8A8_SRGB }, _image_type
+    );
+
+    _image_resource =
+      vk::createImage(ctx.pdevice_info.device, ctx.device, format, width, height, _image_type);
+
+    auto max_anisotropy = ctx.pdevice_info.properties.limits.maxSamplerAnisotropy;
+    _sampler = vk::createSampler(ctx.device, max_anisotropy);
+
+    _transfer_cmdbuf = vk::allocateCommandBuffers(ctx.device, ctx.transfer_ctx.command_pool, 1);
+
+    auto recorder = [&](VkCommandBuffer cmdbuf) {
+      vk::recordImageBarrier(
+        cmdbuf,
+        _image_resource.image.get(),
+        getAspect(_image_type),
+        vk::ImageBarrierUseInfo{
+          .src_use = vk::ImageUse::UNDEFINED,
+          .dst_use = vk::ImageUse::COPY_DST,
+        }
+      );
+
+      vk::copyBufferToImage(
+        _transfer_cmdbuf.get()[0],
+        _staging_buffer,
+        _image_resource.image,
+        vk::getAspect(_image_type),
+        width,
+        height
+      );
+    };
+    vk::recordAndSubmit(
+      _transfer_cmdbuf.get()[0], ctx.transfer_ctx.queue, recorder, {}, {}, VK_NULL_HANDLE
+    );
+  }
+
+  auto getTransfer(vk::TransferFamilyInfo family_info) const -> vk::Transfer override {
+    return vk::getImageTransfer(
+      _image_resource.image,
+      getAspect(_image_type),
+      vk::ImageBarrierUseInfo{
+        .src_use = vk::ImageUse::COPY_DST,
+        .dst_use = vk::ImageUse::FRAGMENT_SAMPLER,
+      },
+      family_info
+    );
+  }
+  auto getDescriptorResource() const
+    -> std::variant<vk::DescriptorResource, std::vector<vk::DescriptorResource>> override {
+    return vk::DescriptorResource{ std::pair{ _image_resource.image_view.get(), _sampler.get() } };
+  }
+};
+
+} // namespace render

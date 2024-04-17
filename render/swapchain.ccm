@@ -1,0 +1,76 @@
+export module render.swapchain;
+
+import render.base_context;
+
+import vulkan;
+
+import <vulkan_config.h>;
+import std;
+import toy;
+
+export namespace render {
+
+class SwapchainContext {
+public:
+  vk::Swapchain                swapchain;
+  VkExtent2D                   extent;
+  std::vector<vk::ImageView>   image_views;
+  vk::ImageResource            depth_image;
+  std::vector<vk::Framebuffer> framebuffers;
+
+private:
+  auto tryCreateSwapchain(const BaseContext& ctx) {
+    return createSwapchain(
+      ctx.pdevice_info.device,
+      ctx.surface,
+      ctx.device,
+      ctx.pdevice_info.surface_format,
+      ctx.pdevice_info.present_mode,
+      ctx.window,
+      VK_NULL_HANDLE
+    );
+  }
+  auto createResource(
+    const BaseContext& ctx, std::pair<vk::Swapchain, VkExtent2D> swapchain_resource
+  ) {
+    std::tie(swapchain, extent) = std::move(swapchain_resource);
+    image_views =
+      vk::createSwapchainImageViews(ctx.device, swapchain, ctx.pdevice_info.surface_format.format);
+    depth_image =
+      vk::createDepthImage(ctx.pdevice_info.device, ctx.device, ctx.depth_format, extent);
+    framebuffers = image_views | views::transform([&](const auto& image_view) {
+                     return vk::createFramebuffer(
+                       ctx.render_pass, ctx.device, extent, image_view, depth_image.image_view
+                     );
+                   }) |
+                   ranges::to<std::vector>();
+  }
+  auto destroyResource() {
+    // move old resource to sorted declared variable to guarantee destroy order
+    auto old_swap_chain = std::move(swapchain);
+    auto old_image_views = std::move(image_views);
+    auto old_depth_image = std::move(depth_image);
+    auto old_framebuffers = std::move(framebuffers);
+  }
+
+public:
+  SwapchainContext() = default;
+  SwapchainContext(const BaseContext& ctx) { createResource(ctx, tryCreateSwapchain(ctx).value()); }
+  auto tryRecreate(const BaseContext& ctx) -> bool {
+    // todo: 换成范围更小的约束?
+    vkDeviceWaitIdle(ctx.device);
+    if (auto ret = tryCreateSwapchain(ctx); ret.has_value()) {
+      destroyResource();
+      createResource(ctx, std::move(ret.value()));
+      return true;
+    } else if (ret.error() == vk::SwapchainCreateError::EXTENT_ZERO) {
+      return false;
+    } else {
+      toy::throwf("create swapchain return some error different to "
+                  "SwapchainCreateError::EXTENT_ZERO");
+    }
+    std::unreachable();
+  }
+};
+
+} // namespace render

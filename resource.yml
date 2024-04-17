@@ -2,6 +2,7 @@ sub_dir:
 - include
 - third_party
 - vulkan
+- render
 - toy
 - shader
 source:

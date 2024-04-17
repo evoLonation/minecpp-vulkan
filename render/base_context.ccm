@@ -1,0 +1,100 @@
+export module render.base_context;
+
+import vulkan;
+
+import <vulkan_config.h>;
+import std;
+import toy;
+import glfw;
+
+export namespace render {
+
+struct BaseContext {
+  glfw::Window window;
+
+  template <bool enable_debug_messenger>
+  struct InstanceWithDebugMessenger;
+  template <>
+  struct InstanceWithDebugMessenger<true> {
+    vk::Instance             instance;
+    vk::DebugMessenger       debug_messenger;
+    vk::DebugMessengerConfig debug_config;
+  };
+  template <>
+  struct InstanceWithDebugMessenger<false> {
+    vk::Instance instance;
+  };
+  InstanceWithDebugMessenger<toy::enable_debug> instance;
+
+  vk::Surface surface;
+
+  vk::PhysicalDeviceInfo pdevice_info;
+  vk::Device             device;
+
+  VkFormat depth_format;
+
+  vk::RenderPass render_pass;
+
+  struct ExecuteContext {
+    VkQueue         queue;
+    uint32_t        family_index;
+    vk::CommandPool command_pool;
+  };
+
+  ExecuteContext graphic_ctx;
+  ExecuteContext present_ctx;
+  ExecuteContext transfer_ctx;
+
+  BaseContext() = default;
+  BaseContext(const std::string& app_name, int width, int height) {
+    window = glfw::Window{ width, height, app_name };
+
+    if constexpr (toy::enable_debug) {
+      instance.debug_config = vk::DebugMessengerConfig{
+        .message_severity_level = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT,
+        .message_type_flags = VK_DEBUG_UTILS_MESSAGE_TYPE_FLAG_BITS_MAX_ENUM_EXT,
+      };
+      instance.instance = vk::createInstance(app_name, instance.debug_config);
+      instance.debug_messenger = vk::createDebugMessenger(instance.instance, instance.debug_config);
+    } else {
+      instance.instance = vk::createInstance(app_name);
+    }
+
+    surface = vk::createSurface(instance.instance, window);
+
+    // VK_KHR_SWAPCHAIN_EXTENSION_NAME 对应的扩展用于支持交换链
+    auto required_device_extensions = std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+    pdevice_info = vk::pickPhysicalDevice(
+      instance.instance,
+      surface,
+      required_device_extensions,
+      vk::checkPhysicalDeviceSupport,
+      vk::checkSurfaceSupport,
+      std::array<vk::QueueFamilyChecker, 3>{
+        vk::checkGraphicQueue, vk::checkPresentQueue, vk::checkTransferQueue },
+      true
+    );
+    toy::debug(pdevice_info.queue_indices);
+    toy::debugf(
+      "graphic family index {} transfer family index",
+      pdevice_info.queue_indices[0].first == pdevice_info.queue_indices[2].first ? "==" : "!="
+    );
+    auto [_device, queues] = vk::createDevice(pdevice_info, required_device_extensions);
+    device = std::move(_device);
+    auto get_ctx = [&](auto pair) {
+      auto ret = ExecuteContext{
+        .queue = pair.first,
+        .family_index = pair.second,
+        .command_pool = vk::createCommandPool(device, pair.second),
+      };
+      return ret;
+    };
+    depth_format = vk::findDepthFormat(pdevice_info.device);
+    render_pass = vk::createRenderPass(device, pdevice_info.surface_format.format, depth_format);
+    graphic_ctx = get_ctx(queues[0]);
+    present_ctx = get_ctx(queues[1]);
+    transfer_ctx = get_ctx(queues[2]);
+  }
+};
+
+} // namespace render

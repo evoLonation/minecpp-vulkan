@@ -17,4 +17,3 @@ source:
 - render.cc
 - loader.cc
 - shader_code.ccm
-- vertex.ccm

@@ -1,0 +1,61 @@
+export module render.pipeline;
+
+import render.context;
+import render.vertex;
+
+import vulkan;
+
+import <vulkan_config.h>;
+import std;
+import glm;
+import toy;
+
+export namespace render {
+
+enum class ResourceType { UNIFORM, SAMPLER };
+
+auto resourceType2Layout(ResourceType type) -> vk::DescriptorSetLayout {
+  auto& ctx = Context::getInstance();
+  switch (type) {
+  case ResourceType::SAMPLER:
+    return vk::createSamplerDescriptorSetLayout(ctx.device);
+  case ResourceType::UNIFORM:
+    return createUniformDescriptorSetLayout(ctx.device);
+  }
+}
+
+class Pipeline {
+private:
+  std::vector<vk::DescriptorSetLayout> _descriptor_set_layouts;
+  vk::PipelineResource                 _pipeline_resource;
+
+public:
+  template <int AttrCount>
+  Pipeline(
+    std::string_view              vertex_shader_name,
+    std::string_view              frag_shader_name,
+    const VertexInfo<AttrCount>&  vertex_info,
+    std::span<const ResourceType> resources
+  ) {
+    auto& ctx = Context::getInstance();
+    _descriptor_set_layouts =
+      resources | views::transform([&](auto type) { return resourceType2Layout(type); }) |
+      ranges::to<std::vector>();
+    _pipeline_resource = vk::createGraphicsPipeline(
+      ctx.device,
+      ctx.render_pass,
+      vertex_shader_name,
+      frag_shader_name,
+      std::array{ vertex_info.binding_description },
+      vertex_info.attribute_descriptions,
+      _descriptor_set_layouts | views::transform([](auto& resource) { return resource.get(); }) |
+        ranges::to<std::vector>()
+    );
+  }
+  auto getDescriptorLayouts() const -> std::span<const vk::DescriptorSetLayout> {
+    return _descriptor_set_layouts;
+  }
+  auto getPipelineResource() const -> const vk::PipelineResource& { return _pipeline_resource; }
+};
+
+} // namespace render

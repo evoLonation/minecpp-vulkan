@@ -1,0 +1,32 @@
+export module render.context;
+
+import render.base_context;
+import render.swapchain;
+
+import std;
+
+export namespace render {
+
+struct Context : BaseContext, SwapchainContext {
+private:
+  static inline Context* instance;
+
+public:
+  static auto getInstance() -> Context& { return *instance; }
+
+  int worker_count;
+
+  Context(const std::string& app_name, int width, int height)
+    : BaseContext(app_name, width, height), SwapchainContext(*static_cast<BaseContext*>(this)) {
+    worker_count = 2;
+    instance = this;
+  }
+  Context(const Context&) = delete;
+  Context(Context&&) = delete;
+  auto operator=(const Context&) -> Context& = delete;
+  auto operator=(Context&&) -> Context& = delete;
+
+  auto tryRecreate() -> bool { return SwapchainContext::tryRecreate(*this); }
+};
+
+} // namespace render

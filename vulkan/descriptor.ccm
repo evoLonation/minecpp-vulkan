@@ -76,7 +76,7 @@ struct DescriptorSetUpdate {
   DescriptorResource resource;
 };
 
-void updateDescriptorSet(VkDevice device, std::span<const DescriptorSetUpdate> updates) {
+void updateDescriptorSets(VkDevice device, std::span<const DescriptorSetUpdate> updates) {
   // descriptor set是资源的引用
   // vkUpdateDescriptorSets 只是更新descriptor set对应绑定到哪个资源
   using InfoVariant = std::variant<VkDescriptorBufferInfo, VkDescriptorImageInfo>;

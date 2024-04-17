@@ -1,0 +1,101 @@
+export module render.draw_unit;
+
+import render.context;
+import render.resource;
+import render.pipeline;
+import render.vertex;
+
+import vulkan;
+
+import <vulkan_config.h>;
+import std;
+import toy;
+
+export namespace render {
+
+class DrawUnit {
+private:
+  vk::DescriptorPool                        _descriptor_pool;
+  vk::DescriptorSets                        _descriptor_sets;
+  std::vector<std::vector<VkDescriptorSet>> _worker_dsets;
+
+  const VertexBuffer* _vertex_buffer;
+  const IndexBuffer*  _index_buffer;
+
+public:
+  DrawUnit(
+    const Pipeline&                            pipeline,
+    const VertexBuffer&                        vertex_buffer,
+    const IndexBuffer&                         index_buffer,
+    std::span<const DescriptorResource* const> resources
+  ) {
+    _vertex_buffer = &vertex_buffer;
+    _index_buffer = &index_buffer;
+    auto& ctx = Context::getInstance();
+    auto  ds_updates = std::vector<vk::DescriptorSetUpdate>{};
+    auto  uniform_count = 0;
+    auto  sampler_count = 0;
+    auto  ds_layouts = std::vector<VkDescriptorSetLayout>{};
+    auto  worker_dset_indices = std::vector<std::vector<int>>{};
+    worker_dset_indices.resize(ctx.worker_count);
+    _worker_dsets.resize(ctx.worker_count);
+    for (const auto& [resource, layout] : views::zip(resources, pipeline.getDescriptorLayouts())) {
+      auto resource_variant = resource->getDescriptorResource();
+      if (resource_variant.index() == 0) {
+        sampler_count++;
+        for (auto& dset_indices : worker_dset_indices) {
+          dset_indices.push_back(ds_layouts.size());
+        }
+        ds_layouts.push_back(layout);
+        ds_updates.emplace_back(VK_NULL_HANDLE, std::get<0>(resource_variant));
+      } else {
+        auto dsp_resources = std::get<1>(resource_variant);
+        uniform_count += dsp_resources.size();
+        toy::checkThrowf(
+          ctx.worker_count == dsp_resources.size(),
+          "The dsp_resources size is not equal to number of worker"
+        );
+        for (auto [dset_indices, index] : views::zip(
+               worker_dset_indices,
+               views::iota(ds_layouts.size(), ds_layouts.size() + dsp_resources.size())
+             )) {
+          dset_indices.push_back(index);
+        }
+        ds_layouts.append_range(views::repeat(layout.get(), dsp_resources.size()));
+        ds_updates.append_range(dsp_resources | views::transform([](auto resource) {
+                                  return vk::DescriptorSetUpdate{ VK_NULL_HANDLE, resource };
+                                }));
+      }
+    }
+    _descriptor_pool = vk::createDescriptorPool(
+      ctx.device,
+      uniform_count + sampler_count,
+      std::array{ VkDescriptorPoolSize{
+                    .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    .descriptorCount = (uint32_t)uniform_count,
+                  },
+                  VkDescriptorPoolSize{
+                    .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                    .descriptorCount = (uint32_t)sampler_count,
+                  } }
+    );
+    _descriptor_sets = vk::allocateDescriptorSets(ctx.device, _descriptor_pool, ds_layouts);
+    for (auto [dsets, dset_indices] : views::zip(_worker_dsets, worker_dset_indices)) {
+      dsets.append_range(dset_indices | views::transform([&](auto index) {
+                           return _descriptor_sets.get()[index];
+                         }));
+    }
+    for (auto [ds, ds_update] : views::zip(_descriptor_sets.get(), ds_updates)) {
+      ds_update.descriptor_set = ds;
+    }
+    vk::updateDescriptorSets(ctx.device, ds_updates);
+  }
+
+  auto getDescriptorSets(int worker_index) const -> std::span<const VkDescriptorSet> {
+    return _worker_dsets[worker_index];
+  }
+  auto getVertexBuffer() const -> const VertexBuffer& { return *_vertex_buffer; }
+  auto getIndexBuffer() const -> const IndexBuffer& { return *_index_buffer; }
+};
+
+} // namespace render

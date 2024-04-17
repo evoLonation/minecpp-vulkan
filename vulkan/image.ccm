@@ -1,7 +1,6 @@
 export module vulkan.image;
 
 import "vulkan_config.h";
-import "stb_image.h";
 import std;
 import toy;
 import vulkan.resource;
@@ -163,6 +162,45 @@ auto createImage(
   return { std::move(image), std::move(memory), std::move(image_view) };
 }
 
+void copyBufferToImage(
+  VkCommandBuffer       cmdbuf,
+  VkBuffer              buffer,
+  VkImage               image,
+  VkImageAspectFlagBits aspect,
+  uint32_t              width,
+  uint32_t              height
+) {
+  auto image_copy = VkBufferImageCopy{
+    .bufferOffset = 0,
+    // bufferRowLength and bufferImageHeight
+    // 用于更详细的定义buffer的内存如何映射到image
+    .bufferRowLength = 0,
+    .bufferImageHeight = 0,
+    .imageSubresource =
+      VkImageSubresourceLayers{
+        .aspectMask = aspect,
+        .mipLevel = 0,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+      },
+    .imageOffset =
+      VkOffset3D{
+        .x = 0,
+        .y = 0,
+        .z = 0,
+      },
+    .imageExtent =
+      VkExtent3D{
+        .width = (uint32_t)width,
+        .height = (uint32_t)height,
+        .depth = 1,
+      },
+  };
+  vkCmdCopyBufferToImage(
+    cmdbuf, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_copy
+  );
+}
+
 auto createSampler(VkDevice device, float max_anisotropy) -> Sampler {
   toy::debugf("max_anisotropy: {}", max_anisotropy);
   auto sampler_info = VkSamplerCreateInfo{
@@ -195,112 +233,6 @@ auto createSampler(VkDevice device, float max_anisotropy) -> Sampler {
   };
   return Sampler{ device, sampler_info };
 }
-
-class SampledTexture {
-private:
-  Buffer _staging_buffer;
-  Memory _staging_memory;
-
-  ImageResource _image_resource;
-  Sampler       _sampler;
-
-  static constexpr auto _image_type = ImageType::SAMPLED_IMAGE;
-  static constexpr auto _src_use = ImageUse::COPY_DST;
-  static constexpr auto _dst_use = ImageUse::FRAGMENT_SAMPLER;
-
-public:
-  SampledTexture() = default;
-  SampledTexture(
-    VkPhysicalDevice   pdevice,
-    VkDevice           device,
-    const std::string& path,
-    VkQueue            transfer_queue,
-    VkCommandBuffer    transfer_cmdbuf,
-    float              max_anisotropy
-  ) {
-    int   width, height, channels;
-    auto* pixels = stbi_load(path.data(), &width, &height, &channels, STBI_rgb_alpha);
-    auto  image_size = static_cast<VkDeviceSize>(width * height * 4);
-    if (pixels == nullptr) {
-      toy::throwf("failed to load image {}", path.data());
-    }
-    auto image_data = std::as_bytes(std::span{ pixels, image_size });
-    toy::debugf("image {} info: width {}, height {}", path.data(), width, height);
-
-    std::tie(_staging_buffer, _staging_memory) = createStagingBuffer(pdevice, device, image_data);
-
-    stbi_image_free(pixels);
-
-    auto format = findSupportedFormat(pdevice, std::array{ VK_FORMAT_R8G8B8A8_SRGB }, _image_type);
-
-    _image_resource = createImage(pdevice, device, format, width, height, _image_type);
-
-    _sampler = createSampler(device, max_anisotropy);
-
-    auto recorder = [&](VkCommandBuffer cmdbuf) {
-      recordImageBarrier(
-        cmdbuf,
-        _image_resource.image.get(),
-        getAspect(_image_type),
-        ImageBarrierUseInfo{
-          .src_use = ImageUse::UNDEFINED,
-          .dst_use = _src_use,
-        }
-      );
-
-      auto image_copy = VkBufferImageCopy{
-        .bufferOffset = 0,
-        // bufferRowLength and bufferImageHeight
-        // 用于更详细的定义buffer的内存如何映射到image
-        .bufferRowLength = 0,
-        .bufferImageHeight = 0,
-        .imageSubresource =
-          VkImageSubresourceLayers{
-            .aspectMask = getAspect(_image_type),
-            .mipLevel = 0,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-          },
-        .imageOffset =
-          VkOffset3D{
-            .x = 0,
-            .y = 0,
-            .z = 0,
-          },
-        .imageExtent =
-          VkExtent3D{
-            .width = (uint32_t)width,
-            .height = (uint32_t)height,
-            .depth = 1,
-          },
-      };
-      vkCmdCopyBufferToImage(
-        cmdbuf,
-        _staging_buffer,
-        _image_resource.image,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        1,
-        &image_copy
-      );
-    };
-    recordAndSubmit(transfer_cmdbuf, transfer_queue, recorder, {}, {}, VK_NULL_HANDLE);
-  }
-
-  auto getTransfer(TransferFamilyInfo family_info) -> Transfer {
-    return getImageTransfer(
-      _image_resource.image,
-      getAspect(_image_type),
-      {
-        .src_use = _src_use,
-        .dst_use = _dst_use,
-      },
-      family_info
-    );
-  }
-  auto getDescriptorResource() -> DescriptorResource {
-    return std::pair{ _image_resource.image_view.get(), _sampler.get() };
-  }
-};
 
 auto findDepthFormat(VkPhysicalDevice pdevice) -> VkFormat {
   return findSupportedFormat(

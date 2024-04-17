@@ -1,0 +1,149 @@
+export module render.vertex;
+
+import render.context;
+import render.resource;
+
+import vulkan;
+
+import <vulkan_config.h>;
+import std;
+import glm;
+import toy;
+
+export namespace render {
+
+template <int AttributeCount>
+struct VertexInfo {
+  VkVertexInputBindingDescription                               binding_description;
+  std::array<VkVertexInputAttributeDescription, AttributeCount> attribute_descriptions;
+};
+
+template <typename... DataTypes>
+  requires(std::is_trivial_v<DataTypes> && ...)
+struct Vertex : public std::array<char, (sizeof(DataTypes) + ...)> {
+  using Base = std::array<char, (sizeof(DataTypes) + ...)>;
+  Vertex(DataTypes&&... data) {
+    int offset = 0;
+    ((*reinterpret_cast<DataTypes*>(Base::data() + offset) = data, offset += sizeof(DataTypes)),
+     ...);
+  }
+  static consteval auto getVertexInfo() -> VertexInfo<sizeof...(DataTypes)>;
+};
+
+template <typename Type>
+consteval auto formatMapper() -> VkFormat {
+  if constexpr (std::same_as<Type, glm::vec2>) {
+    return VK_FORMAT_R32G32_SFLOAT;
+  } else if constexpr (std::same_as<Type, glm::vec3>) {
+    return VK_FORMAT_R32G32B32_SFLOAT;
+  } else if constexpr (std::same_as<Type, glm::vec4>) {
+    return VK_FORMAT_R32G32B32A32_SFLOAT;
+  } else if constexpr (std::same_as<Type, float>) {
+    return VK_FORMAT_R32_SFLOAT;
+  }
+}
+
+template <typename... DataTypes>
+  requires(std::is_trivial_v<DataTypes> && ...)
+consteval auto Vertex<DataTypes...>::getVertexInfo() -> VertexInfo<sizeof...(DataTypes)> {
+  auto binding_description = VkVertexInputBindingDescription{
+    .binding = 0,
+    .stride = sizeof(Vertex),
+    // VK_VERTEX_INPUT_RATE_{VERTEX|INSTANCE}:
+    // 是在每个vertex或者instance后移动到下一个data entry
+    .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+  };
+  auto attribute_descriptions =
+    std::array<VkVertexInputAttributeDescription, sizeof...(DataTypes)>{};
+
+  uint32_t i = 0;
+  uint32_t offset = 0;
+  ((attribute_descriptions[i] =
+      VkVertexInputAttributeDescription{
+        .location = i,
+        .binding = 0,
+        .format = formatMapper<DataTypes>(),
+        .offset = offset,
+      },
+    i++,
+    offset += sizeof(DataTypes)),
+   ...);
+  return { binding_description, attribute_descriptions };
+}
+
+class DeviceLocalBuffer : public vk::Buffer {
+private:
+  vk::Buffer _staging_buffer;
+  vk::Memory _staging_memory;
+
+  vk::Memory _memory;
+
+  vk::CommandBuffers _transfer_cmdbuf;
+
+public:
+  DeviceLocalBuffer() = default;
+
+  DeviceLocalBuffer(VkBufferUsageFlagBits usage, std::span<const std::byte> buffer_data) {
+    auto& ctx = render::Context::getInstance();
+    auto  buffer_size = (uint32_t)buffer_data.size();
+    std::tie(_staging_buffer, _staging_memory) =
+      vk::createStagingBuffer(ctx.pdevice_info.device, ctx.device, buffer_data);
+    std::tie(static_cast<vk::Buffer&>(*this), _memory) = vk::createBuffer(
+      ctx.pdevice_info.device,
+      ctx.device,
+      buffer_size,
+      VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+    );
+    _transfer_cmdbuf = vk::allocateCommandBuffers(ctx.device, ctx.transfer_ctx.command_pool, 1);
+    auto recorder = [&](VkCommandBuffer cmdbuf) {
+      vk::recordCopyBuffer(_transfer_cmdbuf.get()[0], _staging_buffer, *this, buffer_size);
+    };
+    vk::recordAndSubmit(
+      _transfer_cmdbuf.get()[0], ctx.transfer_ctx.queue, recorder, {}, {}, VK_NULL_HANDLE
+    );
+  }
+
+protected:
+  auto getTransfer(vk::BufferUse dst_use, vk::TransferFamilyInfo family_info) const
+    -> vk::Transfer {
+    return vk::getBufferTransfer(
+      *this,
+      vk::BufferBarrierUseInfo{
+        .src_use = vk::BufferUse::COPY_DST,
+        .dst_use = dst_use,
+      },
+      family_info
+    );
+  }
+};
+
+class VertexBuffer : public DeviceLocalBuffer, public DeviceLocalResource {
+public:
+  VertexBuffer() = default;
+  template <toy::InstantiationOf<Vertex> VertexT>
+  // using VertexT = Vertex<glm::vec3>;
+  VertexBuffer(std::span<const VertexT> vertex_data)
+    : DeviceLocalBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, std::as_bytes(vertex_data)) {}
+
+  auto getTransfer(vk::TransferFamilyInfo family_info) const -> vk::Transfer override {
+    return DeviceLocalBuffer::getTransfer(vk::BufferUse::VERTEX_BUFFER_DRAW, family_info);
+  }
+};
+
+class IndexBuffer : public DeviceLocalBuffer, public DeviceLocalResource {
+  int _index_number;
+
+public:
+  IndexBuffer() = default;
+  IndexBuffer(std::span<const uint16_t> indices)
+    : DeviceLocalBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, std::as_bytes(indices)),
+      _index_number(indices.size()) {}
+
+  auto getTransfer(vk::TransferFamilyInfo family_info) const -> vk::Transfer override {
+    return DeviceLocalBuffer::getTransfer(vk::BufferUse::INDEX_BUFFER_DRAW, family_info);
+  }
+  auto getIndexNumber() const -> int { return _index_number; }
+};
+
+} // namespace render
