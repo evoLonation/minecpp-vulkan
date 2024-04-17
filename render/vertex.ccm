@@ -105,8 +105,7 @@ public:
   }
 
 protected:
-  auto getTransfer(vk::BufferUse dst_use, vk::TransferFamilyInfo family_info) const
-    -> vk::Transfer {
+  auto getTransfer(vk::BufferUse dst_use, vk::TransferFamilyInfo family_info) -> vk::Transfer {
     return vk::getBufferTransfer(
       *this,
       vk::BufferBarrierUseInfo{
@@ -126,7 +125,7 @@ public:
   VertexBuffer(std::span<const VertexT> vertex_data)
     : DeviceLocalBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, std::as_bytes(vertex_data)) {}
 
-  auto getTransfer(vk::TransferFamilyInfo family_info) const -> vk::Transfer override {
+  auto getTransfer(vk::TransferFamilyInfo family_info) -> vk::Transfer override {
     return DeviceLocalBuffer::getTransfer(vk::BufferUse::VERTEX_BUFFER_DRAW, family_info);
   }
 };
@@ -140,10 +139,10 @@ public:
     : DeviceLocalBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, std::as_bytes(indices)),
       _index_number(indices.size()) {}
 
-  auto getTransfer(vk::TransferFamilyInfo family_info) const -> vk::Transfer override {
+  auto getTransfer(vk::TransferFamilyInfo family_info) -> vk::Transfer override {
     return DeviceLocalBuffer::getTransfer(vk::BufferUse::INDEX_BUFFER_DRAW, family_info);
   }
-  auto getIndexNumber() const -> int { return _index_number; }
+  auto getIndexNumber() -> int { return _index_number; }
 };
 
 } // namespace render

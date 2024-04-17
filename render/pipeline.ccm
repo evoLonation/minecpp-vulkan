@@ -52,10 +52,10 @@ public:
         ranges::to<std::vector>()
     );
   }
-  auto getDescriptorLayouts() const -> std::span<const vk::DescriptorSetLayout> {
+  auto getDescriptorLayouts() -> std::span<const vk::DescriptorSetLayout> {
     return _descriptor_set_layouts;
   }
-  auto getPipelineResource() const -> const vk::PipelineResource& { return _pipeline_resource; }
+  auto getPipelineResource() -> vk::PipelineResource& { return _pipeline_resource; }
 };
 
 } // namespace render

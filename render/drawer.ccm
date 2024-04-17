@@ -16,7 +16,7 @@ export namespace render {
 
 class Drawer {
 private:
-  const Pipeline* _pipeline;
+  Pipeline* _pipeline;
 
   struct Worker {
     VkCommandBuffer cmdbuf;
@@ -30,11 +30,11 @@ private:
   int  _in_flight_index;
   bool _last_present_failed;
 
-  std::vector<const DrawUnit*> _draw_units;
-  std::vector<BaseUniform*>    _uniforms;
+  std::vector<DrawUnit*>    _draw_units;
+  std::vector<BaseUniform*> _uniforms;
 
 public:
-  Drawer(const Pipeline& pipeline) {
+  Drawer(Pipeline& pipeline) {
     _pipeline = &pipeline;
     auto& ctx = Context::getInstance();
     _worker_cmdbufs =
@@ -51,7 +51,7 @@ public:
     _last_present_failed = false;
   }
 
-  void registerUnit(const DrawUnit& draw_unit) { _draw_units.push_back(&draw_unit); }
+  void registerUnit(DrawUnit& draw_unit) { _draw_units.push_back(&draw_unit); }
   void registerUniform(BaseUniform& uniform) { _uniforms.push_back(&uniform); }
 
   void draw() {
@@ -93,30 +93,27 @@ public:
     vkResetFences(ctx.device, 1, &wait_fence);
     // vkBeginCommandBuffer 会隐式执行vkResetCommandBuffer
     // vkResetCommandBuffer(worker.command_buffer, 0);
-    for (auto* draw_unit : _draw_units) {
-      vk::recordAndSubmit(
-        worker.cmdbuf,
-        ctx.graphic_ctx.queue,
-        [&](VkCommandBuffer cmdbuf) {
-          recordCommandBuffer(
-            cmdbuf,
-            ctx.render_pass,
-            _pipeline->getPipelineResource().pipeline,
-            ctx.extent,
-            ctx.framebuffers[image_index],
-            draw_unit->getVertexBuffer(),
-            draw_unit->getIndexBuffer(),
-            draw_unit->getIndexBuffer().getIndexNumber(),
-            _pipeline->getPipelineResource().pipeline_layout,
-            draw_unit->getDescriptorSets(_in_flight_index)
-          );
-        },
-        std::array<std::pair<VkSemaphore, VkPipelineStageFlags>, 1>{ std::pair{
-          worker.image_available_sema.get(), VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT } },
-        std::array{ worker.render_finished_sema.get() },
-        worker.queue_batch_fence
-      );
-    }
+    vk::recordAndSubmit(
+      worker.cmdbuf,
+      ctx.graphic_ctx.queue,
+      [&](VkCommandBuffer cmdbuf) {
+        vk::recordDraw(
+          cmdbuf,
+          ctx.render_pass,
+          _pipeline->getPipelineResource().pipeline,
+          ctx.extent,
+          ctx.framebuffers[image_index],
+          _pipeline->getPipelineResource().pipeline_layout,
+          _draw_units |
+            views::transform([&](auto* unit) { return unit->getDrawUnitInfo(_in_flight_index); }) |
+            ranges::to<std::vector>()
+        );
+      },
+      std::array<std::pair<VkSemaphore, VkPipelineStageFlags>, 1>{ std::pair{
+        worker.image_available_sema.get(), VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT } },
+      std::array{ worker.render_finished_sema.get() },
+      worker.queue_batch_fence
+    );
     auto present_info = VkPresentInfoKHR{
       .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
       .waitSemaphoreCount = 1,

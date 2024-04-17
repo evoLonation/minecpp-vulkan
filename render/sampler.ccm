@@ -82,7 +82,7 @@ public:
     );
   }
 
-  auto getTransfer(vk::TransferFamilyInfo family_info) const -> vk::Transfer override {
+  auto getTransfer(vk::TransferFamilyInfo family_info) -> vk::Transfer override {
     return vk::getImageTransfer(
       _image_resource.image,
       getAspect(_image_type),
@@ -93,7 +93,7 @@ public:
       family_info
     );
   }
-  auto getDescriptorResource() const
+  auto getDescriptorResource()
     -> std::variant<vk::DescriptorResource, std::vector<vk::DescriptorResource>> override {
     return vk::DescriptorResource{ std::pair{ _image_resource.image_view.get(), _sampler.get() } };
   }

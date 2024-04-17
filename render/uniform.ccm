@@ -26,8 +26,8 @@ template <typename DataType>
 // };
 class Uniform : public BaseUniform {
 private:
-  DataType        _cache_data;
-  const DataType* _p_data;
+  DataType  _cache_data;
+  DataType* _p_data;
   struct WorkerResource {
     vk::Buffer buffer;
     vk::Memory memory;
@@ -37,7 +37,12 @@ private:
   std::vector<WorkerResource> _resources;
 
 public:
-  Uniform(const DataType& data) {
+  Uniform(const Uniform&) = delete;
+  Uniform(Uniform&&) = default;
+  auto operator=(const Uniform&) -> Uniform& = delete;
+  auto operator=(Uniform&&) -> Uniform& = default;
+
+  Uniform(DataType& data) {
     auto& ctx = Context::getInstance();
     _p_data = &data;
     for (int i = 0; i < ctx.worker_count; i++) {
@@ -62,14 +67,12 @@ public:
   }
 
   void update(int worker_index) override {
-    if (std::memcmp(reinterpret_cast<const void*>(_p_data), reinterpret_cast<const void*>(&_cache_data), sizeof(DataType)) != 0) {
+    if (std::memcmp(reinterpret_cast<void*>(_p_data), reinterpret_cast<void*>(&_cache_data), sizeof(DataType)) != 0) {
       for (auto& resource : _resources) {
         resource.dirty = true;
       }
       std::memcpy(
-        reinterpret_cast<void*>(&_cache_data),
-        reinterpret_cast<const void*>(_p_data),
-        sizeof(DataType)
+        reinterpret_cast<void*>(&_cache_data), reinterpret_cast<void*>(_p_data), sizeof(DataType)
       );
     }
     auto& resource = _resources[worker_index];
@@ -77,7 +80,7 @@ public:
     resource.dirty = false;
   }
 
-  auto getDescriptorResource() const
+  auto getDescriptorResource()
     -> std::variant<vk::DescriptorResource, std::vector<vk::DescriptorResource>> override {
     return _resources | views::transform([](auto& resource) {
              return vk::DescriptorResource{ resource.buffer };

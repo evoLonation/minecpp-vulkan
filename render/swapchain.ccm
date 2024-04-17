@@ -19,7 +19,7 @@ public:
   std::vector<vk::Framebuffer> framebuffers;
 
 private:
-  auto tryCreateSwapchain(const BaseContext& ctx) {
+  auto tryCreateSwapchain(BaseContext& ctx) {
     return createSwapchain(
       ctx.pdevice_info.device,
       ctx.surface,
@@ -30,15 +30,13 @@ private:
       VK_NULL_HANDLE
     );
   }
-  auto createResource(
-    const BaseContext& ctx, std::pair<vk::Swapchain, VkExtent2D> swapchain_resource
-  ) {
+  auto createResource(BaseContext& ctx, std::pair<vk::Swapchain, VkExtent2D> swapchain_resource) {
     std::tie(swapchain, extent) = std::move(swapchain_resource);
     image_views =
       vk::createSwapchainImageViews(ctx.device, swapchain, ctx.pdevice_info.surface_format.format);
     depth_image =
       vk::createDepthImage(ctx.pdevice_info.device, ctx.device, ctx.depth_format, extent);
-    framebuffers = image_views | views::transform([&](const auto& image_view) {
+    framebuffers = image_views | views::transform([&](auto& image_view) {
                      return vk::createFramebuffer(
                        ctx.render_pass, ctx.device, extent, image_view, depth_image.image_view
                      );
@@ -55,8 +53,8 @@ private:
 
 public:
   SwapchainContext() = default;
-  SwapchainContext(const BaseContext& ctx) { createResource(ctx, tryCreateSwapchain(ctx).value()); }
-  auto tryRecreate(const BaseContext& ctx) -> bool {
+  SwapchainContext(BaseContext& ctx) { createResource(ctx, tryCreateSwapchain(ctx).value()); }
+  auto tryRecreate(BaseContext& ctx) -> bool {
     // todo: 换成范围更小的约束?
     vkDeviceWaitIdle(ctx.device);
     if (auto ret = tryCreateSwapchain(ctx); ret.has_value()) {

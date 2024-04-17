@@ -325,17 +325,14 @@ auto createGraphicsPipeline(
            std::move(pipeline) };
 }
 
-void recordCommandBuffer(
-  VkCommandBuffer                  command_buffer,
-  VkRenderPass                     render_pass,
-  VkPipeline                       graphics_pipeline,
-  VkExtent2D                       extent,
-  VkFramebuffer                    framebuffer,
-  VkBuffer                         vertex_buffer,
-  VkBuffer                         index_buffer,
-  uint32_t                         count,
-  VkPipelineLayout                 pipeline_layout,
-  std::span<const VkDescriptorSet> descriptor_sets
+void recordDraw(
+  VkCommandBuffer           command_buffer,
+  VkRenderPass              render_pass,
+  VkPipeline                graphics_pipeline,
+  VkExtent2D                extent,
+  VkFramebuffer             framebuffer,
+  VkPipelineLayout          pipeline_layout,
+  std::span<const DrawUnit> draw_units
 ) {
   auto color_clear = VkClearValue{ .color = { .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } };
   auto depth_clear = VkClearValue{ .depthStencil = { .depth = 1.0f, .stencil = 0 } };
@@ -372,21 +369,23 @@ void recordCommandBuffer(
     .extent = extent,
   };
   vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-  auto offset = (VkDeviceSize)0;
-  vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffer, &offset);
-  vkCmdBindIndexBuffer(command_buffer, index_buffer, 0, VK_INDEX_TYPE_UINT16);
-  vkCmdBindDescriptorSets(
-    command_buffer,
-    VK_PIPELINE_BIND_POINT_GRAPHICS,
-    pipeline_layout,
-    // firstSet: 对应着色器中的layout(set=0)
-    0,
-    descriptor_sets.size(),
-    descriptor_sets.data(),
-    0,
-    nullptr
-  );
-  vkCmdDrawIndexed(command_buffer, count, 1, 0, 0, 0);
+  for (auto& [vertex_buffer, index_buffer, count, descriptor_sets] : draw_units) {
+    auto offset = (VkDeviceSize)0;
+    vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffer, &offset);
+    vkCmdBindIndexBuffer(command_buffer, index_buffer, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdBindDescriptorSets(
+      command_buffer,
+      VK_PIPELINE_BIND_POINT_GRAPHICS,
+      pipeline_layout,
+      // firstSet: 对应着色器中的layout(set=0)
+      0,
+      descriptor_sets.size(),
+      descriptor_sets.data(),
+      0,
+      nullptr
+    );
+    vkCmdDrawIndexed(command_buffer, count, 1, 0, 0, 0);
+  }
   vkCmdEndRenderPass(command_buffer);
 }
 

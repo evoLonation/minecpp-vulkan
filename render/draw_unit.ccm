@@ -19,15 +19,15 @@ private:
   vk::DescriptorSets                        _descriptor_sets;
   std::vector<std::vector<VkDescriptorSet>> _worker_dsets;
 
-  const VertexBuffer* _vertex_buffer;
-  const IndexBuffer*  _index_buffer;
+  VertexBuffer* _vertex_buffer;
+  IndexBuffer*  _index_buffer;
 
 public:
   DrawUnit(
-    const Pipeline&                            pipeline,
-    const VertexBuffer&                        vertex_buffer,
-    const IndexBuffer&                         index_buffer,
-    std::span<const DescriptorResource* const> resources
+    Pipeline&                            pipeline,
+    VertexBuffer&                        vertex_buffer,
+    IndexBuffer&                         index_buffer,
+    std::span<DescriptorResource* const> resources
   ) {
     _vertex_buffer = &vertex_buffer;
     _index_buffer = &index_buffer;
@@ -39,7 +39,7 @@ public:
     auto  worker_dset_indices = std::vector<std::vector<int>>{};
     worker_dset_indices.resize(ctx.worker_count);
     _worker_dsets.resize(ctx.worker_count);
-    for (const auto& [resource, layout] : views::zip(resources, pipeline.getDescriptorLayouts())) {
+    for (auto [resource, layout] : views::zip(resources, pipeline.getDescriptorLayouts())) {
       auto resource_variant = resource->getDescriptorResource();
       if (resource_variant.index() == 0) {
         sampler_count++;
@@ -91,11 +91,14 @@ public:
     vk::updateDescriptorSets(ctx.device, ds_updates);
   }
 
-  auto getDescriptorSets(int worker_index) const -> std::span<const VkDescriptorSet> {
-    return _worker_dsets[worker_index];
+  auto getDrawUnitInfo(int worker_index) -> vk::DrawUnit {
+    return {
+      .vertex_buffer = _vertex_buffer->get(),
+      .index_buffer = _index_buffer->get(),
+      .count = (uint32_t)_index_buffer->getIndexNumber(),
+      .descriptor_sets = _worker_dsets[worker_index],
+    };
   }
-  auto getVertexBuffer() const -> const VertexBuffer& { return *_vertex_buffer; }
-  auto getIndexBuffer() const -> const IndexBuffer& { return *_index_buffer; }
 };
 
 } // namespace render

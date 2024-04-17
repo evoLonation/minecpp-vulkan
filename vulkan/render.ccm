@@ -33,17 +33,21 @@ auto createGraphicsPipeline(
   std::span<const VkDescriptorSetLayout>             descriptor_set_layouts
 ) -> PipelineResource;
 
-void recordCommandBuffer(
-  VkCommandBuffer                  command_buffer,
-  VkRenderPass                     render_pass,
-  VkPipeline                       graphics_pipeline,
-  VkExtent2D                       extent,
-  VkFramebuffer                    framebuffer,
-  VkBuffer                         vertex_buffer,
-  VkBuffer                         index_buffer,
-  uint32_t                         count,
-  VkPipelineLayout                 pipeline_layout,
-  std::span<const VkDescriptorSet> descriptor_sets
+struct DrawUnit {
+  VkBuffer                         vertex_buffer;
+  VkBuffer                         index_buffer;
+  uint32_t                         count;
+  std::span<const VkDescriptorSet> descriptor_sets;
+};
+
+void recordDraw(
+  VkCommandBuffer           command_buffer,
+  VkRenderPass              render_pass,
+  VkPipeline                graphics_pipeline,
+  VkExtent2D                extent,
+  VkFramebuffer             framebuffer,
+  VkPipelineLayout          pipeline_layout,
+  std::span<const DrawUnit> draw_units
 );
 
 } // namespace vk

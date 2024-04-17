@@ -19,18 +19,22 @@ struct UniformBufferObject {
   alignas(16) glm::mat4 proj;
 };
 
-auto getUniform() {
+auto getUniform(int index) {
   static auto startTime = std::chrono::high_resolution_clock::now();
 
-  auto  width = 800;
-  auto  height = 600;
+  auto  width = 1920;
+  auto  height = 1080;
   auto  currentTime = std::chrono::high_resolution_clock::now();
   float time =
     std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
   auto ubo = UniformBufferObject{
-    .model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+    .model = glm::rotate(
+      glm::translate(glm::mat4(1.0f), glm::vec3{ index, 0.0f, 0.0f }),
+      time * glm::radians(90.0f),
+      glm::vec3(0.0f, 0.0f, 1.0f)
+    ),
     .view = glm::lookAt(
-      glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)
+      glm::vec3(5.0f, 5.0f, 5.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)
     ),
     .proj = glm::perspective(glm::radians(45.0f), width * 1.0f / height, 0.1f, 10.0f),
   };
@@ -46,8 +50,8 @@ int main() {
     toy::test_SortedRange();
     toy::test_ChunkBy();
     auto applicationName = "hello, vulkan!";
-    auto width = 800;
-    auto height = 600;
+    auto width = 1920;
+    auto height = 1080;
     auto ctx = render::Context{ applicationName, width, height };
 
     auto pipeline = render::Pipeline{ "hello.vert",
@@ -58,20 +62,29 @@ int main() {
     auto [vertex_data, vertex_indices] = model::getModelInfo("model/viking_room.obj");
     auto vertex_buffer = render::VertexBuffer{ std::span<const model::Vertex>{ vertex_data } };
     auto index_buffer = render::IndexBuffer{ vertex_indices };
-    auto uniform_data = UniformBufferObject{};
-    auto uniform = render::Uniform{ uniform_data };
     auto sampled_texture = render::SampledTexture{ "model/viking_room.png" };
-    auto draw_unit = render::DrawUnit{ pipeline,
-                                       vertex_buffer,
-                                       index_buffer,
-                                       std::array<const render::DescriptorResource*, 2>{
-                                         &uniform, &sampled_texture } };
-    auto resource_register =
-      render::ResourceRegister{ std::array<const render::DeviceLocalResource*, 3>{
-        &vertex_buffer, &index_buffer, &sampled_texture } };
+
+    int  unit_count = 8;
+    auto uniform_datas = std::vector<UniformBufferObject>(unit_count);
+    auto uniforms = std::vector<render::Uniform<UniformBufferObject>>{};
+    uniforms.reserve(unit_count);
+    auto draw_units = std::vector<render::DrawUnit>{};
+    for (auto& uniform_data : uniform_datas) {
+      uniforms.emplace_back(uniform_data);
+      draw_units.emplace_back(
+        pipeline,
+        vertex_buffer,
+        index_buffer,
+        std::array<render::DescriptorResource*, 2>{ &uniforms.back(), &sampled_texture }
+      );
+    }
+    auto resource_register = render::ResourceRegister{ std::array<render::DeviceLocalResource*, 3>{
+      &vertex_buffer, &index_buffer, &sampled_texture } };
     auto drawer = render::Drawer{ pipeline };
-    drawer.registerUnit(draw_unit);
-    drawer.registerUniform(uniform);
+    for (auto [unit, uniform] : views::zip(draw_units, uniforms)) {
+      drawer.registerUnit(unit);
+      drawer.registerUniform(uniform);
+    }
 
     auto input_processor = input::InputProcessor{ ctx.window };
     input_processor.addKeyDownHandler(GLFW_KEY_A, []() { toy::debug("press down A"); });
@@ -82,7 +95,9 @@ int main() {
       toy::debugf("press release A when hold {}", time);
     });
     while (!glfwWindowShouldClose(ctx.window)) {
-      uniform_data = getUniform();
+      for (auto i : views::iota(0, unit_count)) {
+        uniform_datas[i] = getUniform(i - 4);
+      }
       input_processor.processInput();
       drawer.draw();
     }

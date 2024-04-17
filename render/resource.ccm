@@ -13,13 +13,13 @@ export namespace render {
 
 class DescriptorResource {
 public:
-  virtual auto getDescriptorResource() const
+  virtual auto getDescriptorResource()
     -> std::variant<vk::DescriptorResource, std::vector<vk::DescriptorResource>> = 0;
 };
 
 class DeviceLocalResource {
 public:
-  virtual auto getTransfer(vk::TransferFamilyInfo family_info) const -> vk::Transfer = 0;
+  virtual auto getTransfer(vk::TransferFamilyInfo family_info) -> vk::Transfer = 0;
 };
 class ResourceRegister {
 private:
@@ -28,7 +28,7 @@ private:
   vk::CommandBuffers _graphic_cmdbuf;
 
 public:
-  ResourceRegister(std::span<const DeviceLocalResource* const> resources) {
+  ResourceRegister(std::span<DeviceLocalResource* const> resources) {
     auto& ctx = Context::getInstance();
     _ownership_transfer_sema = vk::createSemaphore(ctx.device);
     _transfer_cmdbuf = vk::allocateCommandBuffers(ctx.device, ctx.transfer_ctx.command_pool, 1);
