@@ -1,27 +1,82 @@
-// import std;
-#include <iostream>
-struct A {
-  int         a;
-  friend auto operator<=>(const A& a, const A& b) -> std::strong_ordering
-  // = default;
-  {
-    return a.a <=> b.a;
+import std;
+import toy;
+
+class Promise;
+
+class Generator : public std::coroutine_handle<Promise> {
+public:
+  using promise_type = Promise;
+  int next();
+};
+class Awaiter {
+public:
+  Awaiter& operator co_await() { return *this; }
+
+  auto await_ready() -> bool {
+    toy::debug("await_ready");
+    return false;
+  }
+  auto await_suspend(std::coroutine_handle<Promise>) -> bool {
+    toy::debug("await_suspend");
+    return true;
+  }
+  void await_resume() {
+    toy::debug("await_resume");
+    return;
   }
 };
-template <typename T>
-void                         bar(const T& a) {}
-typedef struct VkInstance_T* VkInstance;
-int                          foo() {
-  // auto aa = std::tuple{1, 2, 3};
-  // auto& [a, b, c] {aa};
-  // decltype(a) d;
-  float x{};
-  char  y{};
-  int   z{};
+struct Promise {
+  int  _value;
+  auto get_return_object() -> Generator {
+    toy::debug("get_return_object");
+    return Generator{ std::coroutine_handle<Promise>::from_promise(*this) };
+  }
+  auto initial_suspend() -> std::suspend_always {
+    toy::debug("initial_suspend");
+    return {};
+  }
+  auto final_suspend() noexcept -> std::suspend_never {
+    toy::debug("final_suspend");
+    return {};
+  }
+  void unhandled_exception() {}
+  auto yield_value(int value) -> Awaiter {
+    _value = value;
+    return Awaiter{};
+  }
+};
 
-  std::tuple<float&, char&&, int> tpl(x, std::move(y), z);
-  const auto& [a, b, c] = tpl;
-  // a指名指代x的结构化绑定；decltype(a)为float&
-  // b指名指代y的结构化绑定；decltype(b)为char&&
-  // c指名指代z的结构化绑定；decltype(c)为const int，注意有const
+int Generator::next() {
+  toy::debug("before resume");
+  resume();
+  toy::debug("after resume");
+  int value = promise()._value;
+  return value;
+}
+
+Generator foo() {
+  for (int i = 0;; i++) {
+    toy::debugf("ready yield {}", i);
+    co_yield i;
+  }
+}
+
+// class Task;
+// Task foo() {
+//   co_return 1;
+// }
+// Task bar() {
+//   int a = co_await foo();
+// }
+
+
+int main2() {
+  toy::debug("call foo()");
+  auto generator = foo();
+  toy::debug(generator.next());
+  toy::debug(generator.next());
+  toy::debug(generator.next());
+  toy::debug(generator.next());
+  toy::debug(generator.next());
+  toy::debug("call foo() done");
 }

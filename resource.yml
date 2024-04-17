@@ -7,6 +7,7 @@ sub_dir:
 - shader
 source:
 - main.cc
+- test.cc
 - header_impl.cc
 - glfw.ccm
 - model.ccm
