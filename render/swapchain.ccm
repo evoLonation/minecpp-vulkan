@@ -27,7 +27,7 @@ private:
       ctx.pdevice_info.surface_format,
       ctx.pdevice_info.present_mode,
       ctx.window,
-      VK_NULL_HANDLE
+      swapchain
     );
   }
   auto createResource(BaseContext& ctx, std::pair<vk::Swapchain, VkExtent2D> swapchain_resource) {
