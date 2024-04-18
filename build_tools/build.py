@@ -204,7 +204,8 @@ if __name__ == '__main__':
 
   # 添加shader generate
   with open_ninja(pub.path.ninja_shader_code_gen_file) as writer:
-    need_gen_sources +=  build_shader_code_generate(writer, resources_dict.get(pub.rsc.type_shader, []))
+    if resources_dict.get(pub.rsc.type_shader) is not None:
+      need_gen_sources +=  build_shader_code_generate(writer, resources_dict.get(pub.rsc.type_shader))
   
   # 创建header precompile的ninja文件
   print('build header precompile ninja file...')
