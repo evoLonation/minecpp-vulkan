@@ -57,3 +57,31 @@ cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=cl
 github: https://github.com/syoyo/tinyobjloader-c
 
 直接将tinyobj_loader_c.h放入third_party/include即可
+
+## imgui
+
+github: https://github.com/ocornut/imgui
+
+将源码下载下来后使用本构建系统将其编译为动态库(imgui.dll，注意静态链接时也要加上)
+
+根目录:
+```
+sub_dir:
+- third_party/imgui
+lib:
+- third_party/static_library/libglfw3dll.a
+- third_party/static_library/vulkan-1.lib
+include_dir:
+- third_party/include
+```
+third_party/imgui目录下：
+```
+source:
+- imgui.cpp
+- imgui_demo.cpp
+- imgui_draw.cpp
+- imgui_tables.cpp
+- imgui_widgets.cpp
+- imgui_impl_glfw.cpp
+- imgui_impl_vulkan.cpp
+```
