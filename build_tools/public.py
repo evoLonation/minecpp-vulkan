@@ -1,7 +1,13 @@
 import os.path as ospath
+from enum import Enum
+
+class TargetType(Enum):
+  EXECUTABLE = 0
+  DYNAMIC_LIBRARY = 1
 
 class Paths:
-  def __init__(self, root_dir_, target_):
+  def __init__(self, root_dir_, target_, type_: TargetType):
+    self.target_type = type_
     self.root_dir = ospath.abspath(root_dir_)
     self.target = target_
     self.build_dir = ospath.join(self.root_dir, 'build')
@@ -21,7 +27,10 @@ class Paths:
     self.provide_module_info_file = ospath.join(self.build_dir, 'provide_module.json')
 
     self.target_dir = ospath.join(self.build_dir, 'out')
-    self.target_file = ospath.join(self.target_dir, self.target+'.exe')
+    if self.target_type == TargetType.EXECUTABLE:
+      self.target_file = ospath.join(self.target_dir, self.target+'.exe')
+    elif self.target_type == TargetType.DYNAMIC_LIBRARY:
+      self.target_file = ospath.join(self.target_dir, self.target+'.dll')
 
     self.build_tools_dir = ospath.join(self.root_dir, 'build_tools')
     self.dyndep_generate_script = ospath.join(self.build_tools_dir, 'dyndep_generate.py')
@@ -46,10 +55,11 @@ class Paths:
   def get_dylib_target_file(self, dylib_file):
     return ospath.join(self.target_dir, ospath.basename(dylib_file))
 
-path = Paths('./', 'test.exe')
-def set_path(root_dir, target):
+
+path = Paths('./', 'test', TargetType.EXECUTABLE)
+def set_path(root_dir, target, type: TargetType = TargetType.EXECUTABLE):
   global path
-  path = Paths(root_dir, target)
+  path = Paths(root_dir, target, type)
 
 
 class Flags:
@@ -103,8 +113,9 @@ class Flags:
   def get_compile(self, input, output):
     return self.current_flag + ['-c', input, '-o', output]
   
-  def get_link(self, objs, link_dirs, link_libs, output):
+  def get_link(self, objs, link_dirs, link_libs, output, target_type: TargetType):
     return self.current_flag + objs +\
+      (['-shared'] if target_type == TargetType.DYNAMIC_LIBRARY else [])+\
       ['-L'+dir for dir in link_dirs + self.system_link_dirs]+\
       ['-l'+lib for lib in link_libs + self.system_link_libs]+\
       ['-o', output]

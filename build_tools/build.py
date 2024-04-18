@@ -6,7 +6,7 @@ import yaml
 
 import public as pub
 
-pub.set_path('./', 'hello')
+pub.set_path('./', 'hello', pub.TargetType.EXECUTABLE)
 
 def get_all_file():
   # 记录每个resource type的所有资源,资源要么是一个绝对路径，要么是一个(绝对路径，元信息)元组
@@ -119,11 +119,12 @@ def build_link(writer: ninja.Writer, sources, link_lib_paths):
   for path in link_lib_paths:
     dir, filename = ospath.split(path)
     dir_set.add(dir)
-    if filename[:3] == 'lib' and filename[-2:] == '.a':
+    str().endswith
+    if filename.startswith('lib') and filename.endswith('.a'):
       link_libs.append(filename[3:-2])
-    elif filename[-4:] == '.lib':
+    elif filename.endswith('.lib') or filename.endswith('.dll'):
       link_libs.append(filename[:-4])
-  writer.rule(pub.ninja.link_rule, pub.Flags().get_link(['$in'], list(dir_set), link_libs, '$out'), "LINK $out")
+  writer.rule(pub.ninja.link_rule, pub.Flags().get_link(['$in'], list(dir_set), link_libs, '$out', pub.path.target_type), "LINK $out")
   writer.build(pub.path.target_file, pub.ninja.link_rule, [pub.path.get_obj_file(source) for source, _ in sources])
     
 def add_sub_ninja(ninja_writer: ninja.Writer, src_ninja, sub_ninja):

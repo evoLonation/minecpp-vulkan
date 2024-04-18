@@ -47,7 +47,8 @@ void recordDraw(
   VkExtent2D                extent,
   VkFramebuffer             framebuffer,
   VkPipelineLayout          pipeline_layout,
-  std::span<const DrawUnit> draw_units
+  std::span<const DrawUnit> draw_units,
+  ImDrawData*               draw_data
 );
 
 } // namespace vk

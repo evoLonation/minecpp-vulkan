@@ -9,17 +9,17 @@ export namespace render {
 
 struct Context : BaseContext, SwapchainContext {
 private:
-  static inline Context* instance;
+  static inline Context* _instance;
 
 public:
-  static auto getInstance() -> Context& { return *instance; }
+  static auto getInstance() -> Context& { return *_instance; }
 
   int worker_count;
 
   Context(const std::string& app_name, int width, int height)
     : BaseContext(app_name, width, height), SwapchainContext(*static_cast<BaseContext*>(this)) {
     worker_count = 2;
-    instance = this;
+    _instance = this;
   }
   Context(const Context&) = delete;
   Context(Context&&) = delete;

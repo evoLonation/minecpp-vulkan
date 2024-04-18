@@ -332,7 +332,8 @@ void recordDraw(
   VkExtent2D                extent,
   VkFramebuffer             framebuffer,
   VkPipelineLayout          pipeline_layout,
-  std::span<const DrawUnit> draw_units
+  std::span<const DrawUnit> draw_units,
+  ImDrawData*               draw_data
 ) {
   auto color_clear = VkClearValue{ .color = { .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } };
   auto depth_clear = VkClearValue{ .depthStencil = { .depth = 1.0f, .stencil = 0 } };
@@ -386,6 +387,7 @@ void recordDraw(
     );
     vkCmdDrawIndexed(command_buffer, count, 1, 0, 0, 0);
   }
+  ImGui_ImplVulkan_RenderDrawData(draw_data, command_buffer);
   vkCmdEndRenderPass(command_buffer);
 }
 

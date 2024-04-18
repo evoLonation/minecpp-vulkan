@@ -1,2 +1,5 @@
 dylib:
 - glfw3.dll
+- imgui.dll
+lib:
+- imgui.dll
