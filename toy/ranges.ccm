@@ -153,9 +153,9 @@ auto operator|(auto&& range, Adaptor closure) {
 }
 
 struct EnumerateAdaptor : AdaptorClosureHelper<EnumerateAdaptor> {
-  template <ranges::sized_range Range>
+  template <ranges::forward_range Range>
   auto operator()(Range&& range) {
-    return views::zip(views::iota(0u, range.size()), range);
+    return views::zip(views::iota(0u), std::forward<Range>(range));
   }
 };
 
@@ -297,7 +297,7 @@ public:
 template <typename Range, class Comp = ranges::less, class Proj = std::identity>
 SortedView(Range&& range, Comp comp = {}, Proj proj = {}) -> SortedView<Range, Comp, Proj>;
 
-template <typename T>
+template <typename T, bool sized = false>
 class CommonView {
 private:
   struct ErasedContent;
@@ -484,6 +484,15 @@ public:
   Iterator _begin;
   Sentinel _end;
 
+  std::size_t _size;
+
+  CommonView() {
+    _begin = { IteratorWrapper<T*, T*>{ nullptr } };
+    _end = { IteratorWrapper<T*, T*>{ nullptr } };
+    if constexpr (sized) {
+      _size = 0;
+    }
+  }
   template <typename RangeT>
     requires ranges::forward_range<RangeT> && std::same_as<ranges::range_value_t<RangeT>, T>
   CommonView(const RangeT& range) {
@@ -494,10 +503,18 @@ public:
     using SentinelWrapper = IteratorWrapper::SentinelWrapper;
     _begin = { IteratorWrapper{ range.begin() } };
     _end = { SentinelWrapper{ range.end() } };
+    if constexpr (sized) {
+      _size = range.size();
+    }
   }
 
   auto begin() const -> Iterator { return _begin; }
   auto end() const -> Sentinel { return _end; }
+  template <bool _sized = true>
+    requires(sized == _sized)
+  auto size() const -> std::size_t {
+    return _size;
+  }
   CommonView(const CommonView&) = default;
   CommonView(CommonView&&) = default;
   auto operator=(const CommonView&) -> CommonView& = default;
@@ -507,10 +524,13 @@ public:
 void test_CommonView() {
   auto transform_view = std::array{ 1, 2, 3 } | views::transform([](auto a) { return a + 1; });
   static_assert(ranges::forward_range<CommonView<int>>, "");
-  auto view_a = CommonView<int>{ transform_view };
+  static_assert(ranges::sized_range<CommonView<int, true>>, "");
+  auto view_a = CommonView<int, true>{ transform_view };
   toy::debug(view_a);
   auto view_b = CommonView<int>{ views::repeat(10) } | views::take(10);
   toy::debug(view_b);
+  views::all_t<CommonView<int>>;
+  views::zip(std::move(view_b), views::iota(0));
 }
 
 void test_EnumerateAdaptor() {
