@@ -297,7 +297,181 @@ public:
 template <typename Range, class Comp = ranges::less, class Proj = std::identity>
 SortedView(Range&& range, Comp comp = {}, Proj proj = {}) -> SortedView<Range, Comp, Proj>;
 
-inline void test_EnumerateAdaptor() {
+template <typename T>
+// using T = int;
+class CommonView {
+public:
+  class IteratorInterface {
+  public:
+    virtual auto operator*() const -> T = 0;
+    virtual auto operator++() -> IteratorInterface& = 0;
+    virtual auto operator==(IteratorInterface& a) -> bool = 0;
+    virtual auto copy() -> std::unique_ptr<IteratorInterface> = 0;
+
+    virtual ~IteratorInterface() = default;
+  };
+
+  template <std::forward_iterator IteratorT, typename SentinelT>
+    requires std::sentinel_for<SentinelT, IteratorT>
+  class IteratorWrapper : public IteratorInterface {
+  private:
+    IteratorT _iter;
+
+  public:
+    IteratorWrapper(IteratorT iter) { _iter = iter; }
+
+    virtual auto operator*() const -> T override { return *_iter; }
+    virtual auto operator++() -> IteratorInterface& override {
+      ++_iter;
+      return *this;
+    }
+    virtual auto copy() -> std::unique_ptr<IteratorInterface> override {
+      return std::unique_ptr<IteratorInterface>{ new IteratorWrapper{ *this } };
+    }
+    class SentinelWrapper : public IteratorInterface {
+    public:
+      SentinelT _sentinel;
+      SentinelWrapper(SentinelT sentinel) { _sentinel = sentinel; }
+      virtual auto operator*() const -> T override { std::unreachable(); }
+      virtual auto operator++() -> IteratorInterface& override { std::unreachable(); }
+      virtual auto operator==(IteratorInterface& a) -> bool override {
+        if (auto* sub_iter = dynamic_cast<IteratorWrapper*>(&a); sub_iter != nullptr) {
+          return _sentinel == sub_iter->_iter;
+        } else {
+          toy::throwf("The iterator interface's implement is not by myself");
+          std::unreachable();
+        }
+      }
+      virtual auto copy() -> std::unique_ptr<IteratorInterface> override {
+        return std::unique_ptr<IteratorInterface>{ new SentinelWrapper{ *this } };
+      }
+    };
+    virtual auto operator==(IteratorInterface& a) -> bool override {
+      if (auto* sub_iter = dynamic_cast<IteratorWrapper*>(&a); sub_iter != nullptr) {
+        return _iter == sub_iter->_iter;
+      } else if (auto* sub_iter = dynamic_cast<SentinelWrapper*>(&a); sub_iter != nullptr) {
+        return _iter == sub_iter->_sentinel;
+      } else {
+        toy::throwf("The iterator interface's implement is not by myself");
+        std::unreachable();
+      }
+    }
+  };
+
+  class ErasedIteratorBase {
+  protected:
+    // static constexpr auto _content_size = sizeof(int) * 4;
+    // static constexpr auto _deleter = [](IteratorInterface* t) { t->~IteratorInterface(); };
+    // struct Content {
+    //   std::array<char, _content_size>                        content;
+    //   std::unique_ptr<IteratorInterface, decltype(_deleter)> interface;
+    //   Content() : interface(nullptr, _deleter) {}
+
+    // };
+    // using Ptr = std::shared_ptr<IteratorInterface>;
+    // // variant的默认构造会填充第一个类型的默认值
+    // std::variant<Content, Ptr> _iter;
+    std::unique_ptr<IteratorInterface> _iter;
+
+  public:
+    ErasedIteratorBase() = default;
+    ErasedIteratorBase(std::unique_ptr<IteratorInterface> iter) { _iter = std::move(iter); }
+    // template <typename IteratorT, typename SentinelT>
+    // ErasedIteratorBase(IteratorWrapper<IteratorT, SentinelT> iter) {
+    //   using IteratorWrapper = IteratorWrapper<IteratorT, SentinelT>;
+    //   if constexpr (sizeof(iter) > _content_size) {
+    //     _iter =
+    //       std::shared_ptr<IteratorInterface>{ std::make_shared<IteratorWrapper>(std::move(iter))
+    //       };
+    //   } else {
+    //     auto& [content, interface] = std::get<0>(_iter);
+    //     interface.reset(new (content.data()) IteratorWrapper{ std::move(iter) });
+    //   }
+    // }
+    ErasedIteratorBase(const ErasedIteratorBase& iter) { _iter = iter._iter->copy(); }
+    ErasedIteratorBase(ErasedIteratorBase&&) = default;
+    auto operator=(const ErasedIteratorBase& iter) -> ErasedIteratorBase& {
+      _iter = iter._iter->copy();
+      return *this;
+    }
+    auto operator=(ErasedIteratorBase&&) -> ErasedIteratorBase& = default;
+  };
+
+  class Iterator : public ErasedIteratorBase {
+  public:
+    using difference_type = std::ptrdiff_t;
+    using value_type = T;
+
+    Iterator() = default;
+    using ErasedIteratorBase::ErasedIteratorBase;
+    auto operator*() const -> value_type { return **this->_iter; }
+    auto operator++() -> Iterator& {
+      ++*this->_iter;
+      return *this;
+    }
+    auto operator++(int) -> Iterator {
+      ++*this->_iter;
+      return { this->_iter->copy() };
+    }
+    friend auto operator==(const Iterator& a, const Iterator& b) -> bool {
+      return *a._iter == *b._iter;
+    }
+    class Sentinel : public ErasedIteratorBase {
+    public:
+      Sentinel() = default;
+      using ErasedIteratorBase::ErasedIteratorBase;
+      friend auto operator==(const Iterator& a, const Sentinel& b) -> bool {
+        return *a._iter == *b._iter;
+      }
+      friend auto operator==(const Sentinel& a, const Iterator& b) -> bool {
+        return *a._iter == *b._iter;
+      }
+    };
+  };
+  using Sentinel = Iterator::Sentinel;
+
+  Iterator _begin;
+  Sentinel _end;
+
+  template <typename RangeT>
+    requires ranges::forward_range<RangeT> && std::same_as<ranges::range_value_t<RangeT>, T>
+  CommonView(const RangeT& range) {
+    // const_iterator_t and const_sentinel_t
+    using OriginIterator = decltype(ranges::cbegin(std::declval<RangeT&>()));
+    using OriginSentinel = decltype(ranges::cend(std::declval<RangeT&>()));
+    using ErasedIterator = IteratorWrapper<OriginIterator, OriginSentinel>;
+    _begin = std::unique_ptr<IteratorInterface>{ new ErasedIterator{ range.begin() } };
+    _end = std::unique_ptr<IteratorInterface>{ new ErasedIterator::SentinelWrapper{ range.end() } };
+  }
+
+  auto begin() -> Iterator { return _begin; }
+  auto end() -> Sentinel { return _end; }
+  CommonView(const CommonView&) = default;
+  CommonView(CommonView&&) = default;
+  auto operator=(const CommonView&) -> CommonView& = default;
+  auto operator=(CommonView&&) -> CommonView& = default;
+};
+
+void test_CommonView() {
+  auto view_a =
+    CommonView<int>{ std::array{ 1, 2, 3 } | views::transform([](auto a) { return a + 1; }) };
+  toy::debug(view_a);
+  auto view_b = CommonView<int>{ views::repeat(10) } | views::take(10);
+
+  int  num = 10;
+  auto b = views::repeat(num);
+  auto view = CommonView<int>{ std::move(b) };
+  static_assert(ranges::forward_range<CommonView<int>>, "");
+  auto i = 0;
+  for (auto a : view) {
+    toy::debug(a);
+    i++;
+    if (i > 10)
+      break;
+  }
+}
+
+void test_EnumerateAdaptor() {
   std::array     arr{ "abc", "eddd" };
   auto           brr = arr | EnumerateAdaptor{};
   decltype(auto) c = *brr.begin();
@@ -308,7 +482,7 @@ inline void test_EnumerateAdaptor() {
   checkThrowf(j == 2, "");
 }
 
-inline void test_SortedRange() {
+void test_SortedRange() {
   static_assert(ranges::view<SortedView<std::vector<int>>>);
   static_assert(ranges::random_access_range<SortedView<std::vector<int>>>);
   static_assert(std::random_access_iterator<SortedView<std::vector<int>>::Iterator>);
@@ -329,7 +503,7 @@ inline void test_SortedRange() {
   );
 }
 
-inline void test_ChunkBy() {
+void test_ChunkBy() {
   static_assert(ranges::forward_range<
                 ChunkByView<views::all_t<std::vector<int>>, std::ranges::not_equal_to>>);
   static_assert(ranges::bidirectional_range<
