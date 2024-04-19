@@ -7,8 +7,6 @@ import std;
 
 export namespace vk {
 
-class Queue {};
-
 auto createCommandPool(VkDevice device, uint32_t graphic_family_index) -> CommandPool {
   auto pool_create_info = VkCommandPoolCreateInfo{
     .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,

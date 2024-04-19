@@ -40,15 +40,20 @@ struct DrawUnit {
   std::span<const VkDescriptorSet> descriptor_sets;
 };
 
-void recordDraw(
-  VkCommandBuffer           command_buffer,
-  VkRenderPass              render_pass,
+void recordRenderPass(
+  VkCommandBuffer                      cmdbuf,
+  VkRenderPass                         render_pass,
+  VkFramebuffer                        framebuffer,
+  VkExtent2D                           extent,
+  std::function<void(VkCommandBuffer)> recorder
+);
+
+void recordDrawUnits(
+  VkCommandBuffer           cmdbuf,
   VkPipeline                graphics_pipeline,
   VkExtent2D                extent,
-  VkFramebuffer             framebuffer,
   VkPipelineLayout          pipeline_layout,
-  std::span<const DrawUnit> draw_units,
-  ImDrawData*               draw_data
+  std::span<const DrawUnit> draw_units
 );
 
 } // namespace vk

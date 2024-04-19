@@ -12,5 +12,6 @@ source:
 - glfw.ccm
 - model.ccm
 - input.ccm
+- gui.ccm
 include_dir:
 - include

@@ -325,15 +325,12 @@ auto createGraphicsPipeline(
            std::move(pipeline) };
 }
 
-void recordDraw(
-  VkCommandBuffer           command_buffer,
-  VkRenderPass              render_pass,
-  VkPipeline                graphics_pipeline,
-  VkExtent2D                extent,
-  VkFramebuffer             framebuffer,
-  VkPipelineLayout          pipeline_layout,
-  std::span<const DrawUnit> draw_units,
-  ImDrawData*               draw_data
+void recordRenderPass(
+  VkCommandBuffer                      cmdbuf,
+  VkRenderPass                         render_pass,
+  VkFramebuffer                        framebuffer,
+  VkExtent2D                           extent,
+  std::function<void(VkCommandBuffer)> recorder
 ) {
   auto color_clear = VkClearValue{ .color = { .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } };
   auto depth_clear = VkClearValue{ .depthStencil = { .depth = 1.0f, .stencil = 0 } };
@@ -352,8 +349,19 @@ void recordDraw(
   // VK_SUBPASS_CONTENTS_INLINE: render pass的command被嵌入主缓冲区
   // VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS: render pass 命令
   // 将会从次缓冲区执行
-  vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-  vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
+  vkCmdBeginRenderPass(cmdbuf, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+  recorder(cmdbuf);
+  vkCmdEndRenderPass(cmdbuf);
+}
+
+void recordDrawUnits(
+  VkCommandBuffer           cmdbuf,
+  VkPipeline                graphics_pipeline,
+  VkExtent2D                extent,
+  VkPipelineLayout          pipeline_layout,
+  std::span<const DrawUnit> draw_units
+) {
+  vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
   // 定义了 viewport 到缓冲区的变换
   VkViewport viewport{
     .x = 0,
@@ -363,19 +371,19 @@ void recordDraw(
     .minDepth = 0.0f,
     .maxDepth = 1.0f,
   };
-  vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+  vkCmdSetViewport(cmdbuf, 0, 1, &viewport);
   // 定义了缓冲区实际存储像素的区域
   VkRect2D scissor{
     .offset = { .x = 0, .y = 0 },
     .extent = extent,
   };
-  vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+  vkCmdSetScissor(cmdbuf, 0, 1, &scissor);
   for (auto& [vertex_buffer, index_buffer, count, descriptor_sets] : draw_units) {
     auto offset = (VkDeviceSize)0;
-    vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffer, &offset);
-    vkCmdBindIndexBuffer(command_buffer, index_buffer, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdBindVertexBuffers(cmdbuf, 0, 1, &vertex_buffer, &offset);
+    vkCmdBindIndexBuffer(cmdbuf, index_buffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdBindDescriptorSets(
-      command_buffer,
+      cmdbuf,
       VK_PIPELINE_BIND_POINT_GRAPHICS,
       pipeline_layout,
       // firstSet: 对应着色器中的layout(set=0)
@@ -385,10 +393,8 @@ void recordDraw(
       0,
       nullptr
     );
-    vkCmdDrawIndexed(command_buffer, count, 1, 0, 0, 0);
+    vkCmdDrawIndexed(cmdbuf, count, 1, 0, 0, 0);
   }
-  ImGui_ImplVulkan_RenderDrawData(draw_data, command_buffer);
-  vkCmdEndRenderPass(command_buffer);
 }
 
 } // namespace vk

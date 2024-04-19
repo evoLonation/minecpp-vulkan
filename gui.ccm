@@ -1,0 +1,215 @@
+export module gui;
+
+import std;
+import toy;
+import "vulkan_config.h";
+import render.context;
+import render.drawer;
+import vulkan.resource;
+import vulkan.descriptor;
+import vulkan.command;
+
+export namespace gui {
+
+class Context {
+private:
+  vk::DescriptorPool _dp_pool;
+
+public:
+  Context(render::Drawer& drawer) {
+    auto& ctx = render::Context::getInstance();
+    // imgui 准备阶段 :
+    // call ImGui::CreateContext()
+    // call ImGui_ImplXXXX_Init() for each backend
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    // Setup Dear ImGui style
+    ImGui::StyleColorsDark();
+    // ImGui::StyleColorsLight();
+
+    // must call after input processor
+    // install_callbacks: 如果为true，则imgui会设置glfw的相关callback,
+    // 原来的callback（如果有）的函数指针会保存，imgui的callback会先调用
+    ImGui_ImplGlfw_InitForVulkan(ctx.window, true);
+    ImGui_ImplVulkan_InitInfo init_info = {};
+    init_info.Instance = ctx.instance.instance;
+    init_info.PhysicalDevice = ctx.pdevice_info.device;
+    init_info.Device = ctx.device;
+    init_info.QueueFamily = ctx.graphic_ctx.family_index;
+    init_info.Queue = ctx.graphic_ctx.queue;
+    init_info.PipelineCache = VK_NULL_HANDLE;
+    _dp_pool = vk::createDescriptorPool(
+      ctx.device,
+      1,
+      std::array{
+        VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
+      }
+    );
+    init_info.DescriptorPool = _dp_pool.get();
+    init_info.RenderPass = ctx.render_pass;
+    init_info.Subpass = 0;
+    init_info.MinImageCount = 2;
+    init_info.ImageCount = 2;
+    init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    init_info.Allocator = nullptr;
+    init_info.CheckVkResultFn = [](VkResult err) {
+      if (err == 0)
+        return;
+      toy::debugf("[vulkan] Error: VkResult = {}", (int)err);
+      if (err < 0)
+        abort();
+    };
+    ImGui_ImplVulkan_Init(&init_info);
+    drawer.registerDrawRecorder([](auto cmdbuf) {
+      ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmdbuf);
+    });
+  }
+  ~Context() {
+    // 销毁阶段:
+    // call ImGui_ImplXXXX_Shutdown() for each backend
+    // call ImGui::DestroyContext()
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+  }
+};
+
+template <std::invocable<> Callable>
+void draw(Callable&& drawer) {
+  // frame 创建阶段:
+  // call ImGui_ImplXXXX_NewFrame() for each backend
+  // call ImGui::NewFrame()
+  ImGui_ImplVulkan_NewFrame();
+  ImGui_ImplGlfw_NewFrame();
+  ImGui::NewFrame();
+  drawer();
+  ImGui::Render();
+}
+
+// inline void slider(
+//   const std::string& name, float& value, const float min = -50, const float max = 50
+// ) {
+//   ImGui::SliderFloat(name.c_str(), &value, min, max);
+// }
+// inline void slider(
+//   const std::string&      name,
+//   ObservableValue<float>& value,
+//   const float             min = -50,
+//   const float             max = 50
+// ) {
+//   slider(name, value.get(), min, max);
+//   value.mayNotify();
+// }
+
+// inline void slider(
+//   const std::string& name,
+//   glm::vec3&         value,
+//   const glm::vec3&   min = glm::vec3{ -5.0f },
+//   const glm::vec3&   max = glm::vec3{ 5.0f }
+// ) {
+//   // 这种用法是正确的，因为一个右值的生命周期是其所在的整个表达式
+//   ImGui::SliderFloat(fmt::format("{}: {}", name, "x").c_str(), &value.x, min.x, max.x);
+//   ImGui::SliderFloat(fmt::format("{}: {}", name, "y").c_str(), &value.y, min.y, max.y);
+//   ImGui::SliderFloat(fmt::format("{}: {}", name, "z").c_str(), &value.z, min.z, max.z);
+// }
+// inline void slider(
+//   const std::string&          name,
+//   ObservableValue<glm::vec3>& value,
+//   const glm::vec3&            min = glm::vec3{ -5.0f },
+//   const glm::vec3&            max = glm::vec3{ 5.0f }
+// ) {
+//   slider(name, value.get(), min, max);
+//   value.mayNotify();
+// }
+
+// template <typename T>
+// void showPopup(T& t, std::map<T, std::string> elements) {
+//   if (ImGui::Button("Select..")) {
+//     ImGui::OpenPopup("my_select_popup");
+//   }
+//   ImGui::SameLine();
+//   ImGui::TextUnformatted(elements[t].c_str());
+//   if (ImGui::BeginPopup("my_select_popup")) {
+//     ImGui::SeparatorText("Aquarium");
+//     for (auto& element : elements) {
+//       if (ImGui::Selectable(element.second.c_str())) {
+//         t = element.first;
+//       }
+//     }
+//     ImGui::EndPopup();
+//   }
+// }
+
+// class AbstractGuiWindow : public AutoLoader<AbstractGuiWindow> {
+//   RefContainer<AbstractGuiWindow>& getContainer();
+
+// public:
+//   AbstractGuiWindow() : AutoLoader<AbstractGuiWindow>(getContainer()) {}
+//   virtual void draw() = 0;
+// };
+
+// template <typename Derived>
+// class GuiWindowBase : public AbstractGuiWindow {
+// private:
+//   RefOrConst<std::string> title;
+//   std::optional<bool*>    open;
+//   void                    draw() override final {
+//     if (!open.has_value()) {
+//       if (ImGui::Begin(title.get().c_str())) {
+//         static_cast<Derived&>(*this).innerDraw();
+//       }
+//       ImGui::End();
+//     } else if (*open.value()) {
+//       if (ImGui::Begin(title.get().c_str(), open.value())) {
+//         static_cast<Derived&>(*this).innerDraw();
+//       }
+//       ImGui::End();
+//     }
+//   }
+
+// public:
+//   GuiWindowBase(RefOrConst<std::string> title, bool& open) : title(std::move(title)), open(&open)
+//   {} GuiWindowBase(RefOrConst<std::string> title) : title(std::move(title)), open(std::nullopt)
+//   {}
+
+//   std::string getTitle() const { return title; }
+// };
+
+// template <Callable<void(void)> FuncType>
+// class GuiWindowLoader : public GuiWindowBase<GuiWindowLoader<FuncType>> {
+//   friend GuiWindowBase<GuiWindowLoader>;
+
+// private:
+//   FuncType inner;
+
+//   void innerDraw() { inner(); }
+
+// public:
+//   GuiWindowLoader(const RefOrConst<std::string>& title, bool& open, FuncType&& inner)
+//     : GuiWindowBase<GuiWindowLoader<FuncType>>(title, open),
+//       inner(std::forward<decltype(inner)>(inner)) {}
+//   GuiWindowLoader(const RefOrConst<std::string>& title, FuncType&& inner)
+//     : GuiWindowBase<GuiWindowLoader<FuncType>>(title),
+//     inner(std::forward<decltype(inner)>(inner)) {
+//   }
+// };
+
+// class GuiDrawer : public ProactiveSingleton<GuiDrawer> {
+// private:
+//   friend AbstractGuiWindow;
+//   RefContainer<AbstractGuiWindow> windows;
+
+// public:
+//   void draw() {
+//     GuiFrame frame;
+//     for (auto& window : windows) {
+//       window.draw();
+//     }
+//     frame.render();
+//   }
+// };
+
+// inline RefContainer<AbstractGuiWindow>& AbstractGuiWindow::getContainer() {
+//   return GuiDrawer::getInstance().windows;
+// }
+} // namespace gui

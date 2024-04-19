@@ -9,6 +9,7 @@ import glm;
 import model;
 import input;
 import render;
+import gui;
 
 using namespace vk;
 using namespace glfw;
@@ -54,54 +55,7 @@ int main() {
     auto width = 1920;
     auto height = 1080;
     auto ctx = render::Context{ applicationName, width, height };
-    // Setup Dear ImGui context
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
-
-    // Setup Dear ImGui style
-    ImGui::StyleColorsDark();
-    // ImGui::StyleColorsLight();
-    ImGui_ImplGlfw_InitForVulkan(ctx.window, true);
-    ImGui_ImplVulkan_InitInfo init_info = {};
-    init_info.Instance = ctx.instance.instance;
-    init_info.PhysicalDevice = ctx.pdevice_info.device;
-    init_info.Device = ctx.device;
-    init_info.QueueFamily = ctx.graphic_ctx.family_index;
-    init_info.Queue = ctx.graphic_ctx.queue;
-    init_info.PipelineCache = VK_NULL_HANDLE;
-    VkDescriptorPool ds_pool;
-    {
-
-      VkDescriptorPoolSize pool_sizes[] = {
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
-      };
-      VkDescriptorPoolCreateInfo pool_info = {};
-      pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-      pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-      pool_info.maxSets = 1;
-      pool_info.poolSizeCount = (uint32_t)IM_ARRAYSIZE(pool_sizes);
-      pool_info.pPoolSizes = pool_sizes;
-      vkCreateDescriptorPool(ctx.device, &pool_info, nullptr, &ds_pool);
-    }
-    init_info.DescriptorPool = ds_pool;
-    init_info.RenderPass = ctx.render_pass;
-    init_info.Subpass = 0;
-    init_info.MinImageCount = 2;
-    init_info.ImageCount = 2;
-    init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    init_info.Allocator = nullptr;
-    init_info.CheckVkResultFn = [](VkResult err) {
-      if (err == 0)
-        return;
-      toy::debugf("[vulkan] Error: VkResult = {}", (int)err);
-      if (err < 0)
-        abort();
-    };
-    ImGui_ImplVulkan_Init(&init_info);
+    auto input_processor = input::InputProcessor{ ctx.window };
 
     auto pipeline = render::Pipeline{ "hello.vert",
                                       "hello.frag",
@@ -130,12 +84,12 @@ int main() {
     auto resource_register = render::ResourceRegister{ std::array<render::DeviceLocalResource*, 3>{
       &vertex_buffer, &index_buffer, &sampled_texture } };
     auto drawer = render::Drawer{ pipeline };
+    auto gui_ctx = gui::Context{ drawer };
     for (auto [unit, uniform] : views::zip(draw_units, uniforms)) {
       drawer.registerUnit(unit);
       drawer.registerUniform(uniform);
     }
 
-    auto input_processor = input::InputProcessor{ ctx.window };
     input_processor.addKeyDownHandler(GLFW_KEY_A, []() { toy::debug("press down A"); });
     input_processor.addKeyHoldHandler(GLFW_KEY_A, [](int time) {
       toy::debugf("press hold A {}", time);
@@ -148,18 +102,20 @@ int main() {
         uniform_datas[i] = getUniform(i - 4);
       }
       input_processor.processInput();
-      // Start the Dear ImGui frame
-      ImGui_ImplVulkan_NewFrame();
-      ImGui_ImplGlfw_NewFrame();
-      ImGui::NewFrame();
-
-      // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can
-      // browse its code to learn more about Dear ImGui!).
-      ImGui::ShowDemoWindow();
-      ImGui::Render();
-      auto* draw_data = ImGui::GetDrawData();
-      drawer.draw(draw_data);
+      gui::draw([]() {
+        // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You
+        // can browse its code to learn more about Dear ImGui!).
+        ImGui::ShowDemoWindow();
+        ImGui::Begin("Hello, world!");
+        static auto f = 0.0f;
+        ImGui::SliderFloat(
+          "float", &f, 0.0f, 1.0f
+        ); // Edit 1 float using a slider from 0.0f to 1.0f
+        ImGui::End();
+      });
+      drawer.draw();
     }
+    drawer.waitIdle();
   } catch (const std::exception& e) {
 
     std::print("catch exception at root:\n{}\n", e.what());
