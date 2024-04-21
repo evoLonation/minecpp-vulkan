@@ -11,7 +11,7 @@ source:
 - header_impl.cc
 - glfw.ccm
 - model.ccm
-- input.ccm
 - gui.ccm
+- control.ccm
 include_dir:
 - include

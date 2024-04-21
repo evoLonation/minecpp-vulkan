@@ -7,14 +7,12 @@ layout(location = 2) in vec2 in_tex_coord;
 layout(location = 0) out vec3 frag_color;
 layout(location = 1) out vec2 frag_tex_coord;
 
-layout(set = 0, binding = 0) uniform UniformBufferObject{
-  mat4 model;
-  mat4 view;
-  mat4 proj;
-} ubo;
+layout(set = 0, binding = 0) uniform ViewBlock{mat4 data;} view;
+layout(set = 1, binding = 0) uniform ProjBlock{mat4 data;} proj;
+layout(set = 2, binding = 0) uniform ModelBlock{mat4 data;} model;
 
 void main() {
-  gl_Position = ubo.proj * ubo.view * ubo.model * vec4(in_position, 1.0);
+  gl_Position = proj.data * view.data * model.data * vec4(in_position, 1.0);
   frag_color = in_color;
   frag_tex_coord = in_tex_coord;
 }

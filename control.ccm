@@ -1,0 +1,199 @@
+export module control;
+
+import std;
+import glm;
+import gui;
+import toy;
+import render.context;
+import "glfw_config.h";
+import "vulkan_config.h";
+import "imgui_config.h";
+
+export namespace control {
+
+namespace model {
+
+auto create(const glm::vec3& location, const glm::vec3& scale) -> glm::mat4 {
+  return glm::scale(glm::translate(glm::mat4(1.0f), location), scale);
+}
+auto create(const glm::vec3& location = glm::vec3(), float scale = 1.0f) -> glm::mat4 {
+  return create(location, glm::vec3(scale, scale, scale));
+}
+
+namespace view {
+
+auto create(
+  const glm::vec3& position,
+  const glm::vec3& target = glm::vec3{ 0.0f },
+  const glm::vec3& up = glm::vec3{ 0.0f, 0.0f, 2.0f }
+) -> glm::mat4 {
+  return glm::lookAt(position, target - position, up);
+}
+
+} // namespace view
+
+auto translate(const glm::mat4& model, const glm::vec3& vec, bool self = false) -> glm::mat4 {
+  if (self) {
+    return glm::translate(model, vec);
+  } else {
+    return glm::translate(glm::mat4(1.0f), vec) * model;
+  }
+}
+
+// axis 可以不是 normalize 的
+auto rotate(const glm::mat4& model, float angle, const glm::vec3& axis, bool self = false)
+  -> glm::mat4 {
+  if (self) {
+    // 空间矩阵相对于自己进行旋转
+    return glm::rotate(model, glm::radians(angle), axis);
+  } else {
+    // 空间矩阵相对于目标坐标系进行旋转
+    return glm::rotate(glm::mat4(1.0f), glm::radians(angle), axis) * model;
+  }
+}
+
+class Controller {
+private:
+  glm::mat4* _model;
+  glm::vec3  _location;
+  glm::vec3  _scale;
+  glm::vec3  _axis;
+  float      _angle;
+  bool       _set_model;
+  float      _speed;
+  bool       _self;
+
+public:
+  Controller(glm::mat4& model)
+    : _model{ &model }, _location{ 0.0f }, _scale{ 1.0f }, _axis{ 2.0f, 0.0f, 0.0f },
+      _angle{ 0.0f }, _set_model{ false }, _speed{ 0.05f }, _self{ false } {
+    *_model = create(_location);
+  }
+  void setInput() {
+    auto& ctx = render::Context::getInstance();
+    ctx.addKeyHoldHandler(GLFW_KEY_A, [&](int handle) {
+      *_model = translate(*_model, glm::vec3{ _speed, .0f, .0f }, _self);
+    });
+    ctx.addKeyHoldHandler(GLFW_KEY_D, [&](int handle) {
+      *_model = translate(*_model, glm::vec3{ -_speed, .0f, .0f }, _self);
+    });
+  }
+  void show() {
+    auto& model = *_model;
+    ImGui::Checkbox("Is self", &_self);
+    ImGui::Checkbox("Set Model", &_set_model);
+    if (_set_model) {
+      gui::slider("location", _location);
+      gui::slider("scale", _scale);
+      gui::slider("rotate axis", _axis);
+      gui::slider("rotate angle", _angle, 0.0f, 360.0f);
+      model = create(_location, _scale);
+      model = rotate(model, _angle, _axis, _self);
+    }
+  };
+};
+
+} // namespace model
+
+namespace proj {
+
+auto create(int width, int height, float fovy = 45.0f, float near = 0.1f, float far = 100.0f)
+  -> glm::mat4 {
+  auto proj = glm::perspective(glm::radians(fovy), width * 1.0f / height, near, far);
+  // vulkan 剪辑坐标的y轴相比 opengl 是反的
+  proj[1][1] *= -1;
+  return proj;
+}
+
+} // namespace proj
+
+namespace camera {
+
+class Controller {
+private:
+  glm::mat4* _view;
+  glm::mat4* _proj;
+  int*       _width;
+  int*       _height;
+  bool       _self;
+  float      _speed_move;
+  float      _speed_rotate;
+  bool       _open_controller;
+
+  auto getDelta() -> float { return 1.0f / 60.0f; }
+
+  auto computeMoveDistance() -> float { return _speed_move * getDelta(); }
+  auto computeRotateDegree() -> float { return _speed_rotate * getDelta(); }
+  auto computeRotateDegreeY(float pos) -> float { return _speed_rotate * pos / *_height; }
+  auto computeRotateDegreeX(float pos) -> float { return _speed_rotate * pos / *_width; }
+
+public:
+  Controller(glm::mat4& view, glm::mat4& proj)
+    : _view(&view), _proj(&proj), _self(true), _speed_move(5.0f), _speed_rotate(60.0f),
+      _open_controller(false) {
+    auto& ctx = render::Context::getInstance();
+    _width = &(int&)ctx.extent.width;
+    _height = &(int&)ctx.extent.height;
+    *_view = model::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f });
+    *_proj = proj::create(*_width, *_height);
+  }
+  void setInput() {
+    auto& ctx = render::Context::getInstance();
+    auto& view = *_view;
+    ctx.addKeyHoldHandler(GLFW_KEY_A, [&](auto _) {
+      view = model::translate(view, glm::vec3{ computeMoveDistance(), 0.0f, 0.0f }, _self);
+    });
+    ctx.addKeyHoldHandler(GLFW_KEY_D, [&](auto _) {
+      view = model::translate(view, glm::vec3{ -computeMoveDistance(), 0.0f, 0.0f }, _self);
+    });
+    ctx.addKeyHoldHandler(GLFW_KEY_Z, [&](auto _) {
+      view = model::translate(view, glm::vec3{ 0.0f, -computeMoveDistance(), 0.0f }, _self);
+    });
+    ctx.addKeyHoldHandler(GLFW_KEY_X, [&](auto _) {
+      view = model::translate(view, glm::vec3{ 0.0f, computeMoveDistance(), 0.0f }, _self);
+    });
+    ctx.addKeyHoldHandler(GLFW_KEY_W, [&](auto _) {
+      view = model::translate(view, glm::vec3{ 0.0f, 0.0f, computeMoveDistance() }, _self);
+    });
+    ctx.addKeyHoldHandler(GLFW_KEY_S, [&](auto _) {
+      view = model::translate(view, glm::vec3{ 0.0f, 0.0f, -computeMoveDistance() }, _self);
+    });
+    ctx.addKeyHoldHandler(GLFW_KEY_L, [&](auto _) {
+      view = model::rotate(view, -computeRotateDegree(), glm::vec3{ 0.0f, 1.0f, 0.0f }, _self);
+    });
+    ctx.addKeyHoldHandler(GLFW_KEY_J, [&](auto _) {
+      view = model::rotate(view, computeRotateDegree(), glm::vec3{ 0.0f, 1.0f, 0.0f }, _self);
+    });
+    ctx.addKeyHoldHandler(GLFW_KEY_I, [&](auto _) {
+      view = model::rotate(view, -computeRotateDegree(), glm::vec3{ 1.0f, 0.0f, 0.0f }, _self);
+    });
+    ctx.addKeyHoldHandler(GLFW_KEY_K, [&](auto _) {
+      view = model::rotate(view, computeRotateDegree(), glm::vec3{ 1.0f, 0.0f, 0.0f }, _self);
+    });
+    ctx.addKeyHoldHandler(GLFW_KEY_Q, [&](auto _) {
+      view = model::rotate(view, -computeRotateDegree(), glm::vec3{ 0.0f, 0.0f, 1.0f }, _self);
+    });
+    ctx.addKeyHoldHandler(GLFW_KEY_E, [&](auto _) {
+      view = model::rotate(view, computeRotateDegree(), glm::vec3{ 0.0f, 0.0f, 1.0f }, _self);
+    });
+    ctx.addCursorMoveHandler([&](double x, double y) {
+      if (render::Context::getInstance().isCursorVisible()) {
+        return;
+      }
+      view = model::rotate(view, computeRotateDegreeX(x), glm::vec3{ 0.0f, 1.0f, 0.0f }, _self);
+      view = model::rotate(view, computeRotateDegreeY(y), glm::vec3{ 1.0f, 0.0f, 0.0f }, _self);
+    });
+  }
+  void show() {
+    ImGui::Checkbox("Set Camera", &_open_controller);
+    ImGui::Checkbox("Is self2", &_self);
+    if (_open_controller) {
+      gui::slider("rotate speed", _speed_rotate, 0.0f, 360.0f * 5);
+      gui::slider("move speed", _speed_move, 0.0f, 1.0f * 10);
+    }
+    *_proj = proj::create(*_width, *_height);
+  };
+};
+} // namespace camera
+
+} // namespace control
