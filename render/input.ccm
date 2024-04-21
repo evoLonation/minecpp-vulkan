@@ -1,10 +1,10 @@
-export module input;
+export module render.input;
 
 import "glfw_config.h";
 
 import std;
 
-export namespace input {
+export namespace render {
 
 class InputProcessor {
 private:
@@ -82,9 +82,7 @@ public:
   void addKeyReleaseHandler(int key, KeyReleaseHandler handler) {
     _key_release_handlers[key].push_back(handler);
   }
-  void addCursorMoveHandler(int key, CursorMoveHandler handler) {
-    _cursor_move_handlers.push_back(handler);
-  }
+  void addCursorMoveHandler(CursorMoveHandler handler) { _cursor_move_handlers.push_back(handler); }
 
   void setCursorVisible(bool visible) {
     if (_cursor_visible == visible) {
@@ -122,4 +120,4 @@ public:
   }
 };
 
-} // namespace input
+} // namespace render

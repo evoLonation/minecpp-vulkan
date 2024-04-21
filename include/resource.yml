@@ -1,3 +1,4 @@
 header_unit:
 - vulkan_config.h
 - glfw_config.h
+- imgui_config.h

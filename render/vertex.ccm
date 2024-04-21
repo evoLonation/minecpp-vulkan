@@ -19,7 +19,7 @@ struct VertexInfo {
 };
 
 template <typename... DataTypes>
-  requires(std::is_trivial_v<DataTypes> && ...)
+  requires(std::is_trivially_copyable_v<DataTypes> && ...)
 struct Vertex : public std::array<char, (sizeof(DataTypes) + ...)> {
   using Base = std::array<char, (sizeof(DataTypes) + ...)>;
   Vertex(DataTypes&&... data) {
@@ -44,7 +44,7 @@ consteval auto formatMapper() -> VkFormat {
 }
 
 template <typename... DataTypes>
-  requires(std::is_trivial_v<DataTypes> && ...)
+  requires(std::is_trivially_copyable_v<DataTypes> && ...)
 consteval auto Vertex<DataTypes...>::getVertexInfo() -> VertexInfo<sizeof...(DataTypes)> {
   auto binding_description = VkVertexInputBindingDescription{
     .binding = 0,

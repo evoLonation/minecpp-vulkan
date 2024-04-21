@@ -18,12 +18,7 @@ public:
 };
 
 template <typename DataType>
-  requires std::is_trivial_v<DataType>
-// struct DataType {
-//   alignas(16) glm::mat4 model;
-//   alignas(16) glm::mat4 view;
-//   alignas(16) glm::mat4 proj;
-// };
+  requires std::is_trivially_copyable_v<DataType>
 class Uniform : public BaseUniform {
 private:
   DataType  _cache_data;
