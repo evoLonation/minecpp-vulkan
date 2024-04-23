@@ -1,6 +1,7 @@
 export module toy.helper;
 
 import std;
+import toy.log;
 
 export namespace toy {
 
@@ -8,5 +9,119 @@ template <typename... Lambdas>
 struct OverloadLambda : public Lambdas... {
   using Lambdas::operator()...;
 };
+
+template <typename Derived, typename T = Derived>
+class AutoLoader;
+
+/**
+ * @brief 保证RefContainer在所有还没有unregist的AutoLoader之后析构
+ *
+ * @tparam T
+ */
+template <typename T>
+class RefContainer {
+  template <typename, typename>
+  friend class AutoLoader;
+
+private:
+  std::unordered_set<T*> _base;
+
+  decltype(auto) add(T* e) noexcept(noexcept(_base.insert(e))) { return _base.insert(e); }
+  decltype(auto) remove(T* e) noexcept(noexcept(_base.erase(e))) { return _base.erase(e); }
+
+public:
+  RefContainer() = default;
+  decltype(auto) begin() noexcept(noexcept(_base.begin())) { return _base.begin(); }
+  decltype(auto) end() noexcept(noexcept(_base.end())) { return _base.end(); }
+  decltype(auto) size() noexcept(noexcept(_base.size())) { return _base.size(); }
+};
+
+/**
+ * @brief 自动装载到RefContainer<T>中
+ *
+ * @tparam Derived CRTP中的子类
+ * @tparam T 默认为Derived，可以设置为Derived的父类
+ */
+template <typename Derived, typename T = Derived>
+class AutoLoader {
+  friend RefContainer<T>;
+
+private:
+  RefContainer<T>* _container;
+
+private:
+  template <typename _ = void>
+    requires std::derived_from<Derived, T>
+  auto self() -> T& {
+    return static_cast<T&>(static_cast<Derived&>(*this));
+  }
+  void init(RefContainer<T>& container) {
+    _container = &container;
+    _container->add(&self());
+  }
+  void remove() {
+    if (_container != nullptr) {
+      _container->remove(&self());
+    }
+  }
+  void setMoved() { _container = nullptr; }
+
+protected:
+  AutoLoader() : _container(nullptr) {}
+  AutoLoader(RefContainer<T>& container) { init(container); }
+
+public:
+  ~AutoLoader() { remove(); }
+
+  AutoLoader(const AutoLoader& e) : AutoLoader{ *e._container } {}
+  AutoLoader(AutoLoader&& e) : AutoLoader{ *e._container } {
+    e.remove();
+    e.setMoved();
+  }
+  auto operator=(const AutoLoader& e) -> AutoLoader& {
+    remove();
+    init(e._container);
+  }
+  auto operator=(AutoLoader&& e) -> AutoLoader& {
+    remove();
+    init(e._container);
+    e.remove();
+    e.setMoved();
+  }
+  void regist(RefContainer<T>& container) { init(container); }
+  void unRegist() {
+    remove();
+    setMoved();
+  }
+};
+
+namespace test_refContainer {
+class B : public AutoLoader<B> {
+public:
+  int num;
+  B(RefContainer<B>& container, int num) : AutoLoader<B>(container), num(num) {}
+};
+class A : public RefContainer<B> {};
+
+void test() {
+  toy::debug("start test refcontainer");
+  auto a = A{};
+  auto b1 = B{ a, 1 };
+  {
+    auto b2 = B{ a, 2 };
+    auto b3 = B{ a, 3 };
+    toy::debug(a | views::transform([](auto e) { return e->num; }));
+  }
+  toy::debug(a | views::transform([](auto e) { return e->num; }));
+  {
+    auto b2 = b1;
+    toy::debug(a | views::transform([](auto e) { return e->num; }));
+    auto b3 = std::move(b2);
+    toy::debug(a | views::transform([](auto e) { return e->num; }));
+  }
+  toy::debug(a | views::transform([](auto e) { return e->num; }));
+}
+
+} // namespace test_refContainer
 
 } // namespace toy
