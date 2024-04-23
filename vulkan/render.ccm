@@ -26,6 +26,7 @@ struct PipelineResource {
 auto createGraphicsPipeline(
   VkDevice                                           device,
   VkRenderPass                                       render_pass,
+  VkPrimitiveTopology                                topology,
   std::string_view                                   vertex_shader_name,
   std::string_view                                   frag_shader_name,
   std::span<const VkVertexInputBindingDescription>   vertex_binding_descriptions,

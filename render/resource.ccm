@@ -11,10 +11,18 @@ import toy;
 
 export namespace render {
 
-class DescriptorResource {
+enum class ResourceType { UNIFORM, SAMPLER };
+
+struct ResourceInfo {
+  // all worker same, or each worker single resource
+  std::variant<vk::DescriptorResource, std::vector<vk::DescriptorResource>> desc_resource;
+
+  ResourceType resource_type;
+};
+
+class Resource {
 public:
-  virtual auto getDescriptorResource()
-    -> std::variant<vk::DescriptorResource, std::vector<vk::DescriptorResource>> = 0;
+  virtual auto getResourceInfo() -> ResourceInfo = 0;
 };
 
 class DeviceLocalResource {

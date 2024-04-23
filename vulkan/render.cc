@@ -141,6 +141,7 @@ auto createShaderModule(std::string_view filename, VkDevice device) -> ShaderMod
 auto createGraphicsPipeline(
   VkDevice                                           device,
   VkRenderPass                                       render_pass,
+  VkPrimitiveTopology                                topology,
   std::string_view                                   vertex_shader_name,
   std::string_view                                   frag_shader_name,
   std::span<const VkVertexInputBindingDescription>   vertex_binding_descriptions,
@@ -198,7 +199,7 @@ auto createGraphicsPipeline(
     // VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST: 不复用的三角形
     // VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
     // 下一个三角形的前两条边是上一个三角形的后两条边
-    .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    .topology = topology,
     // 当_STRIP topology下，如果为True，则可以用特殊索引值来 break up 线和三角形
     .primitiveRestartEnable = VK_FALSE,
   };

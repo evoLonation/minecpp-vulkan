@@ -2,6 +2,8 @@ export module render.pipeline;
 
 import render.context;
 import render.vertex;
+import render.resource;
+import render.drawer;
 
 import vulkan;
 
@@ -12,50 +14,185 @@ import toy;
 
 export namespace render {
 
-enum class ResourceType { UNIFORM, SAMPLER };
-
-auto resourceType2Layout(ResourceType type) -> vk::DescriptorSetLayout {
+auto resourceType2Layout(ResourceType type) -> VkDescriptorSetLayout {
   auto& ctx = Context::getInstance();
   switch (type) {
-  case ResourceType::SAMPLER:
-    return vk::createSamplerDescriptorSetLayout(ctx.device);
   case ResourceType::UNIFORM:
-    return createUniformDescriptorSetLayout(ctx.device);
+    return ctx.uniform_dset_layout.get();
+  case ResourceType::SAMPLER:
+    return ctx.sampler_dset_layout.get();
   }
-}
+};
 
-class Pipeline {
+class DrawUnit;
+
+class Pipeline : public DrawRecorder, public toy::AutoLoader<Pipeline, DrawRecorder> {
+  friend DrawUnit;
+
 private:
-  std::vector<vk::DescriptorSetLayout> _descriptor_set_layouts;
-  vk::PipelineResource                 _pipeline_resource;
+  using AutoLoader = toy::AutoLoader<Pipeline, DrawRecorder>;
+
+  std::vector<ResourceType>   _resource_types;
+  vk::PipelineResource        _pipeline_resource;
+  toy::RefContainer<DrawUnit> _draw_units;
 
 public:
+  // static constexpr auto AttrCount = 2;
   template <int AttrCount>
   Pipeline(
     std::string_view              vertex_shader_name,
     std::string_view              frag_shader_name,
+    VkPrimitiveTopology           topology,
     const VertexInfo<AttrCount>&  vertex_info,
-    std::span<const ResourceType> resources
+    std::span<const ResourceType> resource_types
   ) {
     auto& ctx = Context::getInstance();
-    _descriptor_set_layouts =
-      resources | views::transform([&](auto type) { return resourceType2Layout(type); }) |
-      ranges::to<std::vector>();
+    _resource_types.append_range(resource_types);
     _pipeline_resource = vk::createGraphicsPipeline(
       ctx.device,
       ctx.render_pass,
+      topology,
       vertex_shader_name,
       frag_shader_name,
       std::array{ vertex_info.binding_description },
       vertex_info.attribute_descriptions,
-      _descriptor_set_layouts | views::transform([](auto& resource) { return resource.get(); }) |
+      _resource_types | views::transform([&](auto type) { return resourceType2Layout(type); }) |
         ranges::to<std::vector>()
     );
   }
-  auto getDescriptorLayouts() -> std::span<const vk::DescriptorSetLayout> {
-    return _descriptor_set_layouts;
-  }
-  auto getPipelineResource() -> vk::PipelineResource& { return _pipeline_resource; }
+  void record(VkCommandBuffer cmdbuf, int in_flight_index) override;
 };
+
+class DrawUnit : public toy::AutoLoader<DrawUnit> {
+  friend Pipeline;
+
+private:
+  VertexBuffer* _vertex_buffer;
+  IndexBuffer*  _index_buffer;
+
+  vk::DescriptorPool _dsc_pool;
+  vk::DescriptorSets _dsets;
+
+  std::vector<std::vector<VkDescriptorSet>> _worker_dsets;
+
+public:
+  DrawUnit(
+    Pipeline&                  pipeline,
+    VertexBuffer&              vertex_buffer,
+    IndexBuffer&               index_buffer,
+    std::span<Resource* const> resources
+  )
+    : toy::AutoLoader<DrawUnit>(pipeline._draw_units) {
+
+    auto& ctx = Context::getInstance();
+    auto& resource_types = pipeline._resource_types;
+    if (resources.size() != resource_types.size()) {
+      toy::throwf(
+        "The resource size ({}) is not equal to pipeline descriptor layout size ({})",
+        resources.size(),
+        resource_types.size()
+      );
+    }
+    auto ds_updates = std::vector<vk::DescriptorSetUpdate>{};
+    auto uniform_count = 0;
+    auto sampler_count = 0;
+    auto ds_layouts = std::vector<VkDescriptorSetLayout>{};
+    auto worker_dset_indices = std::vector<std::vector<int>>{};
+    worker_dset_indices.resize(ctx.worker_count);
+    for (auto [resource, type] : views::zip(resources, resource_types)) {
+      auto [desc_resource, type_] = resource->getResourceInfo();
+      if (type_ != type) {
+        toy::throwf("The resources typp is not match pipeline resource type");
+      }
+      auto layout = resourceType2Layout(type);
+      if (desc_resource.index() == 0) {
+        sampler_count++;
+        for (auto& dset_indices : worker_dset_indices) {
+          dset_indices.push_back(ds_layouts.size());
+        }
+        ds_layouts.push_back(layout);
+        ds_updates.emplace_back(VK_NULL_HANDLE, std::get<0>(desc_resource));
+      } else {
+        auto dsp_resources = std::get<1>(desc_resource);
+        uniform_count += dsp_resources.size();
+        toy::checkThrowf(
+          ctx.worker_count == dsp_resources.size(),
+          "The dsp_resources size is not equal to number of worker"
+        );
+        for (auto [dset_indices, index] : views::zip(
+               worker_dset_indices,
+               views::iota(ds_layouts.size(), ds_layouts.size() + dsp_resources.size())
+             )) {
+          dset_indices.push_back(index);
+        }
+        ds_layouts.append_range(views::repeat(layout, dsp_resources.size()));
+        ds_updates.append_range(dsp_resources | views::transform([](auto resource) {
+                                  return vk::DescriptorSetUpdate{ VK_NULL_HANDLE, resource };
+                                }));
+      }
+    }
+
+    auto dsc_pool = vk::DescriptorPool{};
+    auto dsets = vk::DescriptorSets{};
+    auto worker_dsets = std::vector<std::vector<VkDescriptorSet>>{};
+    worker_dsets.resize(ctx.worker_count);
+    if (resources.size() > 0) {
+      auto pool_infos = std::array{
+        VkDescriptorPoolSize{
+          .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+          .descriptorCount = (uint32_t)uniform_count,
+        },
+        VkDescriptorPoolSize{
+          .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+          .descriptorCount = (uint32_t)sampler_count,
+        },
+      };
+      if (uniform_count == 0 || sampler_count == 0) {
+        dsc_pool = vk::createDescriptorPool(
+          ctx.device,
+          uniform_count + sampler_count,
+          std::span{ &pool_infos[uniform_count == 0 ? 1 : 0], 1 }
+        );
+      } else {
+        dsc_pool = vk::createDescriptorPool(ctx.device, uniform_count + sampler_count, pool_infos);
+      }
+      dsets = vk::allocateDescriptorSets(ctx.device, dsc_pool, ds_layouts);
+      for (auto [dsets_, dset_indices] : views::zip(worker_dsets, worker_dset_indices)) {
+        dsets_.append_range(dset_indices | views::transform([&](auto index) {
+                              return dsets.get()[index];
+                            }));
+      }
+      for (auto [ds, ds_update] : views::zip(dsets.get(), ds_updates)) {
+        ds_update.descriptor_set = ds;
+      }
+      vk::updateDescriptorSets(ctx.device, ds_updates);
+    }
+
+    _vertex_buffer = &vertex_buffer;
+    _index_buffer = &index_buffer;
+    _dsc_pool = std::move(dsc_pool);
+    _dsets = std::move(dsets);
+    _worker_dsets = std::move(worker_dsets);
+  }
+};
+
+inline void Pipeline::record(VkCommandBuffer cmdbuf, int in_flight_index) {
+  auto& ctx = Context::getInstance();
+  vk::recordDrawUnits(
+    cmdbuf,
+    _pipeline_resource.pipeline,
+    ctx.extent,
+    _pipeline_resource.pipeline_layout,
+    _draw_units | views::transform([&](auto* unit) {
+      return vk::DrawUnit{
+        .vertex_buffer = unit->_vertex_buffer->get(),
+        .index_buffer = unit->_index_buffer->get(),
+        .count = (uint32_t)unit->_index_buffer->getIndexNumber(),
+        .descriptor_sets = unit->_worker_dsets[in_flight_index],
+      };
+    }) |
+      ranges::to<std::vector>()
+  );
+}
 
 } // namespace render

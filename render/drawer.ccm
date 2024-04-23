@@ -1,10 +1,9 @@
 export module render.drawer;
 
 import render.context;
-import render.draw_unit;
 import render.uniform;
-import render.pipeline;
 import render.resource;
+import render.vertex;
 
 import vulkan;
 
@@ -14,10 +13,13 @@ import toy;
 
 export namespace render {
 
+class DrawRecorder {
+public:
+  virtual void record(VkCommandBuffer cmdbuf, int in_flight_index) = 0;
+};
+
 class Drawer {
 private:
-  Pipeline* _pipeline;
-
   struct Worker {
     VkCommandBuffer cmdbuf;
     vk::Semaphore   image_available_sema;
@@ -30,14 +32,11 @@ private:
   int  _in_flight_index;
   bool _last_present_failed;
 
-  using Recorder = std::function<void(VkCommandBuffer)>;
-  std::vector<Recorder>     _recorders;
-  std::vector<DrawUnit*>    _draw_units;
-  std::vector<BaseUniform*> _uniforms;
+  toy::RefContainer<DrawRecorder> _recorders;
+  std::vector<BaseUniform*>       _uniforms;
 
 public:
-  Drawer(Pipeline& pipeline) {
-    _pipeline = &pipeline;
+  Drawer() {
     auto& ctx = Context::getInstance();
     _worker_cmdbufs =
       vk::allocateCommandBuffers(ctx.device, ctx.graphic_ctx.command_pool, ctx.worker_count);
@@ -65,10 +64,8 @@ public:
     }
   }
 
-  void registerDrawRecorder(std::function<void(VkCommandBuffer)> recorder) {
-    _recorders.push_back(std::move(recorder));
-  }
-  void registerUnit(DrawUnit& draw_unit) { _draw_units.push_back(&draw_unit); }
+  operator toy::RefContainer<DrawRecorder>&() { return _recorders; }
+
   void registerUniform(BaseUniform& uniform) { _uniforms.push_back(&uniform); }
 
   void draw() {
@@ -120,18 +117,8 @@ public:
           ctx.framebuffers[image_index],
           ctx.extent,
           [&](auto cmdbuf) {
-            vk::recordDrawUnits(
-              cmdbuf,
-              _pipeline->getPipelineResource().pipeline,
-              ctx.extent,
-              _pipeline->getPipelineResource().pipeline_layout,
-              _draw_units | views::transform([&](auto* unit) {
-                return unit->getDrawUnitInfo(_in_flight_index);
-              }) |
-                ranges::to<std::vector>()
-            );
-            for (auto& recorder : _recorders) {
-              recorder(cmdbuf);
+            for (auto* recorder : _recorders) {
+              recorder->record(cmdbuf, _in_flight_index);
             }
           }
         );

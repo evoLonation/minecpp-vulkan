@@ -3,7 +3,6 @@ source:
 - swapchain.ccm
 - context.ccm
 - pipeline.ccm
-- draw_unit.ccm
 - resource.ccm
 - uniform.ccm
 - sampler.ccm

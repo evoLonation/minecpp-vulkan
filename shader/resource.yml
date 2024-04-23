@@ -1,3 +1,5 @@
 shader:
+- axis.frag
+- axis.vert
 - hello.frag
 - hello.vert

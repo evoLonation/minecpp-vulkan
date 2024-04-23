@@ -7,11 +7,21 @@ sub_dir:
 - shader
 source:
 - main.cc
-- test.cc
 - header_impl.cc
 - glfw.ccm
 - model.ccm
 - gui.ccm
 - control.ccm
+- axis.ccm
 include_dir:
 - include
+
+# for test toy
+# sub_dir:
+# - include
+# - third_party
+# - toy
+# source:
+# - test.cc
+# include_dir:
+# - include

@@ -7,14 +7,14 @@ import std;
 
 export namespace vk {
 
-auto createCommandPool(VkDevice device, uint32_t graphic_family_index) -> CommandPool {
+auto createCommandPool(VkDevice device, uint32_t family_index) -> CommandPool {
   auto pool_create_info = VkCommandPoolCreateInfo{
     .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
     // VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT：允许重置单个command
     // buffer，否则就要重置命令池里的所有buffer
     // VK_COMMAND_POOL_CREATE_TRANSIENT_BIT: 命令缓冲区会很频繁的记录新命令
     .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-    .queueFamilyIndex = graphic_family_index,
+    .queueFamilyIndex = family_index,
   };
   return CommandPool{ device, pool_create_info };
 }

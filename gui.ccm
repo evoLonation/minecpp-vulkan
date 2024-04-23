@@ -50,8 +50,10 @@ void showPopup(T& t, std::map<T, std::string> elements) {
  * @brief must call after input processor
  *
  */
-class Context {
+class Context : public render::DrawRecorder, public toy::AutoLoader<Context, render::DrawRecorder> {
 private:
+  using AutoLoader = toy::AutoLoader<Context, render::DrawRecorder>;
+
   static constexpr auto _base_font_size = 13;
   static constexpr auto _default_scale = 2.0f;
   static constexpr auto _max_scale = 5.0f;
@@ -103,9 +105,6 @@ public:
         abort();
     };
     ImGui_ImplVulkan_Init(&init_info);
-    drawer.registerDrawRecorder([](auto cmdbuf) {
-      ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmdbuf);
-    });
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
@@ -114,6 +113,8 @@ public:
     _scale = _default_scale;
     _io->Fonts->AddFontFromFileTTF("TIMES.TTF", _default_font_size);
     _io->FontGlobalScale = _scale / (_default_font_size * 1.0f / _base_font_size);
+
+    AutoLoader::regist(drawer);
   }
   ~Context() {
     // 销毁阶段:
@@ -140,6 +141,9 @@ public:
     drawer();
     ImGui::End();
     ImGui::Render();
+  }
+  void record(VkCommandBuffer cmdbuf, int in_flight_index) override {
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmdbuf);
   }
 };
 

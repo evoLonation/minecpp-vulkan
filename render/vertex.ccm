@@ -125,6 +125,11 @@ public:
   VertexBuffer(std::span<const VertexT> vertex_data)
     : DeviceLocalBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, std::as_bytes(vertex_data)) {}
 
+  template <typename VertexT>
+  static auto create(std::span<const VertexT> vertex_data) -> VertexBuffer {
+    return VertexBuffer{ vertex_data };
+  }
+
   auto getTransfer(vk::TransferFamilyInfo family_info) -> vk::Transfer override {
     return DeviceLocalBuffer::getTransfer(vk::BufferUse::VERTEX_BUFFER_DRAW, family_info);
   }

@@ -12,7 +12,7 @@ import toy;
 
 export namespace render {
 
-class SampledTexture : public DescriptorResource, public DeviceLocalResource {
+class SampledTexture : public Resource, public DeviceLocalResource {
 private:
   vk::Buffer _staging_buffer;
   vk::Memory _staging_memory;
@@ -93,9 +93,12 @@ public:
       family_info
     );
   }
-  auto getDescriptorResource()
-    -> std::variant<vk::DescriptorResource, std::vector<vk::DescriptorResource>> override {
-    return vk::DescriptorResource{ std::pair{ _image_resource.image_view.get(), _sampler.get() } };
+  auto getResourceInfo() -> ResourceInfo override {
+    return {
+      .desc_resource =
+        vk::DescriptorResource{ std::pair{ _image_resource.image_view.get(), _sampler.get() } },
+      .resource_type = ResourceType::SAMPLER,
+    };
   }
 };
 

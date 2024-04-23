@@ -12,13 +12,14 @@ import toy;
 
 export namespace render {
 
-class BaseUniform : public DescriptorResource {
+class BaseUniform : public Resource {
 public:
   virtual void update(int worker_index) = 0;
 };
 
 template <typename DataType>
   requires std::is_trivially_copyable_v<DataType>
+// using DataType = glm::vec3;
 class Uniform : public BaseUniform {
 private:
   DataType  _cache_data;
@@ -75,12 +76,12 @@ public:
     resource.dirty = false;
   }
 
-  auto getDescriptorResource()
-    -> std::variant<vk::DescriptorResource, std::vector<vk::DescriptorResource>> override {
-    return _resources | views::transform([](auto& resource) {
-             return vk::DescriptorResource{ resource.buffer };
-           }) |
-           ranges::to<std::vector>();
+  auto getResourceInfo() -> ResourceInfo override {
+    return { .desc_resource = _resources | views::transform([](auto& resource) {
+                                return vk::DescriptorResource{ resource.buffer };
+                              }) |
+                              ranges::to<std::vector>(),
+             .resource_type = ResourceType::UNIFORM };
   }
 };
 

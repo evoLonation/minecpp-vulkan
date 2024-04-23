@@ -11,6 +11,7 @@ import model;
 import render;
 import gui;
 import control;
+import axis;
 
 int main() {
   try {
@@ -26,6 +27,7 @@ int main() {
 
     auto pipeline = render::Pipeline{ "hello.vert",
                                       "hello.frag",
+                                      VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                       model::Vertex::getVertexInfo(),
                                       std::array{ render::ResourceType::UNIFORM,
                                                   render::ResourceType::UNIFORM,
@@ -46,24 +48,43 @@ int main() {
     uniforms.emplace_back(view);
     uniforms.emplace_back(proj);
     auto draw_units = std::vector<render::DrawUnit>{};
+    draw_units.reserve(unit_count);
     for (auto& uniform_data : model_datas) {
       uniforms.emplace_back(uniform_data);
       draw_units.emplace_back(
         pipeline,
         vertex_buffer,
         index_buffer,
-        std::array<render::DescriptorResource*, 4>{
+        std::array<render::Resource*, 4>{
           &uniforms[0], &uniforms[1], &uniforms.back(), &sampled_texture }
       );
     }
-    auto resource_register = render::ResourceRegister{ std::array<render::DeviceLocalResource*, 3>{
-      &vertex_buffer, &index_buffer, &sampled_texture } };
-    auto drawer = render::Drawer{ pipeline };
+    auto drawer = render::Drawer{};
+    pipeline.regist(drawer);
     auto gui_ctx = gui::Context{ drawer };
+    auto axis_pipeline = render::Pipeline{ "axis.vert",
+                                           "axis.frag",
+                                           VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
+                                           axis::Vertex::getVertexInfo(),
+                                           std::array{ render::ResourceType::UNIFORM,
+                                                       render::ResourceType::UNIFORM,
+                                                       render::ResourceType::UNIFORM } };
+    auto axis_vertex_buffer = render::VertexBuffer::create<axis::Vertex>(axis::axis_model);
+    auto axis_index_buffer =
+      render::IndexBuffer{ views::iota(uint16_t(0), axis::axis_model.size()) |
+                           ranges::to<std::vector>() };
+    auto axis_draw_unit = render::DrawUnit{ axis_pipeline,
+                                            axis_vertex_buffer,
+                                            axis_index_buffer,
+                                            std::array<render::Resource*, 3>{
+                                              &uniforms[0], &uniforms[1], &uniforms[2] } };
+    axis_pipeline.regist(drawer);
+    auto resource_register = render::ResourceRegister{ std::array<render::DeviceLocalResource*, 5>{
+      &vertex_buffer, &index_buffer, &sampled_texture, &axis_vertex_buffer, &axis_index_buffer } };
     drawer.registerUniform(uniforms[0]);
     drawer.registerUniform(uniforms[1]);
     for (auto [unit, uniform] : views::zip(draw_units, uniforms | views::drop(2))) {
-      drawer.registerUnit(unit);
+      // drawer.registerUnit(unit);
       drawer.registerUniform(uniform);
     }
     auto controller = control::model::Controller{ model_datas[0] };
@@ -80,6 +101,7 @@ int main() {
       drawer.draw();
     }
     drawer.waitIdle();
+    pipeline.unRegist();
   } catch (const std::exception& e) {
 
     std::print("catch exception at root:\n{}\n", e.what());

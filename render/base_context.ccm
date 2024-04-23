@@ -45,6 +45,9 @@ struct BaseContext {
   ExecuteContext present_ctx;
   ExecuteContext transfer_ctx;
 
+  vk::DescriptorSetLayout uniform_dset_layout;
+  vk::DescriptorSetLayout sampler_dset_layout;
+
   BaseContext() = default;
   BaseContext(const std::string& app_name, int width, int height) {
     window = glfw::Window{ width, height, app_name };
@@ -94,6 +97,8 @@ struct BaseContext {
     graphic_ctx = get_ctx(queues[0]);
     present_ctx = get_ctx(queues[1]);
     transfer_ctx = get_ctx(queues[2]);
+    uniform_dset_layout = vk::createUniformDescriptorSetLayout(device);
+    sampler_dset_layout = vk::createSamplerDescriptorSetLayout(device);
   }
 };
 
