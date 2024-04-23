@@ -18,7 +18,7 @@ public:
   virtual void record(VkCommandBuffer cmdbuf, int in_flight_index) = 0;
 };
 
-class Drawer {
+class Drawer : public toy::ProactiveSingleton<Drawer> {
 private:
   struct Worker {
     VkCommandBuffer cmdbuf;

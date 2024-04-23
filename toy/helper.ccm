@@ -88,7 +88,10 @@ public:
     e.remove();
     e.setMoved();
   }
-  void regist(RefContainer<T>& container) { init(container); }
+  void regist(RefContainer<T>& container) {
+    remove();
+    init(container);
+  }
   void unRegist() {
     remove();
     setMoved();
@@ -123,5 +126,44 @@ void test() {
 }
 
 } // namespace test_refContainer
+
+/**
+ * @brief 需要主动构造，可含有参数，若在构造前调用getInstance()会抛异常
+ * @tparam T
+ */
+template <typename Derived>
+class ProactiveSingleton {
+private:
+  static inline Derived* _instance_ptr = nullptr;
+
+protected:
+  auto self() -> Derived& { return static_cast<Derived&>(*this); }
+  ProactiveSingleton() {
+    if (_instance_ptr != nullptr) {
+      toy::throwf("construct multi time!");
+    }
+    _instance_ptr = &self();
+  }
+  ~ProactiveSingleton() {
+    if (_instance_ptr == this) {
+      _instance_ptr = nullptr;
+    }
+  }
+
+public:
+  static auto getInstance() -> Derived& {
+    if (_instance_ptr == nullptr) {
+      toy::throwf("need proactively construct first!");
+    }
+    return *_instance_ptr;
+  }
+
+  // deleted copy semantic
+  ProactiveSingleton& operator=(const ProactiveSingleton&) = delete;
+  ProactiveSingleton(const ProactiveSingleton&) = delete;
+  // move semantic
+  ProactiveSingleton& operator=(ProactiveSingleton&&) { _instance_ptr = &self(); }
+  ProactiveSingleton(ProactiveSingleton&&) { _instance_ptr = &self(); }
+};
 
 } // namespace toy

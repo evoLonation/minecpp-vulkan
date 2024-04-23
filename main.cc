@@ -24,6 +24,7 @@ int main() {
     auto height = 1080;
     auto ctx = render::Context{ applicationName, width, height };
     ctx.addKeyDownHandler(GLFW_KEY_ESCAPE, [&]() { ctx.setCursorVisible(!ctx.isCursorVisible()); });
+    auto drawer = render::Drawer{};
 
     auto pipeline = render::Pipeline{ "hello.vert",
                                       "hello.frag",
@@ -59,8 +60,6 @@ int main() {
           &uniforms[0], &uniforms[1], &uniforms.back(), &sampled_texture }
       );
     }
-    auto drawer = render::Drawer{};
-    pipeline.regist(drawer);
     auto gui_ctx = gui::Context{ drawer };
     auto axis_pipeline = render::Pipeline{ "axis.vert",
                                            "axis.frag",
@@ -78,7 +77,6 @@ int main() {
                                             axis_index_buffer,
                                             std::array<render::Resource*, 3>{
                                               &uniforms[0], &uniforms[1], &uniforms[2] } };
-    axis_pipeline.regist(drawer);
     auto resource_register = render::ResourceRegister{ std::array<render::DeviceLocalResource*, 5>{
       &vertex_buffer, &index_buffer, &sampled_texture, &axis_vertex_buffer, &axis_index_buffer } };
     drawer.registerUniform(uniforms[0]);
@@ -101,7 +99,6 @@ int main() {
       drawer.draw();
     }
     drawer.waitIdle();
-    pipeline.unRegist();
   } catch (const std::exception& e) {
 
     std::print("catch exception at root:\n{}\n", e.what());

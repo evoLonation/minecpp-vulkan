@@ -26,11 +26,12 @@ auto resourceType2Layout(ResourceType type) -> VkDescriptorSetLayout {
 
 class DrawUnit;
 
-class Pipeline : public DrawRecorder, public toy::AutoLoader<Pipeline, DrawRecorder> {
+class Pipeline : public DrawRecorder, private toy::AutoLoader<Pipeline, DrawRecorder> {
   friend DrawUnit;
 
 private:
   using AutoLoader = toy::AutoLoader<Pipeline, DrawRecorder>;
+  friend AutoLoader;
 
   std::vector<ResourceType>   _resource_types;
   vk::PipelineResource        _pipeline_resource;
@@ -46,6 +47,7 @@ public:
     const VertexInfo<AttrCount>&  vertex_info,
     std::span<const ResourceType> resource_types
   ) {
+    AutoLoader::regist(Drawer::getInstance());
     auto& ctx = Context::getInstance();
     _resource_types.append_range(resource_types);
     _pipeline_resource = vk::createGraphicsPipeline(
@@ -63,10 +65,13 @@ public:
   void record(VkCommandBuffer cmdbuf, int in_flight_index) override;
 };
 
-class DrawUnit : public toy::AutoLoader<DrawUnit> {
+class DrawUnit : private toy::AutoLoader<DrawUnit> {
   friend Pipeline;
 
 private:
+  using AutoLoader = toy::AutoLoader<DrawUnit>;
+  friend AutoLoader;
+
   VertexBuffer* _vertex_buffer;
   IndexBuffer*  _index_buffer;
 
@@ -82,7 +87,7 @@ public:
     IndexBuffer&               index_buffer,
     std::span<Resource* const> resources
   )
-    : toy::AutoLoader<DrawUnit>(pipeline._draw_units) {
+    : AutoLoader{ pipeline._draw_units } {
 
     auto& ctx = Context::getInstance();
     auto& resource_types = pipeline._resource_types;

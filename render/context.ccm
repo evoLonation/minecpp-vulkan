@@ -5,23 +5,17 @@ import render.swapchain;
 import render.input;
 
 import std;
+import toy;
 
 export namespace render {
 
-struct Context : BaseContext, SwapchainContext, InputProcessor {
-private:
-  static inline Context* _instance;
-
-public:
-  static auto getInstance() -> Context& { return *_instance; }
-
+struct Context : BaseContext, SwapchainContext, InputProcessor, toy::ProactiveSingleton<Context> {
   int worker_count;
 
   Context(const std::string& app_name, int width, int height)
     : BaseContext(app_name, width, height), SwapchainContext(*static_cast<BaseContext*>(this)),
       InputProcessor(this->window) {
     worker_count = 2;
-    _instance = this;
   }
   Context(const Context&) = delete;
   Context(Context&&) = delete;
