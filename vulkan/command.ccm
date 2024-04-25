@@ -7,7 +7,17 @@ import std;
 
 export namespace vk {
 
-auto createCommandPool(VkDevice device, uint32_t family_index) -> CommandPool {
+/**
+ * @brief Create a Command Pool object
+ *
+ * @param device
+ * @param family_index
+ * @param short_live True means the commandbuffers from the pool will be short-lived, meaning that
+ * they will by reset or freed in short time
+ * @return CommandPool
+ */
+auto createCommandPool(VkDevice device, uint32_t family_index, bool short_live)
+  -> CommandPool {
   auto pool_create_info = VkCommandPoolCreateInfo{
     .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
     // VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT：允许重置单个command
@@ -16,6 +26,9 @@ auto createCommandPool(VkDevice device, uint32_t family_index) -> CommandPool {
     .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
     .queueFamilyIndex = family_index,
   };
+  if (short_live) {
+    pool_create_info.flags |= VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+  }
   return CommandPool{ device, pool_create_info };
 }
 
@@ -41,6 +54,8 @@ void recordAndSubmit(
   std::span<const VkSemaphore>                                  signal_sema,
   VkFence                                                       signal_fence
 ) {
+  // vkBeginCommandBuffer 会隐式执行vkResetCommandBuffer
+  // vkResetCommandBuffer(worker.command_buffer, 0);
   auto begin_info = VkCommandBufferBeginInfo{
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     /** \param VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT specifies that each

@@ -6,3 +6,4 @@ export import render.vertex;
 export import render.uniform;
 export import render.sampler;
 export import render.drawer;
+export import render.command;

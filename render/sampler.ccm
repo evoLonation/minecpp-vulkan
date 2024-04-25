@@ -2,6 +2,7 @@ export module render.sampler;
 
 import render.context;
 import render.resource;
+import render.command;
 
 import vulkan;
 
@@ -19,8 +20,6 @@ private:
 
   vk::ImageResource _image_resource;
   vk::Sampler       _sampler;
-
-  vk::CommandBuffers _transfer_cmdbuf;
 
   static constexpr auto _image_type = vk::ImageType::SAMPLED_IMAGE;
   // static constexpr auto _src_use = vk::ImageUse::COPY_DST;
@@ -55,8 +54,6 @@ public:
     auto max_anisotropy = ctx.pdevice_info.properties.limits.maxSamplerAnisotropy;
     _sampler = vk::createSampler(ctx.device, max_anisotropy);
 
-    _transfer_cmdbuf = vk::allocateCommandBuffers(ctx.device, ctx.transfer_ctx.command_pool, 1);
-
     auto recorder = [&](VkCommandBuffer cmdbuf) {
       vk::recordImageBarrier(
         cmdbuf,
@@ -69,17 +66,10 @@ public:
       );
 
       vk::copyBufferToImage(
-        _transfer_cmdbuf.get()[0],
-        _staging_buffer,
-        _image_resource.image,
-        vk::getAspect(_image_type),
-        width,
-        height
+        cmdbuf, _staging_buffer, _image_resource.image, vk::getAspect(_image_type), width, height
       );
     };
-    vk::recordAndSubmit(
-      _transfer_cmdbuf.get()[0], ctx.transfer_ctx.queue, recorder, {}, {}, VK_NULL_HANDLE
-    );
+    CommandExecutor::getInstance().submitTransfer(recorder, {}, {});
   }
 
   auto getTransfer(vk::TransferFamilyInfo family_info) -> vk::Transfer override {

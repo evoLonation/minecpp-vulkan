@@ -2,6 +2,7 @@ export module render.vertex;
 
 import render.context;
 import render.resource;
+import render.command;
 
 import vulkan;
 
@@ -78,8 +79,6 @@ private:
 
   vk::Memory _memory;
 
-  vk::CommandBuffers _transfer_cmdbuf;
-
 public:
   DeviceLocalBuffer() = default;
 
@@ -95,13 +94,10 @@ public:
       VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage,
       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
     );
-    _transfer_cmdbuf = vk::allocateCommandBuffers(ctx.device, ctx.transfer_ctx.command_pool, 1);
     auto recorder = [&](VkCommandBuffer cmdbuf) {
-      vk::recordCopyBuffer(_transfer_cmdbuf.get()[0], _staging_buffer, *this, buffer_size);
+      vk::recordCopyBuffer(cmdbuf, _staging_buffer, *this, buffer_size);
     };
-    vk::recordAndSubmit(
-      _transfer_cmdbuf.get()[0], ctx.transfer_ctx.queue, recorder, {}, {}, VK_NULL_HANDLE
-    );
+    CommandExecutor::getInstance().submitTransfer(recorder, {}, {});
   }
 
 protected:

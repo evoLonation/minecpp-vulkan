@@ -1,6 +1,7 @@
 export module render.resource;
 
 import render.context;
+import render.command;
 
 import vulkan;
 
@@ -31,16 +32,12 @@ public:
 };
 class ResourceRegister {
 private:
-  vk::Semaphore      _ownership_transfer_sema;
-  vk::CommandBuffers _transfer_cmdbuf;
-  vk::CommandBuffers _graphic_cmdbuf;
+  vk::Semaphore _ownership_transfer_sema;
 
 public:
   ResourceRegister(std::span<DeviceLocalResource* const> resources) {
     auto& ctx = Context::getInstance();
     _ownership_transfer_sema = vk::createSemaphore(ctx.device);
-    _transfer_cmdbuf = vk::allocateCommandBuffers(ctx.device, ctx.transfer_ctx.command_pool, 1);
-    _graphic_cmdbuf = vk::allocateCommandBuffers(ctx.device, ctx.graphic_ctx.command_pool, 1);
 
     auto family_transfer =
       vk::TransferFamilyInfo{ ctx.transfer_ctx.family_index, ctx.graphic_ctx.family_index };
@@ -49,21 +46,17 @@ public:
       resources |
       views::transform([&](auto* resource) { return resource->getTransfer(family_transfer); }) |
       ranges::to<std::vector>();
-    vk::recordAndSubmit(
-      _transfer_cmdbuf.get()[0],
-      ctx.transfer_ctx.queue,
+    auto& executor = CommandExecutor::getInstance();
+    executor.submitTransfer(
       [&](auto cmdbuf) {
         for (auto& transfer : transfers) {
           transfer.src_recorder(cmdbuf);
         }
       },
       {},
-      { &_ownership_transfer_sema.get(), 1 },
-      VK_NULL_HANDLE
+      { &_ownership_transfer_sema.get(), 1 }
     );
-    vk::recordAndSubmit(
-      _graphic_cmdbuf.get()[0],
-      ctx.graphic_ctx.queue,
+    executor.submitGraphic(
       [&](auto cmdbuf) {
         for (auto& transfer : transfers) {
           transfer.dst_recorder(cmdbuf);
@@ -78,8 +71,7 @@ public:
                      [&](auto x, auto y) { return x | y.dst_wait_stage; }
                    ) },
       },
-      {},
-      VK_NULL_HANDLE
+      {}
     );
   }
 };

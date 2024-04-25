@@ -24,7 +24,9 @@ int main() {
     auto height = 1080;
     auto ctx = render::Context{ applicationName, width, height };
     ctx.addKeyDownHandler(GLFW_KEY_ESCAPE, [&]() { ctx.setCursorVisible(!ctx.isCursorVisible()); });
+    auto executor = render::CommandExecutor{};
     auto drawer = render::Drawer{};
+    auto gui_ctx = gui::Context{};
 
     auto pipeline = render::Pipeline{ "hello.vert",
                                       "hello.frag",
@@ -42,7 +44,7 @@ int main() {
     auto view = glm::mat4{};
     auto proj = glm::mat4{};
 
-    auto unit_count = 1;
+    auto unit_count = 8;
     auto model_datas = std::vector<glm::mat4>(unit_count);
     auto uniforms = std::vector<render::Uniform<glm::mat4>>{};
     uniforms.reserve(unit_count + 2);
@@ -51,6 +53,7 @@ int main() {
     auto draw_units = std::vector<render::DrawUnit>{};
     draw_units.reserve(unit_count);
     for (auto& uniform_data : model_datas) {
+      uniform_data = control::model::create();
       uniforms.emplace_back(uniform_data);
       draw_units.emplace_back(
         pipeline,
@@ -60,7 +63,6 @@ int main() {
           &uniforms[0], &uniforms[1], &uniforms.back(), &sampled_texture }
       );
     }
-    auto gui_ctx = gui::Context{ drawer };
     auto axis_pipeline = render::Pipeline{ "axis.vert",
                                            "axis.frag",
                                            VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
@@ -98,7 +100,7 @@ int main() {
       });
       drawer.draw();
     }
-    drawer.waitIdle();
+    drawer.waitDone();
   } catch (const std::exception& e) {
 
     std::print("catch exception at root:\n{}\n", e.what());

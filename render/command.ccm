@@ -1,0 +1,252 @@
+export module render.command;
+
+import "vulkan_config.h";
+import vulkan;
+import std;
+import toy;
+
+import render.context;
+
+export namespace render {
+
+using Recorder = std::function<void(VkCommandBuffer)>;
+
+class CommandExecutor : public toy::ProactiveSingleton<CommandExecutor> {
+private:
+  class CmdbufPool {
+  public:
+    using CmdbufIndex = std::pair<int, int>;
+
+  private:
+    Context::CommandContext*        _cmd_ctx;
+    vk::CommandPool                 _cmd_pool;
+    static constexpr auto           _cmdbuf_allocate_n = 5;
+    std::vector<vk::CommandBuffers> _cmdbufs;
+    std::vector<CmdbufIndex>        _cmdbuf_frees;
+
+  public:
+    CmdbufPool() = default;
+    CmdbufPool(Context::CommandContext& cmd_ctx) {
+      _cmd_ctx = &cmd_ctx;
+      _cmd_pool =
+        vk::createCommandPool(Context::getInstance().device, _cmd_ctx->family_index, true);
+    }
+    auto allocate() -> CmdbufIndex {
+      auto cmdbuf_index = CmdbufIndex{};
+      if (_cmdbuf_frees.empty()) {
+        _cmdbufs.emplace_back(
+          vk::allocateCommandBuffers(Context::getInstance().device, _cmd_pool, _cmdbuf_allocate_n)
+        );
+        [&]<size_t... indices>(std::index_sequence<indices...> index_seq) {
+          (_cmdbuf_frees.emplace_back(_cmdbufs.size() - 1, indices), ...);
+        }(std::make_index_sequence<_cmdbuf_allocate_n - 1>{});
+        cmdbuf_index = { _cmdbufs.size() - 1, _cmdbuf_allocate_n - 1 };
+      } else {
+        cmdbuf_index = _cmdbuf_frees.back();
+        _cmdbuf_frees.pop_back();
+      }
+      return cmdbuf_index;
+    }
+    void collect(CmdbufIndex index) { _cmdbuf_frees.push_back(index); }
+
+    auto operator[](CmdbufIndex index) -> VkCommandBuffer {
+      return _cmdbufs[index.first].get()[index.second];
+    }
+    auto getContext() -> Context::CommandContext& { return *_cmd_ctx; }
+  };
+  class FencePool {
+  public:
+    using FenceIndex = int;
+
+  private:
+    std::vector<vk::Fence>  _fences;
+    std::vector<FenceIndex> _fence_frees;
+
+  public:
+    auto allocate() -> FenceIndex {
+      auto fence_index = FenceIndex{};
+      if (_fence_frees.empty()) {
+        fence_index = _fences.size();
+        _fences.push_back(vk::createFence(Context::getInstance().device, false));
+      } else {
+        fence_index = _fence_frees.back();
+        _fence_frees.pop_back();
+      }
+      return fence_index;
+    }
+    void collect(FenceIndex index) {
+      vk::resetFence(Context::getInstance().device, this->operator[](index));
+      _fence_frees.push_back(index);
+    }
+    auto operator[](FenceIndex index) -> VkFence { return _fences[index]; }
+  };
+
+private:
+  CmdbufPool _graphic_pool;
+  CmdbufPool _transfer_pool;
+  FencePool  _fence_pool;
+
+  struct WorkingInfo {
+    CmdbufPool::CmdbufIndex cmdbuf_index;
+    CmdbufPool*             cmdbuf_pool;
+    int                     fence_index;
+    // 是否已经回收了cmdbuf
+    bool mutable cmdbuf_collected;
+    // fence 是否被调用者持有所有权
+    bool mutable fence_hold_external;
+
+    friend auto operator<(const WorkingInfo& a, const WorkingInfo& b) -> bool {
+      return a.fence_index < b.fence_index;
+    }
+    friend auto operator==(const WorkingInfo& a, const WorkingInfo& b) -> bool {
+      return a.fence_index == b.fence_index;
+    }
+  };
+
+  std::set<WorkingInfo> _workings;
+
+  std::mutex  _mutex;
+  std::thread _thread;
+  bool        _task_done;
+
+  auto add_working(CmdbufPool& cmdbuf_pool) -> const WorkingInfo& {
+    auto cmdbuf_index = cmdbuf_pool.allocate();
+    auto fence_index = _fence_pool.allocate();
+    return *_workings.emplace(cmdbuf_index, &cmdbuf_pool, fence_index, false, false).first;
+  }
+
+  void collect() {
+    auto guard = std::lock_guard<std::mutex>{ _mutex };
+    // DO NOT erase element in range for iteration, if need erase, do like this
+    for (auto iter = _workings.begin(); iter != _workings.end();) {
+      auto& info = *iter;
+      auto  fence = _fence_pool[info.fence_index];
+      auto  erased = false;
+      if (vk::isFenceSignaled(Context::getInstance().device, fence)) {
+
+        if (!info.cmdbuf_collected) {
+          info.cmdbuf_collected = true;
+          info.cmdbuf_pool->collect(info.cmdbuf_index);
+        }
+        if (!info.fence_hold_external) {
+          _fence_pool.collect(info.fence_index);
+          _workings.erase(iter++);
+          erased = true;
+          toy::debug("a working is completely collected");
+        }
+      }
+      if (!erased) {
+        iter++;
+      }
+    }
+  }
+
+public:
+  /**
+   * @brief
+   * 调用者通过该对象持有fence的所有权，这时fence的状态只能通过命令执行的完毕改变，不能通过reset改变
+   *
+   */
+  class Fence {
+  private:
+    const WorkingInfo* _info;
+
+  public:
+    Fence() : _info(nullptr) {}
+    Fence(const WorkingInfo& info) : _info(&info) { _info->fence_hold_external = true; }
+    ~Fence() {
+      if (_info != nullptr) {
+        _info->fence_hold_external = false;
+      }
+    }
+    void wait() {
+      if (_info == nullptr) {
+        return;
+      }
+      vk::waitFence(
+        Context::getInstance().device,
+        CommandExecutor::getInstance()._fence_pool[_info->fence_index]
+      );
+    }
+    auto signaled() -> bool {
+      if (_info == nullptr) {
+        return false;
+      }
+      return vk::isFenceSignaled(
+        Context::getInstance().device,
+        CommandExecutor::getInstance()._fence_pool[_info->fence_index]
+      );
+    }
+    Fence(const Fence&) noexcept = delete;
+    Fence(Fence&& e) noexcept {
+      _info = e._info;
+      e._info = nullptr;
+    }
+    auto operator=(const Fence&) noexcept -> Fence& = delete;
+    auto operator=(Fence&& e) noexcept -> Fence& {
+      if (_info != nullptr) {
+        _info->fence_hold_external = false;
+      }
+      _info = e._info;
+      e._info = nullptr;
+      return *this;
+    }
+  };
+
+private:
+  auto submit(
+    Recorder                                                      recorder,
+    std::span<const std::pair<VkSemaphore, VkPipelineStageFlags>> wait_stages,
+    std::span<const VkSemaphore>                                  signal_semas,
+    CmdbufPool&                                                   cmdbuf_pool
+  ) -> Fence {
+    auto  guard = std::lock_guard<std::mutex>{ _mutex };
+    auto& working = add_working(cmdbuf_pool);
+    auto  cmdbuf = cmdbuf_pool[working.cmdbuf_index];
+    auto  fence = _fence_pool[working.fence_index];
+    toy::debug("start a command execution");
+    vk::recordAndSubmit(
+      cmdbuf, cmdbuf_pool.getContext().queue, recorder, wait_stages, signal_semas, fence
+    );
+    return Fence{ working };
+  }
+
+public:
+  auto submitGraphic(
+    Recorder                                                      recorder,
+    std::span<const std::pair<VkSemaphore, VkPipelineStageFlags>> wait_stages,
+    std::span<const VkSemaphore>                                  signal_semas
+  ) {
+    return submit(recorder, wait_stages, signal_semas, _graphic_pool);
+  }
+  auto submitTransfer(
+    Recorder                                                      recorder,
+    std::span<const std::pair<VkSemaphore, VkPipelineStageFlags>> wait_stages,
+    std::span<const VkSemaphore>                                  signal_semas
+  ) {
+    return submit(recorder, wait_stages, signal_semas, _transfer_pool);
+  }
+  void task() {
+    while (!(_task_done && _workings.empty())) {
+      using namespace std::chrono_literals;
+      std::this_thread::sleep_for(20ms);
+      collect();
+    }
+  }
+
+  CommandExecutor() {
+    auto& ctx = Context::getInstance();
+    _graphic_pool = CmdbufPool{ ctx.graphic_ctx };
+    _transfer_pool = CmdbufPool{ ctx.transfer_ctx };
+    _task_done = false;
+    _thread = std::thread{ &CommandExecutor::task, this };
+  }
+  ~CommandExecutor() {
+    _task_done = true;
+    _thread.join();
+  }
+};
+
+using Fence = CommandExecutor::Fence;
+
+} // namespace render

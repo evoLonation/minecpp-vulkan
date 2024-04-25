@@ -10,3 +10,4 @@ source:
 - drawer.ccm
 - render.ccm
 - input.ccm
+- command.ccm

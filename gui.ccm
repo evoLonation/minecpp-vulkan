@@ -66,7 +66,7 @@ private:
   vk::DescriptorPool _dp_pool;
 
 public:
-  Context(render::Drawer& drawer) {
+  Context() {
     auto& ctx = render::Context::getInstance();
     // imgui 准备阶段 :
     // call ImGui::CreateContext()
@@ -114,7 +114,7 @@ public:
     _io->Fonts->AddFontFromFileTTF("TIMES.TTF", _default_font_size);
     _io->FontGlobalScale = _scale / (_default_font_size * 1.0f / _base_font_size);
 
-    AutoLoader::regist(drawer);
+    AutoLoader::regist(render::Drawer::getInstance());
   }
   ~Context() {
     // 销毁阶段:

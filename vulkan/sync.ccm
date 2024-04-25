@@ -25,14 +25,31 @@ auto createFence(VkDevice device, bool signaled) -> Fence {
   return Fence{ device, create_info };
 }
 
-/**
- * @brief 等待一个fence，等待结束后reset
- */
-void consumeFence(VkDevice device, VkFence fence) {
+void waitFence(VkDevice device, VkFence fence) {
   checkVkResult(
     vkWaitForFences(device, 1, &fence, VK_TRUE, std::numeric_limits<uint64_t>::max()), "wait fences"
   );
+}
+
+void resetFence(VkDevice device, VkFence fence) {
   checkVkResult(vkResetFences(device, 1, &fence), "reset fence");
+}
+
+/**
+ * VK_SUCCESS: The fence specified by fence is signaled.
+ * VK_NOT_READY: The fence specified by fence is unsignaled.
+ * VK_ERROR_DEVICE_LOST: The device has been lost. See Lost Device.
+ */
+auto isFenceSignaled(VkDevice device, VkFence fence) -> bool {
+  auto result = vkGetFenceStatus(device, fence);
+  if (result == VK_SUCCESS) {
+    return true;
+  } else if (result == VK_NOT_READY) {
+    return false;
+  } else {
+    vk::checkVkResult(result, "get fence status");
+  }
+  std::unreachable();
 }
 
 struct ScopeInfo {

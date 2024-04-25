@@ -35,15 +35,14 @@ struct BaseContext {
 
   vk::RenderPass render_pass;
 
-  struct ExecuteContext {
-    VkQueue         queue;
-    uint32_t        family_index;
-    vk::CommandPool command_pool;
+  struct CommandContext {
+    VkQueue  queue;
+    uint32_t family_index;
   };
 
-  ExecuteContext graphic_ctx;
-  ExecuteContext present_ctx;
-  ExecuteContext transfer_ctx;
+  CommandContext graphic_ctx;
+  CommandContext present_ctx;
+  CommandContext transfer_ctx;
 
   vk::DescriptorSetLayout uniform_dset_layout;
   vk::DescriptorSetLayout sampler_dset_layout;
@@ -85,10 +84,9 @@ struct BaseContext {
     auto [_device, queues] = vk::createDevice(pdevice_info, required_device_extensions);
     device = std::move(_device);
     auto get_ctx = [&](auto pair) {
-      auto ret = ExecuteContext{
+      auto ret = CommandContext{
         .queue = pair.first,
         .family_index = pair.second,
-        .command_pool = vk::createCommandPool(device, pair.second),
       };
       return ret;
     };

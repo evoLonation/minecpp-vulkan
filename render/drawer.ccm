@@ -4,6 +4,7 @@ import render.context;
 import render.uniform;
 import render.resource;
 import render.vertex;
+import render.command;
 
 import vulkan;
 
@@ -21,12 +22,10 @@ public:
 class Drawer : public toy::ProactiveSingleton<Drawer> {
 private:
   struct Worker {
-    VkCommandBuffer cmdbuf;
-    vk::Semaphore   image_available_sema;
-    vk::Semaphore   render_finished_sema;
-    vk::Fence       queue_batch_fence;
+    vk::Semaphore image_available_sema;
+    vk::Semaphore render_finished_sema;
+    Fence         fence;
   };
-  vk::CommandBuffers  _worker_cmdbufs;
   std::vector<Worker> _workers;
 
   int  _in_flight_index;
@@ -38,34 +37,26 @@ private:
 public:
   Drawer() {
     auto& ctx = Context::getInstance();
-    _worker_cmdbufs =
-      vk::allocateCommandBuffers(ctx.device, ctx.graphic_ctx.command_pool, ctx.worker_count);
     for (int i = 0; i < ctx.worker_count; i++) {
       _workers.push_back(Worker{
-        .cmdbuf = _worker_cmdbufs.get()[i],
         .image_available_sema = vk::createSemaphore(ctx.device),
         .render_finished_sema = vk::createSemaphore(ctx.device),
-        .queue_batch_fence = vk::createFence(ctx.device, true),
+        .fence = Fence{},
       });
     }
     _in_flight_index = 0;
     _last_present_failed = false;
   }
-  void waitIdle() {
-    auto& ctx = Context::getInstance();
+  void waitDone() {
     for (auto& worker : _workers) {
-      vkWaitForFences(
-        ctx.device,
-        1,
-        &worker.queue_batch_fence.get(),
-        VK_TRUE,
-        std::numeric_limits<uint64_t>::max()
-      );
+      worker.fence.wait();
+      worker.fence = Fence{};
     }
   }
 
   operator toy::RefContainer<DrawRecorder>&() { return _recorders; }
 
+  // todo: 解耦
   void registerUniform(BaseUniform& uniform) { _uniforms.push_back(&uniform); }
 
   void draw() {
@@ -77,8 +68,8 @@ public:
       uniform->update(_in_flight_index);
     }
 
-    auto wait_fence = worker.queue_batch_fence.get();
-    vkWaitForFences(ctx.device, 1, &wait_fence, VK_TRUE, std::numeric_limits<uint64_t>::max());
+    auto& fence = worker.fence;
+    fence.wait();
 
     if (auto result = vkAcquireNextImageKHR(
           ctx.device,
@@ -100,19 +91,11 @@ public:
     } else {
       vk::checkVkResult(result, "acquire next image");
     }
-    // why vkResetFences after acquire image?
-    // because acquire image maybe call drawFrame() recursively, if vkResetFences
-    // befor acquire image, vkResetFences maybe call twice with only one signal
-    // operation by vkQueueSubmit
-    vkResetFences(ctx.device, 1, &wait_fence);
-    // vkBeginCommandBuffer 会隐式执行vkResetCommandBuffer
-    // vkResetCommandBuffer(worker.command_buffer, 0);
-    vk::recordAndSubmit(
-      worker.cmdbuf,
-      ctx.graphic_ctx.queue,
+
+    fence = CommandExecutor::getInstance().submitGraphic(
       [&](VkCommandBuffer cmdbuf) {
         vk::recordRenderPass(
-          worker.cmdbuf,
+          cmdbuf,
           ctx.render_pass,
           ctx.framebuffers[image_index],
           ctx.extent,
@@ -125,8 +108,7 @@ public:
       },
       std::array<std::pair<VkSemaphore, VkPipelineStageFlags>, 1>{ std::pair{
         worker.image_available_sema.get(), VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT } },
-      std::array{ worker.render_finished_sema.get() },
-      worker.queue_batch_fence
+      std::array{ worker.render_finished_sema.get() }
     );
     auto present_info = VkPresentInfoKHR{
       .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
