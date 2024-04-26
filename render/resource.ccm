@@ -47,31 +47,36 @@ public:
       views::transform([&](auto* resource) { return resource->getTransfer(family_transfer); }) |
       ranges::to<std::vector>();
     auto& executor = CommandExecutor::getInstance();
-    executor.submitTransfer(
-      [&](auto cmdbuf) {
-        for (auto& transfer : transfers) {
-          transfer.src_recorder(cmdbuf);
-        }
-      },
-      {},
-      { &_ownership_transfer_sema.get(), 1 }
-    );
-    executor.submitGraphic(
+    auto  waitable = executor
+                      .submit(
+                        CommandExecutor::Family::TRANSFER,
+                        [&](auto cmdbuf) {
+                          for (auto& transfer : transfers) {
+                            transfer.src_recorder(cmdbuf);
+                          }
+                        },
+                        {},
+                        1
+                      )
+                      .second;
+
+    executor.submit(
+      CommandExecutor::Family::GRAPHICS,
       [&](auto cmdbuf) {
         for (auto& transfer : transfers) {
           transfer.dst_recorder(cmdbuf);
         }
       },
       std::array{
-        std::pair{ _ownership_transfer_sema.get(),
-                   std::reduce(
-                     transfers.begin(),
-                     transfers.end(),
-                     VkPipelineStageFlags(0),
-                     [&](auto x, auto y) { return x | y.dst_wait_stage; }
-                   ) },
+        WaitInfo{ waitable,
+                  std::reduce(
+                    transfers.begin(),
+                    transfers.end(),
+                    VkPipelineStageFlags(0),
+                    [&](auto x, auto y) { return x | y.dst_wait_stage; }
+                  ) },
       },
-      {}
+      0
     );
   }
 };

@@ -97,7 +97,7 @@ public:
     auto recorder = [&](VkCommandBuffer cmdbuf) {
       vk::recordCopyBuffer(cmdbuf, _staging_buffer, *this, buffer_size);
     };
-    CommandExecutor::getInstance().submitTransfer(recorder, {}, {});
+    CommandExecutor::getInstance().submit(CommandExecutor::Family::TRANSFER, recorder, {}, {});
   }
 
 protected:

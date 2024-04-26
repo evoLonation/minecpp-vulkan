@@ -50,6 +50,7 @@ public:
   void waitDone() {
     for (auto& worker : _workers) {
       worker.fence.wait();
+      // must clean, otherwise CommandExecutor will never destroy
       worker.fence = Fence{};
     }
   }
@@ -92,7 +93,8 @@ public:
       vk::checkVkResult(result, "acquire next image");
     }
 
-    fence = CommandExecutor::getInstance().submitGraphic(
+    fence = CommandExecutor::getInstance().submit(
+      CommandExecutor::Family::GRAPHICS,
       [&](VkCommandBuffer cmdbuf) {
         vk::recordRenderPass(
           cmdbuf,
@@ -106,8 +108,8 @@ public:
           }
         );
       },
-      std::array<std::pair<VkSemaphore, VkPipelineStageFlags>, 1>{ std::pair{
-        worker.image_available_sema.get(), VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT } },
+      std::array{ vk::WaitInfo{ worker.image_available_sema.get(),
+                                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT } },
       std::array{ worker.render_finished_sema.get() }
     );
     auto present_info = VkPresentInfoKHR{

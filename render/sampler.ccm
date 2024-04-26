@@ -69,7 +69,7 @@ public:
         cmdbuf, _staging_buffer, _image_resource.image, vk::getAspect(_image_type), width, height
       );
     };
-    CommandExecutor::getInstance().submitTransfer(recorder, {}, {});
+    CommandExecutor::getInstance().submit(CommandExecutor::Family::TRANSFER, recorder, {}, {});
   }
 
   auto getTransfer(vk::TransferFamilyInfo family_info) -> vk::Transfer override {
