@@ -190,14 +190,14 @@ struct BarrierScopeInfo {
 };
 
 /**
- * @brief 对于所有权转移，需要分别在src family和dst family处各record一次barrier
- * 要想建立release op到acquire op的同步，只能在第一个submit设置signal sema
- * 并对应设置wait sema到第二个submit；
- * 而signal sema只有所有命令执行完后进行signal，wait sema可以设置wait的stage
- * 因此：
- * - 对于src family的record：将dstStageMask设置为BOTTOM即可；
- * - 对于dst family的record：另srcStageMask=dstStageMask
- * 从而实现release->bottom(submit)->target(submit)->target的依赖链
+ * @brief In case of ownership transfer that with src_use_stage/access and dst_use_stage/access
+ * barrier in src family:
+ * - src_stage/access: src_use_stage, src_use_access
+ * - dst_stage/access: BOTTOM, 0
+ * barrier in dst family:
+ * - must wait semaphore, wait stage: dst_use_stage(or TOP)
+ * - src_stage/access: dst_use_stage(or TOP), 0
+ * - dst_stage/access: dst_use_stage, dst_use_access
  */
 struct TransferScopeInfo {
   BarrierScopeInfo src_barrier;
