@@ -252,6 +252,9 @@ public:
     auto signal_semas = borrowed_semas |
                         views::transform([](auto& borrowed) { return borrowed.get(); }) |
                         ranges::to<std::vector>();
+    for (auto sema : wait_semas) {
+      _working_semas.at(sema).wait_cmd_done = false;
+    }
     auto cmdbuf = addWorkingCmdbuf(
       cmdbuf_pool,
       working_cmdbufs,
