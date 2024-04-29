@@ -7,13 +7,12 @@ import toy;
 namespace vk {
 
 auto pickPhysicalDevice(
-  VkInstance                          instance,
-  VkSurfaceKHR                        surface,
-  std::span<const char*>              required_extensions,
-  DeviceChecker                       device_checker,
-  SurfaceChecker                      surface_checker,
-  std::span<const QueueFamilyChecker> queue_chekers,
-  bool                                all_queue_diff
+  VkInstance                    instance,
+  VkSurfaceKHR                  surface,
+  std::span<const char*>        required_extensions,
+  DeviceChecker                 device_checker,
+  SurfaceChecker                surface_checker,
+  std::span<const QueueRequest> queue_requests
 ) -> PhysicalDeviceInfo {
   std::vector<VkPhysicalDevice>   devices = getVkResources(vkEnumeratePhysicalDevices, instance);
   std::vector<PhysicalDeviceInfo> supported_devices;
@@ -47,19 +46,20 @@ auto pickPhysicalDevice(
       unsupport = true;
     }
 
-    auto queue_family_indices =
-      getQueueFamilyIndices(device, surface, queue_chekers, all_queue_diff);
+    auto queue_family_indices = getQueueFamilyIndices(device, surface, queue_requests);
     if (!queue_family_indices.has_value()) {
       unsupport = true;
     }
 
     if (!unsupport) {
-      supported_devices.push_back({ .device = device,
-                                    .properties = device_properties,
-                                    .features = device_features,
-                                    .present_mode = selected_surface->present_mode,
-                                    .surface_format = selected_surface->surface_format,
-                                    .queue_indices = queue_family_indices.value() });
+      supported_devices.push_back({
+        .device = device,
+        .properties = device_properties,
+        .features = device_features,
+        .present_mode = selected_surface->present_mode,
+        .surface_format = selected_surface->surface_format,
+        .family_indices = queue_family_indices.value(),
+      });
     }
   }
   if (supported_devices.empty()) {
@@ -76,7 +76,7 @@ auto pickPhysicalDevice(
 /**
  * @brief 二分图匹配算法
  */
-auto hungarian(std::span<const std::span<const int>> graph, int right_count)
+auto hungarian(std::span<const std::vector<int>> graph, int right_count)
   -> std::optional<std::vector<int>> {
 
   auto left_count = (int)graph.size();
@@ -115,65 +115,34 @@ auto hungarian(std::span<const std::span<const int>> graph, int right_count)
 }
 
 auto getQueueFamilyIndices(
-  VkPhysicalDevice                    device,
-  VkSurfaceKHR                        surface,
-  std::span<const QueueFamilyChecker> queue_chekers,
-  bool                                all_queue_diff
-) -> std::optional<QueueIndices> {
+  VkPhysicalDevice device, VkSurfaceKHR surface, std::span<const QueueRequest> queue_requests
+) -> std::optional<std::vector<uint32_t>> {
 
   auto queue_families = getVkResources(vkGetPhysicalDeviceQueueFamilyProperties, device);
 
   auto family_size = queue_families.size();
-  auto request_size = queue_chekers.size();
+  auto request_size = queue_requests.size();
   toy::debugf("queue family size: {}, queue request size: {}", family_size, request_size);
 
   std::vector<std::vector<int>> graph(request_size);
 
-  auto family_offsets = std::vector<int>(queue_families.size());
-  int  now_offset = 0;
-  for (auto [properties, offset] : views::zip(queue_families, family_offsets)) {
-    offset = now_offset;
-    now_offset += properties.queueCount;
-  }
-
   for (auto [family_i, properties] : queue_families | toy::enumerate) {
     auto queue_count = (int)properties.queueCount;
     toy::debugf("check queue family {}, which has {} queues", family_i, queue_count);
-    for (auto&& [request_i, queue_checker] : queue_chekers | toy::enumerate) {
-      if (queue_checker(QueueFamilyCheckContext{ device, surface, family_i, properties })) {
-        if (!all_queue_diff) {
-          graph[request_i].append_range(
-            views::iota(family_offsets[family_i], family_offsets[family_i] + queue_count)
-          );
-        } else {
-          graph[request_i].push_back(family_i);
-        }
+    for (auto [request_i, queue_request] : queue_requests | toy::enumerate) {
+      auto& [queue_number, queue_checker] = queue_request;
+      if (properties.queueCount >= queue_number && queue_checker(QueueFamilyCheckContext{ device, surface, family_i, properties })) {
+        graph[request_i].push_back(family_i);
         toy::debugf("queue request {} success", request_i);
       } else {
         toy::debugf("queue request {} failed", request_i);
       }
     }
   }
-  auto graph_span = graph |
-                    views::transform([](const auto& vector) { return std::span{ vector }; }) |
-                    ranges::to<std::vector>();
 
-  toy::debugf("family offsets: {}", family_offsets);
-  auto mapper = [&](int v) {
-    // reverse iterator.base() pointer to next element
-    uint32_t family_i =
-      ranges::lower_bound(views::reverse(family_offsets), v, std::greater{}).base() -
-      family_offsets.begin() - 1;
-    uint32_t queue_i = v - family_offsets[family_i];
-    if (all_queue_diff) {
-      family_i = v;
-      queue_i = 0;
-    }
-    toy::debugf("edge {} map to {}", v, std::pair{ family_i, queue_i });
-    return std::pair{ family_i, queue_i };
-  };
-  return hungarian(graph_span, now_offset).transform([&](auto results) {
-    return results | views::transform(mapper) | ranges::to<std::vector>();
+  return hungarian(graph, queue_families.size()).transform([&](auto&& results) {
+    return results | views::transform([](int right) { return (uint32_t)right; }) |
+           ranges::to<std::vector>();
   });
 }
 
@@ -231,36 +200,32 @@ auto checkTransferQueue(const QueueFamilyCheckContext& ctx) -> bool {
 }
 
 auto createDevice(
-  const PhysicalDeviceInfo& physical_device_info, std::span<const char*> required_extensions
-) -> std::pair<Device, std::vector<std::pair<VkQueue, uint32_t>>> {
+  VkPhysicalDevice                          pdevice,
+  std::span<const std::pair<uint32_t, int>> queue_create_info,
+  VkPhysicalDeviceFeatures                  features,
+  std::span<const char*>                    required_extensions
+) -> std::pair<Device, std::vector<std::vector<VkQueue>>> {
   /*
    * 1. 创建 VkDeviceQueueCreateInfo 数组, 用于指定 logic device 中的队列
    * 2. 根据 queue create info 和 deviceFeatures_ 创建 device create info
    *
    */
 
-  auto create_meta_infos =
-    toy::SortedView(
-      physical_device_info.queue_indices | views::transform(&std::pair<uint32_t, uint32_t>::first)
-    ) |
-    toy::chunkBy(std::equal_to{}) | views::transform([](auto subrange) {
-      std::vector<float> queue_priorities(subrange.size());
-      ranges::fill(queue_priorities, 1.0);
-      return std::tuple{ *subrange.begin(),
-                         static_cast<uint32_t>(subrange.size()),
-                         std::move(queue_priorities) };
+  auto info_queue_priorities =
+    queue_create_info | views::transform([](auto pair) {
+      return views::repeat(1.0f) | views::take(pair.second) | ranges::to<std::vector>();
     }) |
     ranges::to<std::vector>();
-  std::vector<VkDeviceQueueCreateInfo> queue_create_infos =
-    create_meta_infos | views::transform([](auto&& tuple) {
-      return VkDeviceQueueCreateInfo{
-        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .queueFamilyIndex = std::get<0>(tuple),
-        .queueCount = std::get<1>(tuple),
-        .pQueuePriorities = std::get<2>(tuple).data(),
-      };
-    }) |
-    ranges::to<std::vector>();
+  auto queue_create_infos = views::zip(queue_create_info, info_queue_priorities) |
+                            views::transform([](auto pair) {
+                              return VkDeviceQueueCreateInfo{
+                                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                                .queueFamilyIndex = pair.first.first,
+                                .queueCount = (uint32_t)pair.first.second,
+                                .pQueuePriorities = pair.second.data(),
+                              };
+                            }) |
+                            ranges::to<std::vector>();
 
   VkDeviceCreateInfo create_info{
     .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -268,7 +233,7 @@ auto createDevice(
     .pQueueCreateInfos = queue_create_infos.data(),
     .enabledExtensionCount = static_cast<uint32_t>(required_extensions.size()),
     .ppEnabledExtensionNames = required_extensions.data(),
-    .pEnabledFeatures = &physical_device_info.features,
+    .pEnabledFeatures = &features,
   };
 
   // 旧实现在 (instance, physical device) 和 (logic device以上) 两个层面有不同的
@@ -277,16 +242,19 @@ auto createDevice(
   // static_cast<uint32_t>(requiredLayers_.size());
   // createInfo.ppEnabledLayerNames = requiredLayers_.data();
 
-  auto device = Device{ physical_device_info.device, create_info };
+  auto device = Device{ pdevice, create_info };
 
-  auto queues = physical_device_info.queue_indices |
-                views::transform([device = device.get()](auto pair) {
-                  VkQueue queue;
-                  vkGetDeviceQueue(device, pair.first, pair.second, &queue);
-                  return std::pair{ queue, pair.first };
+  auto queues = queue_create_info | views::transform([device = device.get()](auto pair) {
+                  auto [family_index, queue_n] = pair;
+                  return views::iota(0, queue_n) | views::transform([&](auto queue_index) {
+                           VkQueue queue;
+                           vkGetDeviceQueue(device, family_index, queue_index, &queue);
+                           return queue;
+                         }) |
+                         ranges::to<std::vector>();
                 }) |
                 ranges::to<std::vector>();
-  return { std::move(device), queues };
+  return { std::move(device), std::move(queues) };
 }
 
 } // namespace vk

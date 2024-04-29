@@ -23,7 +23,10 @@ class Drawer : public toy::ProactiveSingleton<Drawer> {
 private:
   struct Worker {
     vk::Semaphore image_available_sema;
+    vk::Semaphore present_release_sema;
+    vk::Semaphore graphic_acquire_sema;
     vk::Semaphore render_finished_sema;
+    vk::Semaphore present_acquire_sema;
     Fence         fence;
   };
   std::vector<Worker> _workers;
@@ -34,18 +37,31 @@ private:
   toy::RefContainer<DrawRecorder> _recorders;
   std::vector<BaseUniform*>       _uniforms;
 
+  std::chrono::high_resolution_clock::time_point _last_time;
+
+  // 0 is not use
+  std::vector<int> _image_useds;
+
 public:
   Drawer() {
     auto& ctx = Context::getInstance();
     for (int i = 0; i < ctx.worker_count; i++) {
       _workers.push_back(Worker{
         .image_available_sema = vk::createSemaphore(ctx.device),
+        .present_release_sema = vk::createSemaphore(ctx.device),
+        .graphic_acquire_sema = vk::createSemaphore(ctx.device),
         .render_finished_sema = vk::createSemaphore(ctx.device),
+        .present_acquire_sema = vk::createSemaphore(ctx.device),
         .fence = Fence{},
       });
     }
     _in_flight_index = 0;
     _last_present_failed = false;
+    _last_time = std::chrono::high_resolution_clock::time_point{};
+    _image_useds.resize(ctx.images.size());
+    for (auto& usage : _image_useds) {
+      usage = 0;
+    }
   }
   void waitDone() {
     for (auto& worker : _workers) {
@@ -61,8 +77,10 @@ public:
   void registerUniform(BaseUniform& uniform) { _uniforms.push_back(&uniform); }
 
   void draw() {
-    auto&    ctx = Context::getInstance();
-    auto&    worker = _workers[_in_flight_index];
+    auto& ctx = Context::getInstance();
+    auto& executor = CommandExecutor::getInstance();
+    auto& worker = _workers[_in_flight_index];
+
     uint32_t image_index;
 
     for (auto* uniform : _uniforms) {
@@ -93,8 +111,70 @@ public:
       vk::checkVkResult(result, "acquire next image");
     }
 
-    fence = CommandExecutor::getInstance().submit(
-      CommandExecutor::Family::GRAPHICS,
+    auto this_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(this_time - _last_time);
+    toy::debug(duration);
+    _last_time = this_time;
+
+    auto image_used = _image_useds[image_index];
+    if (!image_used) {
+      _image_useds[image_index] = 1;
+    }
+
+    auto present_executor = executor[CommandExecutor::Family::PRESENT];
+    auto graphic_executor = executor[CommandExecutor::Family::GRAPHICS];
+    auto aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+    auto p2g_layout_transition = vk::LayoutTransitionInfo{
+      vk::ImageUse::PRESENT,
+      vk::ImageUse::PRESENT,
+    };
+    auto p2g_family_info = vk::FamilyTransferInfo{
+      present_executor.getFamily(),
+      graphic_executor.getFamily(),
+    };
+    auto g2p_layout_transition = vk::LayoutTransitionInfo{
+      vk::ImageUse::PRESENT,
+      vk::ImageUse::PRESENT,
+    };
+    auto g2p_family_info = vk::FamilyTransferInfo{
+      graphic_executor.getFamily(),
+      present_executor.getFamily(),
+    };
+    if (image_used) {
+      present_executor.submit(
+        [&](auto cmdbuf) {
+          vk::recordImageBarrier(
+            cmdbuf,
+            ctx.images[image_index],
+            aspect,
+            p2g_layout_transition,
+            vk::BarrierScope::release(vk::CommonUse::NONE),
+            p2g_family_info
+          );
+        },
+        std::array{ vk::WaitInfo{ worker.image_available_sema.get(), vk::CommonUse::ALL } },
+        std::array{ worker.present_release_sema.get() }
+      );
+    }
+
+    if (image_used) {
+      graphic_executor[1].submit(
+        [&](VkCommandBuffer cmdbuf) {
+          vk::recordImageBarrier(
+            cmdbuf,
+            ctx.images[image_index],
+            aspect,
+            p2g_layout_transition,
+            vk::BarrierScope::acquire(vk::CommonUse::NONE),
+            p2g_family_info
+          );
+        },
+        std::array{ vk::WaitInfo{ worker.present_release_sema.get(), vk::CommonUse::ALL } },
+        std::array{ worker.graphic_acquire_sema.get() }
+      );
+    }
+
+    fence = graphic_executor.submit(
       [&](VkCommandBuffer cmdbuf) {
         vk::recordRenderPass(
           cmdbuf,
@@ -107,21 +187,46 @@ public:
             }
           }
         );
+        vk::recordImageBarrier(
+          cmdbuf,
+          ctx.images[image_index],
+          aspect,
+          g2p_layout_transition,
+          vk::BarrierScope::release(vk::CommonUse::ALL),
+          g2p_family_info
+        );
       },
-      std::array{ vk::WaitInfo{ worker.image_available_sema.get(),
-                                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT } },
+      std::array{ vk::WaitInfo{ image_used ? worker.graphic_acquire_sema.get()
+                                           : worker.image_available_sema.get(),
+                                vk::ImageUse::COLOR_ATTACHMENT } },
       std::array{ worker.render_finished_sema.get() }
     );
+
+    present_executor.submit(
+      [&](auto cmdbuf) {
+        vk::recordImageBarrier(
+          cmdbuf,
+          ctx.images[image_index],
+          aspect,
+          g2p_layout_transition,
+          vk::BarrierScope::acquire(vk::CommonUse::NONE),
+          g2p_family_info
+        );
+      },
+      std::array{ vk::WaitInfo{ worker.render_finished_sema.get(), vk::CommonUse::ALL } },
+      std::array{ worker.present_acquire_sema.get() }
+    );
+
     auto present_info = VkPresentInfoKHR{
       .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
       .waitSemaphoreCount = 1,
-      .pWaitSemaphores = &worker.render_finished_sema.get(),
+      .pWaitSemaphores = &worker.present_acquire_sema.get(),
       .swapchainCount = 1,
       .pSwapchains = &ctx.swapchain.get(),
       .pImageIndices = &image_index,
       // .pResults: 当有多个 swapchain 时检查每个的result
     };
-    if (auto result = vkQueuePresentKHR(ctx.present_ctx.queue, &present_info);
+    if (auto result = vkQueuePresentKHR(present_executor[1].getQueue(), &present_info);
         result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
       toy::debugf(
         "the queue present return {}",

@@ -14,6 +14,7 @@ class SwapchainContext {
 public:
   vk::Swapchain                swapchain;
   VkExtent2D                   extent;
+  std::vector<VkImage>         images;
   std::vector<vk::ImageView>   image_views;
   vk::ImageResource            depth_image;
   std::vector<vk::Framebuffer> framebuffers;
@@ -30,10 +31,15 @@ private:
       swapchain
     );
   }
-  auto createResource(BaseContext& ctx, std::pair<vk::Swapchain, VkExtent2D> swapchain_resource) {
-    std::tie(swapchain, extent) = std::move(swapchain_resource);
+  auto createResource(BaseContext& ctx, vk::SwapchainResource swapchain_resource) {
+    std::tie(swapchain, extent, images) = std::move(swapchain_resource);
     image_views =
-      vk::createSwapchainImageViews(ctx.device, swapchain, ctx.pdevice_info.surface_format.format);
+      images | views::transform([&](VkImage image) {
+        return createImageView(
+          ctx.device, image, ctx.pdevice_info.surface_format.format, vk::ImageType::COLOR_ATTACHMENT
+        );
+      }) |
+      ranges::to<std::vector>();
     depth_image =
       vk::createDepthImage(ctx.pdevice_info.device, ctx.device, ctx.depth_format, extent);
     framebuffers = image_views | views::transform([&](auto& image_view) {

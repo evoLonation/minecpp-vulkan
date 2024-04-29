@@ -14,10 +14,22 @@ auto createRenderPass(VkDevice device, VkFormat color_format, VkFormat depth_for
     return VkAttachmentDescription{
       .format = format,
       .samples = VK_SAMPLE_COUNT_1_BIT,
+      /**
+       * @brief load op: define load operation behavior
+       * the load op happen in VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT(color attachment) or
+       * VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT(depth attachment)
+       * and happen before any command which access the sample in the render pass
+       */
       // VK_ATTACHMENT_LOAD_OP_LOAD: 保留 attachment 中现有内容
       // VK_ATTACHMENT_LOAD_OP_CLEAR: 将其中内容清理为一个常量
       // VK_ATTACHMENT_LOAD_OP_DONT_CARE: 不在乎
       .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      /**
+       * @brief store op: define store operation behavior
+       * the store op happen in VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT(color attachment) or
+       * VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT(depth attachment)
+       * and happen after any command which access the sample in the render pass
+       */
       // VK_ATTACHMENT_STORE_OP_STORE: 渲染后内容存入内存稍后使用
       // VK_ATTACHMENT_STORE_DONT_CARE: 不在乎
       .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -25,22 +37,24 @@ auto createRenderPass(VkDevice device, VkFormat color_format, VkFormat depth_for
       .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
       .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
       // 开启及结束时 要求 的图像布局
-      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      // UNDEINFED init layout use with CLEAR load op together
+      .initialLayout = getLayout(ImageUse::UNDEFINED),
       .finalLayout = final_layout,
     };
   };
-  auto attachments =
-    std::array{ get_attachment(color_format, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR),
-                get_attachment(depth_format, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) };
+  auto attachments = std::array{
+    get_attachment(color_format, getLayout(ImageUse::PRESENT)),
+    get_attachment(depth_format, getLayout(ImageUse::DEPTH_ATTACHMENT)),
+  };
   auto color_attach_ref = VkAttachmentReference{
     // 引用的 attachment 的索引
     .attachment = 0,
     // 用到该 ref 的 subpass 过程中使用的布局，会自动转换
-    .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    .layout = getLayout(ImageUse::COLOR_ATTACHMENT),
   };
   auto depth_attach_ref = VkAttachmentReference{
     .attachment = 1,
-    .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+    .layout = getLayout(ImageUse::DEPTH_ATTACHMENT),
   };
   auto subpass = VkSubpassDescription{
     // 还有 compute、 ray tracing 等等
@@ -55,45 +69,23 @@ auto createRenderPass(VkDevice device, VkFormat color_format, VkFormat depth_for
     // pPreserveAttachments: Attachments that are not used by this subpass, but
     // for which the data must be preserved
   };
-  // For color attachment dependency
-  // vkQueueSubmit中设置了image presenting -> color attachment output（外部）的执行依赖
-  // 因此这里只需添加 color attachment output（外部）-> color attachment
-  // output（内部）的内存依赖和布局转换
-  auto src_color_scope = ScopeInfo{
-    .stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-    .access_mask = 0,
-  };
-  auto dst_color_scope = ScopeInfo{
-    .stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-    .access_mask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-  };
-  // For depth attachment dependency
-  // Multi workers use one depth image, so must sync last worker and current worker with stage
-  // early/late fragment test stage and read/write depth attach access.
-  auto src_depth_scope = ScopeInfo{
-    .stage_mask =
-      VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-    .access_mask =
-      VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-  };
-  auto dst_depth_scope = src_depth_scope;
-
-  // attachment 的 layout 转换是在定义的依赖的中间进行的
-  // 如果不主动定义从 VK_SUBPASS_EXTERNAL 到 第一个使用attachment的subpass
-  // 的dependency
-  // 就会隐式定义一个，VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT到VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
+  // For src scope :
+  // access_mask: 0, because the load op is CLEAR, meaning we don't need previous access is
+  // available
+  // stage_mask: depth attachment wait previous flight and output attachment wait outside
+  // For dst scope we need define visible operation for depth and color operation
+  auto src_scope =
+    Scope{ vk::ImageUse::DEPTH_ATTACHMENT, false } | Scope{ vk::ImageUse::COLOR_ATTACHMENT, false };
+  src_scope.exeDep();
+  auto dst_scope =
+    Scope{ vk::ImageUse::COLOR_ATTACHMENT, true } | Scope{ vk::ImageUse::DEPTH_ATTACHMENT, true };
   auto dependency = VkSubpassDependency{
-    // VK_SUBPASS_EXTERNAL 代表整个render pass之前提交的命令
-    // 而vkQueueSubmit中设置的semaphore wait operation就是 renderpass 之前提交的
-    // 但是提交的这个命令的执行阶段是在VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT阶段
     .srcSubpass = VK_SUBPASS_EXTERNAL,
     .dstSubpass = 0,
-    // Multi workers use one depth image, so must sync last worker and current worker with stage
-    // early/late fragment test stage and read/write depth attach access.
-    .srcStageMask = src_color_scope.stage_mask | src_depth_scope.stage_mask,
-    .dstStageMask = dst_color_scope.stage_mask | dst_depth_scope.stage_mask,
-    .srcAccessMask = src_color_scope.access_mask | src_depth_scope.access_mask,
-    .dstAccessMask = dst_color_scope.access_mask | dst_depth_scope.access_mask,
+    .srcStageMask = src_scope.stage_mask,
+    .dstStageMask = dst_scope.stage_mask,
+    .srcAccessMask = src_scope.access_mask,
+    .dstAccessMask = dst_scope.access_mask,
   };
   auto render_pass_create_info = VkRenderPassCreateInfo{
     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,

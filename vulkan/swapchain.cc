@@ -26,7 +26,7 @@ auto createSwapchain(
   VkPresentModeKHR   present_mode,
   GLFWwindow*        p_window,
   VkSwapchainKHR     old_swapchain
-) -> std::expected<std::pair<Swapchain, VkExtent2D>, SwapchainCreateError> {
+) -> std::expected<SwapchainResource, SwapchainCreateError> {
   VkSurfaceCapabilitiesKHR capabilities;
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(pdevice, surface, &capabilities);
   uint32_t image_count = capabilities.minImageCount + 1;
@@ -99,16 +99,10 @@ auto createSwapchain(
   toy::debugf("image count:{}", image_count);
   toy::debugf("extent:({},{})", extent.width, extent.height);
 
-  return std::pair{ Swapchain{ device, create_info }, extent };
-}
-
-auto createSwapchainImageViews(VkDevice device, VkSwapchainKHR swapchain, VkFormat format)
-  -> std::vector<ImageView> {
+  auto swapchain = Swapchain{ device, create_info };
   auto images = getVkResources(vkGetSwapchainImagesKHR, device, swapchain);
-  return images | views::transform([device, format](VkImage image) {
-           return createImageView(device, image, format, ImageType::COLOR_ATTACHMENT);
-         }) |
-         ranges::to<std::vector>();
+
+  return { { std::move(swapchain), extent, std::move(images) } };
 }
 
 } // namespace vk

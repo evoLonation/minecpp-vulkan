@@ -3,6 +3,7 @@ export module vulkan.command;
 import "vulkan_config.h";
 import vulkan.tool;
 import vulkan.resource;
+import vulkan.sync;
 import std;
 
 export namespace vk {
@@ -47,7 +48,21 @@ auto allocateCommandBuffers(VkDevice device, VkCommandPool command_pool, uint32_
 template <typename T>
 concept Recorder = std::invocable<T, VkCommandBuffer>;
 
-using WaitInfo = std::pair<VkSemaphore, VkPipelineStageFlags>;
+struct WaitInfo {
+  VkSemaphore          sema;
+  VkPipelineStageFlags stage_mask;
+  WaitInfo(VkSemaphore sema, VkPipelineStageFlags stage_mask)
+    : sema(sema), stage_mask(stage_mask) {}
+  WaitInfo(VkSemaphore sema, CommonUse use) : sema(sema) {
+    stage_mask = Scope{ use, true }.stage_mask;
+  }
+  WaitInfo(VkSemaphore sema, ImageUse use) : sema(sema) {
+    stage_mask = Scope{ use, true }.stage_mask;
+  }
+  WaitInfo(VkSemaphore sema, BufferUse use) : sema(sema) {
+    stage_mask = Scope{ use, true }.stage_mask;
+  }
+};
 
 void recordAndSubmit(
   VkCommandBuffer              cmdbuf,
@@ -78,9 +93,10 @@ void recordAndSubmit(
   recorder(cmdbuf);
   checkVkResult(vkEndCommandBuffer(cmdbuf), "end command buffer");
 
-  auto wait_sema_ = wait_infos | views::transform([](const auto& pair) { return pair.first; }) |
+  auto wait_sema_ = wait_infos | views::transform([](const auto& pair) { return pair.sema; }) |
                     ranges::to<std::vector>();
-  auto wait_stage = wait_infos | views::transform([](const auto& pair) { return pair.second; }) |
+  auto wait_stage = wait_infos |
+                    views::transform([](const auto& pair) { return pair.stage_mask; }) |
                     ranges::to<std::vector>();
   auto submit_info = VkSubmitInfo{
     .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,

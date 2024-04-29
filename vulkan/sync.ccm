@@ -52,58 +52,6 @@ auto isFenceSignaled(VkDevice device, VkFence fence) -> bool {
   std::unreachable();
 }
 
-struct ScopeInfo {
-  VkPipelineStageFlags stage_mask;
-  VkAccessFlags        access_mask;
-};
-enum class ImageUse {
-  UNDEFINED,
-  COPY_DST,
-  FRAGMENT_SAMPLER,
-};
-enum class BufferUse {
-  COPY_DST,
-  VERTEX_BUFFER_DRAW,
-  INDEX_BUFFER_DRAW,
-};
-
-auto getBufferSyncInfo(BufferUse use) -> ScopeInfo {
-  switch (use) {
-  case BufferUse::COPY_DST:
-    return { .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-             .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT };
-    break;
-  case BufferUse::VERTEX_BUFFER_DRAW:
-    return { .stage_mask = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
-             .access_mask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT };
-    break;
-  case BufferUse::INDEX_BUFFER_DRAW:
-    return { .stage_mask = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
-             .access_mask = VK_ACCESS_INDEX_READ_BIT };
-    break;
-  }
-}
-auto getImageSyncInfo(bool is_dst, ImageUse use) -> std::pair<ScopeInfo, VkImageLayout> {
-  switch (use) {
-  case ImageUse::UNDEFINED:
-    return { { .stage_mask =
-                 is_dst ? VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-               .access_mask = VK_ACCESS_NONE },
-             VK_IMAGE_LAYOUT_UNDEFINED };
-    break;
-  case ImageUse::COPY_DST:
-    return { { .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-               .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT },
-             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL };
-    break;
-  case ImageUse::FRAGMENT_SAMPLER:
-    return { { .stage_mask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-               .access_mask = VK_ACCESS_SHADER_READ_BIT },
-             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
-    break;
-  }
-}
-
 void recordPipelineBarrier(
   VkCommandBuffer                                       cmdbuf,
   std::pair<VkPipelineStageFlags, VkPipelineStageFlags> stage_mask,
@@ -126,21 +74,234 @@ void recordPipelineBarrier(
     image_barriers.data()
   );
 };
-void recordBufferBarrier_(
-  VkCommandBuffer cmdbuf,
-  VkBuffer        buffer,
-  ScopeInfo       src_scope,
-  ScopeInfo       dst_scope,
-  uint32_t        src_family,
-  uint32_t        dst_family
+
+/**
+ * @brief just can define execution dependency, no memory dependency
+ */
+enum class CommonUse {
+  NONE,
+  ALL,
+};
+
+enum class ImageUse {
+  UNDEFINED,
+  COPY_DST,
+  FRAGMENT_SAMPLER,
+  COLOR_ATTACHMENT,
+  DEPTH_ATTACHMENT,
+  PRESENT, // only can convert to layout, no scope
+};
+
+enum class BufferUse {
+  COPY_DST,
+  VERTEX_BUFFER_DRAW,
+  INDEX_BUFFER_DRAW,
+};
+
+struct Scope {
+  VkPipelineStageFlags stage_mask;
+  VkAccessFlags        access_mask;
+
+  Scope() = default;
+
+  Scope(VkPipelineStageFlags stage_mask, VkAccessFlags access_mask)
+    : stage_mask(stage_mask), access_mask(access_mask) {}
+
+  Scope(VkPipelineStageFlags stage_mask) : stage_mask(stage_mask), access_mask(0) {}
+
+  Scope(CommonUse use, bool is_dst) {
+    switch (use) {
+    case CommonUse::NONE:
+      stage_mask =
+        is_dst ? VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+      break;
+    case CommonUse::ALL:
+      stage_mask =
+        is_dst ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+      break;
+    }
+    access_mask = 0;
+  }
+
+  Scope(BufferUse use, bool is_dst) {
+    switch (use) {
+    case BufferUse::COPY_DST:
+      stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+      access_mask = VK_ACCESS_TRANSFER_WRITE_BIT;
+      break;
+    case BufferUse::VERTEX_BUFFER_DRAW:
+      stage_mask = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+      access_mask = is_dst ? (VkAccessFlags)VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT : 0;
+      break;
+    case BufferUse::INDEX_BUFFER_DRAW:
+      stage_mask = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+      access_mask = is_dst ? (VkAccessFlags)VK_ACCESS_INDEX_READ_BIT : 0;
+      break;
+    }
+  }
+
+  Scope(ImageUse use, bool is_dst) {
+    switch (use) {
+    case ImageUse::UNDEFINED:
+      toy::checkThrowf(!is_dst, "the UNDEFINED image use must with is_dst = false");
+      *this = Scope(CommonUse::NONE, is_dst);
+      break;
+    case ImageUse::COPY_DST:
+      stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+      access_mask = VK_ACCESS_TRANSFER_WRITE_BIT;
+      break;
+    case ImageUse::FRAGMENT_SAMPLER:
+      stage_mask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+      access_mask = is_dst ? (VkAccessFlags)VK_ACCESS_SHADER_READ_BIT : 0;
+      break;
+    case ImageUse::COLOR_ATTACHMENT:
+      stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+      access_mask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                    (is_dst ? (VkAccessFlags)VK_ACCESS_COLOR_ATTACHMENT_READ_BIT : 0);
+      break;
+    case ImageUse::DEPTH_ATTACHMENT:
+      stage_mask =
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+      access_mask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                    (is_dst ? (VkAccessFlags)VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT : 0);
+      break;
+    default:
+      toy::throwf("the image use {} can not convert to ScopeInfo", (int)use);
+      std::unreachable();
+    }
+  }
+
+  friend auto operator|(Scope a, Scope b) -> Scope {
+    return {
+      a.stage_mask | b.stage_mask,
+      a.access_mask | b.access_mask,
+    };
+  }
+  /**
+   * @brief convert to execution dependency
+   */
+  auto exeDep() -> Scope& {
+    access_mask = 0;
+    return *this;
+  }
+};
+
+auto getLayout(ImageUse use) -> VkImageLayout {
+  switch (use) {
+  case ImageUse::UNDEFINED:
+    return VK_IMAGE_LAYOUT_UNDEFINED;
+  case ImageUse::COPY_DST:
+    return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+  case ImageUse::FRAGMENT_SAMPLER:
+    return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  case ImageUse::COLOR_ATTACHMENT:
+    return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  case ImageUse::DEPTH_ATTACHMENT:
+    return VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+  case ImageUse::PRESENT:
+    return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+  default:
+    toy::throwf("the image use {} can not convert to image layout", (int)use);
+    std::unreachable();
+  }
+}
+
+/**
+ * @brief In case of ownership transfer that with src_use_stage/access and dst_use_stage/access
+ * barrier in src family:
+ * - src_stage/access: src_use_stage, src_use_access
+ * - dst_stage/access: BOTTOM, 0 (by spec: dst_stage/access are ignored)
+ * barrier in dst family:
+ * - must wait semaphore, wait stage: TOP
+ * - src_stage/access: TOP, 0 (by spec: src_stage/access are ignored)
+ * - dst_stage/access: dst_use_stage, dst_use_access
+ * dependency chain:
+ * src_use -> release op -> src_command done -> dst_command's wait stage start execute -> acquire op
+ * -> dst_use
+ */
+
+struct BarrierScope {
+  Scope src_scope;
+  Scope dst_scope;
+
+  BarrierScope(Scope src_scope, Scope dst_scope) : src_scope(src_scope), dst_scope(dst_scope) {}
+
+  static auto release(ImageUse use) -> BarrierScope {
+    return {
+      Scope{ use, false },
+      Scope{ CommonUse::NONE, true },
+    };
+  }
+  static auto release(BufferUse use) -> BarrierScope {
+    return {
+      Scope{ use, false },
+      Scope{ CommonUse::NONE, true },
+    };
+  }
+  /**
+   * @brief no available operation
+   */
+  static auto release(CommonUse use) -> BarrierScope {
+    return {
+      Scope{ use, false },
+      Scope{ CommonUse::NONE, true },
+    };
+  }
+  static auto acquire(ImageUse use) -> BarrierScope {
+    return {
+      Scope{ CommonUse::NONE, false },
+      Scope{ use, true },
+    };
+  }
+  static auto acquire(BufferUse use) -> BarrierScope {
+    return {
+      Scope{ CommonUse::NONE, false },
+      Scope{ use, true },
+    };
+  }
+  /**
+   * @brief no visible operation
+   */
+  static auto acquire(CommonUse use) -> BarrierScope {
+    return {
+      Scope{ CommonUse::NONE, false },
+      Scope{ use, true },
+    };
+  }
+};
+
+struct FamilyTransferInfo {
+  uint32_t src_family = VK_QUEUE_FAMILY_IGNORED;
+  uint32_t dst_family = VK_QUEUE_FAMILY_IGNORED;
+};
+
+struct LayoutTransitionInfo {
+  VkImageLayout src_layout;
+  VkImageLayout dst_layout;
+
+  LayoutTransitionInfo(VkImageLayout src_layout, VkImageLayout dst_layout)
+    : src_layout(src_layout), dst_layout(dst_layout) {}
+
+  LayoutTransitionInfo(ImageUse src_use, ImageUse dst_use) {
+    src_layout = getLayout(src_use);
+    dst_layout = getLayout(dst_use);
+  }
+};
+
+void recordBufferBarrier(
+  VkCommandBuffer    cmdbuf,
+  VkBuffer           buffer,
+  BarrierScope       barrier_scope,
+  FamilyTransferInfo family_info
 ) {
+  auto [src_scope, dst_scope] = barrier_scope;
   auto buffer_barrier = VkBufferMemoryBarrier{
     .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
     .pNext = nullptr,
     .srcAccessMask = src_scope.access_mask,
     .dstAccessMask = dst_scope.access_mask,
-    .srcQueueFamilyIndex = src_family,
-    .dstQueueFamilyIndex = dst_family,
+    .srcQueueFamilyIndex = family_info.src_family,
+    .dstQueueFamilyIndex = family_info.dst_family,
     .buffer = buffer,
     .offset = 0,
     .size = VK_WHOLE_SIZE,
@@ -149,26 +310,25 @@ void recordBufferBarrier_(
     cmdbuf, { src_scope.stage_mask, dst_scope.stage_mask }, {}, { &buffer_barrier, 1 }, {}
   );
 }
-void recordImageBarrier_(
-  VkCommandBuffer       cmdbuf,
-  VkImage               image,
-  VkImageAspectFlagBits aspect,
-  VkImageLayout         src_layout,
-  VkImageLayout         dst_layout,
-  ScopeInfo             src_scope,
-  ScopeInfo             dst_scope,
-  uint32_t              src_family,
-  uint32_t              dst_family
+
+void recordImageBarrier(
+  VkCommandBuffer      cmdbuf,
+  VkImage              image,
+  VkImageAspectFlags   aspect,
+  LayoutTransitionInfo layout_info,
+  BarrierScope         barrier_scope,
+  FamilyTransferInfo   family_info
 ) {
+  auto [src_scope, dst_scope] = barrier_scope;
   auto image_barrier = VkImageMemoryBarrier{
     .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
     .pNext = nullptr,
     .srcAccessMask = src_scope.access_mask,
     .dstAccessMask = dst_scope.access_mask,
-    .oldLayout = src_layout,
-    .newLayout = dst_layout,
-    .srcQueueFamilyIndex = src_family,
-    .dstQueueFamilyIndex = dst_family,
+    .oldLayout = layout_info.src_layout,
+    .newLayout = layout_info.dst_layout,
+    .srcQueueFamilyIndex = family_info.src_family,
+    .dstQueueFamilyIndex = family_info.dst_family,
     .image = image,
     .subresourceRange =
       VkImageSubresourceRange{
@@ -182,187 +342,6 @@ void recordImageBarrier_(
   recordPipelineBarrier(
     cmdbuf, { src_scope.stage_mask, dst_scope.stage_mask }, {}, {}, { &image_barrier, 1 }
   );
-}
-
-struct BarrierScopeInfo {
-  ScopeInfo src_scope;
-  ScopeInfo dst_scope;
-};
-
-/**
- * @brief In case of ownership transfer that with src_use_stage/access and dst_use_stage/access
- * barrier in src family:
- * - src_stage/access: src_use_stage, src_use_access
- * - dst_stage/access: BOTTOM, 0
- * barrier in dst family:
- * - must wait semaphore, wait stage: dst_use_stage(or TOP)
- * - src_stage/access: dst_use_stage(or TOP), 0
- * - dst_stage/access: dst_use_stage, dst_use_access
- */
-struct TransferScopeInfo {
-  BarrierScopeInfo src_barrier;
-  BarrierScopeInfo dst_barrier;
-
-  TransferScopeInfo(BarrierScopeInfo scope_info) {
-    auto [src_scope, dst_scope] = scope_info;
-    src_barrier = BarrierScopeInfo{
-      .src_scope =
-        ScopeInfo{
-          .stage_mask = src_scope.stage_mask,
-          .access_mask = src_scope.access_mask,
-        },
-      .dst_scope =
-        ScopeInfo{
-          .stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-          .access_mask = 0,
-        },
-    };
-    dst_barrier = BarrierScopeInfo{
-      .src_scope =
-        ScopeInfo{
-          .stage_mask = dst_scope.stage_mask,
-          .access_mask = 0,
-        },
-      .dst_scope =
-        ScopeInfo{
-          .stage_mask = dst_scope.stage_mask,
-          .access_mask = dst_scope.access_mask,
-        },
-    };
-  }
-};
-
-struct ImageBarrierUseInfo {
-  ImageUse src_use;
-  ImageUse dst_use;
-};
-
-struct BufferBarrierUseInfo {
-  BufferUse src_use;
-  BufferUse dst_use;
-};
-
-struct TransferFamilyInfo {
-  uint32_t src_family;
-  uint32_t dst_family;
-};
-
-struct Transfer {
-  std::function<void(VkCommandBuffer)> src_recorder;
-  std::function<void(VkCommandBuffer)> dst_recorder;
-  VkPipelineStageFlags                 dst_wait_stage;
-};
-
-void recordBufferBarrier(VkCommandBuffer cmdbuf, VkBuffer buffer, BufferBarrierUseInfo use_info) {
-  recordBufferBarrier_(
-    cmdbuf,
-    buffer,
-    getBufferSyncInfo(use_info.src_use),
-    getBufferSyncInfo(use_info.dst_use),
-    VK_QUEUE_FAMILY_IGNORED,
-    VK_QUEUE_FAMILY_IGNORED
-  );
-}
-
-auto getBufferTransfer(
-  VkBuffer buffer, BufferBarrierUseInfo use_info, TransferFamilyInfo family_info
-) -> Transfer {
-  auto scope_info = TransferScopeInfo{ {
-    .src_scope = getBufferSyncInfo(use_info.src_use),
-    .dst_scope = getBufferSyncInfo(use_info.dst_use),
-  } };
-  return Transfer{
-    .src_recorder =
-      [scope_info = scope_info.src_barrier, buffer, family_info](VkCommandBuffer cmdbuf) {
-        recordBufferBarrier_(
-          cmdbuf,
-          buffer,
-          scope_info.src_scope,
-          scope_info.dst_scope,
-          family_info.src_family,
-          family_info.dst_family
-        );
-      },
-    .dst_recorder =
-      [scope_info = scope_info.dst_barrier, buffer, family_info](VkCommandBuffer cmdbuf) {
-        recordBufferBarrier_(
-          cmdbuf,
-          buffer,
-          scope_info.src_scope,
-          scope_info.dst_scope,
-          family_info.src_family,
-          family_info.dst_family
-        );
-      },
-    .dst_wait_stage = scope_info.dst_barrier.src_scope.stage_mask
-  };
-}
-
-void recordImageBarrier(
-  VkCommandBuffer cmdbuf, VkImage image, VkImageAspectFlagBits aspect, ImageBarrierUseInfo use_info
-) {
-  auto [src_scope, src_layout] = getImageSyncInfo(false, use_info.src_use);
-  auto [dst_scope, dst_layout] = getImageSyncInfo(true, use_info.dst_use);
-  recordImageBarrier_(
-    cmdbuf,
-    image,
-    aspect,
-    src_layout,
-    dst_layout,
-    src_scope,
-    dst_scope,
-    VK_QUEUE_FAMILY_IGNORED,
-    VK_QUEUE_FAMILY_IGNORED
-  );
-}
-
-auto getImageTransfer(
-  VkImage               image,
-  VkImageAspectFlagBits aspect,
-  ImageBarrierUseInfo   use_info,
-  TransferFamilyInfo    family_info
-) -> Transfer {
-  auto [src_scope, src_layout] = getImageSyncInfo(false, use_info.src_use);
-  auto [dst_scope, dst_layout] = getImageSyncInfo(true, use_info.dst_use);
-  auto scope_info = TransferScopeInfo{ {
-    .src_scope = src_scope,
-    .dst_scope = dst_scope,
-  } };
-  return Transfer{
-    .src_recorder =
-      [scope_info = scope_info.src_barrier, image, family_info, src_layout, dst_layout, aspect](
-        VkCommandBuffer cmdbuf
-      ) {
-        recordImageBarrier_(
-          cmdbuf,
-          image,
-          aspect,
-          src_layout,
-          dst_layout,
-          scope_info.src_scope,
-          scope_info.dst_scope,
-          family_info.src_family,
-          family_info.dst_family
-        );
-      },
-    .dst_recorder =
-      [scope_info = scope_info.dst_barrier, image, family_info, src_layout, dst_layout, aspect](
-        VkCommandBuffer cmdbuf
-      ) {
-        recordImageBarrier_(
-          cmdbuf,
-          image,
-          aspect,
-          src_layout,
-          dst_layout,
-          scope_info.src_scope,
-          scope_info.dst_scope,
-          family_info.src_family,
-          family_info.dst_family
-        );
-      },
-    .dst_wait_stage = scope_info.dst_barrier.src_scope.stage_mask
-  };
 }
 
 } // namespace vk

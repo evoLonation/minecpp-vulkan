@@ -31,18 +31,18 @@ struct BaseContext {
   vk::PhysicalDeviceInfo pdevice_info;
   vk::Device             device;
 
-  VkFormat depth_format;
-
-  vk::RenderPass render_pass;
-
   struct CommandContext {
-    VkQueue  queue;
-    uint32_t family_index;
+    std::vector<VkQueue> queues;
+    uint32_t             family_index;
   };
 
   CommandContext graphic_ctx;
   CommandContext present_ctx;
   CommandContext transfer_ctx;
+
+  VkFormat depth_format;
+
+  vk::RenderPass render_pass;
 
   vk::DescriptorSetLayout uniform_dset_layout;
   vk::DescriptorSetLayout sampler_dset_layout;
@@ -66,35 +66,48 @@ struct BaseContext {
 
     // VK_KHR_SWAPCHAIN_EXTENSION_NAME 对应的扩展用于支持交换链
     auto required_device_extensions = std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+    auto queue_requests = std::array{
+      vk::QueueRequest{ 2, vk::checkGraphicQueue },
+      vk::QueueRequest{ 2, vk::checkPresentQueue },
+      vk::QueueRequest{ 1, vk::checkTransferQueue },
+    };
     pdevice_info = vk::pickPhysicalDevice(
       instance.instance,
       surface,
       required_device_extensions,
       vk::checkPhysicalDeviceSupport,
       vk::checkSurfaceSupport,
-      std::array<vk::QueueFamilyChecker, 3>{
-        vk::checkGraphicQueue, vk::checkPresentQueue, vk::checkTransferQueue },
-      true
+      queue_requests
     );
-    toy::debug(pdevice_info.queue_indices);
+    toy::debug(pdevice_info.family_indices);
     toy::debugf(
       "graphic family index {} transfer family index",
-      pdevice_info.queue_indices[0].first == pdevice_info.queue_indices[2].first ? "==" : "!="
+      pdevice_info.family_indices[0] == pdevice_info.family_indices[2] ? "==" : "!="
     );
-    auto [_device, queues] = vk::createDevice(pdevice_info, required_device_extensions);
+    toy::debugf(
+      "graphic family index {} present family index",
+      pdevice_info.family_indices[0] == pdevice_info.family_indices[1] ? "==" : "!="
+    );
+    auto queue_create_info = views::zip(queue_requests, pdevice_info.family_indices) |
+                             views::transform([](auto pair) {
+                               return std::pair{ pair.second, pair.first.first };
+                             }) |
+                             ranges::to<std::vector>();
+    auto [_device, queues] = vk::createDevice(
+      pdevice_info.device, queue_create_info, pdevice_info.features, required_device_extensions
+    );
     device = std::move(_device);
-    auto get_ctx = [&](auto pair) {
-      auto ret = CommandContext{
-        .queue = pair.first,
-        .family_index = pair.second,
+    auto get_ctx = [&](int index) {
+      return CommandContext{
+        .queues = std::move(queues[index]),
+        .family_index = pdevice_info.family_indices[index],
       };
-      return ret;
     };
+    graphic_ctx = get_ctx(0);
+    present_ctx = get_ctx(1);
+    transfer_ctx = get_ctx(2);
     depth_format = vk::findDepthFormat(pdevice_info.device);
     render_pass = vk::createRenderPass(device, pdevice_info.surface_format.format, depth_format);
-    graphic_ctx = get_ctx(queues[0]);
-    present_ctx = get_ctx(queues[1]);
-    transfer_ctx = get_ctx(queues[2]);
     uniform_dset_layout = vk::createUniformDescriptorSetLayout(device);
     sampler_dset_layout = vk::createSamplerDescriptorSetLayout(device);
   }

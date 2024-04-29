@@ -81,7 +81,7 @@ public:
     init_info.PhysicalDevice = ctx.pdevice_info.device;
     init_info.Device = ctx.device;
     init_info.QueueFamily = ctx.graphic_ctx.family_index;
-    init_info.Queue = ctx.graphic_ctx.queue;
+    init_info.Queue = ctx.graphic_ctx.queues[0];
     init_info.PipelineCache = VK_NULL_HANDLE;
     _dp_pool = vk::createDescriptorPool(
       ctx.device,

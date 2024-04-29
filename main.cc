@@ -79,8 +79,6 @@ int main() {
                                             axis_index_buffer,
                                             std::array<render::Resource*, 3>{
                                               &uniforms[0], &uniforms[1], &uniforms[2] } };
-    auto resource_register = render::ResourceRegister{ std::array<render::DeviceLocalResource*, 5>{
-      &vertex_buffer, &index_buffer, &sampled_texture, &axis_vertex_buffer, &axis_index_buffer } };
     drawer.registerUniform(uniforms[0]);
     drawer.registerUniform(uniforms[1]);
     for (auto [unit, uniform] : views::zip(draw_units, uniforms | views::drop(2))) {
@@ -91,8 +89,8 @@ int main() {
     auto camera_controller = control::camera::Controller{ view, proj };
     camera_controller.setInput();
     // controller.setInput();
-
-    while (!glfwWindowShouldClose(ctx.window)) {
+    int remain_frame = -1;
+    while (!glfwWindowShouldClose(ctx.window) && (remain_frame--)) {
       ctx.processInput();
       gui_ctx.draw([&]() {
         controller.show();

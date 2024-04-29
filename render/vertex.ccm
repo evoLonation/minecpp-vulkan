@@ -82,7 +82,9 @@ private:
 public:
   DeviceLocalBuffer() = default;
 
-  DeviceLocalBuffer(VkBufferUsageFlagBits usage, std::span<const std::byte> buffer_data) {
+  DeviceLocalBuffer(
+    VkBufferUsageFlagBits usage, std::span<const std::byte> buffer_data, vk::BufferUse dst_use
+  ) {
     auto& ctx = render::Context::getInstance();
     auto  buffer_size = (uint32_t)buffer_data.size();
     std::tie(_staging_buffer, _staging_memory) =
@@ -94,55 +96,59 @@ public:
       VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage,
       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
     );
-    auto recorder = [&](VkCommandBuffer cmdbuf) {
-      vk::recordCopyBuffer(cmdbuf, _staging_buffer, *this, buffer_size);
-    };
-    CommandExecutor::getInstance().submit(CommandExecutor::Family::TRANSFER, recorder, {}, {});
-  }
 
-protected:
-  auto getTransfer(vk::BufferUse dst_use, vk::TransferFamilyInfo family_info) -> vk::Transfer {
-    return vk::getBufferTransfer(
-      *this,
-      vk::BufferBarrierUseInfo{
-        .src_use = vk::BufferUse::COPY_DST,
-        .dst_use = dst_use,
-      },
-      family_info
+    auto& executor = CommandExecutor::getInstance();
+    auto  copy_executor = executor[CommandExecutor::Family::TRANSFER];
+    auto  graphics_executor = executor[CommandExecutor::Family::GRAPHICS];
+    auto  family_transfer =
+      vk::FamilyTransferInfo{ copy_executor.getFamily(), graphics_executor.getFamily() };
+    auto copy_recorder = [&](VkCommandBuffer cmdbuf) {
+      vk::recordCopyBuffer(cmdbuf, _staging_buffer, *this, buffer_size);
+      vk::recordBufferBarrier(
+        cmdbuf, *this, vk::BarrierScope::release(vk::BufferUse::COPY_DST), family_transfer
+      );
+    };
+    auto acquire_recorder = [&](VkCommandBuffer cmdbuf) {
+      vk::recordBufferBarrier(
+        cmdbuf, *this, vk::BarrierScope::acquire(dst_use), family_transfer
+      );
+    };
+    auto waitable = copy_executor.submit(copy_recorder, {}, 1).second;
+    graphics_executor.submit(
+      acquire_recorder, std::array{ WaitInfo{ waitable, vk::CommonUse::ALL } }, 0
     );
   }
 };
 
-class VertexBuffer : public DeviceLocalBuffer, public DeviceLocalResource {
+class VertexBuffer : public DeviceLocalBuffer {
 public:
   VertexBuffer() = default;
   template <toy::InstantiationOf<Vertex> VertexT>
   // using VertexT = Vertex<glm::vec3>;
   VertexBuffer(std::span<const VertexT> vertex_data)
-    : DeviceLocalBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, std::as_bytes(vertex_data)) {}
+    : DeviceLocalBuffer(
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        std::as_bytes(vertex_data),
+        vk::BufferUse::VERTEX_BUFFER_DRAW
+      ) {}
 
   template <typename VertexT>
   static auto create(std::span<const VertexT> vertex_data) -> VertexBuffer {
     return VertexBuffer{ vertex_data };
   }
-
-  auto getTransfer(vk::TransferFamilyInfo family_info) -> vk::Transfer override {
-    return DeviceLocalBuffer::getTransfer(vk::BufferUse::VERTEX_BUFFER_DRAW, family_info);
-  }
 };
 
-class IndexBuffer : public DeviceLocalBuffer, public DeviceLocalResource {
+class IndexBuffer : public DeviceLocalBuffer {
   int _index_number;
 
 public:
   IndexBuffer() = default;
   IndexBuffer(std::span<const uint16_t> indices)
-    : DeviceLocalBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, std::as_bytes(indices)),
+    : DeviceLocalBuffer(
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT, std::as_bytes(indices), vk::BufferUse::INDEX_BUFFER_DRAW
+      ),
       _index_number(indices.size()) {}
 
-  auto getTransfer(vk::TransferFamilyInfo family_info) -> vk::Transfer override {
-    return DeviceLocalBuffer::getTransfer(vk::BufferUse::INDEX_BUFFER_DRAW, family_info);
-  }
   auto getIndexNumber() -> int { return _index_number; }
 };
 

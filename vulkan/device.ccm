@@ -14,14 +14,13 @@ export namespace vk {
  * surface capability, format, present mode 用于创建 swap chain
  */
 
-using QueueIndices = std::vector<std::pair<uint32_t, uint32_t>>;
 struct PhysicalDeviceInfo {
   VkPhysicalDevice           device;
   VkPhysicalDeviceProperties properties;
   VkPhysicalDeviceFeatures   features;
   VkPresentModeKHR           present_mode;
   VkSurfaceFormatKHR         surface_format;
-  QueueIndices               queue_indices;
+  std::vector<uint32_t>      family_indices;
 };
 struct QueueFamilyCheckContext {
   VkPhysicalDevice        device;
@@ -44,19 +43,25 @@ struct SelectedSurfaceInfo {
 using SurfaceChecker =
   std::function<std::optional<SelectedSurfaceInfo>(const SurfaceCheckContext&)>;
 using DeviceChecker = std::function<bool(const DeviceCheckContext&)>;
-using QueueFamilyChecker = std::function<bool(const QueueFamilyCheckContext&)>;
+/**
+ * @brief first: queue number, second: queue checker
+ */
+using QueueRequest = std::pair<int, std::function<bool(const QueueFamilyCheckContext&)>>;
 using SurfaceChecker =
   std::function<std::optional<SelectedSurfaceInfo>(const SurfaceCheckContext&)>;
 
 auto pickPhysicalDevice(
-  VkInstance                          instance,
-  VkSurfaceKHR                        surface,
-  std::span<const char*>              required_extensions,
-  DeviceChecker                       device_checker,
-  SurfaceChecker                      surface_checker,
-  std::span<const QueueFamilyChecker> queue_chekers,
-  bool                                all_queue_diff
+  VkInstance                    instance,
+  VkSurfaceKHR                  surface,
+  std::span<const char*>        required_extensions,
+  DeviceChecker                 device_checker,
+  SurfaceChecker                surface_checker,
+  std::span<const QueueRequest> queue_requests
 ) -> PhysicalDeviceInfo;
+
+auto getQueueFamilyIndices(
+  VkPhysicalDevice device, VkSurfaceKHR surface, std::span<const QueueRequest> queue_requests
+) -> std::optional<std::vector<uint32_t>>;
 
 auto checkPhysicalDeviceSupport(const DeviceCheckContext& ctx) -> bool;
 auto checkSurfaceSupport(const SurfaceCheckContext& ctx) -> std::optional<SelectedSurfaceInfo>;
@@ -64,23 +69,14 @@ auto checkGraphicQueue(const QueueFamilyCheckContext& ctx) -> bool;
 auto checkPresentQueue(const QueueFamilyCheckContext& ctx) -> bool;
 auto checkTransferQueue(const QueueFamilyCheckContext& ctx) -> bool;
 
-/*
- * logical device 相关
- * 创建 logical device, 得到 queue
+/**
+ * @param queue_create_info first: family index, second: queue number
  */
 auto createDevice(
-  const PhysicalDeviceInfo& physical_device_info, std::span<const char*> required_extensions
-) -> std::pair<Device, std::vector<std::pair<VkQueue, uint32_t>>>;
-
-} // namespace vk
-
-namespace vk {
-
-auto getQueueFamilyIndices(
-  VkPhysicalDevice                    device,
-  VkSurfaceKHR                        surface,
-  std::span<const QueueFamilyChecker> queue_chekers,
-  bool                                all_queue_diff
-) -> std::optional<QueueIndices>;
+  VkPhysicalDevice                          pdevice,
+  std::span<const std::pair<uint32_t, int>> queue_create_info,
+  VkPhysicalDeviceFeatures                  features,
+  std::span<const char*>                    required_extensions
+) -> std::pair<Device, std::vector<std::vector<VkQueue>>>;
 
 } // namespace vk

@@ -149,7 +149,19 @@ public:
   }
 };
 
-using WaitInfo = std::pair<Waitable&, VkPipelineStageFlags>;
+struct WaitInfo {
+  Waitable&            waitable;
+  VkPipelineStageFlags stage_mask;
+  WaitInfo(Waitable& waitable, vk::CommonUse use) : waitable(waitable) {
+    stage_mask = vk::Scope{ use, true }.stage_mask;
+  }
+  WaitInfo(Waitable& waitable, vk::ImageUse use) : waitable(waitable) {
+    stage_mask = vk::Scope{ use, true }.stage_mask;
+  }
+  WaitInfo(Waitable& waitable, vk::BufferUse use) : waitable(waitable) {
+    stage_mask = vk::Scope{ use, true }.stage_mask;
+  }
+};
 
 class CommandExecutor : public toy::ProactiveSingleton<CommandExecutor> {
 private:
@@ -221,30 +233,51 @@ private:
   }
 
 public:
-  enum class Family { TRANSFER, GRAPHICS };
+  enum class Family { TRANSFER, GRAPHICS, PRESENT };
 
 private:
-  auto getFamilyContext(Family family) -> std::tuple<CmdbufPool&, VkQueue, WorkingCmdbufs&> {
+  auto getContext(Family family, int queue_index)
+    -> std::tuple<uint32_t, VkQueue, CmdbufPool&, WorkingCmdbufs&> {
+    auto& ctx = Context::getInstance();
     switch (family) {
     case Family::GRAPHICS:
-      return { _graphic_pool, Context::getInstance().graphic_ctx.queue, _working_graphic_cmdbufs };
+      return {
+        ctx.graphic_ctx.family_index,
+        ctx.graphic_ctx.queues[queue_index],
+        _graphic_pool,
+        _working_graphic_cmdbufs,
+      };
     case Family::TRANSFER:
-      return { _transfer_pool,
-               Context::getInstance().transfer_ctx.queue,
-               _working_transfer_cmdbufs };
+      return {
+        ctx.transfer_ctx.family_index,
+        ctx.transfer_ctx.queues[queue_index],
+        _transfer_pool,
+        _working_transfer_cmdbufs,
+      };
+    case Family::PRESENT:
+      return {
+        ctx.present_ctx.family_index,
+        ctx.present_ctx.queues[queue_index],
+        _present_pool,
+        _working_present_cmdbufs,
+      };
     }
   }
 
 public:
   auto submit(
-    Family family, vk::Recorder auto&& recorder, std::span<WaitInfo const> wait_infos, int signal_n
+    Family                    family,
+    int                       queue_index,
+    vk::Recorder auto&&       recorder,
+    std::span<WaitInfo const> wait_infos,
+    int                       signal_n
   ) -> std::pair<Fence, Waitable> {
     auto guard = std::lock_guard<std::mutex>{ _mutex };
-    auto [cmdbuf_pool, queue, working_cmdbufs] = getFamilyContext(family);
+    auto [_, queue, cmdbuf_pool, working_cmdbufs] = getContext(family, queue_index);
     auto borrowed_fence = addWorkingFence();
     auto borrowed_semas = addWorkingSemas(signal_n);
     auto wait_borroweds = wait_infos |
-                          views::transform([](auto info) { return info.first.consume(); }) |
+                          views::transform([](auto info) { return info.waitable.consume(); }) |
                           ranges::to<std::vector>();
     auto wait_semas = wait_borroweds |
                       views::transform([](auto& borrowed) { return borrowed.get(); }) |
@@ -262,9 +295,12 @@ public:
       std::move(wait_semas),
       std::move(signal_semas)
     );
-    auto wait_stages = wait_infos | views::transform([](auto info) { return info.second; }) |
+    auto wait_stages = wait_infos | views::transform([](auto info) { return info.stage_mask; }) |
                        ranges::to<std::vector>();
-    auto wait_vk_infos = views::zip(wait_semas, wait_stages) | ranges::to<std::vector>();
+    auto wait_vk_infos = views::zip(wait_semas, wait_stages) | views::transform([](auto pair) {
+                           return vk::WaitInfo{ pair.first, pair.second };
+                         }) |
+                         ranges::to<std::vector>();
     vk::recordAndSubmit(cmdbuf, queue, recorder, wait_vk_infos, signal_semas, borrowed_fence.get());
     return std::pair{ std::move(borrowed_fence), std::move(borrowed_semas) };
   }
@@ -272,12 +308,13 @@ public:
 public:
   auto submit(
     Family                        family,
+    int                           queue_index,
     vk::Recorder auto&&           recorder,
     std::span<const vk::WaitInfo> wait_infos,
     std::span<const VkSemaphore>  signal_semas
   ) -> Fence {
     auto guard = std::lock_guard<std::mutex>{ _mutex };
-    auto [cmdbuf_pool, queue, working_cmdbufs] = getFamilyContext(family);
+    auto [_, queue, cmdbuf_pool, working_cmdbufs] = getContext(family, queue_index);
     auto borrowed_fence = addWorkingFence();
     auto cmdbuf = addWorkingCmdbuf(cmdbuf_pool, working_cmdbufs, borrowed_fence.get(), {}, {});
     vk::recordAndSubmit(cmdbuf, queue, recorder, wait_infos, signal_semas, borrowed_fence.get());
@@ -307,6 +344,7 @@ public:
     };
     cmdbuf_collect(_working_graphic_cmdbufs, _graphic_pool);
     cmdbuf_collect(_working_transfer_cmdbufs, _transfer_pool);
+    cmdbuf_collect(_working_present_cmdbufs, _present_pool);
     for (auto iter = _working_fences.begin(); iter != _working_fences.end();) {
       auto& info = iter->second;
       if (!info.borrowed && info.cmd_done) {
@@ -328,11 +366,13 @@ public:
 
   CmdbufPool    _graphic_pool;
   CmdbufPool    _transfer_pool;
+  CmdbufPool    _present_pool;
   FencePool     _fence_pool;
   SemaphorePool _sema_pool;
 
   WorkingCmdbufs    _working_graphic_cmdbufs;
   WorkingCmdbufs    _working_transfer_cmdbufs;
+  WorkingCmdbufs    _working_present_cmdbufs;
   WorkingFences     _working_fences;
   WorkingSemaphores _working_semas;
 
@@ -340,11 +380,10 @@ public:
   std::thread _thread;
   bool        _task_done;
 
-public:
   void task() {
     while (
       !(_task_done && _working_graphic_cmdbufs.empty() && _working_transfer_cmdbufs.empty() &&
-        _working_fences.empty() && _working_semas.empty())
+        _working_present_cmdbufs.empty() && _working_fences.empty() && _working_semas.empty())
     ) {
       using namespace std::chrono_literals;
       std::this_thread::sleep_for(20ms);
@@ -352,10 +391,12 @@ public:
     }
   }
 
+public:
   CommandExecutor() {
     auto& ctx = Context::getInstance();
     _graphic_pool = CmdbufPool{ ctx.graphic_ctx };
     _transfer_pool = CmdbufPool{ ctx.transfer_ctx };
+    _present_pool = CmdbufPool{ ctx.present_ctx };
     _thread = std::thread{ &CommandExecutor::task, this };
     _task_done = false;
   }
@@ -363,6 +404,44 @@ public:
     _task_done = true;
     _thread.join();
   }
+
+  class QueueExecutor {
+  private:
+    CommandExecutor* _cmd_executor;
+    Family           _family;
+    int              _queue_index;
+
+  public:
+    QueueExecutor(CommandExecutor& cmd_executor, Family family, int queue_index)
+      : _cmd_executor(&cmd_executor), _family(family), _queue_index(queue_index) {}
+    auto submit(
+      vk::Recorder auto&&           recorder,
+      std::span<const vk::WaitInfo> wait_infos,
+      std::span<const VkSemaphore>  signal_semas
+    ) -> Fence {
+      return _cmd_executor->submit(
+        _family, _queue_index, std::forward<decltype(recorder)>(recorder), wait_infos, signal_semas
+      );
+    }
+    auto submit(vk::Recorder auto&& recorder, std::span<WaitInfo const> wait_infos, int signal_n)
+      -> std::pair<Fence, Waitable> {
+      return _cmd_executor->submit(
+        _family, _queue_index, std::forward<decltype(recorder)>(recorder), wait_infos, signal_n
+      );
+    }
+
+    auto getFamily() -> uint32_t {
+      return std::get<0>(_cmd_executor->getContext(_family, _queue_index));
+    }
+    auto getQueue() -> VkQueue {
+      return std::get<1>(_cmd_executor->getContext(_family, _queue_index));
+    }
+
+    auto operator[](int queue_index) -> QueueExecutor {
+      return QueueExecutor{ *_cmd_executor, _family, queue_index };
+    }
+  };
+  auto operator[](Family family) -> QueueExecutor { return QueueExecutor{ *this, family, 0 }; }
 };
 
 } // namespace render

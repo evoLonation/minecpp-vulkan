@@ -16,6 +16,7 @@ auto createSurface(VkInstance instance, GLFWwindow* p_window) -> Surface;
 /*
  * swap chain 相关
  */
+using SwapchainResource = std::tuple<Swapchain, VkExtent2D, std::vector<VkImage>>;
 enum class SwapchainCreateError {
   EXTENT_ZERO,
 };
@@ -27,9 +28,6 @@ auto createSwapchain(
   VkPresentModeKHR   present_mode,
   GLFWwindow*        p_window,
   VkSwapchainKHR     old_swapchain
-) -> std::expected<std::pair<Swapchain, VkExtent2D>, SwapchainCreateError>;
-
-auto createSwapchainImageViews(VkDevice device, VkSwapchainKHR swapchain, VkFormat format)
-  -> std::vector<ImageView>;
+) -> std::expected<SwapchainResource, SwapchainCreateError>;
 
 } // namespace vk

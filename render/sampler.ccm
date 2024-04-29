@@ -13,7 +13,7 @@ import toy;
 
 export namespace render {
 
-class SampledTexture : public Resource, public DeviceLocalResource {
+class SampledTexture : public Resource {
 private:
   vk::Buffer _staging_buffer;
   vk::Memory _staging_memory;
@@ -22,8 +22,6 @@ private:
   vk::Sampler       _sampler;
 
   static constexpr auto _image_type = vk::ImageType::SAMPLED_IMAGE;
-  // static constexpr auto _src_use = vk::ImageUse::COPY_DST;
-  // static constexpr auto _dst_use = vk::ImageUse::FRAGMENT_SAMPLER;
 
 public:
   SampledTexture() = default;
@@ -54,35 +52,59 @@ public:
     auto max_anisotropy = ctx.pdevice_info.properties.limits.maxSamplerAnisotropy;
     _sampler = vk::createSampler(ctx.device, max_anisotropy);
 
-    auto recorder = [&](VkCommandBuffer cmdbuf) {
+    auto& executor = CommandExecutor::getInstance();
+    auto  copy_executor = executor[CommandExecutor::Family::TRANSFER];
+    auto  graphics_executor = executor[CommandExecutor::Family::GRAPHICS];
+    auto  family_transfer =
+      vk::FamilyTransferInfo{ copy_executor.getFamily(), graphics_executor.getFamily() };
+    auto aspect = vk::getAspect(_image_type);
+    auto layout_transition = vk::LayoutTransitionInfo{
+      vk::ImageUse::COPY_DST,
+      vk::ImageUse::FRAGMENT_SAMPLER,
+    };
+
+    auto recorder_copy = [&](VkCommandBuffer cmdbuf) {
       vk::recordImageBarrier(
         cmdbuf,
         _image_resource.image.get(),
-        getAspect(_image_type),
-        vk::ImageBarrierUseInfo{
-          .src_use = vk::ImageUse::UNDEFINED,
-          .dst_use = vk::ImageUse::COPY_DST,
-        }
+        aspect,
+        { vk::ImageUse::UNDEFINED, vk::ImageUse::COPY_DST },
+        { vk::Scope{ vk::ImageUse::UNDEFINED, false },
+          vk::Scope{ vk::ImageUse::COPY_DST, true } },
+        {}
       );
 
       vk::copyBufferToImage(
         cmdbuf, _staging_buffer, _image_resource.image, vk::getAspect(_image_type), width, height
       );
-    };
-    CommandExecutor::getInstance().submit(CommandExecutor::Family::TRANSFER, recorder, {}, {});
-  }
 
-  auto getTransfer(vk::TransferFamilyInfo family_info) -> vk::Transfer override {
-    return vk::getImageTransfer(
-      _image_resource.image,
-      getAspect(_image_type),
-      vk::ImageBarrierUseInfo{
-        .src_use = vk::ImageUse::COPY_DST,
-        .dst_use = vk::ImageUse::FRAGMENT_SAMPLER,
-      },
-      family_info
+      vk::recordImageBarrier(
+        cmdbuf,
+        _image_resource.image.get(),
+        aspect,
+        layout_transition,
+        vk::BarrierScope::release(vk::ImageUse::COPY_DST),
+        family_transfer
+      );
+    };
+
+    auto recorder_acqurie = [&](VkCommandBuffer cmdbuf) {
+      vk::recordImageBarrier(
+        cmdbuf,
+        _image_resource.image.get(),
+        aspect,
+        layout_transition,
+        vk::BarrierScope::acquire(vk::ImageUse::FRAGMENT_SAMPLER),
+        family_transfer
+      );
+    };
+
+    auto waitable = copy_executor.submit(recorder_copy, {}, 1).second;
+    graphics_executor.submit(
+      recorder_acqurie, std::array{ WaitInfo{ waitable, vk::CommonUse::ALL } }, 0
     );
   }
+
   auto getResourceInfo() -> ResourceInfo override {
     return {
       .desc_resource =
