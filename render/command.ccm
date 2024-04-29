@@ -321,7 +321,7 @@ public:
     return std::move(borrowed_fence);
   }
 
-public:
+private:
   void collect() {
     auto guard = std::lock_guard<std::mutex>{ _mutex };
     // DO NOT erase element in range for iteration, if need erase, do like this
