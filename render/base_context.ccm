@@ -42,13 +42,15 @@ struct BaseContext {
 
   VkFormat depth_format;
 
+  std::optional<VkSampleCountFlagBits> sample_count;
+
   vk::RenderPass render_pass;
 
   vk::DescriptorSetLayout uniform_dset_layout;
   vk::DescriptorSetLayout sampler_dset_layout;
 
   BaseContext() = default;
-  BaseContext(const std::string& app_name, int width, int height) {
+  BaseContext(const std::string& app_name, int width, int height, bool multi_sample) {
     window = glfw::Window{ width, height, app_name };
 
     if constexpr (toy::enable_debug) {
@@ -107,7 +109,12 @@ struct BaseContext {
     present_ctx = get_ctx(1);
     transfer_ctx = get_ctx(2);
     depth_format = vk::findDepthFormat(pdevice_info.device);
-    render_pass = vk::createRenderPass(device, pdevice_info.surface_format.format, depth_format);
+    if (multi_sample) {
+      sample_count = vk::getMaxSampleCount(pdevice_info.properties);
+      toy::debugf("the sample count is {}", (int)sample_count.value());
+    }
+    render_pass =
+      vk::createRenderPass(device, pdevice_info.surface_format.format, depth_format, sample_count);
     uniform_dset_layout = vk::createUniformDescriptorSetLayout(device);
     sampler_dset_layout = vk::createSamplerDescriptorSetLayout(device);
   }

@@ -60,7 +60,8 @@ public:
       std::array{ vertex_info.binding_description },
       vertex_info.attribute_descriptions,
       _resource_types | views::transform([&](auto type) { return resourceType2Layout(type); }) |
-        ranges::to<std::vector>()
+        ranges::to<std::vector>(),
+      ctx.sample_count.value_or(VK_SAMPLE_COUNT_1_BIT)
     );
   }
   void record(VkCommandBuffer cmdbuf, int in_flight_index) override;

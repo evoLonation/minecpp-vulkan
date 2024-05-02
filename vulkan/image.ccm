@@ -109,14 +109,15 @@ struct ImageResource {
 };
 
 auto createImage(
-  VkPhysicalDevice pdevice,
-  VkDevice         device,
-  VkFormat         format,
-  uint32_t         width,
-  uint32_t         height,
-  ImageType        type,
-  TransferOption   transfer,
-  uint32_t         mip_levels
+  VkPhysicalDevice      pdevice,
+  VkDevice              device,
+  VkFormat              format,
+  uint32_t              width,
+  uint32_t              height,
+  ImageType             type,
+  TransferOption        transfer,
+  uint32_t              mip_levels,
+  VkSampleCountFlagBits sample_count
 ) -> ImageResource {
 
   // if use for staging image, combine use:
@@ -136,7 +137,7 @@ auto createImage(
       },
     .mipLevels = mip_levels,
     .arrayLayers = 1,
-    .samples = VK_SAMPLE_COUNT_1_BIT,
+    .samples = sample_count,
     // VK_IMAGE_TILING_LINEAR: Texels are laid out in row-major
     // order like our pixels array
     // 想要直接访问 image 中的像素的话就用 VK_IMAGE_TILING_LINEAR
@@ -282,6 +283,21 @@ auto findDepthFormat(VkPhysicalDevice pdevice) -> VkFormat {
     return *it;
   } else {
     toy::throwf("can not found support format");
+  }
+  std::unreachable();
+}
+
+auto getMaxSampleCount(VkPhysicalDeviceProperties properties) -> VkSampleCountFlagBits {
+  auto counts =
+    properties.limits.framebufferColorSampleCounts & properties.limits.framebufferDepthSampleCounts;
+  auto sample_counts = std::array{
+    VK_SAMPLE_COUNT_64_BIT, VK_SAMPLE_COUNT_32_BIT, VK_SAMPLE_COUNT_16_BIT, VK_SAMPLE_COUNT_8_BIT,
+    VK_SAMPLE_COUNT_4_BIT,  VK_SAMPLE_COUNT_2_BIT,  VK_SAMPLE_COUNT_1_BIT,
+  };
+  for (auto sample_count : sample_counts) {
+    if (counts & sample_count) {
+      return sample_count;
+    }
   }
   std::unreachable();
 }

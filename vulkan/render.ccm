@@ -6,14 +6,20 @@ import std;
 
 export namespace vk {
 
-auto createRenderPass(VkDevice device, VkFormat color_format, VkFormat depth_format) -> RenderPass;
+auto createRenderPass(
+  VkDevice                             device,
+  VkFormat                             color_format,
+  VkFormat                             depth_format,
+  std::optional<VkSampleCountFlagBits> sample_count
+) -> RenderPass;
 
 auto createFramebuffer(
-  VkRenderPass render_pass,
-  VkDevice     device,
-  VkExtent2D   extent,
-  VkImageView  color_image,
-  VkImageView  depth_image
+  VkRenderPass               render_pass,
+  VkDevice                   device,
+  VkExtent2D                 extent,
+  VkImageView                color_image,
+  VkImageView                depth_image,
+  std::optional<VkImageView> multi_sample_image
 ) -> Framebuffer;
 
 struct PipelineResource {
@@ -32,7 +38,8 @@ auto createGraphicsPipeline(
   std::string_view                                   frag_shader_name,
   std::span<const VkVertexInputBindingDescription>   vertex_binding_descriptions,
   std::span<const VkVertexInputAttributeDescription> vertex_attribute_descriptions,
-  std::span<const VkDescriptorSetLayout>             descriptor_set_layouts
+  std::span<const VkDescriptorSetLayout>             descriptor_set_layouts,
+  VkSampleCountFlagBits                              sample_count
 ) -> PipelineResource;
 
 struct DrawUnit {
@@ -47,7 +54,8 @@ void recordRenderPass(
   VkRenderPass                         render_pass,
   VkFramebuffer                        framebuffer,
   VkExtent2D                           extent,
-  std::function<void(VkCommandBuffer)> recorder
+  std::function<void(VkCommandBuffer)> recorder,
+  bool                                 multi_sample
 );
 
 void recordDrawUnits(

@@ -10,11 +10,21 @@ import toy;
 
 namespace vk {
 
-auto createRenderPass(VkDevice device, VkFormat color_format, VkFormat depth_format) -> RenderPass {
-  auto get_attachment = [](VkFormat format, VkImageLayout final_layout) {
+auto createRenderPass(
+  VkDevice                             device,
+  VkFormat                             color_format,
+  VkFormat                             depth_format,
+  std::optional<VkSampleCountFlagBits> sample_count
+) -> RenderPass {
+  auto get_attachment = [](
+                          VkFormat              format,
+                          VkImageLayout         final_layout,
+                          bool                  keep_content,
+                          VkSampleCountFlagBits sample_count
+                        ) {
     return VkAttachmentDescription{
       .format = format,
-      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .samples = sample_count,
       /**
        * @brief load op: define load operation behavior
        * the load op happen in VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT(color attachment) or
@@ -33,7 +43,7 @@ auto createRenderPass(VkDevice device, VkFormat color_format, VkFormat depth_for
        */
       // VK_ATTACHMENT_STORE_OP_STORE: 渲染后内容存入内存稍后使用
       // VK_ATTACHMENT_STORE_DONT_CARE: 不在乎
-      .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .storeOp = keep_content ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE,
 
       .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
       .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
@@ -43,26 +53,43 @@ auto createRenderPass(VkDevice device, VkFormat color_format, VkFormat depth_for
       .finalLayout = final_layout,
     };
   };
-  auto attachments = std::array{
-    get_attachment(color_format, getLayout(ImageUse::PRESENT)),
-    get_attachment(depth_format, getLayout(ImageUse::DEPTH_STENCIL_ATTACHMENT)),
+  auto attachments = std::array<VkAttachmentDescription, 3>{
+    get_attachment(color_format, getLayout(ImageUse::PRESENT), true, VK_SAMPLE_COUNT_1_BIT),
+    get_attachment(
+      depth_format,
+      getLayout(ImageUse::DEPTH_STENCIL_ATTACHMENT),
+      false,
+      sample_count.value_or(VK_SAMPLE_COUNT_1_BIT)
+    ),
+    get_attachment(
+      color_format,
+      getLayout(ImageUse::COLOR_ATTACHMENT),
+      false,
+      sample_count.value_or(VK_SAMPLE_COUNT_1_BIT)
+    ),
   };
   auto color_attach_ref = VkAttachmentReference{
     // 引用的 attachment 的索引
     .attachment = 0,
     // 用到该 ref 的 subpass 过程中使用的布局，会自动转换
+    // if enable multi sample, resolve op also occur in color attachment ouput stage
     .layout = getLayout(ImageUse::COLOR_ATTACHMENT),
   };
   auto depth_attach_ref = VkAttachmentReference{
     .attachment = 1,
     .layout = getLayout(ImageUse::DEPTH_STENCIL_ATTACHMENT),
   };
+  auto multi_sample_attach_ref = VkAttachmentReference{
+    .attachment = 2,
+    .layout = getLayout(ImageUse::COLOR_ATTACHMENT),
+  };
   auto subpass = VkSubpassDescription{
     // 还有 compute、 ray tracing 等等
     .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
     .colorAttachmentCount = 1,
     // 这里的数组的索引和 着色器里的 layout 数值一一对应
-    .pColorAttachments = &color_attach_ref,
+    .pColorAttachments = sample_count.has_value() ? &multi_sample_attach_ref : &color_attach_ref,
+    .pResolveAttachments = sample_count.has_value() ? &color_attach_ref : nullptr,
     // pInputAttachments: Attachments that are read from a shader
     // pResolveAttachments: Attachments used for multisampling color attachments
     // pDepthStencilAttachment: Attachment for depth and stencil data
@@ -90,7 +117,8 @@ auto createRenderPass(VkDevice device, VkFormat color_format, VkFormat depth_for
   };
   auto render_pass_create_info = VkRenderPassCreateInfo{
     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-    .attachmentCount = attachments.size(),
+    .attachmentCount =
+      (uint32_t)(sample_count.has_value() ? attachments.size() : attachments.size() - 1),
     .pAttachments = attachments.data(),
     .subpassCount = 1,
     .pSubpasses = &subpass,
@@ -102,17 +130,20 @@ auto createRenderPass(VkDevice device, VkFormat color_format, VkFormat depth_for
 }
 
 auto createFramebuffer(
-  VkRenderPass render_pass,
-  VkDevice     device,
-  VkExtent2D   extent,
-  VkImageView  color_image,
-  VkImageView  depth_image
+  VkRenderPass               render_pass,
+  VkDevice                   device,
+  VkExtent2D                 extent,
+  VkImageView                color_image,
+  VkImageView                depth_image,
+  std::optional<VkImageView> multi_sample_image
 ) -> Framebuffer {
-  auto attachments = std::array{ color_image, depth_image };
+  auto attachments =
+    std::array{ color_image, depth_image, multi_sample_image.value_or(VK_NULL_HANDLE) };
   auto create_info = VkFramebufferCreateInfo{
     .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
     .renderPass = render_pass,
-    .attachmentCount = attachments.size(),
+    .attachmentCount =
+      (uint32_t)(multi_sample_image.has_value() ? attachments.size() : attachments.size() - 1),
     .pAttachments = attachments.data(),
     .width = extent.width,
     .height = extent.height,
@@ -140,7 +171,8 @@ auto createGraphicsPipeline(
   std::string_view                                   frag_shader_name,
   std::span<const VkVertexInputBindingDescription>   vertex_binding_descriptions,
   std::span<const VkVertexInputAttributeDescription> vertex_attribute_descriptions,
-  std::span<const VkDescriptorSetLayout>             descriptor_set_layouts
+  std::span<const VkDescriptorSetLayout>             descriptor_set_layouts,
+  VkSampleCountFlagBits                              sample_count
 ) -> PipelineResource {
   constexpr bool enable_blending_color = false;
 
@@ -236,7 +268,7 @@ auto createGraphicsPipeline(
 
   auto multisampling_state_info = VkPipelineMultisampleStateCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-    .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+    .rasterizationSamples = sample_count,
     .sampleShadingEnable = VK_FALSE,
   };
 
@@ -335,11 +367,13 @@ void recordRenderPass(
   VkRenderPass                         render_pass,
   VkFramebuffer                        framebuffer,
   VkExtent2D                           extent,
-  std::function<void(VkCommandBuffer)> recorder
+  std::function<void(VkCommandBuffer)> recorder,
+  bool                                 multi_sample
 ) {
   auto color_clear = VkClearValue{ .color = { .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } };
   auto depth_clear = VkClearValue{ .depthStencil = { .depth = 1.0f, .stencil = 0 } };
-  auto clear_values = std::array{ color_clear, depth_clear };
+  auto multi_sample_clear = VkClearValue{ .color = { .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } };
+  auto clear_values = std::array{ color_clear, depth_clear, multi_sample_clear };
   VkRenderPassBeginInfo render_pass_begin_info {
     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
     .renderPass = render_pass,
@@ -348,7 +382,7 @@ void recordRenderPass(
       .offset = {0, 0},
       .extent = extent,
     },
-    .clearValueCount = clear_values.size(),
+    .clearValueCount = multi_sample ? 3u : 2u,
     .pClearValues = clear_values.data(),
   };
   // VK_SUBPASS_CONTENTS_INLINE: render pass的command被嵌入主缓冲区

@@ -12,12 +12,13 @@ export namespace render {
 
 class SwapchainContext {
 public:
-  vk::Swapchain                swapchain;
-  VkExtent2D                   extent;
-  std::vector<VkImage>         images;
-  std::vector<vk::ImageView>   image_views;
-  vk::ImageResource            depth_image;
-  std::vector<vk::Framebuffer> framebuffers;
+  vk::Swapchain                    swapchain;
+  VkExtent2D                       extent;
+  std::vector<VkImage>             images;
+  std::vector<vk::ImageView>       image_views;
+  vk::ImageResource                depth_image;
+  std::optional<vk::ImageResource> sample_image;
+  std::vector<vk::Framebuffer>     framebuffers;
 
 private:
   auto tryCreateSwapchain(BaseContext& ctx) {
@@ -31,7 +32,7 @@ private:
       swapchain
     );
   }
-  auto createResource(BaseContext& ctx, vk::SwapchainResource swapchain_resource) {
+  void createResource(BaseContext& ctx, vk::SwapchainResource swapchain_resource) {
     std::tie(swapchain, extent, images) = std::move(swapchain_resource);
     image_views = images | views::transform([&](VkImage image) {
                     return vk::createImageView(
@@ -51,14 +52,34 @@ private:
       extent.height,
       vk::ImageType::DEPTH_STENCIL,
       vk::TransferOption::NONE,
-      1
+      1,
+      ctx.sample_count.value_or(VK_SAMPLE_COUNT_1_BIT)
     );
-    framebuffers = image_views | views::transform([&](auto& image_view) {
-                     return vk::createFramebuffer(
-                       ctx.render_pass, ctx.device, extent, image_view, depth_image.image_view
-                     );
-                   }) |
-                   ranges::to<std::vector>();
+    if (ctx.sample_count.has_value()) {
+      sample_image = vk::createImage(
+        ctx.pdevice_info.device,
+        ctx.device,
+        ctx.pdevice_info.surface_format.format,
+        extent.width,
+        extent.height,
+        vk::ImageType::COLOR_ATTACHMENT,
+        vk::TransferOption::NONE,
+        1,
+        ctx.sample_count.value()
+      );
+    }
+    framebuffers =
+      image_views | views::transform([&](auto& image_view) {
+        return vk::createFramebuffer(
+          ctx.render_pass,
+          ctx.device,
+          extent,
+          image_view,
+          depth_image.image_view,
+          sample_image.transform([](auto& resource) { return resource.image_view.get(); })
+        );
+      }) |
+      ranges::to<std::vector>();
   }
   auto destroyResource() {
     // move old resource to sorted declared variable to guarantee destroy order

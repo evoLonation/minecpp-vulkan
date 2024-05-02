@@ -22,7 +22,7 @@ int main() {
     auto applicationName = "hello, vulkan!";
     auto width = 1920;
     auto height = 1080;
-    auto ctx = render::Context{ applicationName, width, height };
+    auto ctx = render::Context{ applicationName, width, height, true };
     ctx.addKeyDownHandler(GLFW_KEY_ESCAPE, [&]() { ctx.setCursorVisible(!ctx.isCursorVisible()); });
     auto executor = render::CommandExecutor{};
     auto drawer = render::Drawer{};
