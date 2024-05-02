@@ -5,6 +5,7 @@ import vulkan.tool;
 import vulkan.buffer;
 import vulkan.shader_code;
 import vulkan.sync;
+import vulkan.device;
 import toy;
 
 namespace vk {
@@ -44,7 +45,7 @@ auto createRenderPass(VkDevice device, VkFormat color_format, VkFormat depth_for
   };
   auto attachments = std::array{
     get_attachment(color_format, getLayout(ImageUse::PRESENT)),
-    get_attachment(depth_format, getLayout(ImageUse::DEPTH_ATTACHMENT)),
+    get_attachment(depth_format, getLayout(ImageUse::DEPTH_STENCIL_ATTACHMENT)),
   };
   auto color_attach_ref = VkAttachmentReference{
     // 引用的 attachment 的索引
@@ -54,7 +55,7 @@ auto createRenderPass(VkDevice device, VkFormat color_format, VkFormat depth_for
   };
   auto depth_attach_ref = VkAttachmentReference{
     .attachment = 1,
-    .layout = getLayout(ImageUse::DEPTH_ATTACHMENT),
+    .layout = getLayout(ImageUse::DEPTH_STENCIL_ATTACHMENT),
   };
   auto subpass = VkSubpassDescription{
     // 还有 compute、 ray tracing 等等
@@ -74,11 +75,11 @@ auto createRenderPass(VkDevice device, VkFormat color_format, VkFormat depth_for
   // available
   // stage_mask: depth attachment wait previous flight and output attachment wait outside
   // For dst scope we need define visible operation for depth and color operation
-  auto src_scope =
-    Scope{ vk::ImageUse::DEPTH_ATTACHMENT, false } | Scope{ vk::ImageUse::COLOR_ATTACHMENT, false };
+  auto src_scope = Scope{ vk::ImageUse::DEPTH_STENCIL_ATTACHMENT, false } |
+                   Scope{ vk::ImageUse::COLOR_ATTACHMENT, false };
   src_scope.exeDep();
-  auto dst_scope =
-    Scope{ vk::ImageUse::COLOR_ATTACHMENT, true } | Scope{ vk::ImageUse::DEPTH_ATTACHMENT, true };
+  auto dst_scope = Scope{ vk::ImageUse::COLOR_ATTACHMENT, true } |
+                   Scope{ vk::ImageUse::DEPTH_STENCIL_ATTACHMENT, true };
   auto dependency = VkSubpassDependency{
     .srcSubpass = VK_SUBPASS_EXTERNAL,
     .dstSubpass = 0,
@@ -131,6 +132,7 @@ auto createShaderModule(std::string_view filename, VkDevice device) -> ShaderMod
 }
 
 auto createGraphicsPipeline(
+  VkPhysicalDevice                                   pdevice,
   VkDevice                                           device,
   VkRenderPass                                       render_pass,
   VkPrimitiveTopology                                topology,
@@ -174,6 +176,16 @@ auto createGraphicsPipeline(
     .dynamicStateCount = dynamic_states.size(),
     .pDynamicStates = dynamic_states.data(),
   };
+
+  for (auto& descrip : vertex_attribute_descriptions) {
+    toy::checkThrowf(
+      vk::checkFormatSupport(
+        pdevice, vk::FormatType::BUFFER, descrip.format, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT
+      ),
+      "The format {} is not supported for vertex buffer",
+      (int)descrip.format
+    );
+  }
 
   auto vertex_input_info = VkPipelineVertexInputStateCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,

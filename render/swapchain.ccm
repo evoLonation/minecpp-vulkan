@@ -33,15 +33,26 @@ private:
   }
   auto createResource(BaseContext& ctx, vk::SwapchainResource swapchain_resource) {
     std::tie(swapchain, extent, images) = std::move(swapchain_resource);
-    image_views =
-      images | views::transform([&](VkImage image) {
-        return createImageView(
-          ctx.device, image, ctx.pdevice_info.surface_format.format, vk::ImageType::COLOR_ATTACHMENT
-        );
-      }) |
-      ranges::to<std::vector>();
-    depth_image =
-      vk::createDepthImage(ctx.pdevice_info.device, ctx.device, ctx.depth_format, extent);
+    image_views = images | views::transform([&](VkImage image) {
+                    return vk::createImageView(
+                      ctx.device,
+                      image,
+                      ctx.pdevice_info.surface_format.format,
+                      vk::ImageType::COLOR_ATTACHMENT,
+                      1
+                    );
+                  }) |
+                  ranges::to<std::vector>();
+    depth_image = vk::createImage(
+      ctx.pdevice_info.device,
+      ctx.device,
+      ctx.depth_format,
+      extent.width,
+      extent.height,
+      vk::ImageType::DEPTH_STENCIL,
+      vk::TransferOption::NONE,
+      1
+    );
     framebuffers = image_views | views::transform([&](auto& image_view) {
                      return vk::createFramebuffer(
                        ctx.render_pass, ctx.device, extent, image_view, depth_image.image_view

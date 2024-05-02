@@ -3,6 +3,7 @@ export module vulkan.sync;
 import "vulkan_config.h";
 import vulkan.resource;
 import vulkan.tool;
+import vulkan.image;
 import std;
 import toy;
 
@@ -86,9 +87,10 @@ enum class CommonUse {
 enum class ImageUse {
   UNDEFINED,
   COPY_DST,
+  COPY_SRC,
   FRAGMENT_SAMPLER,
   COLOR_ATTACHMENT,
-  DEPTH_ATTACHMENT,
+  DEPTH_STENCIL_ATTACHMENT,
   PRESENT, // only can convert to layout, no scope
 };
 
@@ -150,6 +152,10 @@ struct Scope {
       stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
       access_mask = VK_ACCESS_TRANSFER_WRITE_BIT;
       break;
+    case ImageUse::COPY_SRC:
+      stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+      access_mask = (is_dst ? (VkAccessFlags)VK_ACCESS_TRANSFER_READ_BIT : 0);
+      break;
     case ImageUse::FRAGMENT_SAMPLER:
       stage_mask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
       access_mask = is_dst ? (VkAccessFlags)VK_ACCESS_SHADER_READ_BIT : 0;
@@ -159,7 +165,7 @@ struct Scope {
       access_mask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                     (is_dst ? (VkAccessFlags)VK_ACCESS_COLOR_ATTACHMENT_READ_BIT : 0);
       break;
-    case ImageUse::DEPTH_ATTACHMENT:
+    case ImageUse::DEPTH_STENCIL_ATTACHMENT:
       stage_mask =
         VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
       access_mask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
@@ -192,12 +198,14 @@ auto getLayout(ImageUse use) -> VkImageLayout {
     return VK_IMAGE_LAYOUT_UNDEFINED;
   case ImageUse::COPY_DST:
     return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+  case ImageUse::COPY_SRC:
+    return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
   case ImageUse::FRAGMENT_SAMPLER:
     return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
   case ImageUse::COLOR_ATTACHMENT:
     return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-  case ImageUse::DEPTH_ATTACHMENT:
-    return VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+  case ImageUse::DEPTH_STENCIL_ATTACHMENT:
+    return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
   case ImageUse::PRESENT:
     return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
   default:
@@ -314,7 +322,8 @@ void recordBufferBarrier(
 void recordImageBarrier(
   VkCommandBuffer      cmdbuf,
   VkImage              image,
-  VkImageAspectFlags   aspect,
+  ImageType            type,
+  MipRange             mip_range,
   LayoutTransitionInfo layout_info,
   BarrierScope         barrier_scope,
   FamilyTransferInfo   family_info
@@ -330,14 +339,7 @@ void recordImageBarrier(
     .srcQueueFamilyIndex = family_info.src_family,
     .dstQueueFamilyIndex = family_info.dst_family,
     .image = image,
-    .subresourceRange =
-      VkImageSubresourceRange{
-        .aspectMask = aspect,
-        .baseMipLevel = 0,
-        .levelCount = 1,
-        .baseArrayLayer = 0,
-        .layerCount = 1,
-      },
+    .subresourceRange = getSubResourceRange(type, mip_range),
   };
   recordPipelineBarrier(
     cmdbuf, { src_scope.stage_mask, dst_scope.stage_mask }, {}, {}, { &image_barrier, 1 }

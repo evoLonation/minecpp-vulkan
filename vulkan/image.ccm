@@ -5,13 +5,9 @@ import std;
 import toy;
 import vulkan.resource;
 import vulkan.buffer;
-import vulkan.command;
-import vulkan.sync;
-import vulkan.descriptor;
+import vulkan.device;
 
 export namespace vk {
-
-auto _tiling = VK_IMAGE_TILING_OPTIMAL;
 
 enum class ImageType {
   SAMPLED_IMAGE,
@@ -19,49 +15,33 @@ enum class ImageType {
   COLOR_ATTACHMENT,
 };
 
-auto findSupportedFormat(
-  VkPhysicalDevice pdevice, std::span<const VkFormat> candidates, ImageType type
-) -> VkFormat {
-  auto get_feature = [](ImageType type) {
-    switch (type) {
-    case ImageType::SAMPLED_IMAGE:
-      return VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
-    case ImageType::DEPTH_STENCIL:
-      return VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    default:
-      std::unreachable();
-    }
-  };
-  auto feature = get_feature(type);
-  auto condition = [&](VkFormat format) {
-    VkFormatProperties properties;
-    vkGetPhysicalDeviceFormatProperties(pdevice, format, &properties);
-    return _tiling == VK_IMAGE_TILING_OPTIMAL &&
-             (properties.optimalTilingFeatures & feature) == feature ||
-           _tiling == VK_IMAGE_TILING_LINEAR &&
-             (properties.linearTilingFeatures & feature) == feature;
-  };
-  if (auto it = ranges::find_if(candidates, condition); it != candidates.end()) {
-    return *it;
-  } else {
-    toy::throwf("can not found support format");
-  }
-  std::unreachable();
-}
-auto getUsage(ImageType type) -> VkImageUsageFlags {
-  VkImageUsageFlagBits usage;
+enum class TransferOption {
+  NONE = 0b00,
+  DST = 0b01,
+  SRC = 0b10,
+  ALL = 0b11,
+};
+
+auto getUsage(ImageType type, TransferOption transfer) -> VkImageUsageFlags {
+  auto usage = (VkImageUsageFlags)0;
   switch (type) {
   case ImageType::SAMPLED_IMAGE:
-    usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+    usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
     break;
   case ImageType::COLOR_ATTACHMENT:
-    usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     break;
   case ImageType::DEPTH_STENCIL:
-    usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     break;
   }
-  return usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+  if ((int)transfer & (int)TransferOption::DST) {
+    usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+  }
+  if ((int)transfer & (int)TransferOption::SRC) {
+    usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+  }
+  return usage;
 }
 auto getAspect(ImageType type) -> VkImageAspectFlagBits {
   switch (type) {
@@ -74,17 +54,34 @@ auto getAspect(ImageType type) -> VkImageAspectFlagBits {
     std::unreachable();
   }
 };
-auto getSubResourceRange(ImageType type) -> VkImageSubresourceRange {
+
+/**
+ * @brief first: base mip level; second: mip level count
+ */
+using MipRange = std::pair<uint32_t, uint32_t>;
+
+auto getSubResourceRange(ImageType type, MipRange mip_range) -> VkImageSubresourceRange {
   return {
     .aspectMask = getAspect(type),
-    .baseMipLevel = 0,
-    .levelCount = 1,
+    .baseMipLevel = mip_range.first,
+    .levelCount = mip_range.second,
     .baseArrayLayer = 0,
     .layerCount = 1,
   };
 }
 
-auto createImageView(VkDevice device, VkImage image, VkFormat format, ImageType type) -> ImageView {
+auto getSubresourceLayers(ImageType type, uint32_t mip_level) -> VkImageSubresourceLayers {
+  return {
+    .aspectMask = getAspect(type),
+    .mipLevel = mip_level,
+    .baseArrayLayer = 0,
+    .layerCount = 1,
+  };
+}
+
+auto createImageView(
+  VkDevice device, VkImage image, VkFormat format, ImageType type, uint32_t mip_levels
+) -> ImageView {
   auto create_info = VkImageViewCreateInfo{
     .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
     .pNext = nullptr,
@@ -100,7 +97,7 @@ auto createImageView(VkDevice device, VkImage image, VkFormat format, ImageType 
       .a = VK_COMPONENT_SWIZZLE_IDENTITY,
     },
     // view 访问 image 资源的范围
-    .subresourceRange = getSubResourceRange(type),
+    .subresourceRange = getSubResourceRange(type, {0, mip_levels}),
   };
   return ImageView{ device, create_info };
 }
@@ -117,7 +114,9 @@ auto createImage(
   VkFormat         format,
   uint32_t         width,
   uint32_t         height,
-  ImageType        type
+  ImageType        type,
+  TransferOption   transfer,
+  uint32_t         mip_levels
 ) -> ImageResource {
 
   // if use for staging image, combine use:
@@ -135,7 +134,7 @@ auto createImage(
         .height = height,
         .depth = 1,
       },
-    .mipLevels = 1,
+    .mipLevels = mip_levels,
     .arrayLayers = 1,
     .samples = VK_SAMPLE_COUNT_1_BIT,
     // VK_IMAGE_TILING_LINEAR: Texels are laid out in row-major
@@ -143,8 +142,8 @@ auto createImage(
     // 想要直接访问 image 中的像素的话就用 VK_IMAGE_TILING_LINEAR
     // VK_IMAGE_TILING_OPTIMAL: Texels are laid out in an implementation
     // defined order for optimal access
-    .tiling = _tiling,
-    .usage = getUsage(type),
+    .tiling = VK_IMAGE_TILING_OPTIMAL,
+    .usage = getUsage(type, transfer),
     .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     // 仅当VK_SHARING_MODE_CONCURRENT时设置
     .queueFamilyIndexCount = 0,
@@ -158,17 +157,18 @@ auto createImage(
   auto image = Image{ device, image_info };
   auto memory = createMemory(pdevice, device, image.get(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
   vkBindImageMemory(device, image, memory, 0);
-  auto image_view = createImageView(device, image, format, type);
+  auto image_view = createImageView(device, image, format, type, mip_levels);
   return { std::move(image), std::move(memory), std::move(image_view) };
 }
 
 void copyBufferToImage(
-  VkCommandBuffer       cmdbuf,
-  VkBuffer              buffer,
-  VkImage               image,
-  VkImageAspectFlagBits aspect,
-  uint32_t              width,
-  uint32_t              height
+  VkCommandBuffer cmdbuf,
+  VkBuffer        buffer,
+  VkImage         image,
+  ImageType       type,
+  uint32_t        width,
+  uint32_t        height,
+  uint32_t        mip_level
 ) {
   auto image_copy = VkBufferImageCopy{
     .bufferOffset = 0,
@@ -176,13 +176,7 @@ void copyBufferToImage(
     // 用于更详细的定义buffer的内存如何映射到image
     .bufferRowLength = 0,
     .bufferImageHeight = 0,
-    .imageSubresource =
-      VkImageSubresourceLayers{
-        .aspectMask = aspect,
-        .mipLevel = 0,
-        .baseArrayLayer = 0,
-        .layerCount = 1,
-      },
+    .imageSubresource = getSubresourceLayers(type, mip_level),
     .imageOffset =
       VkOffset3D{
         .x = 0,
@@ -201,15 +195,56 @@ void copyBufferToImage(
   );
 }
 
+struct ImageBlit {
+  VkImage       image;
+  ImageType     type;
+  VkImageLayout layout;
+  uint32_t      mip_level;
+  VkExtent2D    extent;
+};
+
+void blitImage(VkCommandBuffer cmdbuf, ImageBlit src, ImageBlit dst) {
+  auto blit = VkImageBlit{
+    .srcSubresource = getSubresourceLayers(src.type, src.mip_level),
+    .srcOffsets = { VkOffset3D{ 0, 0, 0 },
+                    VkOffset3D{ (int32_t)src.extent.width, (int32_t)src.extent.height, 1 } },
+    .dstSubresource = getSubresourceLayers(dst.type, dst.mip_level),
+    .dstOffsets = { VkOffset3D{ 0, 0, 0 },
+                    VkOffset3D{ (int32_t)dst.extent.width, (int32_t)dst.extent.height, 1 } },
+  };
+  vkCmdBlitImage(cmdbuf, src.image, src.layout, dst.image, dst.layout, 1, &blit, VK_FILTER_LINEAR);
+}
+
+auto computeMipExtents(VkExtent2D extent) -> std::vector<VkExtent2D> {
+  auto mip_levels = uint32_t(std::floor(std::log2(std::max(extent.width, extent.height)))) + 1;
+  auto mip_extents = std::vector<VkExtent2D>{};
+  auto now_extent = extent;
+  for (auto i : views::iota(0u, mip_levels)) {
+    mip_extents.emplace_back(now_extent);
+    now_extent = VkExtent2D{
+      std::max(now_extent.width / 2, 1u),
+      std::max(now_extent.height / 2, 1u),
+    };
+  }
+  return mip_extents;
+}
+
 auto createSampler(VkDevice device, float max_anisotropy) -> Sampler {
   toy::debugf("max_anisotropy: {}", max_anisotropy);
+  // lod 是 lod 等级，用于选择纹理过滤模式等等
+  // level 是在 lod 基础上计算得到的 mip 等级
+  // lod = clamp(lod_base + mipLodBias, minLod, maxLod)
+  // level = (baseMipLevel + clamp(lod, 0, levelCount - 1))
   auto sampler_info = VkSamplerCreateInfo{
     .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
     .pNext = nullptr,
     .flags = 0,
     // VK_FILTER_NEAREST and VK_FILTER_LINEAR, 插值模式
+    // 分别是 lod <= 0 和 lod > 0 时采用的纹理过滤模式
     .magFilter = VK_FILTER_LINEAR,
     .minFilter = VK_FILTER_LINEAR,
+    // VK_SAMPLER_MIPMAP_MODE_NEAREST: 将 level 四舍五入后选择对应的mip等级
+    // VK_SAMPLER_MIPMAP_MODE_LINEAR: 根据 level 在两个mip等级之间线性插值
     .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
     // VK_SAMPLER_ADDRESS_MODE_REPEAT：超出图像尺寸时重复纹理。
     // VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT：同上，但是镜像图像。
@@ -226,7 +261,8 @@ auto createSampler(VkDevice device, float max_anisotropy) -> Sampler {
     .compareEnable = VK_FALSE,
     .compareOp = VK_COMPARE_OP_ALWAYS,
     .minLod = 0.0f,
-    .maxLod = 0.0f,
+    // VK_LOD_CLAMP_NONE is a special value for maxLod to indicate that not to clamp maxLod
+    .maxLod = VK_LOD_CLAMP_NONE,
     .borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
     // VK_FALSE: (0, 1)寻址， 反之 (0, width), (0, height)寻址
     .unnormalizedCoordinates = VK_FALSE,
@@ -235,18 +271,19 @@ auto createSampler(VkDevice device, float max_anisotropy) -> Sampler {
 }
 
 auto findDepthFormat(VkPhysicalDevice pdevice) -> VkFormat {
-  return findSupportedFormat(
-    pdevice,
-    std::array{ VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT },
-    ImageType::DEPTH_STENCIL
-  );
-}
-
-auto createDepthImage(VkPhysicalDevice pdevice, VkDevice device, VkFormat format, VkExtent2D extent)
-  -> ImageResource {
-  return createImage(
-    pdevice, device, format, extent.width, extent.height, ImageType::DEPTH_STENCIL
-  );
+  auto candidates =
+    std::array{ VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT };
+  auto condition = [&](auto format) {
+    return checkFormatSupport(
+      pdevice, FormatType::OPTIMAL_TILING, format, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
+    );
+  };
+  if (auto it = ranges::find_if(candidates, condition); it != candidates.end()) {
+    return *it;
+  } else {
+    toy::throwf("can not found support format");
+  }
+  std::unreachable();
 }
 
 } // namespace vk

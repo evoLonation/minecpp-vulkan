@@ -51,6 +51,7 @@ public:
     auto& ctx = Context::getInstance();
     _resource_types.append_range(resource_types);
     _pipeline_resource = vk::createGraphicsPipeline(
+      ctx.pdevice_info.device,
       ctx.device,
       ctx.render_pass,
       topology,

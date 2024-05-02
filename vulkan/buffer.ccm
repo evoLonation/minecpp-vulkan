@@ -3,8 +3,6 @@ export module vulkan.buffer;
 import "vulkan_config.h";
 import vulkan.resource;
 import vulkan.tool;
-import vulkan.command;
-import vulkan.sync;
 import std;
 import glm;
 import toy;

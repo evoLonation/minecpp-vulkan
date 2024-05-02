@@ -39,7 +39,7 @@ int main() {
     auto [vertex_data, vertex_indices] = model::getModelInfo("model/viking_room.obj");
     auto vertex_buffer = render::VertexBuffer{ std::span<const model::Vertex>{ vertex_data } };
     auto index_buffer = render::IndexBuffer{ vertex_indices };
-    auto sampled_texture = render::SampledTexture{ "model/viking_room.png" };
+    auto sampled_texture = render::SampledTexture{ "model/viking_room.png", true };
 
     auto view = glm::mat4{};
     auto proj = glm::mat4{};

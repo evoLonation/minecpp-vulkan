@@ -24,6 +24,7 @@ struct PipelineResource {
 };
 
 auto createGraphicsPipeline(
+  VkPhysicalDevice                                   pdevice,
   VkDevice                                           device,
   VkRenderPass                                       render_pass,
   VkPrimitiveTopology                                topology,

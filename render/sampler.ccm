@@ -25,12 +25,14 @@ private:
 
 public:
   SampledTexture() = default;
-  SampledTexture(const std::string& path) {
+  SampledTexture(const std::string& path, bool mipmap) {
     auto& ctx = Context::getInstance();
 
-    int   width, height, channels;
-    auto* pixels = stbi_load(path.data(), &width, &height, &channels, STBI_rgb_alpha);
-    auto  image_size = static_cast<VkDeviceSize>(width * height * 4);
+    uint32_t width, height, channels;
+
+    auto* pixels =
+      stbi_load(path.data(), &(int&)width, &(int&)height, &(int&)channels, STBI_rgb_alpha);
+    auto image_size = static_cast<VkDeviceSize>(width * height * 4);
     if (pixels == nullptr) {
       toy::throwf("failed to load image {}", path.data());
     }
@@ -42,12 +44,38 @@ public:
 
     stbi_image_free(pixels);
 
-    auto format = vk::findSupportedFormat(
-      ctx.pdevice_info.device, std::array{ VK_FORMAT_R8G8B8A8_SRGB }, _image_type
+    auto format = VK_FORMAT_R8G8B8A8_SRGB;
+    // VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT: can do linear op, include magFilter,
+    // minFilter, mipmapMode and filter in vkCmdBlitImage
+    toy::checkThrowf(
+      vk::checkFormatSupport(
+        ctx.pdevice_info.device,
+        vk::FormatType::OPTIMAL_TILING,
+        format,
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+          (mipmap ? VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT : 0)
+      ),
+      "the format {} not support to sampled image",
+      (int)format
     );
 
-    _image_resource =
-      vk::createImage(ctx.pdevice_info.device, ctx.device, format, width, height, _image_type);
+    auto mip_extents = std::vector<VkExtent2D>{};
+    auto mip_range = vk::MipRange{ 0, 1 };
+    if (mipmap) {
+      mip_extents = vk::computeMipExtents({ width, height });
+      mip_range = vk::MipRange{ 0, mip_extents.size() };
+    }
+
+    _image_resource = vk::createImage(
+      ctx.pdevice_info.device,
+      ctx.device,
+      format,
+      width,
+      height,
+      _image_type,
+      vk::TransferOption::ALL,
+      mip_extents.size()
+    );
 
     auto max_anisotropy = ctx.pdevice_info.properties.limits.maxSamplerAnisotropy;
     _sampler = vk::createSampler(ctx.device, max_anisotropy);
@@ -57,51 +85,110 @@ public:
     auto  graphics_executor = executor[CommandExecutor::Family::GRAPHICS];
     auto  family_transfer =
       vk::FamilyTransferInfo{ copy_executor.getFamily(), graphics_executor.getFamily() };
-    auto aspect = vk::getAspect(_image_type);
-    auto layout_transition = vk::LayoutTransitionInfo{
-      vk::ImageUse::COPY_DST,
-      vk::ImageUse::FRAGMENT_SAMPLER,
-    };
+    // auto layout_transition = vk::LayoutTransitionInfo{
+    //   vk::ImageUse::COPY_SRC,
+    //   vk::ImageUse::FRAGMENT_SAMPLER,
+    // };
 
     auto recorder_copy = [&](VkCommandBuffer cmdbuf) {
       vk::recordImageBarrier(
         cmdbuf,
         _image_resource.image.get(),
-        aspect,
+        _image_type,
+        mip_range,
         { vk::ImageUse::UNDEFINED, vk::ImageUse::COPY_DST },
-        { vk::Scope{ vk::ImageUse::UNDEFINED, false },
-          vk::Scope{ vk::ImageUse::COPY_DST, true } },
+        { vk::Scope{ vk::ImageUse::UNDEFINED, false }, vk::Scope{ vk::ImageUse::COPY_DST, true } },
         {}
       );
 
       vk::copyBufferToImage(
-        cmdbuf, _staging_buffer, _image_resource.image, vk::getAspect(_image_type), width, height
+        cmdbuf, _staging_buffer, _image_resource.image, _image_type, width, height, 0
       );
 
       vk::recordImageBarrier(
         cmdbuf,
         _image_resource.image.get(),
-        aspect,
-        layout_transition,
+        _image_type,
+        mip_range,
+        {
+          vk::ImageUse::COPY_DST,
+          mipmap ? vk::ImageUse::COPY_DST : vk::ImageUse::FRAGMENT_SAMPLER,
+        },
         vk::BarrierScope::release(vk::ImageUse::COPY_DST),
         family_transfer
       );
     };
 
-    auto recorder_acqurie = [&](VkCommandBuffer cmdbuf) {
+    auto recorder_blit = [&](VkCommandBuffer cmdbuf) {
       vk::recordImageBarrier(
         cmdbuf,
         _image_resource.image.get(),
-        aspect,
-        layout_transition,
-        vk::BarrierScope::acquire(vk::ImageUse::FRAGMENT_SAMPLER),
+        _image_type,
+        mip_range,
+        {
+          vk::ImageUse::COPY_DST,
+          mipmap ? vk::ImageUse::COPY_DST : vk::ImageUse::FRAGMENT_SAMPLER,
+        },
+        vk::BarrierScope::acquire(mipmap ? vk::ImageUse::COPY_DST : vk::ImageUse::FRAGMENT_SAMPLER),
         family_transfer
       );
+
+      if (mipmap) {
+        for (auto dst_mip_level : views::iota(1u, mip_extents.size())) {
+          vk::recordImageBarrier(
+            cmdbuf,
+            _image_resource.image.get(),
+            _image_type,
+            vk::MipRange{ dst_mip_level - 1, 1 },
+            { vk::ImageUse::COPY_DST, vk::ImageUse::COPY_SRC },
+            { vk::Scope{ vk::ImageUse::COPY_DST, false },
+              vk::Scope{ vk::ImageUse::COPY_SRC, true } },
+            {}
+          );
+          vk::blitImage(
+            cmdbuf,
+            vk::ImageBlit{
+              .image = _image_resource.image,
+              .type = _image_type,
+              .layout = vk::getLayout(vk::ImageUse::COPY_SRC),
+              .mip_level = dst_mip_level - 1,
+              .extent = mip_extents[dst_mip_level - 1],
+            },
+            vk::ImageBlit{
+              .image = _image_resource.image,
+              .type = _image_type,
+              .layout = vk::getLayout(vk::ImageUse::COPY_DST),
+              .mip_level = dst_mip_level,
+              .extent = mip_extents[dst_mip_level],
+            }
+          );
+        }
+        vk::recordImageBarrier(
+          cmdbuf,
+          _image_resource.image.get(),
+          _image_type,
+          vk::MipRange{ mip_extents.size() - 1, 1 },
+          { vk::ImageUse::COPY_DST, vk::ImageUse::FRAGMENT_SAMPLER },
+          { vk::Scope{ vk::ImageUse::COPY_DST, false },
+            vk::Scope{ vk::ImageUse::FRAGMENT_SAMPLER, true } },
+          {}
+        );
+        vk::recordImageBarrier(
+          cmdbuf,
+          _image_resource.image.get(),
+          _image_type,
+          { 0, mip_extents.size() - 1 },
+          { vk::ImageUse::COPY_SRC, vk::ImageUse::FRAGMENT_SAMPLER },
+          { vk::Scope{ vk::ImageUse::COPY_SRC, false },
+            vk::Scope{ vk::ImageUse::FRAGMENT_SAMPLER, true } },
+          {}
+        );
+      }
     };
 
     auto waitable = copy_executor.submit(recorder_copy, {}, 1).second;
     graphics_executor.submit(
-      recorder_acqurie, std::array{ WaitInfo{ waitable, vk::CommonUse::ALL } }, 0
+      recorder_blit, std::array{ WaitInfo{ waitable, vk::CommonUse::ALL } }, 0
     );
   }
 

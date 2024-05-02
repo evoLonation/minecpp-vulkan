@@ -30,7 +30,7 @@ auto pickPhysicalDevice(
       unsupport = true;
     }
     auto selected_surface =
-      surface_checker(SurfaceCheckContext{ std::move(presentModes), std::move(formats) });
+      surface_checker(SurfaceCheckContext{ device, std::move(presentModes), std::move(formats) });
     if (!selected_surface.has_value()) {
       unsupport = true;
     }
@@ -160,9 +160,15 @@ auto checkPhysicalDeviceSupport(const DeviceCheckContext& ctx) -> bool {
 }
 
 auto checkSurfaceSupport(const SurfaceCheckContext& ctx) -> std::optional<SelectedSurfaceInfo> {
-  auto p_format = ranges::find_if(ctx.surface_formats, [](auto format) {
+  auto p_format = ranges::find_if(ctx.surface_formats, [&](auto format) {
     return format.format == VK_FORMAT_B8G8R8A8_SRGB &&
-           format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+           format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR &&
+           checkFormatSupport(
+             ctx.device,
+             FormatType::OPTIMAL_TILING,
+             format.format,
+             VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT
+           );
   });
   if (p_format == ctx.surface_formats.end()) {
     toy::debugf("no suitable format");

@@ -109,9 +109,7 @@ public:
       );
     };
     auto acquire_recorder = [&](VkCommandBuffer cmdbuf) {
-      vk::recordBufferBarrier(
-        cmdbuf, *this, vk::BarrierScope::acquire(dst_use), family_transfer
-      );
+      vk::recordBufferBarrier(cmdbuf, *this, vk::BarrierScope::acquire(dst_use), family_transfer);
     };
     auto waitable = copy_executor.submit(copy_recorder, {}, 1).second;
     graphics_executor.submit(

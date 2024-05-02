@@ -123,8 +123,9 @@ public:
 
     auto present_executor = executor[CommandExecutor::Family::PRESENT];
     auto graphic_executor = executor[CommandExecutor::Family::GRAPHICS];
-    auto aspect = VK_IMAGE_ASPECT_COLOR_BIT;
     auto image = ctx.images[image_index];
+    auto image_type = vk::ImageType::COLOR_ATTACHMENT;
+    auto mip_range = vk::MipRange{ 0, 1 };
     auto framebuffer = ctx.framebuffers[image_index].get();
     auto p2g_layout_transition = vk::LayoutTransitionInfo{
       vk::ImageUse::PRESENT,
@@ -138,7 +139,8 @@ public:
       vk::recordImageBarrier(
         cmdbuf,
         image,
-        aspect,
+        image_type,
+        mip_range,
         p2g_layout_transition,
         acquire ? vk::BarrierScope::acquire(use) : vk::BarrierScope::release(use),
         p2g_family_info
@@ -156,7 +158,8 @@ public:
       vk::recordImageBarrier(
         cmdbuf,
         image,
-        aspect,
+        image_type,
+        mip_range,
         g2p_layout_transition,
         acquire ? vk::BarrierScope::acquire(use) : vk::BarrierScope::release(use),
         g2p_family_info

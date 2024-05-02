@@ -33,6 +33,7 @@ struct DeviceCheckContext {
   VkPhysicalDeviceFeatures   features;
 };
 struct SurfaceCheckContext {
+  VkPhysicalDevice                device;
   std::vector<VkPresentModeKHR>   present_modes;
   std::vector<VkSurfaceFormatKHR> surface_formats;
 };
@@ -78,5 +79,31 @@ auto createDevice(
   VkPhysicalDeviceFeatures                  features,
   std::span<const char*>                    required_extensions
 ) -> std::pair<Device, std::vector<std::vector<VkQueue>>>;
+
+enum class FormatType {
+  BUFFER,
+  OPTIMAL_TILING,
+  LINEAR_TILING,
+};
+
+auto checkFormatSupport(
+  VkPhysicalDevice pdevice, FormatType type, VkFormat format, VkFormatFeatureFlags features
+) -> bool {
+  VkFormatProperties properties;
+  vkGetPhysicalDeviceFormatProperties(pdevice, format, &properties);
+  auto support_features = (VkFormatFeatureFlags)0;
+  switch (type) {
+  case FormatType::BUFFER:
+    support_features = properties.bufferFeatures;
+    break;
+  case FormatType::OPTIMAL_TILING:
+    support_features = properties.optimalTilingFeatures;
+    break;
+  case FormatType::LINEAR_TILING:
+    support_features = properties.linearTilingFeatures;
+    break;
+  }
+  return (support_features & features) == features;
+}
 
 } // namespace vk
