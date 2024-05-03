@@ -1,16 +1,19 @@
 export module render.input;
 
+import render.context;
+import render.loop;
+
 import "glfw_config.h";
 
 import std;
+import toy;
 
 export namespace render {
 
-class InputProcessor {
+class InputProcessor : public toy::ProactiveSingleton<InputProcessor>,
+                       public toy::InterfaceLoader<InputProcessor, LoopAction, Loop> {
 private:
   inline static std::map<GLFWwindow*, InputProcessor*> _instance_map;
-
-  GLFWwindow* _window;
 
   using KeyDownHandler = std::function<void()>;
   using KeyHoldHandler = std::function<void(int holdMilli)>;
@@ -33,8 +36,8 @@ private:
   auto operator=(InputProcessor&&) -> InputProcessor& = delete;
 
 public:
-  InputProcessor(GLFWwindow* window) {
-    _window = window;
+  InputProcessor() {
+    GLFWwindow* window = Context::getInstance().window;
     _instance_map.insert({ window, this });
     // 须在创建窗口后、开始渲染前注册回调函数
     glfwSetKeyCallback(window, [](GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -90,9 +93,9 @@ public:
     }
     _cursor_visible = visible;
     if (visible) {
-      glfwSetInputMode(_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+      glfwSetInputMode(Context::getInstance().window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     } else {
-      glfwSetInputMode(_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+      glfwSetInputMode(Context::getInstance().window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     }
   }
   bool isCursorVisible() const { return _cursor_visible; }
@@ -118,6 +121,7 @@ public:
       }
     }
   }
+  void action() override { processInput(); }
 };
 
 } // namespace render

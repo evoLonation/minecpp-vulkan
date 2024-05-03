@@ -5,6 +5,7 @@ import glm;
 import gui;
 import toy;
 import render.context;
+import render.input;
 import "glfw_config.h";
 import "vulkan_config.h";
 import "imgui_config.h";
@@ -70,7 +71,7 @@ public:
     *_model = create(_location);
   }
   void setInput() {
-    auto& ctx = render::Context::getInstance();
+    auto& ctx = render::InputProcessor::getInstance();
     ctx.addKeyHoldHandler(GLFW_KEY_A, [&](int handle) {
       *_model = translate(*_model, glm::vec3{ _speed, .0f, .0f }, _self);
     });
@@ -138,7 +139,7 @@ public:
     *_proj = proj::create(*_width, *_height);
   }
   void setInput() {
-    auto& ctx = render::Context::getInstance();
+    auto& ctx = render::InputProcessor::getInstance();
     auto& view = *_view;
     ctx.addKeyHoldHandler(GLFW_KEY_A, [&](auto _) {
       view = model::translate(view, glm::vec3{ computeMoveDistance(), 0.0f, 0.0f }, _self);
@@ -177,7 +178,7 @@ public:
       view = model::rotate(view, computeRotateDegree(), glm::vec3{ 0.0f, 0.0f, 1.0f }, _self);
     });
     ctx.addCursorMoveHandler([&](double x, double y) {
-      if (render::Context::getInstance().isCursorVisible()) {
+      if (render::InputProcessor::getInstance().isCursorVisible()) {
         return;
       }
       view = model::rotate(view, computeRotateDegreeX(x), glm::vec3{ 0.0f, 1.0f, 0.0f }, _self);

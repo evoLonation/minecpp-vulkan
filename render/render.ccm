@@ -1,5 +1,6 @@
 export module render;
 export import render.context;
+export import render.input;
 export import render.resource;
 export import render.pipeline;
 export import render.vertex;
@@ -7,3 +8,4 @@ export import render.uniform;
 export import render.sampler;
 export import render.drawer;
 export import render.command;
+export import render.loop;

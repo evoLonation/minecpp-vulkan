@@ -13,16 +13,19 @@ import gui;
 import control;
 import axis;
 
-class CommandExecutorMoniter {
+class CommandExecutorMoniter
+  : public toy::InterfaceLoader<CommandExecutorMoniter, render::LoopAction, render::Loop>,
+    public toy::InterfaceLoader<CommandExecutorMoniter, gui::Drawer, gui::Context> {
 private:
   render::CommandExecutor::State state;
 
 public:
-  void update() {
+  CommandExecutorMoniter() = default;
+  void action() override {
     auto& executor = render::CommandExecutor::getInstance();
     state = executor.getState();
   }
-  void show() {
+  void draw() override {
     auto show_pool = [](render::PoolState state, const std::string& name) {
       ImGui::Text(std::format("The {} pool:", name).c_str());
       ImGui::Text(std::format("Total allocated resource: {}", state.allocate_n).c_str());
@@ -46,11 +49,15 @@ int main() {
     auto width = 1920;
     auto height = 1080;
     auto ctx = render::Context{ applicationName, width, height, true };
-    ctx.addKeyDownHandler(GLFW_KEY_ESCAPE, [&]() { ctx.setCursorVisible(!ctx.isCursorVisible()); });
     auto executor = render::CommandExecutor{};
-    auto executor_moniter = CommandExecutorMoniter{};
+    auto loop = render::Loop{};
+    auto input_processor = render::InputProcessor{};
+    input_processor.addKeyDownHandler(GLFW_KEY_ESCAPE, [&]() {
+      input_processor.setCursorVisible(!input_processor.isCursorVisible());
+    });
     auto drawer = render::Drawer{};
     auto gui_ctx = gui::Context{};
+    auto executor_moniter = CommandExecutorMoniter{};
 
     auto pipeline = render::Pipeline{ "hello.vert",
                                       "hello.frag",
@@ -103,27 +110,11 @@ int main() {
                                             axis_index_buffer,
                                             std::array<render::Resource*, 3>{
                                               &uniforms[0], &uniforms[1], &uniforms[2] } };
-    drawer.registerUniform(uniforms[0]);
-    drawer.registerUniform(uniforms[1]);
-    for (auto [unit, uniform] : views::zip(draw_units, uniforms | views::drop(2))) {
-      // drawer.registerUnit(unit);
-      drawer.registerUniform(uniform);
-    }
     auto controller = control::model::Controller{ model_datas[0] };
     auto camera_controller = control::camera::Controller{ view, proj };
     camera_controller.setInput();
     // controller.setInput();
-    int remain_frame = -1;
-    while (!glfwWindowShouldClose(ctx.window) && (remain_frame--)) {
-      ctx.processInput();
-      executor_moniter.update();
-      gui_ctx.draw([&]() {
-        controller.show();
-        camera_controller.show();
-        executor_moniter.show();
-      });
-      drawer.draw();
-    }
+    loop.startLoop();
     drawer.waitDone();
   } catch (const std::exception& e) {
 

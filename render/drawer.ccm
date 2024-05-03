@@ -1,10 +1,10 @@
 export module render.drawer;
 
 import render.context;
-import render.uniform;
 import render.resource;
 import render.vertex;
 import render.command;
+import render.loop;
 
 import vulkan;
 
@@ -19,7 +19,8 @@ public:
   virtual void record(VkCommandBuffer cmdbuf, int in_flight_index) = 0;
 };
 
-class Drawer : public toy::ProactiveSingleton<Drawer> {
+class Drawer : public toy::ProactiveSingleton<Drawer>,
+               public toy::InterfaceLoader<Drawer, LoopAction, Loop> {
 private:
   struct Worker {
     vk::Semaphore image_available_sema;
@@ -35,7 +36,6 @@ private:
   bool _last_present_failed;
 
   toy::RefContainer<DrawRecorder> _recorders;
-  std::vector<BaseUniform*>       _uniforms;
 
   std::chrono::high_resolution_clock::time_point _last_time;
 
@@ -73,8 +73,7 @@ public:
 
   operator toy::RefContainer<DrawRecorder>&() { return _recorders; }
 
-  // todo: 解耦
-  void registerUniform(BaseUniform& uniform) { _uniforms.push_back(&uniform); }
+  int currentFlightIndex() { return _in_flight_index; }
 
   void draw() {
     auto& ctx = Context::getInstance();
@@ -82,10 +81,6 @@ public:
     auto& worker = _workers[_in_flight_index];
 
     uint32_t image_index;
-
-    for (auto* uniform : _uniforms) {
-      uniform->update(_in_flight_index);
-    }
 
     auto& fence = worker.fence;
     fence.wait();
@@ -235,5 +230,6 @@ public:
     }
     _in_flight_index = (_in_flight_index + 1) % _workers.size();
   }
+  void action() override { draw(); }
 };
 } // namespace render

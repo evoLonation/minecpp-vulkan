@@ -11,3 +11,4 @@ source:
 - render.ccm
 - input.ccm
 - command.ccm
+- loop.ccm

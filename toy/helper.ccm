@@ -10,6 +10,45 @@ struct OverloadLambda : public Lambdas... {
   using Lambdas::operator()...;
 };
 
+/**
+ * @brief 需要主动构造，可含有参数，若在构造前调用getInstance()会抛异常
+ * @tparam T
+ */
+template <typename Derived>
+class ProactiveSingleton {
+private:
+  static inline Derived* _instance_ptr = nullptr;
+
+  auto self() -> Derived& { return static_cast<Derived&>(*this); }
+
+public:
+  ProactiveSingleton() {
+    if (_instance_ptr != nullptr) {
+      toy::throwf("construct multi time!");
+    }
+    _instance_ptr = &self();
+  }
+  ~ProactiveSingleton() {
+    if (_instance_ptr == this) {
+      _instance_ptr = nullptr;
+    }
+  }
+
+  static auto getInstance() -> Derived& {
+    if (_instance_ptr == nullptr) {
+      toy::throwf("need proactively construct first!");
+    }
+    return *_instance_ptr;
+  }
+
+  // deleted copy semantic
+  ProactiveSingleton& operator=(const ProactiveSingleton&) = delete;
+  ProactiveSingleton(const ProactiveSingleton&) = delete;
+  // move semantic
+  ProactiveSingleton& operator=(ProactiveSingleton&&) { _instance_ptr = &self(); }
+  ProactiveSingleton(ProactiveSingleton&&) { _instance_ptr = &self(); }
+};
+
 template <typename Derived, typename T = Derived>
 class AutoLoader;
 
@@ -98,6 +137,30 @@ public:
   }
 };
 
+template <typename Derived, typename Interface, typename Container>
+class InterfaceLoader : public Interface, private toy::AutoLoader<Derived, Interface> {
+private:
+  using AutoLoader = toy::AutoLoader<Derived, Interface>;
+  friend AutoLoader;
+
+  template <typename _ = void>
+    requires std::derived_from<Derived, Interface> &&
+             std::convertible_to<Container, RefContainer<Interface>>
+  auto conceptCheck() {}
+
+public:
+  template <typename _ = void>
+    requires std::derived_from<Container, ProactiveSingleton<Container>>
+  InterfaceLoader() : AutoLoader(Container::getInstance()) {
+    conceptCheck();
+  }
+  template <typename _ = void>
+    requires(!std::derived_from<Container, ProactiveSingleton<Container>>)
+  InterfaceLoader(Container& container) : AutoLoader(container) {
+    conceptCheck();
+  }
+};
+
 namespace test_refContainer {
 class B : public AutoLoader<B> {
 public:
@@ -106,7 +169,7 @@ public:
 };
 class A : public RefContainer<B> {};
 
-void test() {
+void test_base() {
   toy::debug("start test refcontainer");
   auto a = A{};
   auto b1 = B{ a, 1 };
@@ -125,45 +188,35 @@ void test() {
   toy::debug(a | views::transform([](auto e) { return e->num; }));
 }
 
-} // namespace test_refContainer
-
-/**
- * @brief 需要主动构造，可含有参数，若在构造前调用getInstance()会抛异常
- * @tparam T
- */
-template <typename Derived>
-class ProactiveSingleton {
-private:
-  static inline Derived* _instance_ptr = nullptr;
-
-protected:
-  auto self() -> Derived& { return static_cast<Derived&>(*this); }
-  ProactiveSingleton() {
-    if (_instance_ptr != nullptr) {
-      toy::throwf("construct multi time!");
-    }
-    _instance_ptr = &self();
-  }
-  ~ProactiveSingleton() {
-    if (_instance_ptr == this) {
-      _instance_ptr = nullptr;
-    }
-  }
+class Interface {
+  virtual void foo() = 0;
+};
+class Container {
+  RefContainer<Interface> interfaces;
 
 public:
-  static auto getInstance() -> Derived& {
-    if (_instance_ptr == nullptr) {
-      toy::throwf("need proactively construct first!");
-    }
-    return *_instance_ptr;
-  }
-
-  // deleted copy semantic
-  ProactiveSingleton& operator=(const ProactiveSingleton&) = delete;
-  ProactiveSingleton(const ProactiveSingleton&) = delete;
-  // move semantic
-  ProactiveSingleton& operator=(ProactiveSingleton&&) { _instance_ptr = &self(); }
-  ProactiveSingleton(ProactiveSingleton&&) { _instance_ptr = &self(); }
+  operator RefContainer<Interface>&() { return interfaces; }
 };
+class Impl : public InterfaceLoader<Impl, Interface, Container> {
+  void foo() override {}
+
+public:
+  Impl(Container& container) : InterfaceLoader<Impl, Interface, Container>(container) {}
+};
+class ContainerSingleton : public RefContainer<Interface>,
+                           public ProactiveSingleton<ContainerSingleton> {};
+class ImplForSingleton : public InterfaceLoader<ImplForSingleton, Interface, ContainerSingleton> {
+  void foo() override {}
+};
+
+void test_interfaceLoader() {
+  auto container = Container{};
+  auto impl = Impl{ container };
+  auto singleton = ContainerSingleton{};
+  auto impl2 = ImplForSingleton{};
+  // impl2.regist(); private member
+}
+
+} // namespace test_refContainer
 
 } // namespace toy

@@ -7,6 +7,7 @@ import "vulkan_config.h";
 import "imgui_config.h";
 import render.context;
 import render.drawer;
+import render.loop;
 import vulkan.resource;
 import vulkan.descriptor;
 import vulkan.command;
@@ -46,14 +47,20 @@ void showPopup(T& t, std::map<T, std::string> elements) {
   }
 }
 
+class Drawer {
+public:
+  virtual void draw() = 0;
+};
+
 /**
  * @brief must call after input processor
  *
  */
-class Context : public render::DrawRecorder, public toy::AutoLoader<Context, render::DrawRecorder> {
+class Context : public toy::ProactiveSingleton<Context>,
+                public toy::RefContainer<Drawer>,
+                public toy::InterfaceLoader<Context, render::DrawRecorder, render::Drawer>,
+                public toy::InterfaceLoader<Context, render::LoopAction, render::Loop> {
 private:
-  using AutoLoader = toy::AutoLoader<Context, render::DrawRecorder>;
-
   static constexpr auto _base_font_size = 13;
   static constexpr auto _default_scale = 2.0f;
   static constexpr auto _max_scale = 5.0f;
@@ -113,8 +120,6 @@ public:
     _scale = _default_scale;
     _io->Fonts->AddFontFromFileTTF("TIMES.TTF", _default_font_size);
     _io->FontGlobalScale = _scale / (_default_font_size * 1.0f / _base_font_size);
-
-    AutoLoader::regist(render::Drawer::getInstance());
   }
   ~Context() {
     // 销毁阶段:
@@ -125,8 +130,7 @@ public:
     ImGui::DestroyContext();
   }
 
-  template <std::invocable<> Callable>
-  void draw(Callable&& drawer) {
+  void draw() {
     // frame 创建阶段:
     // call ImGui_ImplXXXX_NewFrame() for each backend
     // call ImGui::NewFrame()
@@ -138,13 +142,17 @@ public:
 
     slider("scale ratio", _scale, _min_scale, _max_scale);
     _io->FontGlobalScale = _scale / (_default_font_size * 1.0f / _base_font_size);
-    drawer();
+    for (auto* drawer : *this) {
+      drawer->draw();
+    }
     ImGui::End();
     ImGui::Render();
   }
   void record(VkCommandBuffer cmdbuf, int in_flight_index) override {
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmdbuf);
   }
+
+  void action() override { draw(); }
 };
 
 } // namespace gui

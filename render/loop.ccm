@@ -1,0 +1,28 @@
+export module render.loop;
+
+import render.context;
+import "glfw_config.h";
+import std;
+import toy;
+
+export namespace render {
+
+class LoopAction {
+public:
+  virtual void action() = 0;
+  LoopAction() = default;
+};
+
+class Loop : public toy::ProactiveSingleton<Loop>, public toy::RefContainer<LoopAction> {
+public:
+  Loop() = default;
+  void startLoop() {
+    while (!glfwWindowShouldClose(Context::getInstance().window)) {
+      for (auto* action : *this) {
+        action->action();
+      }
+    }
+  }
+};
+
+} // namespace render
