@@ -9,6 +9,11 @@ import render.context;
 
 export namespace render {
 
+struct PoolState {
+  std::size_t allocate_n;
+  std::size_t inuse_n;
+};
+
 template <typename ResourceT, typename Derived>
 class CommonPool;
 template <typename VkHandle, typename Derived>
@@ -29,6 +34,9 @@ public:
     }
     auto deleter = [&](VkHandle handle) { _resource_frees.push_back(handle); };
     return std::unique_ptr<std::remove_pointer_t<VkHandle>, decltype(deleter)>{ handle, deleter };
+  }
+  auto getState() -> PoolState {
+    return { _resources.size(), _resources.size() - _resource_frees.size() };
   }
 };
 
@@ -78,6 +86,10 @@ public:
     return std::unique_ptr<std::remove_pointer_t<VkCommandBuffer>, decltype(deleter)>{
       handle, std::move(deleter)
     };
+  }
+  auto getState() -> PoolState {
+    return { _cmdbufs.size() * _cmdbuf_allocate_n,
+             _cmdbufs.size() * _cmdbuf_allocate_n - _cmdbuf_frees.size() };
   }
 };
 
@@ -389,6 +401,22 @@ private:
       std::this_thread::sleep_for(20ms);
       collect();
     }
+  }
+
+public:
+  struct State {
+    PoolState graphic_cmdbuf_state;
+    PoolState transfer_cmdbuf_state;
+    PoolState present_cmdbuf_state;
+    PoolState fence_state;
+    PoolState sema_state;
+  };
+  auto getState() -> State {
+    auto guard = std::lock_guard<std::mutex>{ _mutex };
+    return {
+      _graphic_pool.getState(), _transfer_pool.getState(), _present_pool.getState(),
+      _fence_pool.getState(),   _sema_pool.getState(),
+    };
   }
 
 public:

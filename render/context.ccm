@@ -10,13 +10,10 @@ import toy;
 export namespace render {
 
 struct Context : BaseContext, SwapchainContext, InputProcessor, toy::ProactiveSingleton<Context> {
-  int worker_count;
 
   Context(const std::string& app_name, int width, int height, bool multi_sample)
-    : BaseContext(app_name, width, height, multi_sample),
-      SwapchainContext(*static_cast<BaseContext*>(this)), InputProcessor(this->window) {
-    worker_count = 2;
-  }
+    : BaseContext(app_name, width, height, 2, multi_sample),
+      SwapchainContext(*static_cast<BaseContext*>(this)), InputProcessor(this->window) {}
   Context(const Context&) = delete;
   Context(Context&&) = delete;
   auto operator=(const Context&) -> Context& = delete;

@@ -13,6 +13,29 @@ import gui;
 import control;
 import axis;
 
+class CommandExecutorMoniter {
+private:
+  render::CommandExecutor::State state;
+
+public:
+  void update() {
+    auto& executor = render::CommandExecutor::getInstance();
+    state = executor.getState();
+  }
+  void show() {
+    auto show_pool = [](render::PoolState state, const std::string& name) {
+      ImGui::Text(std::format("The {} pool:", name).c_str());
+      ImGui::Text(std::format("Total allocated resource: {}", state.allocate_n).c_str());
+      ImGui::Text(std::format("In use resource: {}", state.inuse_n).c_str());
+    };
+    show_pool(state.graphic_cmdbuf_state, "graphic cmdbuf");
+    show_pool(state.transfer_cmdbuf_state, "transfer cmdbuf");
+    show_pool(state.present_cmdbuf_state, "present cmdbuf");
+    show_pool(state.fence_state, "fence");
+    show_pool(state.sema_state, "sema");
+  }
+};
+
 int main() {
   try {
     toy::test_EnumerateAdaptor();
@@ -25,6 +48,7 @@ int main() {
     auto ctx = render::Context{ applicationName, width, height, true };
     ctx.addKeyDownHandler(GLFW_KEY_ESCAPE, [&]() { ctx.setCursorVisible(!ctx.isCursorVisible()); });
     auto executor = render::CommandExecutor{};
+    auto executor_moniter = CommandExecutorMoniter{};
     auto drawer = render::Drawer{};
     auto gui_ctx = gui::Context{};
 
@@ -92,9 +116,11 @@ int main() {
     int remain_frame = -1;
     while (!glfwWindowShouldClose(ctx.window) && (remain_frame--)) {
       ctx.processInput();
+      executor_moniter.update();
       gui_ctx.draw([&]() {
         controller.show();
         camera_controller.show();
+        executor_moniter.show();
       });
       drawer.draw();
     }

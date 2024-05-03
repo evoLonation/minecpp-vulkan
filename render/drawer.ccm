@@ -170,7 +170,7 @@ public:
       );
     };
     if (image_used) {
-      present_executor.submit(
+      present_executor[_in_flight_index].submit(
         [&](auto cmdbuf) { record_p2g(cmdbuf, vk::CommonUse::NONE, false); },
         std::array{ vk::WaitInfo{ worker.image_available_sema.get(), vk::CommonUse::ALL } },
         std::array{ worker.present_release_sema.get() }
@@ -178,14 +178,14 @@ public:
     }
 
     if (image_used) {
-      graphic_executor[1].submit(
+      graphic_executor[2 * _in_flight_index].submit(
         [&](auto cmdbuf) { record_p2g(cmdbuf, vk::CommonUse::NONE, true); },
         std::array{ vk::WaitInfo{ worker.present_release_sema.get(), vk::CommonUse::ALL } },
         std::array{ worker.graphic_acquire_sema.get() }
       );
     }
 
-    fence = graphic_executor.submit(
+    fence = graphic_executor[2 * _in_flight_index + 1].submit(
       [&](VkCommandBuffer cmdbuf) {
         vk::recordRenderPass(
           cmdbuf,
@@ -207,7 +207,7 @@ public:
       std::array{ worker.render_finished_sema.get() }
     );
 
-    present_executor.submit(
+    present_executor[_in_flight_index].submit(
       [&](auto cmdbuf) { record_g2p(cmdbuf, vk::CommonUse::NONE, true); },
       std::array{ vk::WaitInfo{ worker.render_finished_sema.get(), vk::CommonUse::ALL } },
       std::array{ worker.present_acquire_sema.get() }
@@ -222,7 +222,8 @@ public:
       .pImageIndices = &image_index,
       // .pResults: 当有多个 swapchain 时检查每个的result
     };
-    if (auto result = vkQueuePresentKHR(present_executor[1].getQueue(), &present_info);
+    if (auto result =
+          vkQueuePresentKHR(present_executor[_in_flight_index].getQueue(), &present_info);
         result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
       toy::debugf(
         "the queue present return {}",

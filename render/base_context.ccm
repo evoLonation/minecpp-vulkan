@@ -10,6 +10,8 @@ import glfw;
 export namespace render {
 
 struct BaseContext {
+  uint32_t worker_count;
+
   glfw::Window window;
 
   template <bool enable_debug_messenger>
@@ -50,7 +52,10 @@ struct BaseContext {
   vk::DescriptorSetLayout sampler_dset_layout;
 
   BaseContext() = default;
-  BaseContext(const std::string& app_name, int width, int height, bool multi_sample) {
+  BaseContext(
+    const std::string& app_name, int width, int height, uint32_t worker_count, bool multi_sample
+  ) {
+    this->worker_count = worker_count;
     window = glfw::Window{ width, height, app_name };
 
     if constexpr (toy::enable_debug) {
@@ -69,8 +74,8 @@ struct BaseContext {
     // VK_KHR_SWAPCHAIN_EXTENSION_NAME 对应的扩展用于支持交换链
     auto required_device_extensions = std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME };
     auto queue_requests = std::array{
-      vk::QueueRequest{ 2, vk::checkGraphicQueue },
-      vk::QueueRequest{ 2, vk::checkPresentQueue },
+      vk::QueueRequest{ worker_count * 2, vk::checkGraphicQueue },
+      vk::QueueRequest{ worker_count, vk::checkPresentQueue },
       vk::QueueRequest{ 1, vk::checkTransferQueue },
     };
     pdevice_info = vk::pickPhysicalDevice(
