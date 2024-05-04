@@ -197,8 +197,7 @@ inline void Pipeline::record(VkCommandBuffer cmdbuf, int in_flight_index) {
         .count = (uint32_t)unit->_index_buffer->getIndexNumber(),
         .descriptor_sets = unit->_worker_dsets[in_flight_index],
       };
-    }) |
-      ranges::to<std::vector>()
+    })
   );
 }
 

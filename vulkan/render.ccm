@@ -3,6 +3,7 @@ export module vulkan.render;
 import "vulkan_config.h";
 import vulkan.resource;
 import std;
+import toy;
 
 export namespace vk {
 
@@ -59,11 +60,11 @@ void recordRenderPass(
 );
 
 void recordDrawUnits(
-  VkCommandBuffer           cmdbuf,
-  VkPipeline                graphics_pipeline,
-  VkExtent2D                extent,
-  VkPipelineLayout          pipeline_layout,
-  std::span<const DrawUnit> draw_units
+  VkCommandBuffer        cmdbuf,
+  VkPipeline             graphics_pipeline,
+  VkExtent2D             extent,
+  VkPipelineLayout       pipeline_layout,
+  toy::AnyView<DrawUnit> draw_units
 );
 
 } // namespace vk

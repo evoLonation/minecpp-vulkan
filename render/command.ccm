@@ -288,31 +288,32 @@ public:
     auto [_, queue, cmdbuf_pool, working_cmdbufs] = getContext(family, queue_index);
     auto borrowed_fence = addWorkingFence();
     auto borrowed_semas = addWorkingSemas(signal_n);
-    auto wait_borroweds = wait_infos |
-                          views::transform([](auto info) { return info.waitable.consume(); }) |
-                          ranges::to<std::vector>();
-    auto wait_semas = wait_borroweds |
-                      views::transform([](auto& borrowed) { return borrowed.get(); }) |
-                      ranges::to<std::vector>();
-    auto signal_semas = borrowed_semas |
-                        views::transform([](auto& borrowed) { return borrowed.get(); }) |
-                        ranges::to<std::vector>();
-    for (auto sema : wait_semas) {
-      _working_semas.at(sema).wait_cmd_done = false;
-    }
+
+    auto wait_semas_ = wait_infos |
+                       views::transform([](auto& info) { return info.waitable.consume().get(); }) |
+                       ranges::to<std::vector>();
+    auto signal_semas_ = borrowed_semas |
+                         views::transform([](auto& borrowed) { return borrowed.get(); }) |
+                         ranges::to<std::vector>();
     auto cmdbuf = addWorkingCmdbuf(
       cmdbuf_pool,
       working_cmdbufs,
       borrowed_fence.get(),
-      std::move(wait_semas),
-      std::move(signal_semas)
+      std::move(wait_semas_),
+      std::move(signal_semas_)
     );
-    auto wait_stages = wait_infos | views::transform([](auto info) { return info.stage_mask; }) |
-                       ranges::to<std::vector>();
+    // retrieve back moved resource from working_info
+    auto& working = working_cmdbufs.at(cmdbuf);
+    auto& wait_semas = working.wait_semas;
+    auto& signal_semas = working.signal_semas;
+
+    for (auto sema : wait_semas) {
+      _working_semas.at(sema).wait_cmd_done = false;
+    }
+    auto wait_stages = wait_infos | views::transform([](auto info) { return info.stage_mask; });
     auto wait_vk_infos = views::zip(wait_semas, wait_stages) | views::transform([](auto pair) {
                            return vk::WaitInfo{ pair.first, pair.second };
-                         }) |
-                         ranges::to<std::vector>();
+                         });
     vk::recordAndSubmit(cmdbuf, queue, recorder, wait_vk_infos, signal_semas, borrowed_fence.get());
     return std::pair{ std::move(borrowed_fence), std::move(borrowed_semas) };
   }

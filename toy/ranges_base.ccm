@@ -1,4 +1,4 @@
-module toy.ranges:base;
+export module toy.ranges:base;
 
 import toy.log;
 import std;

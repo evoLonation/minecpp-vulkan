@@ -206,10 +206,10 @@ auto checkTransferQueue(const QueueFamilyCheckContext& ctx) -> bool {
 }
 
 auto createDevice(
-  VkPhysicalDevice                          pdevice,
-  std::span<const std::pair<uint32_t, int>> queue_create_info,
-  VkPhysicalDeviceFeatures                  features,
-  std::span<const char*>                    required_extensions
+  VkPhysicalDevice                       pdevice,
+  toy::AnyView<std::pair<uint32_t, int>> queue_create_info,
+  VkPhysicalDeviceFeatures               features,
+  std::span<const char*>                 required_extensions
 ) -> std::pair<Device, std::vector<std::vector<VkQueue>>> {
   /*
    * 1. 创建 VkDeviceQueueCreateInfo 数组, 用于指定 logic device 中的队列

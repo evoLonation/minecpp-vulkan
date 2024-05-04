@@ -394,11 +394,11 @@ void recordRenderPass(
 }
 
 void recordDrawUnits(
-  VkCommandBuffer           cmdbuf,
-  VkPipeline                graphics_pipeline,
-  VkExtent2D                extent,
-  VkPipelineLayout          pipeline_layout,
-  std::span<const DrawUnit> draw_units
+  VkCommandBuffer        cmdbuf,
+  VkPipeline             graphics_pipeline,
+  VkExtent2D             extent,
+  VkPipelineLayout       pipeline_layout,
+  toy::AnyView<DrawUnit> draw_units
 ) {
   vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
   // 定义了 viewport 到缓冲区的变换
@@ -417,7 +417,7 @@ void recordDrawUnits(
     .extent = extent,
   };
   vkCmdSetScissor(cmdbuf, 0, 1, &scissor);
-  for (auto& [vertex_buffer, index_buffer, count, descriptor_sets] : draw_units) {
+  for (auto [vertex_buffer, index_buffer, count, descriptor_sets] : draw_units) {
     auto offset = (VkDeviceSize)0;
     vkCmdBindVertexBuffers(cmdbuf, 0, 1, &vertex_buffer, &offset);
     vkCmdBindIndexBuffer(cmdbuf, index_buffer, 0, VK_INDEX_TYPE_UINT16);

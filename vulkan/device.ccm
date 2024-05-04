@@ -3,6 +3,7 @@ export module vulkan.device;
 import "vulkan_config.h";
 import vulkan.resource;
 import std;
+import toy;
 
 export namespace vk {
 
@@ -74,10 +75,10 @@ auto checkTransferQueue(const QueueFamilyCheckContext& ctx) -> bool;
  * @param queue_create_info first: family index, second: queue number
  */
 auto createDevice(
-  VkPhysicalDevice                          pdevice,
-  std::span<const std::pair<uint32_t, int>> queue_create_info,
-  VkPhysicalDeviceFeatures                  features,
-  std::span<const char*>                    required_extensions
+  VkPhysicalDevice                       pdevice,
+  toy::AnyView<std::pair<uint32_t, int>> queue_create_info,
+  VkPhysicalDeviceFeatures               features,
+  std::span<const char*>                 required_extensions
 ) -> std::pair<Device, std::vector<std::vector<VkQueue>>>;
 
 enum class FormatType {

@@ -1,6 +1,6 @@
 export module toy.ranges;
 
-import :base;
+export import :base;
 export import :any_view;
 
 import toy.log;

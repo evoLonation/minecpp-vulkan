@@ -95,11 +95,10 @@ struct BaseContext {
       "graphic family index {} present family index",
       pdevice_info.family_indices[0] == pdevice_info.family_indices[1] ? "==" : "!="
     );
-    auto queue_create_info = views::zip(queue_requests, pdevice_info.family_indices) |
-                             views::transform([](auto pair) {
-                               return std::pair{ pair.second, pair.first.first };
-                             }) |
-                             ranges::to<std::vector>();
+    auto queue_create_info =
+      views::zip(queue_requests, pdevice_info.family_indices) | views::transform([](auto pair) {
+        return std::pair{ pair.second, pair.first.first };
+      });
     auto [_device, queues] = vk::createDevice(
       pdevice_info.device, queue_create_info, pdevice_info.features, required_device_extensions
     );

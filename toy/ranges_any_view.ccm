@@ -7,8 +7,8 @@ import toy.log;
 
 export namespace toy {
 
-template <typename T, bool sized = false>
-class CommonView {
+template <typename T, bool sized = true>
+class AnyView {
 private:
   struct ErasedContent;
 
@@ -53,10 +53,9 @@ private:
     }
   };
   using DynamicContent = std::unique_ptr<IteratorInterface>;
-  // variant的默认构造会填充第一个类型的默认值
-  class ErasedContent : private std::variant<LocalContent, DynamicContent> {
+  class ErasedContent {
   private:
-    using Base = std::variant<LocalContent, DynamicContent>;
+    std::variant<LocalContent, DynamicContent> _content;
     template <std::derived_from<IteratorInterface> ImplementT>
     static auto getVariant(ImplementT implement) -> std::variant<LocalContent, DynamicContent> {
       if constexpr (sizeof(implement) > LocalContent::_content_size) {
@@ -67,13 +66,14 @@ private:
     }
 
   public:
+    // variant的默认构造会填充第一个类型的默认值
     ErasedContent() = default;
     template <std::derived_from<IteratorInterface> ImplementT>
     ErasedContent(ImplementT implement) {
       if constexpr (sizeof(implement) > LocalContent::_content_size) {
-        Base::template emplace<1>(std::make_unique<ImplementT>(std::move(implement)));
+        _content.template emplace<1>(std::make_unique<ImplementT>(std::move(implement)));
       } else {
-        Base::operator=(LocalContent{ std::move(implement) });
+        _content = LocalContent{ std::move(implement) };
       }
     }
     ErasedContent(const ErasedContent& content)
@@ -87,13 +87,13 @@ private:
 
   protected:
     auto has_value() const -> bool {
-      return !(Base::index() == 0 && std::get<0>(*this).interface == nullptr);
+      return !(_content.index() == 0 && std::get<0>(_content).interface == nullptr);
     }
     auto get() const -> IteratorInterface& {
-      if (Base::index() == 0) {
-        return *std::get<0>(*this).interface;
+      if (_content.index() == 0) {
+        return *std::get<0>(_content).interface;
       } else {
-        return *std::get<1>(*this).get();
+        return *std::get<1>(_content).get();
       }
     }
   };
@@ -196,7 +196,7 @@ public:
 
   std::size_t _size;
 
-  CommonView() {
+  AnyView() {
     _begin = { IteratorWrapper<T*, T*>{ nullptr } };
     _end = { IteratorWrapper<T*, T*>{ nullptr } };
     if constexpr (sized) {
@@ -205,7 +205,7 @@ public:
   }
   template <typename RangeT>
     requires ranges::forward_range<RangeT> && std::same_as<ranges::range_value_t<RangeT>, T>
-  CommonView(const RangeT& range) {
+  AnyView(const RangeT& range) {
     // const_iterator_t and const_sentinel_t
     using OriginIterator = decltype(ranges::cbegin(std::declval<RangeT&>()));
     using OriginSentinel = decltype(ranges::cend(std::declval<RangeT&>()));
@@ -225,22 +225,32 @@ public:
   auto size() const -> std::size_t {
     return _size;
   }
-  CommonView(const CommonView&) = default;
-  CommonView(CommonView&&) = default;
-  auto operator=(const CommonView&) -> CommonView& = default;
-  auto operator=(CommonView&&) -> CommonView& = default;
+  AnyView(const AnyView&) = default;
+  AnyView(AnyView&&) = default;
+  auto operator=(const AnyView&) -> AnyView& = default;
+  auto operator=(AnyView&&) -> AnyView& = default;
 };
 
-void test_CommonView() {
-  auto transform_view = std::array{ 1, 2, 3 } | views::transform([](auto a) { return a + 1; });
-  static_assert(ranges::forward_range<CommonView<int>>, "");
-  static_assert(ranges::sized_range<CommonView<int, true>>, "");
-  auto view_a = CommonView<int, true>{ transform_view };
-  toy::debug(view_a);
-  auto view_b = CommonView<int>{ views::repeat(10) } | views::take(10);
-  toy::debug(view_b);
-  views::all_t<CommonView<int>>;
-  views::zip(std::move(view_b), views::iota(0));
-}
+} // namespace toy
 
+export namespace std {
+template <typename T, bool sized>
+inline constexpr bool ranges::enable_borrowed_range<toy::AnyView<T, sized>> = true;
+template <typename T, bool sized>
+inline constexpr bool ranges::enable_view<toy::AnyView<T, sized>> = true;
+} // namespace std
+
+export namespace toy {
+void test_AnyView() {
+  auto transform_view = std::array{ 1, 2, 3 } | views::transform([](auto a) { return a + 1; });
+  static_assert(ranges::view<AnyView<int>>, "");
+  static_assert(ranges::forward_range<AnyView<int>>, "");
+  static_assert(ranges::sized_range<AnyView<int, true>>, "");
+  static_assert(ranges::borrowed_range<AnyView<int, true>>, "");
+  auto view_a = AnyView<int>{ transform_view };
+  toy::debug(view_a);
+  auto view_b = AnyView<int, false>{ views::repeat(10) } | views::take(10);
+  toy::debug(view_b);
+  toy::debug(AnyView<std::pair<int, int>, false>{ views::zip(view_b, views::iota(0, 10)) });
+}
 } // namespace toy

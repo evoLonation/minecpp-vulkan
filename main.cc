@@ -44,7 +44,7 @@ int main() {
     toy::test_EnumerateAdaptor();
     toy::test_SortedRange();
     toy::test_ChunkBy();
-    toy::test_CommonView();
+    toy::test_AnyView();
     auto applicationName = "hello, vulkan!";
     auto width = 1920;
     auto height = 1080;

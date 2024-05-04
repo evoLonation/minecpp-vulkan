@@ -5,6 +5,7 @@ import vulkan.tool;
 import vulkan.resource;
 import vulkan.sync;
 import std;
+import toy;
 
 export namespace vk {
 
@@ -68,7 +69,7 @@ void recordAndSubmit(
   VkCommandBuffer              cmdbuf,
   VkQueue                      queue,
   Recorder auto&&              recorder,
-  std::span<const WaitInfo>    wait_infos,
+  toy::AnyView<WaitInfo>       wait_infos,
   std::span<const VkSemaphore> signal_semas,
   VkFence                      signal_fence
 ) {
@@ -93,19 +94,19 @@ void recordAndSubmit(
   recorder(cmdbuf);
   checkVkResult(vkEndCommandBuffer(cmdbuf), "end command buffer");
 
-  auto wait_sema_ = wait_infos | views::transform([](const auto& pair) { return pair.sema; }) |
+  auto wait_semas = wait_infos | views::transform([](const auto& pair) { return pair.sema; }) |
                     ranges::to<std::vector>();
-  auto wait_stage = wait_infos |
-                    views::transform([](const auto& pair) { return pair.stage_mask; }) |
-                    ranges::to<std::vector>();
+  auto wait_stages = wait_infos |
+                     views::transform([](const auto& pair) { return pair.stage_mask; }) |
+                     ranges::to<std::vector>();
   auto submit_info = VkSubmitInfo{
     .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
     .pNext = nullptr,
     .waitSemaphoreCount = (uint32_t)wait_infos.size(),
     // 对 pWaitSemaphores 中的每个 semaphore 都定义了 semaphore wait operation
     // 触发阶段由 dst stage mask 定义
-    .pWaitSemaphores = wait_sema_.data(),
-    .pWaitDstStageMask = wait_stage.data(),
+    .pWaitSemaphores = wait_semas.data(),
+    .pWaitDstStageMask = wait_stages.data(),
     .commandBufferCount = 1,
     .pCommandBuffers = &cmdbuf,
     .signalSemaphoreCount = (uint32_t)signal_semas.size(),
