@@ -72,6 +72,8 @@ private:
 
   vk::DescriptorPool _dp_pool;
 
+  bool _draw_called;
+
 public:
   Context() {
     auto& ctx = render::Context::getInstance();
@@ -120,6 +122,7 @@ public:
     _scale = _default_scale;
     _io->Fonts->AddFontFromFileTTF("TIMES.TTF", _default_font_size);
     _io->FontGlobalScale = _scale / (_default_font_size * 1.0f / _base_font_size);
+    _draw_called = false;
   }
   ~Context() {
     // 销毁阶段:
@@ -147,9 +150,12 @@ public:
     }
     ImGui::End();
     ImGui::Render();
+    _draw_called = true;
   }
   void record(VkCommandBuffer cmdbuf, int in_flight_index) override {
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmdbuf);
+    if (_draw_called) {
+      ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmdbuf);
+    }
   }
 
   void action() override { draw(); }
