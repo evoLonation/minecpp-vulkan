@@ -7,3 +7,4 @@ source:
 - ranges_base.ccm
 - ranges_any_view.ccm
 - helper.ccm
+- coroutine.ccm

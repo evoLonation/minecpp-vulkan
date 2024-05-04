@@ -10,34 +10,11 @@ import glm;
 import model;
 import render;
 import gui;
+import gui.component;
 import control;
 import axis;
 
-class CommandExecutorMoniter
-  : public toy::InterfaceLoader<CommandExecutorMoniter, render::LoopAction, render::Loop>,
-    public toy::InterfaceLoader<CommandExecutorMoniter, gui::Drawer, gui::Context> {
-private:
-  render::CommandExecutor::State state;
 
-public:
-  CommandExecutorMoniter() = default;
-  void action() override {
-    auto& executor = render::CommandExecutor::getInstance();
-    state = executor.getState();
-  }
-  void draw() override {
-    auto show_pool = [](render::PoolState state, const std::string& name) {
-      ImGui::Text(std::format("The {} pool:", name).c_str());
-      ImGui::Text(std::format("Total allocated resource: {}", state.allocate_n).c_str());
-      ImGui::Text(std::format("In use resource: {}", state.inuse_n).c_str());
-    };
-    show_pool(state.graphic_cmdbuf_state, "graphic cmdbuf");
-    show_pool(state.transfer_cmdbuf_state, "transfer cmdbuf");
-    show_pool(state.present_cmdbuf_state, "present cmdbuf");
-    show_pool(state.fence_state, "fence");
-    show_pool(state.sema_state, "sema");
-  }
-};
 
 int main() {
   try {
@@ -45,6 +22,7 @@ int main() {
     toy::test_SortedRange();
     toy::test_ChunkBy();
     toy::test_AnyView();
+    toy::test_Generator::test();
     auto applicationName = "hello, vulkan!";
     auto width = 1920;
     auto height = 1080;
@@ -57,7 +35,7 @@ int main() {
     });
     auto drawer = render::Drawer{};
     auto gui_ctx = gui::Context{};
-    auto executor_moniter = CommandExecutorMoniter{};
+    auto executor_moniter = gui::CommandExecutorMoniter{};
 
     auto pipeline = render::Pipeline{ "hello.vert",
                                       "hello.frag",

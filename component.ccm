@@ -1,0 +1,33 @@
+export module gui.component;
+
+import "imgui_config.h";
+
+import gui;
+import toy;
+import render;
+import std;
+
+export namespace gui {
+
+class CommandExecutorMoniter : public CoDrawer<CommandExecutorMoniter> {
+public:
+  static toy::Generator drawer() {
+    auto  state = render::CommandExecutor::State{};
+    auto& executor = render::CommandExecutor::getInstance();
+
+    while (co_yield 0) {
+      state = executor.getState();
+      auto show_pool = [](render::PoolState state, const std::string& name) {
+        ImGui::Text("%s", std::format("The {} pool:", name).c_str());
+        ImGui::Text("%s", std::format("Total allocated resource: {}", state.allocate_n).c_str());
+        ImGui::Text("%s", std::format("In use resource: {}", state.inuse_n).c_str());
+      };
+      show_pool(state.graphic_cmdbuf_state, "graphic cmdbuf");
+      show_pool(state.transfer_cmdbuf_state, "transfer cmdbuf");
+      show_pool(state.present_cmdbuf_state, "present cmdbuf");
+      show_pool(state.fence_state, "fence");
+      show_pool(state.sema_state, "sema");
+    }
+  }
+};
+} // namespace gui

@@ -57,7 +57,6 @@ public:
  *
  */
 class Context : public toy::ProactiveSingleton<Context>,
-                public toy::RefContainer<Drawer>,
                 public toy::InterfaceLoader<Context, render::DrawRecorder, render::Drawer>,
                 public toy::InterfaceLoader<Context, render::LoopAction, render::Loop> {
 private:
@@ -66,6 +65,9 @@ private:
   static constexpr auto _max_scale = 5.0f;
   static constexpr auto _min_scale = 0.5f;
   static constexpr auto _default_font_size = static_cast<int>(_base_font_size * _max_scale / 2);
+
+  toy::RefContainer<Drawer>         _drawers;
+  toy::RefContainer<toy::Generator> _co_drawers;
 
   float    _scale;
   ImGuiIO* _io;
@@ -145,8 +147,11 @@ public:
 
     slider("scale ratio", _scale, _min_scale, _max_scale);
     _io->FontGlobalScale = _scale / (_default_font_size * 1.0f / _base_font_size);
-    for (auto* drawer : *this) {
+    for (auto* drawer : _drawers) {
       drawer->draw();
+    }
+    for (auto* drawer : _co_drawers) {
+      drawer->next();
     }
     ImGui::End();
     ImGui::Render();
@@ -159,6 +164,21 @@ public:
   }
 
   void action() override { draw(); }
+
+  operator toy::RefContainer<Drawer>&() { return _drawers; }
+  operator toy::RefContainer<toy::Generator>&() { return _co_drawers; }
+};
+
+template <typename Derived>
+class CoDrawer : public toy::Generator, public toy::AutoLoader<CoDrawer<Derived>, toy::Generator> {
+public:
+  template <typename _ = void>
+    requires requires {
+      { Derived::drawer() } -> std::convertible_to<toy::Generator>;
+    }
+  CoDrawer()
+    : toy::Generator(Derived::drawer()),
+      toy::AutoLoader<CoDrawer<Derived>, toy::Generator>(Context::getInstance()) {}
 };
 
 } // namespace gui

@@ -1,46 +1,71 @@
 export module toy.coroutine;
 
 import std;
-import toy;
+import toy.log;
 
 export namespace toy {
 
-class Promise;
+class Generator {
+private:
+  class Awaiter;
+  class Promise;
 
-class Generator : public std::coroutine_handle<Promise> {
+  std::coroutine_handle<Promise> _handle;
+
 public:
+  Generator(std::coroutine_handle<Promise> handle) : _handle(handle) {}
+  ~Generator() {
+    if (_handle) {
+      _handle.destroy();
+    }
+  }
+  Generator(const Generator&) noexcept = delete;
+  Generator(Generator&& e) noexcept {
+    _handle = e._handle;
+    e._handle = nullptr;
+  }
+  auto operator=(const Generator&) noexcept -> Generator& = delete;
+  auto operator=(Generator&& e) noexcept -> Generator& {
+    if (_handle) {
+      _handle.destroy();
+    }
+    _handle = e._handle;
+    e._handle = nullptr;
+    return *this;
+  }
+
   using promise_type = Promise;
   int next();
 };
-class Awaiter {
+class Generator::Awaiter {
 public:
   Awaiter& operator co_await() { return *this; }
 
   auto await_ready() -> bool {
-    toy::debug("await_ready");
+    // toy::debug("await_ready");
     return false;
   }
-  auto await_suspend(std::coroutine_handle<Promise>) -> bool {
-    toy::debug("await_suspend");
+  auto await_suspend(std::coroutine_handle<Generator::Promise>) -> bool {
+    // toy::debug("await_suspend");
     return true;
   }
-  void await_resume() {
-    toy::debug("await_resume");
-    return;
+  auto await_resume() -> bool {
+    // toy::debug("await_resume");
+    return true;
   }
 };
-struct Promise {
+struct Generator::Promise {
   int  _value;
   auto get_return_object() -> Generator {
-    toy::debug("get_return_object");
+    // toy::debug("get_return_object");
     return Generator{ std::coroutine_handle<Promise>::from_promise(*this) };
   }
   auto initial_suspend() -> std::suspend_always {
-    toy::debug("initial_suspend");
+    // toy::debug("initial_suspend");
     return {};
   }
   auto final_suspend() noexcept -> std::suspend_never {
-    toy::debug("final_suspend");
+    // toy::debug("final_suspend");
     return {};
   }
   void unhandled_exception() {}
@@ -51,18 +76,18 @@ struct Promise {
 };
 
 int Generator::next() {
-  toy::debug("before resume");
-  resume();
-  toy::debug("after resume");
-  int value = promise()._value;
+  // toy::debug("before resume");
+  _handle.resume();
+  // toy::debug("after resume");
+  int value = _handle.promise()._value;
   return value;
 }
 
 namespace test_Generator {
 Generator foo() {
-  for (int i = 0;; i++) {
-    toy::debugf("ready yield {}", i);
-    co_yield i;
+  int i = 0;
+  while (co_yield i) {
+    toy::debugf("ready yield {}", i++);
   }
 }
 void test() {
