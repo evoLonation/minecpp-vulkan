@@ -4,4 +4,6 @@ source:
 - trait.ccm
 - concepts.ccm
 - ranges.ccm
+- ranges_base.ccm
+- ranges_any_view.ccm
 - helper.ccm

@@ -1,0 +1,155 @@
+module toy.ranges:base;
+
+import toy.log;
+import std;
+
+export namespace toy {
+
+template <typename T>
+concept SelfIncrement = requires(T iter) {
+  { iter.selfIncrement() } -> std::same_as<void>;
+};
+template <typename T>
+concept SelfDecrement = requires(T iter) {
+  { iter.selfDecrement() } -> std::same_as<void>;
+};
+template <typename Derived>
+class SelfOperatorHelper {
+public:
+  auto self() -> Derived& { return static_cast<Derived&>(*this); }
+
+  template <SelfIncrement Derived_ = Derived>
+  auto operator++() -> Derived& {
+    self().selfIncrement();
+    return self();
+  }
+  template <SelfIncrement Derived_ = Derived>
+  auto operator++(int) -> Derived {
+    auto old = self();
+    self().selfIncrement();
+    return old;
+  }
+
+  template <SelfDecrement Derived_ = Derived>
+  auto operator--() -> Derived& {
+    self().selfDecrement();
+    return self();
+  }
+  template <SelfDecrement Derived_ = Derived>
+  auto operator--(int) -> Derived {
+    auto old = self();
+    self().selfDecrement();
+    return old;
+  }
+};
+template <typename T>
+concept RandomAccess = requires(T iter) {
+  requires std::random_access_iterator<
+    std::remove_reference_t<decltype(iter.*T::randomAccessMember())>>;
+};
+template <typename Derived, typename DifferenceType = std::ptrdiff_t>
+class RandomAccessIteratorHelper : public SelfOperatorHelper<Derived> {
+private:
+  using difference_type = DifferenceType;
+
+  RandomAccess auto& self() { return static_cast<Derived&>(*this); }
+  RandomAccess auto  self() const { return static_cast<const Derived&>(*this); }
+
+  auto  base() const { return self().*Derived::randomAccessMember(); }
+  auto& base() { return self().*Derived::randomAccessMember(); }
+
+private:
+  friend SelfOperatorHelper<Derived>;
+  void selfIncrement() { ++base(); }
+  void selfDecrement() { --base(); }
+
+public:
+  auto operator+=(difference_type n) -> Derived& {
+    base() += n;
+    return self();
+  }
+  friend auto operator+(Derived a, difference_type n) -> Derived {
+    return a.RandomAccessIteratorHelper::base() + n;
+  }
+  friend auto operator+(difference_type n, Derived a) -> Derived {
+    return a.RandomAccessIteratorHelper::base() + n;
+  }
+  auto operator-=(difference_type n) -> Derived& {
+    base() -= n;
+    return self();
+  }
+  friend auto operator-(Derived a, difference_type n) -> Derived {
+    return a.RandomAccessIteratorHelper::base() - n;
+  }
+
+  decltype(auto) operator[](difference_type n) const { return *(self() + n); }
+
+  friend auto operator-(Derived a, Derived b) -> difference_type {
+    return a.RandomAccessIteratorHelper::base() - b.RandomAccessIteratorHelper::base();
+  }
+
+  // 飞船运算符 = default， 编译器会自动生成所有比较运算符
+  // 如果飞船运算符是用户自定义的，则编译器不会自动生成相等比较运算符
+  // 考虑到容器类进行相等比较时，如果size不等则可以直接false，而进行三相比较则永远是O(n)的
+  friend auto operator<=>(Derived a, Derived b) -> std::strong_ordering {
+    return a.RandomAccessIteratorHelper::base() <=> b.RandomAccessIteratorHelper::base();
+  }
+  friend auto operator==(Derived a, Derived b) -> bool {
+    return a.RandomAccessIteratorHelper::base() == b.RandomAccessIteratorHelper::base();
+  }
+};
+
+template <typename Adaptor, typename... Args>
+struct AdaptorClosure {
+  Adaptor             adaptor_;
+  std::tuple<Args...> args_;
+  decltype(auto)      operator()(auto&& range) {
+    return std::apply(
+      [this, &range](auto&&... args) -> decltype(auto) {
+        return adaptor_(
+          std::forward<decltype(range)>(range), std::forward<decltype(args)>(args)...
+        );
+      },
+      args_
+    );
+  }
+
+  AdaptorClosure(Adaptor adaptor, auto&&... args)
+    : adaptor_(adaptor), args_(std::forward<decltype(args)>(args)...) {}
+};
+
+// 构造函数的参数用万能引用，并推导得到Args为去掉引用的类型
+template <typename Adaptor, typename... Args>
+AdaptorClosure(Adaptor adaptor, Args&&... args)
+  -> AdaptorClosure<Adaptor, std::remove_reference_t<Args>...>;
+
+template <typename... Args>
+auto operator|(auto&& range, AdaptorClosure<Args...> closure) {
+  return closure(std::forward<decltype(range)>(range));
+}
+
+// example
+struct MyTake {
+  auto operator()(auto&& range, int n) {
+    return views::take(views::all(std::forward<decltype(range)>(range)), n);
+  }
+  auto operator()(int n) { return AdaptorClosure{ *this, n }; }
+};
+
+void test_AdaptorClosure() {
+  std::array arr = { 1, 2, 3 };
+  auto       view = arr | MyTake{}(2);
+  auto       view2 = MyTake{}(view, 2);
+}
+
+// CRTP 模式，辅助无参数adaptor
+template <typename Derived>
+struct AdaptorClosureHelper {};
+
+template <typename Adaptor>
+  requires std::is_base_of_v<AdaptorClosureHelper<Adaptor>, Adaptor>
+auto operator|(auto&& range, Adaptor closure) {
+  return closure(std::forward<decltype(range)>(range));
+}
+
+} // namespace toy

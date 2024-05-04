@@ -1,0 +1,246 @@
+export module toy.ranges:any_view;
+
+import :base;
+
+import std;
+import toy.log;
+
+export namespace toy {
+
+template <typename T, bool sized = false>
+class CommonView {
+private:
+  struct ErasedContent;
+
+  class IteratorInterface {
+  public:
+    virtual auto operator*() const -> T = 0;
+    virtual auto operator++() -> IteratorInterface& = 0;
+    virtual auto operator==(IteratorInterface& a) -> bool = 0;
+    virtual auto getErasedContent() -> ErasedContent = 0;
+    virtual ~IteratorInterface() = default;
+  };
+  class LocalContent {
+  private:
+    auto moveResource(LocalContent&& obj) {
+      content = obj.content;
+      interface = reinterpret_cast<IteratorInterface*>(
+        (char*)obj.interface + (content.data() - obj.content.data())
+      );
+    }
+
+  public:
+    static constexpr auto _content_size = sizeof(int) * 10;
+
+    std::array<char, _content_size> content;
+    IteratorInterface*              interface;
+
+    LocalContent() : interface(nullptr) {}
+    template <std::derived_from<IteratorInterface> ImplementT>
+    LocalContent(ImplementT implement) {
+      auto* p = new (content.data()) ImplementT{ std::move(implement) };
+      interface = p;
+    }
+    LocalContent(const LocalContent&) = delete;
+    LocalContent(LocalContent&& obj) { moveResource(std::move(obj)); }
+    auto operator=(const LocalContent&) -> LocalContent& = delete;
+    auto operator=(LocalContent&& obj) -> LocalContent& {
+      if (interface != nullptr) {
+        interface->~IteratorInterface();
+      }
+      moveResource(std::move(obj));
+      return *this;
+    }
+  };
+  using DynamicContent = std::unique_ptr<IteratorInterface>;
+  // variant的默认构造会填充第一个类型的默认值
+  class ErasedContent : private std::variant<LocalContent, DynamicContent> {
+  private:
+    using Base = std::variant<LocalContent, DynamicContent>;
+    template <std::derived_from<IteratorInterface> ImplementT>
+    static auto getVariant(ImplementT implement) -> std::variant<LocalContent, DynamicContent> {
+      if constexpr (sizeof(implement) > LocalContent::_content_size) {
+        return std::make_unique<ImplementT>(std::move(implement));
+      } else {
+        return LocalContent{ std::move(implement) };
+      }
+    }
+
+  public:
+    ErasedContent() = default;
+    template <std::derived_from<IteratorInterface> ImplementT>
+    ErasedContent(ImplementT implement) {
+      if constexpr (sizeof(implement) > LocalContent::_content_size) {
+        Base::template emplace<1>(std::make_unique<ImplementT>(std::move(implement)));
+      } else {
+        Base::operator=(LocalContent{ std::move(implement) });
+      }
+    }
+    ErasedContent(const ErasedContent& content)
+      : ErasedContent{ std::move(content.get().getErasedContent()) } {}
+    ErasedContent(ErasedContent&&) = default;
+    auto operator=(const ErasedContent& content) -> ErasedContent& {
+      *this = std::move(content.get().getErasedContent());
+      return *this;
+    }
+    auto operator=(ErasedContent&&) -> ErasedContent& = default;
+
+  protected:
+    auto has_value() const -> bool {
+      return !(Base::index() == 0 && std::get<0>(*this).interface == nullptr);
+    }
+    auto get() const -> IteratorInterface& {
+      if (Base::index() == 0) {
+        return *std::get<0>(*this).interface;
+      } else {
+        return *std::get<1>(*this).get();
+      }
+    }
+  };
+
+public:
+  class Iterator : public ErasedContent {
+  public:
+    using difference_type = std::ptrdiff_t;
+    using value_type = T;
+
+    Iterator() = default;
+    Iterator(ErasedContent content) : ErasedContent{ std::move(content) } {}
+    auto operator*() const -> value_type { return *this->get(); }
+    auto operator++() -> Iterator& {
+      ++this->get();
+      return *this;
+    }
+    auto operator++(int) -> Iterator {
+      ++this->get();
+      return std::move(this->get().getErasedContent());
+    }
+    friend auto operator==(const Iterator& a, const Iterator& b) -> bool {
+      if (!a.has_value() || !b.has_value()) {
+        return false;
+      }
+      return a.get() == b.get();
+    }
+    class Sentinel : public ErasedContent {
+    public:
+      Sentinel() = default;
+      Sentinel(ErasedContent content) : ErasedContent{ std::move(content) } {}
+      friend auto operator==(const Iterator& a, const Sentinel& b) -> bool {
+        if (!a.has_value() || !b.has_value()) {
+          return false;
+        }
+        return a.get() == b.get();
+      }
+      friend auto operator==(const Sentinel& a, const Iterator& b) -> bool {
+        if (!a.has_value() || !b.has_value()) {
+          return false;
+        }
+        return a.get() == b.get();
+      }
+    };
+  };
+  using Sentinel = Iterator::Sentinel;
+
+private:
+  template <std::forward_iterator IteratorT, typename SentinelT>
+    requires std::sentinel_for<SentinelT, IteratorT>
+  class IteratorWrapper : public IteratorInterface {
+  private:
+    IteratorT _iter;
+
+  public:
+    IteratorWrapper(IteratorT iter) { _iter = std::move(iter); }
+
+    virtual auto operator*() const -> T override { return *_iter; }
+    virtual auto operator++() -> IteratorInterface& override {
+      ++_iter;
+      return *this;
+    }
+    virtual auto getErasedContent() -> ErasedContent override { return ErasedContent{ *this }; }
+
+    class SentinelWrapper : public IteratorInterface {
+      friend class IteratorWrapper;
+
+    private:
+      SentinelT _sentinel;
+
+    public:
+      SentinelWrapper(SentinelT sentinel) { _sentinel = std::move(sentinel); }
+      virtual auto operator*() const -> T override { std::unreachable(); }
+      virtual auto operator++() -> IteratorInterface& override { std::unreachable(); }
+      virtual auto operator==(IteratorInterface& a) -> bool override {
+        if (auto* sub_iter = dynamic_cast<IteratorWrapper*>(&a); sub_iter != nullptr) {
+          return _sentinel == sub_iter->_iter;
+        } else {
+          toy::throwf("The iterator interface's implement is not by myself");
+          std::unreachable();
+        }
+      }
+      virtual auto getErasedContent() -> ErasedContent override { return ErasedContent{ *this }; }
+    };
+    virtual auto operator==(IteratorInterface& a) -> bool override {
+      if (auto* sub_iter = dynamic_cast<IteratorWrapper*>(&a); sub_iter != nullptr) {
+        return _iter == sub_iter->_iter;
+      } else if (auto* sub_iter = dynamic_cast<SentinelWrapper*>(&a); sub_iter != nullptr) {
+        return _iter == sub_iter->_sentinel;
+      } else {
+        toy::throwf("The iterator interface's implement is not by myself");
+        std::unreachable();
+      }
+    }
+  };
+
+public:
+  Iterator _begin;
+  Sentinel _end;
+
+  std::size_t _size;
+
+  CommonView() {
+    _begin = { IteratorWrapper<T*, T*>{ nullptr } };
+    _end = { IteratorWrapper<T*, T*>{ nullptr } };
+    if constexpr (sized) {
+      _size = 0;
+    }
+  }
+  template <typename RangeT>
+    requires ranges::forward_range<RangeT> && std::same_as<ranges::range_value_t<RangeT>, T>
+  CommonView(const RangeT& range) {
+    // const_iterator_t and const_sentinel_t
+    using OriginIterator = decltype(ranges::cbegin(std::declval<RangeT&>()));
+    using OriginSentinel = decltype(ranges::cend(std::declval<RangeT&>()));
+    using IteratorWrapper = IteratorWrapper<OriginIterator, OriginSentinel>;
+    using SentinelWrapper = IteratorWrapper::SentinelWrapper;
+    _begin = { IteratorWrapper{ range.begin() } };
+    _end = { SentinelWrapper{ range.end() } };
+    if constexpr (sized) {
+      _size = range.size();
+    }
+  }
+
+  auto begin() const -> Iterator { return _begin; }
+  auto end() const -> Sentinel { return _end; }
+  template <bool _sized = true>
+    requires(sized == _sized)
+  auto size() const -> std::size_t {
+    return _size;
+  }
+  CommonView(const CommonView&) = default;
+  CommonView(CommonView&&) = default;
+  auto operator=(const CommonView&) -> CommonView& = default;
+  auto operator=(CommonView&&) -> CommonView& = default;
+};
+
+void test_CommonView() {
+  auto transform_view = std::array{ 1, 2, 3 } | views::transform([](auto a) { return a + 1; });
+  static_assert(ranges::forward_range<CommonView<int>>, "");
+  static_assert(ranges::sized_range<CommonView<int, true>>, "");
+  auto view_a = CommonView<int, true>{ transform_view };
+  toy::debug(view_a);
+  auto view_b = CommonView<int>{ views::repeat(10) } | views::take(10);
+  toy::debug(view_b);
+  views::all_t<CommonView<int>>;
+  views::zip(std::move(view_b), views::iota(0));
+}
+
+} // namespace toy
