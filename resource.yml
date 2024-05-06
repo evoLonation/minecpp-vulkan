@@ -11,6 +11,7 @@ source:
 - glfw.ccm
 - model.ccm
 - gui.ccm
+- transform.ccm
 - control.ccm
 - axis.ccm
 include_dir:

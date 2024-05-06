@@ -11,20 +11,48 @@ import toy;
 export namespace render {
 
 class InputProcessor : public toy::ProactiveSingleton<InputProcessor>,
-                       public toy::InterfaceLoader<InputProcessor, LoopAction, Loop> {
+                       public LoopActionLoader<LoopOrder::INPUT> {
+private:
+  using _KeyDownHandler = std::function<void()>;
+  using _KeyHoldHandler = std::function<void(int holdMilli)>;
+  using _KeyReleaseHandler = std::function<void(int holdMilli)>;
+  using _CursorMoveHandler = std::function<void(double x, double y)>;
+
+public:
+  struct KeyDownHandler : public _KeyDownHandler, public toy::AutoLoader<KeyDownHandler> {
+    KeyDownHandler() = default;
+    KeyDownHandler(int key, _KeyDownHandler handler)
+      : _KeyDownHandler(std::move(handler)),
+        toy::AutoLoader<KeyDownHandler>(InputProcessor::getInstance()._key_down_handlers[key]) {}
+  };
+  struct KeyReleaseHandler : public _KeyHoldHandler, public toy::AutoLoader<KeyReleaseHandler> {
+    KeyReleaseHandler() = default;
+    KeyReleaseHandler(int key, _KeyHoldHandler handler)
+      : _KeyHoldHandler(std::move(handler)),
+        toy::AutoLoader<KeyReleaseHandler>(InputProcessor::getInstance()._key_release_handlers[key]
+        ) {}
+  };
+  struct KeyHoldHandler : public _KeyHoldHandler, public toy::AutoLoader<KeyHoldHandler> {
+    KeyHoldHandler() = default;
+    KeyHoldHandler(int key, _KeyHoldHandler handler)
+      : _KeyHoldHandler(std::move(handler)),
+        toy::AutoLoader<KeyHoldHandler>(InputProcessor::getInstance()._key_hold_handlers[key]) {}
+  };
+  struct CursorMoveHandler : public _CursorMoveHandler, public toy::AutoLoader<CursorMoveHandler> {
+    CursorMoveHandler() = default;
+    CursorMoveHandler(_CursorMoveHandler handler)
+      : _CursorMoveHandler(std::move(handler)),
+        toy::AutoLoader<CursorMoveHandler>(InputProcessor::getInstance()._cursor_move_handlers) {}
+  };
+
 private:
   inline static std::map<GLFWwindow*, InputProcessor*> _instance_map;
 
-  using KeyDownHandler = std::function<void()>;
-  using KeyHoldHandler = std::function<void(int holdMilli)>;
-  using KeyReleaseHandler = std::function<void(int holdMilli)>;
-  using CursorMoveHandler = std::function<void(double x, double y)>;
-
   std::map<int, std::chrono::high_resolution_clock::time_point> _pressed_keys;
-  std::map<int, std::vector<KeyDownHandler>>                    _key_down_handlers;
-  std::map<int, std::vector<KeyReleaseHandler>>                 _key_release_handlers;
-  std::map<int, std::vector<KeyHoldHandler>>                    _key_hold_handlers;
-  std::vector<CursorMoveHandler>                                _cursor_move_handlers;
+  std::map<int, toy::RefContainer<KeyDownHandler>>              _key_down_handlers;
+  std::map<int, toy::RefContainer<KeyHoldHandler>>              _key_hold_handlers;
+  std::map<int, toy::RefContainer<KeyReleaseHandler>>           _key_release_handlers;
+  toy::RefContainer<CursorMoveHandler>                          _cursor_move_handlers;
 
   double _last_x;
   double _last_y;
@@ -45,7 +73,7 @@ public:
       if (action == GLFW_PRESS) {
         if (instance._key_down_handlers.contains(key)) {
           for (auto& handler : instance._key_down_handlers[key]) {
-            handler();
+            handler->operator()();
           }
         }
         auto start_time = std::chrono::high_resolution_clock::now();
@@ -57,7 +85,7 @@ public:
           auto duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
           for (auto& handler : instance._key_release_handlers[key]) {
-            handler(duration.count());
+            handler->operator()(duration.count());
           }
         }
         instance._pressed_keys.erase(key);
@@ -67,25 +95,14 @@ public:
     glfwSetCursorPosCallback(window, [](GLFWwindow* window, double x, double y) {
       auto& instance = *_instance_map[window];
       for (auto& handler : instance._cursor_move_handlers) {
-        handler(x - instance._last_x, y - instance._last_y);
+        handler->operator()(x - instance._last_x, y - instance._last_y);
       }
       instance._last_x = x;
       instance._last_y = y;
     });
     _cursor_visible = false;
     setCursorVisible(true);
-  };
-
-  void addKeyDownHandler(int key, KeyDownHandler handler) {
-    _key_down_handlers[key].push_back(handler);
   }
-  void addKeyHoldHandler(int key, KeyHoldHandler handler) {
-    _key_hold_handlers[key].push_back(handler);
-  }
-  void addKeyReleaseHandler(int key, KeyReleaseHandler handler) {
-    _key_release_handlers[key].push_back(handler);
-  }
-  void addCursorMoveHandler(CursorMoveHandler handler) { _cursor_move_handlers.push_back(handler); }
 
   void setCursorVisible(bool visible) {
     if (_cursor_visible == visible) {
@@ -116,12 +133,17 @@ public:
         auto duration =
           std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
         for (auto& handler : _key_hold_handlers[_key]) {
-          handler(duration.count());
+          handler->operator()(duration.count());
         }
       }
     }
   }
   void action() override { processInput(); }
 };
+
+using KeyDownHandler = InputProcessor::KeyDownHandler;
+using KeyHoldHandler = InputProcessor::KeyHoldHandler;
+using KeyReleaseHandler = InputProcessor::KeyReleaseHandler;
+using CursorMoveHandler = InputProcessor::CursorMoveHandler;
 
 } // namespace render

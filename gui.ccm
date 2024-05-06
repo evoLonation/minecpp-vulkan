@@ -57,8 +57,8 @@ public:
  *
  */
 class Context : public toy::ProactiveSingleton<Context>,
-                public toy::InterfaceLoader<Context, render::DrawRecorder, render::Drawer>,
-                public toy::InterfaceLoader<Context, render::LoopAction, render::Loop> {
+                public toy::InterfaceLoader<render::DrawRecorder, render::Drawer>,
+                public render::LoopActionLoader<render::LoopOrder::GUI_RENDER> {
 private:
   static constexpr auto _base_font_size = 13;
   static constexpr auto _default_scale = 2.0f;
@@ -169,16 +169,13 @@ public:
   operator toy::RefContainer<toy::Generator>&() { return _co_drawers; }
 };
 
-template <typename Derived>
-class CoDrawer : public toy::Generator, public toy::AutoLoader<CoDrawer<Derived>, toy::Generator> {
+using DrawerLoader = toy::InterfaceLoader<Drawer, Context>;
+
+class CoDrawer : public toy::Generator, public toy::AutoLoader<CoDrawer, toy::Generator> {
 public:
-  template <typename _ = void>
-    requires requires {
-      { Derived::drawer() } -> std::convertible_to<toy::Generator>;
-    }
-  CoDrawer()
-    : toy::Generator(Derived::drawer()),
-      toy::AutoLoader<CoDrawer<Derived>, toy::Generator>(Context::getInstance()) {}
+  CoDrawer(toy::Generator generator)
+    : toy::Generator(std::move(generator)),
+      toy::AutoLoader<CoDrawer, toy::Generator>(Context::getInstance()) {}
 };
 
 } // namespace gui

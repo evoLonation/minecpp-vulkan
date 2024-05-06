@@ -13,16 +13,37 @@ public:
   LoopAction() = default;
 };
 
-class Loop : public toy::ProactiveSingleton<Loop>, public toy::RefContainer<LoopAction> {
+enum class LoopOrder {
+  INPUT = 0,
+  COMMON = 1,
+  UNIFORM_UPDATE = 998,
+  GUI_RENDER = 999,
+  DRAWCALL = 1000,
+};
+
+class Loop : public toy::ProactiveSingleton<Loop> {
+private:
+  template <LoopOrder>
+  friend class LoopActionLoader;
+  std::map<LoopOrder, toy::RefContainer<LoopAction>> _action_map;
+
 public:
   Loop() = default;
   void startLoop() {
     while (!glfwWindowShouldClose(Context::getInstance().window)) {
-      for (auto* action : *this) {
-        action->action();
+      for (auto& [order, container] : _action_map) {
+        for (auto* action : container) {
+          action->action();
+        }
       }
     }
   }
+};
+
+template <LoopOrder order>
+class LoopActionLoader : public toy::InterfaceLoader<LoopAction> {
+public:
+  LoopActionLoader() : toy::InterfaceLoader<LoopAction>(Loop::getInstance()._action_map[order]) {}
 };
 
 } // namespace render

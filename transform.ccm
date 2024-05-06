@@ -1,0 +1,98 @@
+export module transform;
+
+import std;
+import glm;
+
+export namespace trans {
+
+namespace model {
+
+auto create(const glm::vec3& location, const glm::vec3& scale) -> glm::mat4 {
+  return glm::scale(glm::translate(glm::mat4(1.0f), location), scale);
+}
+auto create(const glm::vec3& location = glm::vec3{ 0.0f }, float scale = 1.0f) -> glm::mat4 {
+  return create(location, glm::vec3(scale, scale, scale));
+}
+
+} // namespace model
+
+namespace view {
+
+// Requirement: in the direction of camera, x is front, y is left, z is up
+// glm::lookAt: x is right, y is up, z is back
+// need a transform matrix, transform glm to requirement: x -> -y, y -> z, z -> -x
+auto create(
+  const glm::vec3& position,
+  const glm::vec3& target = glm::vec3{ 0.0f },
+  const glm::vec3& up = glm::vec3{ 0.0f, 0.0f, 2.0f }
+) -> glm::mat4 {
+  auto transform = glm::mat4{ .0f };
+  transform[0][1] = -1.0f;
+  transform[1][2] = 1.0f;
+  transform[2][0] = -1.0f;
+  transform[3][3] = 1.0f;
+  return transform * glm::lookAt(position, target - position, up);
+}
+
+} // namespace view
+
+namespace proj {
+
+// Corresponding to view::create, need transform back to glm's coordinate system
+// x -> -z, y -> -x, z -> y
+auto create(int width, int height, float fovy = 45.0f, float near = 0.1f, float far = 100.0f)
+  -> glm::mat4 {
+  auto transform = glm::mat4{ .0f };
+  transform[0][2] = -1.0f;
+  transform[1][0] = -1.0f;
+  transform[2][1] = 1.0f;
+  transform[3][3] = 1.0f;
+  auto proj = glm::perspective(glm::radians(fovy), width * 1.0f / height, near, far);
+  // vulkan 剪辑坐标的y轴相比 opengl 是反的
+  proj[1][1] *= -1;
+  return proj * transform;
+}
+} // namespace proj
+
+auto transform(const glm::mat4& target, const glm::mat4 transform, bool self = false) {
+  if (self) {
+    return target * transform;
+  } else {
+    return transform * target;
+  }
+}
+
+auto translate(const glm::vec3& vec) -> glm::mat4 { return glm::translate(glm::mat4(1.0f), vec); }
+
+// axis 可以不是 normalize 的
+auto rotate(float angle, const glm::vec3& axis) -> glm::mat4 {
+  return glm::rotate(glm::mat4(1.0f), glm::radians(angle), axis);
+}
+
+enum class Axis { X, Y, Z };
+
+template <Axis axis>
+auto rotate(float degree) -> glm::mat4 {
+  auto matrix = glm::mat4{ 1.0f };
+  auto cos = glm::cos(glm::radians(degree));
+  auto sin = glm::sin(glm::radians(degree));
+  if constexpr (axis == Axis::X) {
+    matrix[1][1] = cos;
+    matrix[1][2] = -sin;
+    matrix[2][1] = sin;
+    matrix[2][2] = cos;
+  } else if constexpr (axis == Axis::Y) {
+    matrix[0][0] = cos;
+    matrix[0][2] = sin;
+    matrix[2][0] = -sin;
+    matrix[2][2] = cos;
+  } else if constexpr (axis == Axis::Z) {
+    matrix[0][0] = cos;
+    matrix[0][1] = -sin;
+    matrix[1][0] = sin;
+    matrix[1][1] = cos;
+  }
+  return matrix;
+}
+
+} // namespace trans

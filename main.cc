@@ -10,11 +10,9 @@ import glm;
 import model;
 import render;
 import gui;
-import gui.component;
 import control;
 import axis;
-
-
+import transform;
 
 int main() {
   try {
@@ -30,12 +28,12 @@ int main() {
     auto executor = render::CommandExecutor{};
     auto loop = render::Loop{};
     auto input_processor = render::InputProcessor{};
-    input_processor.addKeyDownHandler(GLFW_KEY_ESCAPE, [&]() {
+    auto exit_handler = render::KeyDownHandler(GLFW_KEY_ESCAPE, [&]() {
       input_processor.setCursorVisible(!input_processor.isCursorVisible());
     });
     auto drawer = render::Drawer{};
     auto gui_ctx = gui::Context{};
-    auto executor_moniter = gui::CommandExecutorMoniter{};
+    auto executor_moniter = gui::CoDrawer{ control::cmdExecutorMoniter() };
 
     auto pipeline = render::Pipeline{ "hello.vert",
                                       "hello.frag",
@@ -50,8 +48,9 @@ int main() {
     auto index_buffer = render::IndexBuffer{ vertex_indices };
     auto sampled_texture = render::SampledTexture{ "model/viking_room.png", true };
 
-    auto view = glm::mat4{};
-    auto proj = glm::mat4{};
+    auto view = trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f });
+    auto view_control = gui::CoDrawer{ control::cameraController(view) };
+    auto proj = trans::proj::create(1920, 1080);
 
     auto unit_count = 8;
     auto model_datas = std::vector<glm::mat4>(unit_count);
@@ -62,7 +61,7 @@ int main() {
     auto draw_units = std::vector<render::DrawUnit>{};
     draw_units.reserve(unit_count);
     for (auto& uniform_data : model_datas) {
-      uniform_data = control::model::create();
+      uniform_data = trans::model::create();
       uniforms.emplace_back(uniform_data);
       draw_units.emplace_back(
         pipeline,
@@ -72,6 +71,7 @@ int main() {
           &uniforms[0], &uniforms[1], &uniforms.back(), &sampled_texture }
       );
     }
+    auto model_control = control::ModelInput{ model_datas[0] };
     auto axis_pipeline = render::Pipeline{ "axis.vert",
                                            "axis.frag",
                                            VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
@@ -88,9 +88,9 @@ int main() {
                                             axis_index_buffer,
                                             std::array<render::Resource*, 3>{
                                               &uniforms[0], &uniforms[1], &uniforms[2] } };
-    auto controller = control::model::Controller{ model_datas[0] };
-    auto camera_controller = control::camera::Controller{ view, proj };
-    camera_controller.setInput();
+    // auto controller = control::model::Controller{ model_datas[0] };
+    // auto camera_controller = control::camera::Controller{ view, proj };
+    // camera_controller.setInput();
     // controller.setInput();
     loop.startLoop();
     drawer.waitDone();

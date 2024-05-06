@@ -96,7 +96,9 @@ private:
   }
   void init(RefContainer<T>& container) {
     _container = &container;
-    _container->add(&self());
+    if (_container != nullptr) {
+      _container->add(&self());
+    }
   }
   void remove() {
     if (_container != nullptr) {
@@ -119,13 +121,15 @@ public:
   }
   auto operator=(const AutoLoader& e) -> AutoLoader& {
     remove();
-    init(e._container);
+    init(*e._container);
+    return *this;
   }
   auto operator=(AutoLoader&& e) -> AutoLoader& {
     remove();
-    init(e._container);
+    init(*e._container);
     e.remove();
     e.setMoved();
+    return *this;
   }
   void regist(RefContainer<T>& container) {
     remove();
@@ -137,15 +141,15 @@ public:
   }
 };
 
-template <typename Derived, typename Interface, typename Container>
-class InterfaceLoader : public Interface, private toy::AutoLoader<Derived, Interface> {
+template <typename Interface, typename Container = RefContainer<Interface>>
+class InterfaceLoader : public Interface,
+                        private toy::AutoLoader<InterfaceLoader<Interface, Container>, Interface> {
 private:
-  using AutoLoader = toy::AutoLoader<Derived, Interface>;
+  using AutoLoader = toy::AutoLoader<InterfaceLoader<Interface, Container>, Interface>;
   friend AutoLoader;
 
   template <typename _ = void>
-    requires std::derived_from<Derived, Interface> &&
-             std::convertible_to<Container, RefContainer<Interface>>
+    requires std::convertible_to<Container, RefContainer<Interface>>
   auto conceptCheck() {}
 
 public:
@@ -197,15 +201,15 @@ class Container {
 public:
   operator RefContainer<Interface>&() { return interfaces; }
 };
-class Impl : public InterfaceLoader<Impl, Interface, Container> {
+class Impl : public InterfaceLoader<Interface, Container> {
   void foo() override {}
 
 public:
-  Impl(Container& container) : InterfaceLoader<Impl, Interface, Container>(container) {}
+  Impl(Container& container) : InterfaceLoader<Interface, Container>(container) {}
 };
 class ContainerSingleton : public RefContainer<Interface>,
                            public ProactiveSingleton<ContainerSingleton> {};
-class ImplForSingleton : public InterfaceLoader<ImplForSingleton, Interface, ContainerSingleton> {
+class ImplForSingleton : public InterfaceLoader<Interface, ContainerSingleton> {
   void foo() override {}
 };
 

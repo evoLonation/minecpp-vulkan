@@ -17,7 +17,8 @@ export namespace render {
 template <typename DataType>
   requires std::is_trivially_copyable_v<DataType>
 // using DataType = glm::vec3;
-class Uniform : public Resource, public toy::InterfaceLoader<Uniform<DataType>, LoopAction, Loop> {
+class Uniform : public Resource,
+                public render::LoopActionLoader<render::LoopOrder::UNIFORM_UPDATE> {
 private:
   DataType  _cache_data;
   DataType* _p_data;
