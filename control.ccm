@@ -48,22 +48,22 @@ private:
       render::KeyHoldHandler{
         GLFW_KEY_A,
         [&](auto _) {
-          *_model = trans::transform(*_model, trans::translate(glm::vec3{ _speed, .0f, .0f }));
+          *_model = *_model * trans::translate(glm::vec3{ +_speed, .0f, .0f });
         } },
       render::KeyHoldHandler{
         GLFW_KEY_D,
         [&](auto _) {
-          *_model = trans::transform(*_model, trans::translate(glm::vec3{ -_speed, .0f, .0f }));
+          *_model = *_model * trans::translate(glm::vec3{ -_speed, .0f, .0f });
         } },
       render::KeyHoldHandler{
         GLFW_KEY_W,
         [&](auto _) {
-          *_model = trans::transform(*_model, trans::translate(glm::vec3{ .0f, _speed, .0f }));
+          *_model = *_model * trans::translate(glm::vec3{ .0f, +_speed, .0f });
         } },
       render::KeyHoldHandler{
         GLFW_KEY_S,
         [&](auto _) {
-          *_model = trans::transform(*_model, trans::translate(glm::vec3{ .0f, -_speed, .0f }));
+          *_model = *_model * trans::translate(glm::vec3{ .0f, -_speed, .0f });
         } },
     };
   }
@@ -76,6 +76,9 @@ public:
   auto draw() -> toy::Generator {
     auto  last_input = false;
     auto  input = false;
+    auto  gui_set = false;
+    auto  axis = glm::vec3{ 1.0f, 0.0f, 0.0f };
+    auto  degree = float{};
     auto& model = *_model;
     while (co_yield 0) {
       ImGui::Checkbox("Enable input control ?", &input);
@@ -88,16 +91,15 @@ public:
       }
       last_input = input;
       ImGui::Checkbox("Move model self ?", &_self);
+      ImGui::Checkbox("Enable Gui Set Model", &gui_set);
+      if (gui_set) {
+        // gui::slider("location", _location);
+        // gui::slider("scale", _scale);
+        gui::slider("rotate axis", axis);
+        gui::slider("rotate degree", degree, 0.0f, 360.0f);
+        model = trans::rotate(axis, degree);
+      }
     }
-    // ImGui::Checkbox("Enable Model", &_set_model);
-    // if (_set_model) {
-    //   gui::slider("location", _location);
-    //   gui::slider("scale", _scale);
-    //   gui::slider("rotate axis", _axis);
-    //   gui::slider("rotate angle", _angle, 0.0f, 360.0f);
-    //   model = create(_location, _scale);
-    //   model = rotate(model, _angle, _axis, _self);
-    // }
   }
   // todo: how to move coroutine?
   ModelInput(const ModelInput&) noexcept = delete;
@@ -166,189 +168,16 @@ auto cameraController(glm::mat4& view, glm::vec3 location = glm::vec3{ -1.0f, 0.
       if (render::InputProcessor::getInstance().isCursorVisible()) {
         return;
       }
-      rotate_z -= x / 1920 * 360;
-      rotate_y += y / 1080 * 360;
+      // x为正 -> 鼠标右移 -> 所有坐标沿z轴正旋转
+      rotate_z += x / 1920 * 360;
+      // y为正 -> 鼠标下移 -> 所有坐标沿y轴负旋转
+      rotate_y -= y / 1080 * 360;
       rotate_y = std::clamp(rotate_y, -90.0f, 90.0f);
     }),
   };
   while (co_yield 0) {
     compute_view();
   }
-  // toy::KeyHoldHandler(GLFW_KEY_D, [&](auto _) {
-  //   view = model::translate(view, glm::vec3{ -computeMoveDistance(), 0.0f, 0.0f }, _self);
-  // });
-  // toy::KeyHoldHandler(GLFW_KEY_Z, [&](auto _) {
-  //   view = model::translate(view, glm::vec3{ 0.0f, -computeMoveDistance(), 0.0f }, _self);
-  // });
-  // toy::KeyHoldHandler(GLFW_KEY_X, [&](auto _) {
-  //   view = model::translate(view, glm::vec3{ 0.0f, computeMoveDistance(), 0.0f }, _self);
-  // });
-  // toy::KeyHoldHandler(GLFW_KEY_W, [&](auto _) {
-  //   view = model::translate(view, glm::vec3{ 0.0f, 0.0f, computeMoveDistance() }, _self);
-  // });
-  // toy::KeyHoldHandler(GLFW_KEY_S, [&](auto _) {
-  //   view = model::translate(view, glm::vec3{ 0.0f, 0.0f, -computeMoveDistance() }, _self);
-  // });
-  // toy::KeyHoldHandler(GLFW_KEY_L, [&](auto _) {
-  //   view = model::rotate(view, -computeRotateDegree(), glm::vec3{ 0.0f, 1.0f, 0.0f }, _self);
-  // });
-  // toy::KeyHoldHandler(GLFW_KEY_J, [&](auto _) {
-  //   view = model::rotate(view, computeRotateDegree(), glm::vec3{ 0.0f, 1.0f, 0.0f }, _self);
-  // });
-  // toy::KeyHoldHandler(GLFW_KEY_I, [&](auto _) {
-  //   view = model::rotate(view, -computeRotateDegree(), glm::vec3{ 1.0f, 0.0f, 0.0f }, _self);
-  // });
-  // toy::KeyHoldHandler(GLFW_KEY_K, [&](auto _) {
-  //   view = model::rotate(view, computeRotateDegree(), glm::vec3{ 1.0f, 0.0f, 0.0f }, _self);
-  // });
-  // toy::KeyHoldHandler(GLFW_KEY_Q, [&](auto _) {
-  //   view = model::rotate(view, -computeRotateDegree(), glm::vec3{ 0.0f, 0.0f, 1.0f }, _self);
-  // });
-  // toy::KeyHoldHandler(GLFW_KEY_E, [&](auto _) {
-  //   view = model::rotate(view, computeRotateDegree(), glm::vec3{ 0.0f, 0.0f, 1.0f }, _self);
-  // });
-  // toy::CursorMoveHandler([&](double x, double y) {
-  //   if (render::InputProcessor::getInstance().isCursorVisible()) {
-  //     return;
-  //   }
-  //   view = model::rotate(view, computeRotateDegreeX(x), glm::vec3{ 0.0f, 1.0f, 0.0f }, _self);
-  //   view = model::rotate(view, computeRotateDegreeY(y), glm::vec3{ 1.0f, 0.0f, 0.0f }, _self);
-  // });
 }
-
-// auto cameraInput(glm::mat4& view) -> toy::Generator {
-//   auto move_speed = .1f;
-//   auto rotate_speed = .1f;
-//   auto handler = getCameraInputHandler(view, move_speed, rotate_speed);
-//   while (co_yield 0) {
-//   }
-// }
-
-// class ModelController {
-// private:
-//   glm::mat4* _model;
-//   glm::vec3  _location;
-//   glm::vec3  _scale;
-//   glm::vec3  _axis;
-//   float      _angle;
-//   bool       _set_model;
-//   float      _speed;
-//   bool       _self;
-
-// public:
-//   ModelController(glm::mat4& model)
-//     : _model{ &model }, _location{ 0.0f }, _scale{ 1.0f }, _axis{ 2.0f, 0.0f, 0.0f },
-//       _angle{ 0.0f }, _set_model{ false }, _speed{ 0.05f }, _self{ false } {
-//     *_model = trans::model::create(_location);
-//   }
-//   void setInput() {
-//     auto& ctx = render::InputProcessor::getInstance();
-//     ctx.addKeyHoldHandler(GLFW_KEY_A, [&](int handle) {
-//       *_model = translate(*_model, glm::vec3{ _speed, .0f, .0f }, _self);
-//     });
-//     ctx.addKeyHoldHandler(GLFW_KEY_D, [&](int handle) {
-//       *_model = translate(*_model, glm::vec3{ -_speed, .0f, .0f }, _self);
-//     });
-//   }
-//   void show() {
-//     auto& model = *_model;
-//     ImGui::Checkbox("Is self", &_self);
-//     ImGui::Checkbox("Set Model", &_set_model);
-//     if (_set_model) {
-//       gui::slider("location", _location);
-//       gui::slider("scale", _scale);
-//       gui::slider("rotate axis", _axis);
-//       gui::slider("rotate angle", _angle, 0.0f, 360.0f);
-//       model = create(_location, _scale);
-//       model = rotate(model, _angle, _axis, _self);
-//     }
-//   };
-// };
-
-// class CameraController {
-// private:
-//   glm::mat4* _view;
-//   glm::mat4* _proj;
-//   int*       _width;
-//   int*       _height;
-//   bool       _self;
-//   float      _speed_move;
-//   float      _speed_rotate;
-//   bool       _open_controller;
-
-//   auto getDelta() -> float { return 1.0f / 60.0f; }
-
-//   auto computeMoveDistance() -> float { return _speed_move * getDelta(); }
-//   auto computeRotateDegree() -> float { return _speed_rotate * getDelta(); }
-//   auto computeRotateDegreeY(float pos) -> float { return _speed_rotate * pos / *_height; }
-//   auto computeRotateDegreeX(float pos) -> float { return _speed_rotate * pos / *_width; }
-
-// public:
-//   CameraController(glm::mat4& view, glm::mat4& proj)
-//     : _view(&view), _proj(&proj), _self(true), _speed_move(5.0f), _speed_rotate(60.0f),
-//       _open_controller(false) {
-//     auto& ctx = render::Context::getInstance();
-//     _width = &(int&)ctx.extent.width;
-//     _height = &(int&)ctx.extent.height;
-//     *_view = model::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f });
-//     *_proj = proj::create(*_width, *_height);
-//   }
-//   void setInput() {
-//     auto& ctx = render::InputProcessor::getInstance();
-//     auto& view = *_view;
-//     ctx.addKeyHoldHandler(GLFW_KEY_A, [&](auto _) {
-//       view = model::translate(view, glm::vec3{ computeMoveDistance(), 0.0f, 0.0f }, _self);
-//     });
-//     ctx.addKeyHoldHandler(GLFW_KEY_D, [&](auto _) {
-//       view = model::translate(view, glm::vec3{ -computeMoveDistance(), 0.0f, 0.0f }, _self);
-//     });
-//     ctx.addKeyHoldHandler(GLFW_KEY_Z, [&](auto _) {
-//       view = model::translate(view, glm::vec3{ 0.0f, -computeMoveDistance(), 0.0f }, _self);
-//     });
-//     ctx.addKeyHoldHandler(GLFW_KEY_X, [&](auto _) {
-//       view = model::translate(view, glm::vec3{ 0.0f, computeMoveDistance(), 0.0f }, _self);
-//     });
-//     ctx.addKeyHoldHandler(GLFW_KEY_W, [&](auto _) {
-//       view = model::translate(view, glm::vec3{ 0.0f, 0.0f, computeMoveDistance() }, _self);
-//     });
-//     ctx.addKeyHoldHandler(GLFW_KEY_S, [&](auto _) {
-//       view = model::translate(view, glm::vec3{ 0.0f, 0.0f, -computeMoveDistance() }, _self);
-//     });
-//     ctx.addKeyHoldHandler(GLFW_KEY_L, [&](auto _) {
-//       view = model::rotate(view, -computeRotateDegree(), glm::vec3{ 0.0f, 1.0f, 0.0f }, _self);
-//     });
-//     ctx.addKeyHoldHandler(GLFW_KEY_J, [&](auto _) {
-//       view = model::rotate(view, computeRotateDegree(), glm::vec3{ 0.0f, 1.0f, 0.0f }, _self);
-//     });
-//     ctx.addKeyHoldHandler(GLFW_KEY_I, [&](auto _) {
-//       view = model::rotate(view, -computeRotateDegree(), glm::vec3{ 1.0f, 0.0f, 0.0f }, _self);
-//     });
-//     ctx.addKeyHoldHandler(GLFW_KEY_K, [&](auto _) {
-//       view = model::rotate(view, computeRotateDegree(), glm::vec3{ 1.0f, 0.0f, 0.0f }, _self);
-//     });
-//     ctx.addKeyHoldHandler(GLFW_KEY_Q, [&](auto _) {
-//       view = model::rotate(view, -computeRotateDegree(), glm::vec3{ 0.0f, 0.0f, 1.0f }, _self);
-//     });
-//     ctx.addKeyHoldHandler(GLFW_KEY_E, [&](auto _) {
-//       view = model::rotate(view, computeRotateDegree(), glm::vec3{ 0.0f, 0.0f, 1.0f }, _self);
-//     });
-//     ctx.addCursorMoveHandler([&](double x, double y) {
-//       if (render::InputProcessor::getInstance().isCursorVisible()) {
-//         return;
-//       }
-//       view = model::rotate(view, computeRotateDegreeX(x), glm::vec3{ 0.0f, 1.0f, 0.0f }, _self);
-//       view = model::rotate(view, computeRotateDegreeY(y), glm::vec3{ 1.0f, 0.0f, 0.0f }, _self);
-//     });
-//   }
-//   void show() {
-//     ImGui::Checkbox("Set Camera", &_open_controller);
-//     ImGui::Checkbox("Is self2", &_self);
-//     if (_open_controller) {
-//       gui::slider("rotate speed", _speed_rotate, 0.0f, 360.0f * 5);
-//       gui::slider("move speed", _speed_move, 0.0f, 1.0f * 10);
-//     }
-//     *_proj = proj::create(*_width, *_height);
-//   }
-// };
 
 } // namespace control

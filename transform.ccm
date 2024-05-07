@@ -2,8 +2,80 @@ export module transform;
 
 import std;
 import glm;
+import toy;
 
 export namespace trans {
+
+auto eq(float a, float b) { return glm::abs(a - b) < 0.00001f; }
+auto eq(glm::vec4 a, glm::vec4 b) {
+  return eq(a.x, b.x) && eq(a.y, b.y) && eq(a.z, b.z) && eq(a.w, b.w);
+}
+auto eq(glm::vec3 a, glm::vec3 b) { return eq(a.x, b.x) && eq(a.y, b.y) && eq(a.z, b.z); }
+auto equivalence(glm::vec4 a, glm::vec4 b) { return eq(a / a.w, b / b.w); }
+
+// 按照行向量的方式构造矩阵
+auto matrix(const std::array<glm::vec4, 4>& vecs) -> glm::mat4 {
+  return glm::transpose(glm::mat4{ vecs[0], vecs[1], vecs[2], vecs[3] });
+}
+
+auto translate(const glm::vec3& vec) -> glm::mat4 {
+  return matrix({
+    glm::vec4{ 1.0f, 0.0f, 0.0f, vec.x },
+    glm::vec4{ 0.0f, 1.0f, 0.0f, vec.y },
+    glm::vec4{ 0.0f, 0.0f, 1.0f, vec.z },
+    glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f },
+  });
+}
+
+enum class Axis { X, Y, Z };
+
+template <Axis axis>
+auto rotate(float degree) -> glm::mat4 {
+  auto cos = glm::cos(glm::radians(degree));
+  auto sin = glm::sin(glm::radians(degree));
+  if constexpr (axis == Axis::X) {
+    return matrix({
+      glm::vec4{ 1.0f, 0.0f, 0.0f, 0.0f },
+      glm::vec4{ 0.0f, cos, -sin, 0.0f },
+      glm::vec4{ 0.0f, sin, cos, 0.0f },
+      glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f },
+    });
+  } else if constexpr (axis == Axis::Y) {
+    return matrix({
+      glm::vec4{ cos, 0.0f, sin, 0.0f },
+      glm::vec4{ 0.0f, 1.0f, 0.0f, 0.0f },
+      glm::vec4{ -sin, 0.0f, cos, 0.0f },
+      glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f },
+    });
+  } else if constexpr (axis == Axis::Z) {
+    return matrix({
+      glm::vec4{ cos, -sin, 0.0f, 0.0f },
+      glm::vec4{ sin, cos, 0.0f, 0.0f },
+      glm::vec4{ 0.0f, 0.0f, 1.0f, 0.0f },
+      glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f },
+    });
+  }
+}
+
+auto rotate(const glm::vec3& axis_, float degree) -> glm::mat4 {
+  auto radian = glm::radians(degree);
+  radian /= 2;
+  auto sin = glm::sin(radian);
+  auto cos = glm::cos(radian);
+  auto axis = glm::normalize(axis_);
+  auto quaternion = glm::vec4{ cos, axis.x * sin, axis.y * sin, axis.z * sin };
+  auto [a, b, c, d] = std::tuple<float&, float&, float&, float&>{
+    quaternion.x, quaternion.y, quaternion.z, quaternion.w
+  };
+  auto [a2, b2, c2, d2] = std::tuple{ a * a, b * b, c * c, d * d };
+  auto [ab, ac, ad, bc, bd, cd] = std::tuple{ a * b, a * c, a * d, b * c, b * d, c * d };
+  return matrix({
+    glm::vec4{ a2 + b2 - c2 - d2, 2 * (bc - ad), 2 * (ac + bd), 0.0f },
+    glm::vec4{ 2 * (ad + bc), a2 - b2 + c2 - d2, 2 * (cd - ab), 0.0f },
+    glm::vec4{ 2 * (bd - ac), 2 * (ab + cd), a2 - b2 - c2 + d2, 0.0f },
+    glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f },
+  });
+}
 
 namespace model {
 
@@ -19,80 +91,64 @@ auto create(const glm::vec3& location = glm::vec3{ 0.0f }, float scale = 1.0f) -
 namespace view {
 
 // Requirement: in the direction of camera, x is front, y is left, z is up
-// glm::lookAt: x is right, y is up, z is back
-// need a transform matrix, transform glm to requirement: x -> -y, y -> z, z -> -x
 auto create(
   const glm::vec3& position,
   const glm::vec3& target = glm::vec3{ 0.0f },
   const glm::vec3& up = glm::vec3{ 0.0f, 0.0f, 2.0f }
 ) -> glm::mat4 {
-  auto transform = glm::mat4{ .0f };
-  transform[0][1] = -1.0f;
-  transform[1][2] = 1.0f;
-  transform[2][0] = -1.0f;
-  transform[3][3] = 1.0f;
-  return transform * glm::lookAt(position, target - position, up);
+  auto x = glm::normalize(target - position);
+  auto y = glm::cross(up, x);
+  auto z = glm::normalize(glm::cross(x, y));
+  // 用单位基构成的矩阵的几何意义是将向量的坐标变换为这些单位基构成的空间下的坐标
+  auto m_rotate = matrix({
+    glm::vec4{ x, 0.0f },
+    glm::vec4{ y, 0.0f },
+    glm::vec4{ z, 0.0f },
+    glm::vec4{ 0, 0, 0, 1.0f },
+  });
+  return m_rotate * translate(-position);
 }
 
 } // namespace view
 
 namespace proj {
 
-// Corresponding to view::create, need transform back to glm's coordinate system
-// x -> -z, y -> -x, z -> y
-auto create(int width, int height, float fovy = 45.0f, float near = 0.1f, float far = 100.0f)
+auto create(int width, int height, float fovz = 45.0f, float near = 0.1f, float far = 100.0f)
   -> glm::mat4 {
-  auto transform = glm::mat4{ .0f };
-  transform[0][2] = -1.0f;
-  transform[1][0] = -1.0f;
-  transform[2][1] = 1.0f;
-  transform[3][3] = 1.0f;
-  auto proj = glm::perspective(glm::radians(fovy), width * 1.0f / height, near, far);
+  // glm::perspective's coordinate: x -> right, y -> up, z -> back
+  // need transfer coordinate system, new unit basis vector:
+  // x (right) = (0, -1, 0), y (up) = (0, 0, 1), z (back) = (-1, 0, 0)
+  auto transform = matrix({
+    glm::vec4{ 0.0f, -1.0f, 0.0f, 0.0f },
+    glm::vec4{ 0.0f, 0.0f, 1.0f, 0.0f },
+    glm::vec4{ -1.0f, 0.0f, 0.0f, 0.0f },
+    glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f },
+  });
+  auto proj = glm::perspective(glm::radians(fovz), width * 1.0f / height, near, far);
   // vulkan 剪辑坐标的y轴相比 opengl 是反的
   proj[1][1] *= -1;
   return proj * transform;
 }
 } // namespace proj
 
-auto transform(const glm::mat4& target, const glm::mat4 transform, bool self = false) {
-  if (self) {
-    return target * transform;
-  } else {
-    return transform * target;
-  }
-}
-
-auto translate(const glm::vec3& vec) -> glm::mat4 { return glm::translate(glm::mat4(1.0f), vec); }
-
-// axis 可以不是 normalize 的
-auto rotate(float angle, const glm::vec3& axis) -> glm::mat4 {
-  return glm::rotate(glm::mat4(1.0f), glm::radians(angle), axis);
-}
-
-enum class Axis { X, Y, Z };
-
-template <Axis axis>
-auto rotate(float degree) -> glm::mat4 {
-  auto matrix = glm::mat4{ 1.0f };
-  auto cos = glm::cos(glm::radians(degree));
-  auto sin = glm::sin(glm::radians(degree));
-  if constexpr (axis == Axis::X) {
-    matrix[1][1] = cos;
-    matrix[1][2] = -sin;
-    matrix[2][1] = sin;
-    matrix[2][2] = cos;
-  } else if constexpr (axis == Axis::Y) {
-    matrix[0][0] = cos;
-    matrix[0][2] = sin;
-    matrix[2][0] = -sin;
-    matrix[2][2] = cos;
-  } else if constexpr (axis == Axis::Z) {
-    matrix[0][0] = cos;
-    matrix[0][1] = -sin;
-    matrix[1][0] = sin;
-    matrix[1][1] = cos;
-  }
-  return matrix;
+void test_trans() {
+  auto assert = [](bool condition) { toy::checkThrowf(condition, "assert error!"); };
+  auto view = view::create({ 1, 0, 0 }, { 1, 1, 0 }, { 0, -1, 1 });
+  // assert(eq(view * glm::vec4{ 1, 0, 1, 1 }, glm::vec4{ 0, 0, 1, 1 }));
+  assert(eq(view * glm::vec4{ 0, 0, 1, 1 }, glm::vec4{ 0, 1, 1, 1 }));
+  assert(eq(view * glm::vec4{ 2, 0, 1, 1 }, glm::vec4{ 0, -1, 1, 1 }));
+  assert(eq(view * glm::vec4{ 1, 1, 1, 1 }, glm::vec4{ 1, 0, 1, 1 }));
+  assert(eq(view * glm::vec4{ 1, -1, 1, 1 }, glm::vec4{ -1, 0, 1, 1 }));
+  auto proj = proj::create(1920, 1080, 90.0f, 2.5f, 100.0f);
+  assert(
+    equivalence(proj * glm::vec4{ 2.5f, 0.0f, 0.0f, 1.0f }, glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f })
+  );
+  assert(
+    equivalence(proj * glm::vec4{ 100.0f, 0.0f, 0.0f, 1.0f }, glm::vec4{ 0.0f, 0.0f, 1.0f, 1.0f })
+  );
+  assert(
+    equivalence(proj * glm::vec4{ 2.5f, 0.0f, 2.5f, 1.0f }, glm::vec4{ 0.0f, -1.0f, 0.0f, 1.0f })
+  );
 }
 
 } // namespace trans

@@ -21,6 +21,7 @@ int main() {
     toy::test_ChunkBy();
     toy::test_AnyView();
     toy::test_Generator::test();
+    trans::test_trans();
     auto applicationName = "hello, vulkan!";
     auto width = 1920;
     auto height = 1080;
