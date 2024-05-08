@@ -18,7 +18,7 @@ template <typename DataType>
   requires std::is_trivially_copyable_v<DataType>
 // using DataType = glm::vec3;
 class Uniform : public Resource,
-                public render::LoopActionLoader<render::LoopOrder::UNIFORM_UPDATE> {
+                private render::LoopActionLoader<render::LoopOrder::UPDATE_UNIFORM> {
 private:
   DataType  _cache_data;
   DataType* _p_data;

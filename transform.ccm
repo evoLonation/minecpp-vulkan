@@ -6,7 +6,7 @@ import toy;
 
 export namespace trans {
 
-auto eq(float a, float b) { return glm::abs(a - b) < 0.00001f; }
+auto eq(float a, float b) { return glm::abs(a - b) < 0.001f; }
 auto eq(glm::vec4 a, glm::vec4 b) {
   return eq(a.x, b.x) && eq(a.y, b.y) && eq(a.z, b.z) && eq(a.w, b.w);
 }
@@ -23,6 +23,15 @@ auto translate(const glm::vec3& vec) -> glm::mat4 {
     glm::vec4{ 1.0f, 0.0f, 0.0f, vec.x },
     glm::vec4{ 0.0f, 1.0f, 0.0f, vec.y },
     glm::vec4{ 0.0f, 0.0f, 1.0f, vec.z },
+    glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f },
+  });
+}
+
+auto scale(const glm::vec3& vec) -> glm::mat4 {
+  return matrix({
+    glm::vec4{ vec.x, 0.0f, 0.0f, 0.0f },
+    glm::vec4{ 0.0f, vec.y, 0.0f, 0.0f },
+    glm::vec4{ 0.0f, 0.0f, vec.z, 0.0f },
     glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f },
   });
 }
@@ -77,6 +86,32 @@ auto rotate(const glm::vec3& axis_, float degree) -> glm::mat4 {
   });
 }
 
+auto inverse(const glm::mat4& transform) -> glm::mat4 {
+  // transform = translate * q
+  // transform^-1 = q^-1 * translate^-1
+
+  // translate and translate^-1
+  auto t = translate(glm::vec3{ transform[3] });
+  auto t_i = t;
+  t_i[3][0] = -t_i[3][0];
+  t_i[3][1] = -t_i[3][1];
+  t_i[3][2] = -t_i[3][2];
+  // q is left up part
+  auto q = transform;
+  q[3] = glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f };
+  auto q_t = glm::transpose(q);
+  // scale^2
+  auto s2 = q_t * q;
+  // scale^-2
+  auto s2_i = s2;
+  s2_i[0][0] = 1 / s2_i[0][0];
+  s2_i[1][1] = 1 / s2_i[1][1];
+  s2_i[2][2] = 1 / s2_i[2][2];
+  // q^-1 = s^-2 * q^t
+  auto q_i = s2_i * q_t;
+  return q_i * t_i;
+}
+
 namespace model {
 
 auto create(const glm::vec3& location, const glm::vec3& scale) -> glm::mat4 {
@@ -113,22 +148,50 @@ auto create(
 
 namespace proj {
 
-auto create(int width, int height, float fovz = 45.0f, float near = 0.1f, float far = 100.0f)
+// transform projection coordinate to vulkan viewport coordinate
+// projection coordinate: x -> front, y -> left, z -> up
+// viewport coordinate: x -> right, y -> down, z -> front
+// the viewport coordinate unit vectors: x -> -y, y -> -z, z -> x
+const auto viewport = matrix({
+  glm::vec4{ 0.0f, -1.0f, 0.0f, 0.0f },
+  glm::vec4{ 0.0f, 0.0f, -1.0f, 0.0f },
+  glm::vec4{ 1.0f, 0.0f, 0.0f, 0.0f },
+  glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f },
+});
+
+auto orthogonal(float near, float far, float left, float right, float bottom, float top)
   -> glm::mat4 {
-  // glm::perspective's coordinate: x -> right, y -> up, z -> back
-  // need transfer coordinate system, new unit basis vector:
-  // x (right) = (0, -1, 0), y (up) = (0, 0, 1), z (back) = (-1, 0, 0)
-  auto transform = matrix({
-    glm::vec4{ 0.0f, -1.0f, 0.0f, 0.0f },
-    glm::vec4{ 0.0f, 0.0f, 1.0f, 0.0f },
-    glm::vec4{ -1.0f, 0.0f, 0.0f, 0.0f },
-    glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f },
-  });
-  auto proj = glm::perspective(glm::radians(fovz), width * 1.0f / height, near, far);
-  // vulkan 剪辑坐标的y轴相比 opengl 是反的
-  proj[1][1] *= -1;
-  return proj * transform;
+  auto t = translate(-glm::vec3{ (near + far) / 2, (left + right) / 2, (top + bottom) / 2 });
+  auto s = scale(glm::vec3{ 2 / (far - near), 2 / (left - right), 2 / (top - bottom) });
+  return viewport * s * t;
 }
+
+auto perspective(float near, float far, float left, float right, float bottom, float top)
+  -> glm::mat4 {
+  auto zip = matrix({
+    glm::vec4{ near + far, 0.0f, 0.0f, -near * far },
+    glm::vec4{ 0.0f, near, 0.0f, 0.0f },
+    glm::vec4{ 0.0f, 0.0f, near, 0.0f },
+    glm::vec4{ 1.0f, 0.0f, 0.0f, 0.0f },
+  });
+  return orthogonal(near, far, left, right, bottom, top) * zip;
+}
+
+auto perspective(
+  uint32_t width, uint32_t height, float fovy_degree = 45.0f, float near = 0.1f, float far = 100.f
+) -> glm::mat4 {
+  float left = near * glm::tan(glm::radians(fovy_degree) / 2);
+  float right = -left;
+  float top = left * height / width;
+  float bottom = -top;
+  return perspective(near, far, left, right, bottom, top);
+}
+
+auto perspectiveInverse(float near, float far, float left, float right, float bottom, float top)
+  -> glm::mat4 {
+  // todo
+}
+
 } // namespace proj
 
 void test_trans() {
@@ -139,16 +202,68 @@ void test_trans() {
   assert(eq(view * glm::vec4{ 2, 0, 1, 1 }, glm::vec4{ 0, -1, 1, 1 }));
   assert(eq(view * glm::vec4{ 1, 1, 1, 1 }, glm::vec4{ 1, 0, 1, 1 }));
   assert(eq(view * glm::vec4{ 1, -1, 1, 1 }, glm::vec4{ -1, 0, 1, 1 }));
-  auto proj = proj::create(1920, 1080, 90.0f, 2.5f, 100.0f);
+  auto transform = translate(glm::vec3{ 7, 8, 9 });
+  auto I = transform * inverse(transform);
+  assert(eq(glm::vec4{ I[0][0], I[1][1], I[2][2], I[3][3] }, glm::vec4{ 1.0f }));
+  transform *= rotate(glm::vec3{ 1, 2, 3 }, 56);
+  I = transform * inverse(transform);
+  assert(eq(glm::vec4{ I[0][0], I[1][1], I[2][2], I[3][3] }, glm::vec4{ 1.0f }));
+  transform *= scale(glm::vec3{ 4, 5, 6 });
+  I = transform * inverse(transform);
+  for (int i = 0; i < 4; i++) {
+    for (int j = 0; j < 4; j++) {
+      if (i == j) {
+        assert(eq(I[i][j], 1));
+      } else {
+        assert(eq(I[i][j], 0));
+      }
+    }
+  }
+  auto near = 1.0f, far = 3.0f, left = 2.0f, right = 0.0f, bottom = 0.0f, top = 2.0f;
+  // auto near = 1.0f, far = 3.0f, left = 2.0f, right = -2.0f, bottom = -2.0f, top = 2.0f;
+  auto orthogonal = proj::orthogonal(near, far, left, right, bottom, top);
+  assert(eq(
+    orthogonal * glm::vec4{ (near + far) / 2, (left + right) / 2, (bottom + top) / 2, 1.0f },
+    glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f }
+  ));
   assert(
-    equivalence(proj * glm::vec4{ 2.5f, 0.0f, 0.0f, 1.0f }, glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f })
+    eq(orthogonal * glm::vec4{ near, left, bottom, 1.0f }, glm::vec4{ -1.0f, 1.0f, -1.0f, 1.0f })
   );
-  assert(
-    equivalence(proj * glm::vec4{ 100.0f, 0.0f, 0.0f, 1.0f }, glm::vec4{ 0.0f, 0.0f, 1.0f, 1.0f })
+  assert(eq(orthogonal * glm::vec4{ far, right, top, 1.0f }, glm::vec4{ 1.0f, -1.0f, 1.0f, 1.0f }));
+  assert(eq(orthogonal * glm::vec4{ far, right, bottom, 1.0f }, glm::vec4{ 1.0f, 1.0f, 1.0f, 1.0f })
   );
-  assert(
-    equivalence(proj * glm::vec4{ 2.5f, 0.0f, 2.5f, 1.0f }, glm::vec4{ 0.0f, -1.0f, 0.0f, 1.0f })
+  assert(eq(orthogonal * glm::vec4{ near, left, top, 1.0f }, glm::vec4{ -1.0f, -1.0f, -1.0f, 1.0f })
   );
+  auto perspective = proj::perspective(near, far, left, right, bottom, top);
+  assert(equivalence(
+    perspective * glm::vec4{ near, left, bottom, 1.0f }, glm::vec4{ -1.0f, 1.0f, -1.0f, 1.0f }
+  ));
+  assert(equivalence(
+    perspective * glm::vec4{ near, right, top, 1.0f }, glm::vec4{ 1.0f, -1.0f, -1.0f, 1.0f }
+  ));
+  assert(equivalence(
+    perspective *
+      glm::vec4{ far, (left + right) / 2 * far / near, (bottom + top) / 2 * far / near, 1.0f },
+    glm::vec4{ 0.0f, 0.0f, 1.0f, 1.0f }
+  ));
+  assert(equivalence(
+    perspective * glm::vec4{ far, left * far / near, bottom * far / near, 1.0f },
+    glm::vec4{ -1.0f, 1.0f, 1.0f, 1.0f }
+  ));
+  assert(equivalence(
+    perspective * glm::vec4{ far, right * far / near, top * far / near, 1.0f },
+    glm::vec4{ 1.0f, -1.0f, 1.0f, 1.0f }
+  ));
+  perspective = proj::perspective(1920, 1080, 90.0f, 2.5f, 100.0f);
+  assert(equivalence(
+    perspective * glm::vec4{ 2.5f, 0.0f, 0.0f, 1.0f }, glm::vec4{ 0.0f, 0.0f, -1.0f, 1.0f }
+  ));
+  assert(equivalence(
+    perspective * glm::vec4{ 100.0f, 0.0f, 0.0f, 1.0f }, glm::vec4{ 0.0f, 0.0f, 1.0f, 1.0f }
+  ));
+  assert(equivalence(
+    perspective * glm::vec4{ 2.5f, 2.5f, 0.0f, 1.0f }, glm::vec4{ -1.0f, 0.0f, -1.0f, 1.0f }
+  ));
 }
 
 } // namespace trans

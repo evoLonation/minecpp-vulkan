@@ -11,7 +11,7 @@ import toy;
 export namespace render {
 
 class InputProcessor : public toy::ProactiveSingleton<InputProcessor>,
-                       public LoopActionLoader<LoopOrder::INPUT> {
+                       private LoopActionLoader<LoopOrder::PROCESS_INPUT> {
 private:
   using _KeyDownHandler = std::function<void()>;
   using _KeyHoldHandler = std::function<void(int holdMilli)>;

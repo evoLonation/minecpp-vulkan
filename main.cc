@@ -28,6 +28,7 @@ int main() {
     auto ctx = render::Context{ applicationName, width, height, true };
     auto executor = render::CommandExecutor{};
     auto loop = render::Loop{};
+    auto frame_ctx = render::FrameContext{};
     auto input_processor = render::InputProcessor{};
     auto exit_handler = render::KeyDownHandler(GLFW_KEY_ESCAPE, [&]() {
       input_processor.setCursorVisible(!input_processor.isCursorVisible());
@@ -51,7 +52,7 @@ int main() {
 
     auto view = trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f });
     auto view_control = gui::CoDrawer{ control::cameraController(view) };
-    auto proj = trans::proj::create(1920, 1080);
+    auto proj = trans::proj::perspective(1920, 1080);
 
     auto unit_count = 8;
     auto model_datas = std::vector<glm::mat4>(unit_count);

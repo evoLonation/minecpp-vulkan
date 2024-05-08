@@ -19,7 +19,7 @@ public:
   virtual void record(VkCommandBuffer cmdbuf, int in_flight_index) = 0;
 };
 
-class Drawer : public toy::ProactiveSingleton<Drawer>, public LoopActionLoader<LoopOrder::DRAWCALL> {
+class Drawer : public toy::ProactiveSingleton<Drawer>, private LoopActionLoader<LoopOrder::DRAWCALL> {
 private:
   struct Worker {
     vk::Semaphore image_available_sema;
@@ -35,8 +35,6 @@ private:
   bool _last_present_failed;
 
   toy::RefContainer<DrawRecorder> _recorders;
-
-  std::chrono::high_resolution_clock::time_point _last_time;
 
   // 0 is not use
   std::vector<int> _image_useds;
@@ -56,7 +54,6 @@ public:
     }
     _in_flight_index = 0;
     _last_present_failed = false;
-    _last_time = std::chrono::high_resolution_clock::time_point{};
     _image_useds.resize(ctx.images.size());
     for (auto& usage : _image_useds) {
       usage = 0;
@@ -108,11 +105,6 @@ public:
     } else {
       vk::checkVkResult(result, "acquire next image");
     }
-
-    auto this_time = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(this_time - _last_time);
-    toy::debug(duration);
-    _last_time = this_time;
 
     auto image_used = _image_useds[image_index];
     if (!image_used) {
