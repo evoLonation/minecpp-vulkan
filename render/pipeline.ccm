@@ -26,7 +26,7 @@ auto resourceType2Layout(ResourceType type) -> VkDescriptorSetLayout {
 
 class DrawUnit;
 
-class Pipeline : public DrawRecorder, private toy::AutoLoader<Pipeline, DrawRecorder> {
+class Pipeline : private toy::InterfaceLoader<DrawRecorder, Drawer> {
   friend DrawUnit;
 
 private:
@@ -37,17 +37,19 @@ private:
   vk::PipelineResource        _pipeline_resource;
   toy::RefContainer<DrawUnit> _draw_units;
 
+  bool _dynamic_stencil_reference;
+
 public:
   // static constexpr auto AttrCount = 2;
   template <int AttrCount>
   Pipeline(
-    std::string_view              vertex_shader_name,
-    std::string_view              frag_shader_name,
-    VkPrimitiveTopology           topology,
-    const VertexInfo<AttrCount>&  vertex_info,
-    std::span<const ResourceType> resource_types
+    std::string_view                 vertex_shader_name,
+    std::string_view                 frag_shader_name,
+    VkPrimitiveTopology              topology,
+    const VertexInfo<AttrCount>&     vertex_info,
+    std::span<const ResourceType>    resource_types,
+    std::optional<vk::StencilOption> stencil_option
   ) {
-    AutoLoader::regist(Drawer::getInstance());
     auto& ctx = Context::getInstance();
     _resource_types.append_range(resource_types);
     _pipeline_resource = vk::createGraphicsPipeline(
@@ -61,12 +63,17 @@ public:
       vertex_info.attribute_descriptions,
       _resource_types | views::transform([&](auto type) { return resourceType2Layout(type); }) |
         ranges::to<std::vector>(),
-      ctx.sample_count.value_or(VK_SAMPLE_COUNT_1_BIT)
+      ctx.sample_count.value_or(VK_SAMPLE_COUNT_1_BIT),
+      stencil_option
     );
+    _dynamic_stencil_reference =
+      stencil_option.transform([](auto& option) { return option.dynamic_reference; }
+      ).value_or(false);
   }
   void record(VkCommandBuffer cmdbuf, int in_flight_index) override;
 };
 
+// todo: add vertex and resource layout check
 class DrawUnit : private toy::AutoLoader<DrawUnit> {
   friend Pipeline;
 
@@ -82,12 +89,15 @@ private:
 
   std::vector<std::vector<VkDescriptorSet>> _worker_dsets;
 
+  std::optional<uint32_t> _stencil_reference;
+
 public:
   DrawUnit(
     Pipeline&                  pipeline,
     VertexBuffer&              vertex_buffer,
     IndexBuffer&               index_buffer,
-    std::span<Resource* const> resources
+    std::span<Resource* const> resources,
+    std::optional<uint32_t>    stencil_reference
   )
     : AutoLoader{ pipeline._draw_units } {
 
@@ -180,24 +190,54 @@ public:
     _dsc_pool = std::move(dsc_pool);
     _dsets = std::move(dsets);
     _worker_dsets = std::move(worker_dsets);
+
+    _stencil_reference = stencil_reference;
   }
 };
 
+auto getStencilReferences(std::span<const uint32_t> references)
+  -> std::vector<std::pair<size_t, uint32_t>> {
+  return references | toy::enumerate |
+         toy::chunkBy([](auto a, auto b) { return a.second == b.second; }) |
+         views::transform([](auto sub_range) {
+           // the stencil reference is a reference, LOL
+           auto [index, reference] = *sub_range.begin();
+           return std::pair<size_t, uint32_t>{ index, reference };
+         }) |
+         ranges::to<std::vector>();
+}
+
 inline void Pipeline::record(VkCommandBuffer cmdbuf, int in_flight_index) {
   auto& ctx = Context::getInstance();
+  // todo: the exception can not throw outside, find out why
+  toy::checkThrowf(
+    ranges::all_of(
+      _draw_units,
+      [&](auto& unit) { return unit._stencil_reference.has_value() == _dynamic_stencil_reference; }
+    ),
+    "the draw units are {} set dynamic stencil reference",
+    _dynamic_stencil_reference ? "not" : ""
+  );
   vk::recordDrawUnits(
     cmdbuf,
     _pipeline_resource.pipeline,
     ctx.extent,
     _pipeline_resource.pipeline_layout,
-    _draw_units | views::transform([&](auto* unit) {
+    _draw_units | views::transform([&](auto& unit) {
       return vk::DrawUnit{
-        .vertex_buffer = unit->_vertex_buffer->get(),
-        .index_buffer = unit->_index_buffer->get(),
-        .count = (uint32_t)unit->_index_buffer->getIndexNumber(),
-        .descriptor_sets = unit->_worker_dsets[in_flight_index],
+        .vertex_buffer = unit._vertex_buffer->get(),
+        .index_buffer = unit._index_buffer->get(),
+        .count = (uint32_t)unit._index_buffer->getIndexNumber(),
+        .descriptor_sets = unit._worker_dsets[in_flight_index],
       };
-    })
+    }),
+    _dynamic_stencil_reference
+      ? std::optional{ vk::StencilReferences{ getStencilReferences(
+          _draw_units |
+          views::transform([&](auto& unit) { return unit._stencil_reference.value(); }) |
+          ranges::to<std::vector>()
+        ) } }
+      : std::nullopt
   );
 }
 

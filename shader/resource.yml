@@ -3,3 +3,5 @@ shader:
 - axis.vert
 - hello.frag
 - hello.vert
+- outline.vert
+- outline.frag

@@ -34,8 +34,8 @@ public:
   void startLoop() {
     while (!glfwWindowShouldClose(Context::getInstance().window)) {
       for (auto& [order, container] : _action_map) {
-        for (auto* action : container) {
-          action->action();
+        for (auto& action : container) {
+          action.action();
         }
       }
     }

@@ -23,12 +23,16 @@ auto createRenderPass(
                           VkSampleCountFlagBits sample_count
                         ) {
     return VkAttachmentDescription{
+      /**
+       * @brief if color format, the stencilxxxOp is ignored;
+       * if depth and/or stencil format, xxxOp apply to depth, stencilxxxOp apply to stencil
+       */
       .format = format,
       .samples = sample_count,
       /**
-       * @brief load op: define load operation behavior
-       * the load op happen in VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT(color attachment) or
-       * VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT(depth attachment)
+       * @brief load op: define load operation behavior of color and depth
+       * the load op happen in VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT(color attachment) or
+       * VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT(depth attachment)
        * and happen before any command which access the sample in the render pass
        */
       // VK_ATTACHMENT_LOAD_OP_LOAD: 保留 attachment 中现有内容
@@ -36,17 +40,18 @@ auto createRenderPass(
       // VK_ATTACHMENT_LOAD_OP_DONT_CARE: 不在乎
       .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
       /**
-       * @brief store op: define store operation behavior
-       * the store op happen in VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT(color attachment) or
-       * VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT(depth attachment)
+       * @brief store op: define store operation behavior of color and depth
+       * the store op happen in VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT(color attachment) or
+       * VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT(depth attachment)
        * and happen after any command which access the sample in the render pass
        */
       // VK_ATTACHMENT_STORE_OP_STORE: 渲染后内容存入内存稍后使用
       // VK_ATTACHMENT_STORE_DONT_CARE: 不在乎
       .storeOp = keep_content ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE,
 
-      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .stencilStoreOp =
+        keep_content ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE,
       // 开启及结束时 要求 的图像布局
       // UNDEINFED init layout use with CLEAR load op together
       .initialLayout = getLayout(ImageUse::UNDEFINED),
@@ -172,7 +177,8 @@ auto createGraphicsPipeline(
   std::span<const VkVertexInputBindingDescription>   vertex_binding_descriptions,
   std::span<const VkVertexInputAttributeDescription> vertex_attribute_descriptions,
   std::span<const VkDescriptorSetLayout>             descriptor_set_layouts,
-  VkSampleCountFlagBits                              sample_count
+  VkSampleCountFlagBits                              sample_count,
+  std::optional<StencilOption>                       stencil_option
 ) -> PipelineResource {
   constexpr bool enable_blending_color = false;
 
@@ -198,14 +204,18 @@ auto createGraphicsPipeline(
   // 很多状态必须提前烘焙到管道中
   // 如果某些状态想要动态设置，可以用 VkPipelineDynamicStateCreateInfo
   // 设置 多个 VkDynamicState
-  auto dynamic_states = std::array{
+  auto dynamic_states = std::vector<VkDynamicState>{
     VK_DYNAMIC_STATE_VIEWPORT,
     VK_DYNAMIC_STATE_SCISSOR,
   };
+  if (stencil_option.transform([](auto& option) { return option.dynamic_reference; }
+      ).value_or(false)) {
+    dynamic_states.push_back(VK_DYNAMIC_STATE_STENCIL_REFERENCE);
+  }
 
   auto dynamic_state_info = VkPipelineDynamicStateCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-    .dynamicStateCount = dynamic_states.size(),
+    .dynamicStateCount = (uint32_t)dynamic_states.size(),
     .pDynamicStates = dynamic_states.data(),
   };
 
@@ -257,7 +267,7 @@ auto createGraphicsPipeline(
     .rasterizerDiscardEnable = VK_FALSE,
     // 如何绘制多边形，除了FILL外皆需要 gpu 支持
     .polygonMode = VK_POLYGON_MODE_FILL,
-    // 背面剔除
+    // 背面剔除, 指定要剔除的面
     .cullMode = VK_CULL_MODE_BACK_BIT,
     .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
     // 深度偏移
@@ -283,9 +293,11 @@ auto createGraphicsPipeline(
     // Lower depth of fragment is closer
     .depthCompareOp = VK_COMPARE_OP_LESS,
     .depthBoundsTestEnable = VK_FALSE,
-    .stencilTestEnable = VK_FALSE,
-    .front = {},
-    .back = {},
+    .stencilTestEnable = stencil_option.has_value(),
+    .front = stencil_option.transform([](auto& option) { return option.front; }
+    ).value_or(VkStencilOpState{}),
+    .back = stencil_option.transform([](auto& option) { return option.back; }
+    ).value_or(VkStencilOpState{}),
     .minDepthBounds = 0.0f,
     .maxDepthBounds = 1.0f,
   };
@@ -394,11 +406,12 @@ void recordRenderPass(
 }
 
 void recordDrawUnits(
-  VkCommandBuffer        cmdbuf,
-  VkPipeline             graphics_pipeline,
-  VkExtent2D             extent,
-  VkPipelineLayout       pipeline_layout,
-  toy::AnyView<DrawUnit> draw_units
+  VkCommandBuffer                  cmdbuf,
+  VkPipeline                       graphics_pipeline,
+  VkExtent2D                       extent,
+  VkPipelineLayout                 pipeline_layout,
+  toy::AnyView<DrawUnit>           draw_units,
+  std::optional<StencilReferences> stencil_references
 ) {
   vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
   // 定义了 viewport 到缓冲区的变换
@@ -417,7 +430,12 @@ void recordDrawUnits(
     .extent = extent,
   };
   vkCmdSetScissor(cmdbuf, 0, 1, &scissor);
-  for (auto [vertex_buffer, index_buffer, count, descriptor_sets] : draw_units) {
+  auto iter = decltype(stencil_references->begin()){};
+  if (stencil_references.has_value()) {
+    iter = stencil_references->begin();
+  }
+  for (auto [index, draw_unit] : draw_units | toy::enumerate) {
+    auto& [vertex_buffer, index_buffer, count, descriptor_sets] = draw_unit;
     auto offset = (VkDeviceSize)0;
     vkCmdBindVertexBuffers(cmdbuf, 0, 1, &vertex_buffer, &offset);
     vkCmdBindIndexBuffer(cmdbuf, index_buffer, 0, VK_INDEX_TYPE_UINT16);
@@ -432,8 +450,62 @@ void recordDrawUnits(
       0,
       nullptr
     );
+    if (stencil_references.has_value() && iter != stencil_references->end()) {
+      if (iter->first == index) {
+        vkCmdSetStencilReference(cmdbuf, VK_STENCIL_FACE_FRONT_BIT, iter->second);
+        iter++;
+      } else if (iter->first < index) {
+        toy::throwf("The dynamic references is not asc order by drawunit index!");
+      }
+    }
     vkCmdDrawIndexed(cmdbuf, count, 1, 0, 0, 0);
   }
+}
+
+auto getOutliningStencil() -> std::pair<StencilOption, StencilOption> {
+  // first pipeline: set stencil value to 1
+  // second pipeline: reference is 1, compare op is not_eq
+  auto first = StencilOption{
+    .front =
+      VkStencilOpState{
+        // faile stencil (never)
+        .failOp = VK_STENCIL_OP_DECREMENT_AND_WRAP,
+        // pass stencil and depth (set to 1)
+        .passOp = VK_STENCIL_OP_REPLACE,
+        // pass stencil and fail depth (do nothing)
+        .depthFailOp = VK_STENCIL_OP_KEEP,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        // never mind
+        .compareMask = std::numeric_limits<uint32_t>::max(),
+        // must larger than 1
+        .writeMask = std::numeric_limits<uint32_t>::max(),
+        .reference = 1,
+      },
+    // back is culled
+    .back = VkStencilOpState{},
+    .dynamic_reference = false,
+  };
+  auto second = StencilOption{
+    .front =
+      VkStencilOpState{
+        // faile stencil (do nothing)
+        .failOp = VK_STENCIL_OP_KEEP,
+        // pass stencil and depth (do nothing)
+        .passOp = VK_STENCIL_OP_KEEP,
+        // pass stencil and fail depth (do nothing)
+        .depthFailOp = VK_STENCIL_OP_KEEP,
+        .compareOp = VK_COMPARE_OP_NOT_EQUAL,
+        // must larger than 1
+        .compareMask = std::numeric_limits<uint32_t>::max(),
+        // never mind
+        .writeMask = std::numeric_limits<uint32_t>::max(),
+        .reference = 1,
+      },
+    // back is culled
+    .back = VkStencilOpState{},
+    .dynamic_reference = false,
+  };
+  return { first, second };
 }
 
 } // namespace vk

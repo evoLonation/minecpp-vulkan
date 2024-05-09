@@ -73,7 +73,7 @@ public:
       if (action == GLFW_PRESS) {
         if (instance._key_down_handlers.contains(key)) {
           for (auto& handler : instance._key_down_handlers[key]) {
-            handler->operator()();
+            handler();
           }
         }
         auto start_time = std::chrono::high_resolution_clock::now();
@@ -85,7 +85,7 @@ public:
           auto duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
           for (auto& handler : instance._key_release_handlers[key]) {
-            handler->operator()(duration.count());
+            handler(duration.count());
           }
         }
         instance._pressed_keys.erase(key);
@@ -95,7 +95,7 @@ public:
     glfwSetCursorPosCallback(window, [](GLFWwindow* window, double x, double y) {
       auto& instance = *_instance_map[window];
       for (auto& handler : instance._cursor_move_handlers) {
-        handler->operator()(x - instance._last_x, y - instance._last_y);
+        handler(x - instance._last_x, y - instance._last_y);
       }
       instance._last_x = x;
       instance._last_y = y;
@@ -133,7 +133,7 @@ public:
         auto duration =
           std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
         for (auto& handler : _key_hold_handlers[_key]) {
-          handler->operator()(duration.count());
+          handler(duration.count());
         }
       }
     }

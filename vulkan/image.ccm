@@ -272,8 +272,12 @@ auto createSampler(VkDevice device, float max_anisotropy) -> Sampler {
 }
 
 auto findDepthFormat(VkPhysicalDevice pdevice) -> VkFormat {
-  auto candidates =
-    std::array{ VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT };
+  auto candidates = std::array{
+    // todo: better format feature manage, even better vulkan feature manage not just format
+    // VK_FORMAT_D32_SFLOAT, this format can not use to stencil test
+    VK_FORMAT_D32_SFLOAT_S8_UINT,
+    VK_FORMAT_D24_UNORM_S8_UINT,
+  };
   auto condition = [&](auto format) {
     return checkFormatSupport(
       pdevice, FormatType::OPTIMAL_TILING, format, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT

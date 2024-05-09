@@ -63,16 +63,51 @@ class RefContainer {
   friend class AutoLoader;
 
 private:
-  std::unordered_set<T*> _base;
+  std::map<size_t, T*>           _id2pointer;
+  std::unordered_map<T*, size_t> _pointer2id;
 
-  decltype(auto) add(T* e) noexcept(noexcept(_base.insert(e))) { return _base.insert(e); }
-  decltype(auto) remove(T* e) noexcept(noexcept(_base.erase(e))) { return _base.erase(e); }
+  size_t _max_id;
+
+  void add(T* e) {
+    _id2pointer.emplace(_max_id + 1, e);
+    _pointer2id.emplace(e, _max_id + 1);
+    _max_id++;
+  }
+  void remove(T* e) {
+    auto id = _pointer2id.at(e);
+    _pointer2id.erase(e);
+    _id2pointer.erase(id);
+  }
 
 public:
-  RefContainer() = default;
-  decltype(auto) begin() noexcept(noexcept(_base.begin())) { return _base.begin(); }
-  decltype(auto) end() noexcept(noexcept(_base.end())) { return _base.end(); }
-  decltype(auto) size() noexcept(noexcept(_base.size())) { return _base.size(); }
+  class Iterator {
+  private:
+    ranges::iterator_t<std::map<size_t, T*>> _base;
+
+  public:
+    using difference_type = std::ptrdiff_t;
+    using value_type = T;
+    Iterator() = default;
+    Iterator(ranges::iterator_t<std::map<size_t, T*>> base) : _base(base) {}
+    auto operator*() -> value_type& { return *_base->second; }
+    auto operator*() const -> value_type& { return *_base->second; }
+    auto operator++(int) -> Iterator { return _base++; }
+    auto operator++() -> Iterator& {
+      _base++;
+      return *this;
+    }
+    auto operator--(int) -> Iterator { return _base--; }
+    auto operator--() -> Iterator& {
+      _base--;
+      return *this;
+    }
+    friend auto operator==(Iterator a, Iterator b) -> bool { return a._base == b._base; }
+  };
+
+  RefContainer() : _max_id(0) {}
+  Iterator       begin() { return _id2pointer.begin(); }
+  Iterator       end() { return _id2pointer.end(); }
+  decltype(auto) size() { return _id2pointer.size(); }
 };
 
 /**
@@ -175,21 +210,24 @@ class A : public RefContainer<B> {};
 
 void test_base() {
   toy::debug("start test refcontainer");
+  static_assert(ranges::sized_range<A>, "");
+  static_assert(ranges::bidirectional_range<A>, "");
+  static_assert(ranges::output_range<A, B>, "");
   auto a = A{};
   auto b1 = B{ a, 1 };
   {
     auto b2 = B{ a, 2 };
     auto b3 = B{ a, 3 };
-    toy::debug(a | views::transform([](auto e) { return e->num; }));
+    toy::debug(a | views::transform([](auto e) { return e.num; }));
   }
-  toy::debug(a | views::transform([](auto e) { return e->num; }));
+  toy::debug(a | views::transform([](auto e) { return e.num; }));
   {
     auto b2 = b1;
-    toy::debug(a | views::transform([](auto e) { return e->num; }));
+    toy::debug(a | views::transform([](auto e) { return e.num; }));
     auto b3 = std::move(b2);
-    toy::debug(a | views::transform([](auto e) { return e->num; }));
+    toy::debug(a | views::transform([](auto e) { return e.num; }));
   }
-  toy::debug(a | views::transform([](auto e) { return e->num; }));
+  toy::debug(a | views::transform([](auto e) { return e.num; }));
 }
 
 class Interface {

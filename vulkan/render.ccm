@@ -30,6 +30,13 @@ struct PipelineResource {
   Pipeline       pipeline;
 };
 
+struct StencilOption {
+  VkStencilOpState front;
+  VkStencilOpState back;
+
+  bool dynamic_reference;
+};
+
 auto createGraphicsPipeline(
   VkPhysicalDevice                                   pdevice,
   VkDevice                                           device,
@@ -40,7 +47,8 @@ auto createGraphicsPipeline(
   std::span<const VkVertexInputBindingDescription>   vertex_binding_descriptions,
   std::span<const VkVertexInputAttributeDescription> vertex_attribute_descriptions,
   std::span<const VkDescriptorSetLayout>             descriptor_set_layouts,
-  VkSampleCountFlagBits                              sample_count
+  VkSampleCountFlagBits                              sample_count,
+  std::optional<StencilOption>                       stencil_option
 ) -> PipelineResource;
 
 struct DrawUnit {
@@ -59,12 +67,18 @@ void recordRenderPass(
   bool                                 multi_sample
 );
 
+// first: the drawunit index to apply reference; second: reference
+using StencilReferences = std::span<const std::pair<size_t, uint32_t>>;
+
 void recordDrawUnits(
-  VkCommandBuffer        cmdbuf,
-  VkPipeline             graphics_pipeline,
-  VkExtent2D             extent,
-  VkPipelineLayout       pipeline_layout,
-  toy::AnyView<DrawUnit> draw_units
+  VkCommandBuffer                  cmdbuf,
+  VkPipeline                       graphics_pipeline,
+  VkExtent2D                       extent,
+  VkPipelineLayout                 pipeline_layout,
+  toy::AnyView<DrawUnit>           draw_units,
+  std::optional<StencilReferences> stencil_references
 );
+
+auto getOutliningStencil() -> std::pair<StencilOption, StencilOption>;
 
 } // namespace vk

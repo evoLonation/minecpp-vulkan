@@ -52,6 +52,7 @@ public:
   virtual void draw() = 0;
 };
 
+// todo: add depth test or something, make gui front regardless of the drawing order
 /**
  * @brief must call after input processor
  *
@@ -144,11 +145,11 @@ public:
 
     slider("scale ratio", _scale, _min_scale, _max_scale);
     _io->FontGlobalScale = _scale / (_default_font_size * 1.0f / _base_font_size);
-    for (auto* drawer : _drawers) {
-      drawer->draw();
+    for (auto& drawer : _drawers) {
+      drawer.draw();
     }
-    for (auto* drawer : _co_drawers) {
-      drawer->next();
+    for (auto& drawer : _co_drawers) {
+      drawer.next();
     }
     ImGui::End();
     ImGui::Render();
