@@ -58,7 +58,7 @@ public:
  *
  */
 class Context : public toy::ProactiveSingleton<Context>,
-                private toy::InterfaceLoader<render::DrawRecorder, render::Drawer>,
+                private render::DrawerLoader<render::DrawStage::GUI>,
                 private render::LoopActionLoader<render::LoopOrder::GUI_RENDER> {
 private:
   static constexpr auto _base_font_size = 13;

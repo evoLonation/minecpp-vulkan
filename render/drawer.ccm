@@ -19,7 +19,16 @@ public:
   virtual void record(VkCommandBuffer cmdbuf, int in_flight_index) = 0;
 };
 
-class Drawer : public toy::ProactiveSingleton<Drawer>, private LoopActionLoader<LoopOrder::DRAWCALL> {
+/**
+ * @brief the most outside draw order
+ */
+enum class DrawStage {
+  PIPELINE = 0,
+  GUI = 1,
+};
+
+class Drawer : public toy::ProactiveSingleton<Drawer>,
+               private LoopActionLoader<LoopOrder::DRAWCALL> {
 private:
   struct Worker {
     vk::Semaphore image_available_sema;
@@ -34,10 +43,20 @@ private:
   int  _in_flight_index;
   bool _last_present_failed;
 
-  toy::RefContainer<DrawRecorder> _recorders;
+  std::map<DrawStage, toy::RefContainer<DrawRecorder>> _recorders;
 
   // 0 is not use
   std::vector<int> _image_useds;
+
+public:
+  template <DrawStage stage>
+  struct StageContainer : public toy::ProactiveSingleton<StageContainer<stage>> {
+    operator toy::RefContainer<DrawRecorder>&() { return Drawer::getInstance()._recorders[stage]; }
+  };
+
+private:
+  StageContainer<DrawStage::PIPELINE> _stage_container_default;
+  StageContainer<DrawStage::GUI>      _stage_container_gui;
 
 public:
   Drawer() {
@@ -66,8 +85,6 @@ public:
       worker.fence = Fence{};
     }
   }
-
-  operator toy::RefContainer<DrawRecorder>&() { return _recorders; }
 
   int currentFlightIndex() { return _in_flight_index; }
 
@@ -179,8 +196,10 @@ public:
           framebuffer,
           ctx.extent,
           [&](auto cmdbuf) {
-            for (auto& recorder : _recorders) {
-              recorder.record(cmdbuf, _in_flight_index);
+            for (auto& stage_recorders : _recorders | views::values) {
+              for (auto& recorder : stage_recorders) {
+                recorder.record(cmdbuf, _in_flight_index);
+              }
             }
           },
           ctx.sample_count.has_value()
@@ -223,4 +242,8 @@ public:
   }
   void action() override { draw(); }
 };
+
+template <DrawStage stage>
+using DrawerLoader = toy::InterfaceLoader<DrawRecorder, Drawer::StageContainer<stage>>;
+
 } // namespace render

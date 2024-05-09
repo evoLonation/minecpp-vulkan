@@ -26,7 +26,7 @@ auto resourceType2Layout(ResourceType type) -> VkDescriptorSetLayout {
 
 class DrawUnit;
 
-class Pipeline : private toy::InterfaceLoader<DrawRecorder, Drawer> {
+class Pipeline : private DrawerLoader<DrawStage::PIPELINE> {
   friend DrawUnit;
 
 private:
