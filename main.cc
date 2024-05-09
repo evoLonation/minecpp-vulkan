@@ -48,7 +48,7 @@ int main() {
     //                                   std::nullopt };
     auto stencil_options = vk::getOutliningStencil();
     stencil_options.first.dynamic_reference = false;
-    stencil_options.first.dynamic_reference = true;
+    stencil_options.second.dynamic_reference = true;
     auto pipeline_outline_1 = render::Pipeline{ "hello.vert",
                                                 "hello.frag",
                                                 VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
