@@ -39,6 +39,8 @@ private:
 
   bool _dynamic_stencil_reference;
 
+  VertexInfo _vertex_info;
+
 public:
   Pipeline(
     std::string_view                 vertex_shader_name,
@@ -57,7 +59,7 @@ public:
       topology,
       vertex_shader_name,
       frag_shader_name,
-      std::array{ vertex_info.binding_description },
+      std::array{ *vertex_info.binding_description },
       vertex_info.attribute_descriptions,
       _resource_types | views::transform([&](auto type) { return resourceType2Layout(type); }) |
         ranges::to<std::vector>(),
@@ -67,11 +69,11 @@ public:
     _dynamic_stencil_reference =
       stencil_option.transform([](auto& option) { return option.dynamic_reference; }
       ).value_or(false);
+    _vertex_info = vertex_info;
   }
   void record(VkCommandBuffer cmdbuf, int in_flight_index) override;
 };
 
-// todo: add vertex and resource layout check
 class DrawUnit : private toy::AutoLoader<DrawUnit> {
   friend Pipeline;
 
@@ -182,7 +184,10 @@ public:
       }
       vk::updateDescriptorSets(ctx.device, ds_updates);
     }
-
+    toy::checkThrowf(
+      vertex_buffer.getVertexInfo() == pipeline._vertex_info,
+      "The vertex info between draw unit and pipeline is different "
+    );
     _vertex_buffer = &vertex_buffer;
     _index_buffer = &index_buffer;
     _dsc_pool = std::move(dsc_pool);

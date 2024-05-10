@@ -27,8 +27,13 @@ consteval auto formatMapper() -> VkFormat {
 }
 
 struct VertexInfo {
-  const VkVertexInputBindingDescription&             binding_description;
+  const VkVertexInputBindingDescription*             binding_description;
   std::span<const VkVertexInputAttributeDescription> attribute_descriptions;
+  friend auto operator==(const VertexInfo& a, const VertexInfo& b) -> bool {
+    return a.binding_description == b.binding_description &&
+           a.attribute_descriptions.begin() == b.attribute_descriptions.begin() &&
+           a.attribute_descriptions.end() == b.attribute_descriptions.end();
+  }
 };
 
 template <typename... DataTypes>
@@ -41,7 +46,7 @@ struct Vertex : public std::array<char, (sizeof(DataTypes) + ...)> {
      ...);
   }
   static auto getVertexInfo() -> VertexInfo {
-    return { binding_description<>, attribute_descriptions<> };
+    return { &binding_description<>, attribute_descriptions<> };
   }
 
   // must make the static member as template variable, otherwise the Vertex is incomplete type when
@@ -74,6 +79,8 @@ struct Vertex : public std::array<char, (sizeof(DataTypes) + ...)> {
     return attribute_descriptions;
   }();
 };
+
+template class Vertex<glm::vec3>;
 
 class DeviceLocalBuffer : public vk::Buffer {
 private:
@@ -122,6 +129,9 @@ public:
 };
 
 class VertexBuffer : public DeviceLocalBuffer {
+private:
+  VertexInfo _vertex_info;
+
 public:
   VertexBuffer() = default;
   template <toy::InstantiationOf<Vertex> VertexT>
@@ -131,12 +141,15 @@ public:
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         std::as_bytes(vertex_data),
         vk::BufferUse::VERTEX_BUFFER_DRAW
-      ) {}
+      ),
+      _vertex_info(VertexT::getVertexInfo()) {}
 
   template <typename VertexT>
   static auto create(std::span<const VertexT> vertex_data) -> VertexBuffer {
     return VertexBuffer{ vertex_data };
   }
+
+  auto getVertexInfo() const -> VertexInfo { return _vertex_info; }
 };
 
 class IndexBuffer : public DeviceLocalBuffer {
