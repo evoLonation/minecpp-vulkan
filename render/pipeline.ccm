@@ -40,13 +40,11 @@ private:
   bool _dynamic_stencil_reference;
 
 public:
-  // static constexpr auto AttrCount = 2;
-  template <int AttrCount>
   Pipeline(
     std::string_view                 vertex_shader_name,
     std::string_view                 frag_shader_name,
     VkPrimitiveTopology              topology,
-    const VertexInfo<AttrCount>&     vertex_info,
+    VertexInfo                       vertex_info,
     std::span<const ResourceType>    resource_types,
     std::optional<vk::StencilOption> stencil_option
   ) {
@@ -119,7 +117,7 @@ public:
     for (auto [resource, type] : views::zip(resources, resource_types)) {
       auto [desc_resource, type_] = resource->getResourceInfo();
       if (type_ != type) {
-        toy::throwf("The resources typp is not match pipeline resource type");
+        toy::throwf("The resources type is not match pipeline resource type");
       }
       auto layout = resourceType2Layout(type);
       if (desc_resource.index() == 0) {
