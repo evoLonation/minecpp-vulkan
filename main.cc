@@ -74,7 +74,10 @@ int main() {
 
     auto view = trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f });
     auto view_control = gui::CoDrawer{ control::cameraController(view) };
-    auto proj = trans::proj::perspective(1920, 1080);
+    auto proj = trans::proj::perspective({
+      .width = 1920,
+      .height = 1080,
+    });
 
     auto model_data = trans::model::create();
     auto outline_data = model_data * trans::scale(glm::vec3{ 1.1f });

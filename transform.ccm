@@ -11,6 +11,9 @@ auto eq(glm::vec4 a, glm::vec4 b) {
   return eq(a.x, b.x) && eq(a.y, b.y) && eq(a.z, b.z) && eq(a.w, b.w);
 }
 auto eq(glm::vec3 a, glm::vec3 b) { return eq(a.x, b.x) && eq(a.y, b.y) && eq(a.z, b.z); }
+auto eq(const glm::mat4 a, const glm::mat4 b) {
+  return eq(a[0], b[0]) && eq(a[1], b[1]) && eq(a[2], b[2]) && eq(a[3], b[3]);
+}
 auto equivalence(glm::vec4 a, glm::vec4 b) { return eq(a / a.w, b / b.w); }
 
 // 按照行向量的方式构造矩阵
@@ -112,6 +115,31 @@ auto inverse(const glm::mat4& transform) -> glm::mat4 {
   return q_i * t_i;
 }
 
+// equation: L(t) = direction * t + pointer
+struct Line {
+  glm::vec3 direction;
+  glm::vec3 point;
+};
+// equation: normal * x = dot
+struct Surface {
+  glm::vec3 normal;
+  float     dot;
+};
+
+/**
+ * @return std::variant<glm::vec3, bool> : intersection pointer, or overlap(重合) or not
+ */
+auto intersection(const Line& line, const Surface& surface) -> std::variant<glm::vec3, bool> {
+  auto nd = glm::dot(line.direction, surface.normal);
+  if (eq(nd, 0)) {
+    return eq(glm::dot(surface.normal, line.point), surface.dot);
+  } else {
+    return line.point - ((glm::dot(surface.normal, line.point) - surface.dot) /
+                         glm::dot(surface.normal, line.direction)) *
+                          line.direction;
+  }
+}
+
 namespace model {
 
 auto create(const glm::vec3& location, const glm::vec3& scale) -> glm::mat4 {
@@ -177,9 +205,16 @@ auto perspective(float near, float far, float left, float right, float bottom, f
   return orthogonal(near, far, left, right, bottom, top) * zip;
 }
 
-auto perspective(
-  uint32_t width, uint32_t height, float fovy_degree = 45.0f, float near = 0.1f, float far = 100.f
-) -> glm::mat4 {
+struct ProjectionInfo {
+  uint32_t width;
+  uint32_t height;
+  float    fovy_degree = 45.0f;
+  float    near = 0.1f;
+  float    far = 100.f;
+};
+
+auto perspective(const ProjectionInfo& info) -> glm::mat4 {
+  const auto& [width, height, fovy_degree, near, far] = info;
   float left = near * glm::tan(glm::radians(fovy_degree) / 2);
   float right = -left;
   float top = left * height / width;
@@ -189,7 +224,22 @@ auto perspective(
 
 auto perspectiveInverse(float near, float far, float left, float right, float bottom, float top)
   -> glm::mat4 {
-  // todo
+  auto zip_i = matrix({
+    glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f },
+    glm::vec4{ 0.0f, 1.0f / near, 0.0f, 0.0f },
+    glm::vec4{ 0.0f, 0.0f, 1.0f / near, 0.0f },
+    glm::vec4{ -1.0f / (near * far), 0.0f, 0.0f, (near + far) / (near * far) },
+  });
+  return zip_i * inverse(orthogonal(near, far, left, right, bottom, top));
+}
+
+auto perspectiveInverse(const ProjectionInfo& info) -> glm::mat4 {
+  const auto& [width, height, fovy_degree, near, far] = info;
+  float left = near * glm::tan(glm::radians(fovy_degree) / 2);
+  float right = -left;
+  float top = left * height / width;
+  float bottom = -top;
+  return perspectiveInverse(near, far, left, right, bottom, top);
 }
 
 } // namespace proj
@@ -219,6 +269,21 @@ void test_trans() {
       }
     }
   }
+  // intersection test
+  auto inter = intersection(
+    {
+      .direction = glm::vec3{ glm::sqrt(3.0f), -1.0f, 0.0f },
+      .point = glm::vec3{ 0.0f, 1.0f, 1.0f },
+    },
+    {
+      .normal = glm::vec3{ -1.0f, glm::sqrt(3.0f), 0.0f },
+      .dot = -glm::sqrt(3.0f),
+    }
+  );
+  assert(inter.index() == 0);
+  assert(eq(std::get<0>(inter), glm::vec3(glm::sqrt(3.0f), 0.0f, 1.0f)));
+
+  // proj test
   auto near = 1.0f, far = 3.0f, left = 2.0f, right = 0.0f, bottom = 0.0f, top = 2.0f;
   // auto near = 1.0f, far = 3.0f, left = 2.0f, right = -2.0f, bottom = -2.0f, top = 2.0f;
   auto orthogonal = proj::orthogonal(near, far, left, right, bottom, top);
@@ -235,6 +300,8 @@ void test_trans() {
   assert(eq(orthogonal * glm::vec4{ near, left, top, 1.0f }, glm::vec4{ -1.0f, -1.0f, -1.0f, 1.0f })
   );
   auto perspective = proj::perspective(near, far, left, right, bottom, top);
+  auto perspective_i = proj::perspectiveInverse(near, far, left, right, bottom, top);
+  assert(eq(perspective * perspective_i, glm::mat4{ 1.0f }));
   assert(equivalence(
     perspective * glm::vec4{ near, left, bottom, 1.0f }, glm::vec4{ -1.0f, 1.0f, -1.0f, 1.0f }
   ));
@@ -254,7 +321,9 @@ void test_trans() {
     perspective * glm::vec4{ far, right * far / near, top * far / near, 1.0f },
     glm::vec4{ 1.0f, -1.0f, 1.0f, 1.0f }
   ));
-  perspective = proj::perspective(1920, 1080, 90.0f, 2.5f, 100.0f);
+  perspective = proj::perspective({ 1920, 1080, 90.0f, 2.5f, 100.0f });
+  perspective_i = proj::perspectiveInverse({ 1920, 1080, 90.0f, 2.5f, 100.0f });
+  assert(eq(perspective * perspective_i, glm::mat4{ 1.0f }));
   assert(equivalence(
     perspective * glm::vec4{ 2.5f, 0.0f, 0.0f, 1.0f }, glm::vec4{ 0.0f, 0.0f, -1.0f, 1.0f }
   ));
