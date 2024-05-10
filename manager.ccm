@@ -1,0 +1,157 @@
+export module manager;
+
+import "vulkan_config.h";
+import "imgui_config.h";
+
+import std;
+import toy;
+import render;
+import model;
+import vulkan;
+import gui;
+
+export namespace mng {
+
+template <typename EnumT>
+auto __enum2Father();
+template <typename EnumT, typename T = decltype(__enum2Father<EnumT>())>
+constexpr auto enum2String(EnumT t) -> const char* {
+  return &T::pair.first[T::pair.second[t]];
+}
+template <typename EnumT, typename T = decltype(__enum2Father<EnumT>())>
+constexpr auto enumCount() -> std::size_t {
+  return T::count;
+}
+
+template <int... Values, std::size_t N>
+consteval auto splitString(const char (&buf)[N])
+  -> std::pair<std::array<char, N>, std::array<std::size_t, sizeof...(Values)>> {
+  auto writable = std::array<char, N>{};
+  auto indices = std::array<std::size_t, sizeof...(Values)>{};
+  std::copy(buf, buf + N, writable.begin());
+  auto i_indices = 0;
+  indices[i_indices] = 0;
+  i_indices++;
+  for (auto iter = writable.begin(); iter != writable.end(); iter++) {
+    auto& c = *iter;
+    if (c == ',') {
+      c = '\0';
+      indices[i_indices] = iter - writable.begin() + 2;
+      i_indices++;
+    }
+  }
+  return { writable, indices };
+}
+
+#define ENUM(name, ...)                                                                            \
+  struct __##name {                                                                                \
+    enum Enum { __VA_ARGS__ };                                                                     \
+    static constexpr auto count = [](auto... values) { return sizeof...(values); }(__VA_ARGS__);   \
+    static constexpr auto pair = splitString<__VA_ARGS__>(#__VA_ARGS__);                           \
+  };                                                                                               \
+  template <>                                                                                      \
+  auto __enum2Father<__##name::Enum>() {                                                           \
+    return __##name{};                                                                             \
+  }                                                                                                \
+  using name = __##name::Enum
+
+ENUM(PipelineType, DEFAULT, OUTLINE_1, OUTLINE_2);
+
+auto create(PipelineType type) -> render::Pipeline {
+  auto stencil_options = vk::getOutliningStencil();
+  stencil_options.first.dynamic_reference = false;
+  stencil_options.second.dynamic_reference = true;
+  switch (type) {
+  case PipelineType::DEFAULT:
+    return render::Pipeline{ "hello.vert",
+                             "hello.frag",
+                             VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                             model::Vertex::getVertexInfo(),
+                             std::array{ render::ResourceType::UNIFORM,
+                                         render::ResourceType::UNIFORM,
+                                         render::ResourceType::UNIFORM,
+                                         render::ResourceType::SAMPLER },
+                             std::nullopt };
+  case PipelineType::OUTLINE_1:
+    return render::Pipeline{ "hello.vert",
+                             "hello.frag",
+                             VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                             model::Vertex::getVertexInfo(),
+                             std::array{ render::ResourceType::UNIFORM,
+                                         render::ResourceType::UNIFORM,
+                                         render::ResourceType::UNIFORM,
+                                         render::ResourceType::SAMPLER },
+                             stencil_options.first };
+  case PipelineType::OUTLINE_2:
+    return render::Pipeline{ "outline.vert",
+                             "outline.frag",
+                             VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                             model::Vertex::getVertexInfo(),
+                             std::array{ render::ResourceType::UNIFORM,
+                                         render::ResourceType::UNIFORM,
+                                         render::ResourceType::UNIFORM },
+                             stencil_options.second };
+  }
+}
+
+class Manager : private gui::DrawerLoader,
+                private render::LoopActionLoader<render::LoopOrder::COMMON> {
+private:
+  std::map<std::string, render::Pipeline> _resources;
+
+  std::array<char, 128> _resource_name_buf;
+  PipelineType          _pipeline_type;
+
+  std::array<const char*, 3> _pipeline_type_items;
+  int                        _pipeline_type_item;
+
+  const std::string* _selected_item;
+
+  std::queue<std::function<void()>> _events;
+
+public:
+  Manager() {
+    _resource_name_buf = {};
+    ranges::copy(
+      views::iota(0u, enumCount<PipelineType>()) |
+        views::transform([](auto i) { return enum2String(static_cast<PipelineType>(i)); }),
+      _pipeline_type_items.begin()
+    );
+    _selected_item = nullptr;
+  }
+  void draw() override {
+    ImGui::InputText("Resource Name", _resource_name_buf.begin(), _resource_name_buf.size());
+    ImGui::Combo(
+      "Pipeline type",
+      &_pipeline_type_item,
+      _pipeline_type_items.data(),
+      _pipeline_type_items.size()
+    );
+    if (ImGui::Button("Create pipeline")) {
+      _events.emplace([&]() {
+        _resources.emplace(
+          std::string{ _resource_name_buf.data() },
+          create(static_cast<PipelineType>(_pipeline_type_item))
+        );
+      });
+    }
+    for (auto& name : _resources | views::keys) {
+      if (ImGui::Selectable(name.data(), _selected_item == &name)) {
+        _selected_item = &name;
+      }
+    }
+    if (_selected_item == nullptr) {
+      ImGui::Text("No select any pipeline");
+    } else {
+      ImGui::Text("%s", std::format("Selected pipeline: {}", *_selected_item).data());
+    }
+  }
+  void action() override {
+    while (!_events.empty()) {
+      _events.back()();
+      _events.pop();
+    }
+  }
+};
+
+} // namespace mng

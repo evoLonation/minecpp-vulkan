@@ -13,6 +13,7 @@ import gui;
 import control;
 import axis;
 import transform;
+import manager;
 
 int main() {
   try {
@@ -119,6 +120,7 @@ int main() {
     // auto camera_controller = control::camera::Controller{ view, proj };
     // camera_controller.setInput();
     // controller.setInput();
+    auto manager = mng::Manager{};
     loop.startLoop();
     drawer.waitDone();
   } catch (const std::exception& e) {
