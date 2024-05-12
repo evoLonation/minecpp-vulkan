@@ -2,6 +2,7 @@ export module manager;
 
 import "vulkan_config.h";
 import "imgui_config.h";
+import "enum.h";
 
 import std;
 import toy;
@@ -9,6 +10,7 @@ import render;
 import model;
 import vulkan;
 import gui;
+import action;
 
 export namespace mng {
 
@@ -43,25 +45,13 @@ consteval auto splitString(const char (&buf)[N])
   return { writable, indices };
 }
 
-#define ENUM(name, ...)                                                                            \
-  struct __##name {                                                                                \
-    enum Enum { __VA_ARGS__ };                                                                     \
-    static constexpr auto count = [](auto... values) { return sizeof...(values); }(__VA_ARGS__);   \
-    static constexpr auto pair = splitString<__VA_ARGS__>(#__VA_ARGS__);                           \
-  };                                                                                               \
-  template <>                                                                                      \
-  auto __enum2Father<__##name::Enum>() {                                                           \
-    return __##name{};                                                                             \
-  }                                                                                                \
-  using name = __##name::Enum
-
-ENUM(PipelineType, DEFAULT, OUTLINE_1, OUTLINE_2);
+TOY_ENUM(PipelineType, DEFAULT, OUTLINE_1, OUTLINE_2);
 
 auto create(PipelineType type) -> render::Pipeline {
   auto stencil_options = vk::getOutliningStencil();
   stencil_options.first.dynamic_reference = false;
   stencil_options.second.dynamic_reference = true;
-  switch (type) {
+  switch (type.value()) {
   case PipelineType::DEFAULT:
     return render::Pipeline{ "hello.vert",
                              "hello.frag",
@@ -94,8 +84,7 @@ auto create(PipelineType type) -> render::Pipeline {
   }
 }
 
-class Manager : private gui::DrawerLoader,
-                private render::LoopActionLoader<render::LoopOrder::COMMON> {
+class Manager : private gui::DrawerLoader, private action::ActionLoader {
 private:
   std::map<std::string, render::Pipeline> _resources;
 
@@ -113,8 +102,8 @@ public:
   Manager() {
     _resource_name_buf = {};
     ranges::copy(
-      views::iota(0u, enumCount<PipelineType>()) |
-        views::transform([](auto i) { return enum2String(static_cast<PipelineType>(i)); }),
+      views::iota(0u, toy::enumCount<PipelineType>()) |
+        views::transform([](auto i) { return toy::enum2String(PipelineType{ i }); }),
       _pipeline_type_items.begin()
     );
     _selected_item = nullptr;
@@ -146,7 +135,7 @@ public:
       ImGui::Text("%s", std::format("Selected pipeline: {}", *_selected_item).data());
     }
   }
-  void action() override {
+  void run(const action::ActionContext& ctx) override {
     while (!_events.empty()) {
       _events.back()();
       _events.pop();

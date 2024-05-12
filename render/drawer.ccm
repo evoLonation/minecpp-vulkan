@@ -116,7 +116,7 @@ public:
         draw();
         return;
       } else {
-        toy::debugf("recreate swapchain failed, draw frame return");
+        // toy::debugf("recreate swapchain failed, draw frame return");
         return;
       }
     } else {
@@ -240,7 +240,7 @@ public:
     }
     _in_flight_index = (_in_flight_index + 1) % _workers.size();
   }
-  void action() override { draw(); }
+  void loopAction(uint32_t _) override { draw(); }
 };
 
 template <DrawStage stage>

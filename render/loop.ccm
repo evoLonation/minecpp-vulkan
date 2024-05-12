@@ -10,18 +10,19 @@ export namespace render {
 
 class LoopAction {
 public:
-  virtual void action() = 0;
+  virtual void loopAction(uint32_t interval_milli) = 0;
   LoopAction() = default;
 };
 
 enum class LoopOrder {
-  UPDATE_CONTEXT = 0,
-  PROCESS_INPUT = 1,
-  COMMON = 2,
+  UPDATE_INPUT = 1,
+  EXECUTE_ACTIONS = 2,
   UPDATE_UNIFORM = 998,
   GUI_RENDER = 999,
   DRAWCALL = 1000,
 };
+
+namespace chrono = std::chrono;
 
 class Loop : public toy::ProactiveSingleton<Loop> {
 private:
@@ -29,13 +30,20 @@ private:
   friend class LoopActionLoader;
   std::map<LoopOrder, toy::RefContainer<LoopAction>> _action_map;
 
+  chrono::time_point<chrono::high_resolution_clock> _last_time;
+
 public:
   Loop() = default;
   void startLoop() {
     while (!glfwWindowShouldClose(Context::getInstance().window)) {
+      auto interval = chrono::high_resolution_clock::now() - _last_time;
+      _last_time += interval;
+      auto interval_milli_ = chrono::duration_cast<chrono::milliseconds>(interval);
+      // toy::debug(interval_milli_);
+      auto interval_milli = interval_milli_.count();
       for (auto& [order, container] : _action_map) {
         for (auto& action : container) {
-          action.action();
+          action.loopAction(interval_milli);
         }
       }
     }
@@ -46,34 +54,6 @@ template <LoopOrder order>
 class LoopActionLoader : public toy::InterfaceLoader<LoopAction> {
 public:
   LoopActionLoader() : toy::InterfaceLoader<LoopAction>(Loop::getInstance()._action_map[order]) {}
-};
-
-namespace chrono = std::chrono;
-class FrameContext : private toy::ProactiveSingleton<FrameContext>,
-                     private LoopActionLoader<LoopOrder::UPDATE_CONTEXT> {
-private:
-  friend toy::ProactiveSingleton<FrameContext>;
-  chrono::time_point<chrono::high_resolution_clock> _last_time;
-
-  void action() override {
-    auto interval = chrono::high_resolution_clock::now() - _last_time;
-    _last_time += interval;
-    auto interval_milli_ = chrono::duration_cast<chrono::milliseconds>(interval);
-    toy::debug(interval_milli_);
-    interval_milli = interval_milli_.count();
-    auto& ctx = render::Context::getInstance();
-    width = ctx.extent.width;
-    height = ctx.extent.height;
-  }
-
-public:
-  uint32_t interval_milli;
-  uint32_t width;
-  uint32_t height;
-
-  static auto getInstance() -> const FrameContext& {
-    return toy::ProactiveSingleton<FrameContext>::getInstance();
-  }
 };
 
 } // namespace render

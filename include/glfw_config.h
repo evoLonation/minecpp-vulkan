@@ -3,3 +3,5 @@
 #include <GLFW/glfw3native.h>
 #undef near
 #undef far
+#undef DELETE
+#undef interface

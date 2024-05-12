@@ -14,6 +14,7 @@ import control;
 import axis;
 import transform;
 import manager;
+import action;
 
 int main() {
   try {
@@ -22,6 +23,7 @@ int main() {
     toy::test_ChunkBy();
     toy::test_AnyView();
     toy::test_Generator::test();
+    toy::test_EnumSet::test();
     trans::test_trans();
     auto applicationName = "hello, vulkan!";
     auto width = 1920;
@@ -29,11 +31,15 @@ int main() {
     auto ctx = render::Context{ applicationName, width, height, true };
     auto executor = render::CommandExecutor{};
     auto loop = render::Loop{};
-    auto frame_ctx = render::FrameContext{};
     auto input_processor = render::InputProcessor{};
-    auto exit_handler = render::KeyDownHandler(GLFW_KEY_ESCAPE, [&]() {
-      input_processor.setCursorVisible(!input_processor.isCursorVisible());
-    });
+    auto action_manager = action::ActionManager{};
+    auto exit_handler = action::KeyboardAction(
+      action::Keyboard::ESCAPE,
+      action::ButtonState::DOWN,
+      [&](const action::KeyboardContext& e) {
+        input_processor.setCursorVisible(!input_processor.getCursorState().visible);
+      }
+    );
     auto drawer = render::Drawer{};
     auto gui_ctx = gui::Context{};
     auto executor_moniter = gui::CoDrawer{ control::cmdExecutorMoniter() };
@@ -78,8 +84,13 @@ int main() {
       .width = 1920,
       .height = 1080,
     });
+    auto proj_iv = trans::proj::perspectiveInverse({
+      .width = 1920,
+      .height = 1080,
+    });
 
     auto model_data = trans::model::create();
+    auto cursor_dragger = control::CursorDragger{ proj, proj_iv, view, model_data };
     auto outline_data = model_data * trans::scale(glm::vec3{ 1.1f });
     auto uniforms = std::vector<render::Uniform<glm::mat4>>{};
     uniforms.reserve(4);
@@ -94,12 +105,12 @@ int main() {
                         std::array<render::Resource*, 4>{
                           &uniforms[0], &uniforms[1], &uniforms[2], &sampled_texture },
                         std::nullopt };
-    auto draw_unit_outline = render::DrawUnit{ pipeline_outline_2,
-                                               vertex_buffer,
-                                               index_buffer,
-                                               std::array<render::Resource*, 3>{
-                                                 &uniforms[0], &uniforms[1], &uniforms[3] },
-                                               1 };
+    // auto draw_unit_outline = render::DrawUnit{ pipeline_outline_2,
+    //                                            vertex_buffer,
+    //                                            index_buffer,
+    //                                            std::array<render::Resource*, 3>{
+    //                                              &uniforms[0], &uniforms[1], &uniforms[3] },
+    //                                            1 };
     // auto model_control = control::ModelInput{ model_datas[0] };
     auto pipeline_axis = render::Pipeline{ "axis.vert",
                                            "axis.frag",

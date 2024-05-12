@@ -30,16 +30,16 @@ void slider(
 }
 
 template <typename T>
-void showPopup(T& t, std::map<T, std::string> elements) {
+void showPopup(T& t, std::map<T, const char*> elements) {
   if (ImGui::Button("Select..")) {
     ImGui::OpenPopup("my_select_popup");
   }
   ImGui::SameLine();
-  ImGui::TextUnformatted(elements[t].c_str());
+  ImGui::TextUnformatted(elements[t], elements[t]);
   if (ImGui::BeginPopup("my_select_popup")) {
     ImGui::SeparatorText("Aquarium");
     for (auto& element : elements) {
-      if (ImGui::Selectable(element.second.c_str())) {
+      if (ImGui::Selectable(element.second)) {
         t = element.first;
       }
     }
@@ -47,6 +47,9 @@ void showPopup(T& t, std::map<T, std::string> elements) {
   }
 }
 
+/**
+ * @brief the draw implement should only contain codes relevant to GUI draw
+ */
 class Drawer {
 public:
   virtual void draw() = 0;
@@ -158,7 +161,7 @@ public:
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmdbuf);
   }
 
-  void action() override { draw(); }
+  void loopAction(uint32_t _) override { draw(); }
 
   operator toy::RefContainer<Drawer>&() { return _drawers; }
   operator toy::RefContainer<toy::Generator>&() { return _co_drawers; }

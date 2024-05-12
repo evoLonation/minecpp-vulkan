@@ -81,7 +81,7 @@ public:
                               ranges::to<std::vector>(),
              .resource_type = ResourceType::UNIFORM };
   }
-  void action() override { update(Drawer::getInstance().currentFlightIndex()); }
+  void loopAction(uint32_t _) override { update(Drawer::getInstance().currentFlightIndex()); }
 };
 
 } // namespace render

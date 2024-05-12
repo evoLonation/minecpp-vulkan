@@ -5,8 +5,8 @@ import glm;
 import gui;
 import toy;
 import render.context;
-import render.input;
 import render.command;
+import action;
 import transform;
 import "glfw_config.h";
 import "vulkan_config.h";
@@ -33,41 +33,41 @@ auto cmdExecutorMoniter() -> toy::Generator {
   }
 }
 
-class ModelInput {
+class ModelInput : public action::KeyboardLoader {
 private:
   glm::mat4* _model;
   float      _speed;
   bool       _self;
 
-  std::array<render::KeyHoldHandler, 4> _handlers;
+  // action::KeyboardAction _action;
 
   gui::CoDrawer _co_drawer;
 
-  void setInput() {
-    _handlers = {
-      render::KeyHoldHandler{
-        GLFW_KEY_A,
-        [&](auto _) {
-          *_model = *_model * trans::translate(glm::vec3{ +_speed, .0f, .0f });
-        } },
-      render::KeyHoldHandler{
-        GLFW_KEY_D,
-        [&](auto _) {
-          *_model = *_model * trans::translate(glm::vec3{ -_speed, .0f, .0f });
-        } },
-      render::KeyHoldHandler{
-        GLFW_KEY_W,
-        [&](auto _) {
-          *_model = *_model * trans::translate(glm::vec3{ .0f, +_speed, .0f });
-        } },
-      render::KeyHoldHandler{
-        GLFW_KEY_S,
-        [&](auto _) {
-          *_model = *_model * trans::translate(glm::vec3{ .0f, -_speed, .0f });
-        } },
-    };
+  void run(const action::KeyboardContext& ctx) override {
+    using action::Keyboard;
+    switch (ctx.event.key) {
+    case Keyboard::KEY_A:
+      *_model = *_model * trans::translate(glm::vec3{ +_speed, .0f, .0f });
+      break;
+    case Keyboard::KEY_D:
+      *_model = *_model * trans::translate(glm::vec3{ -_speed, .0f, .0f });
+      break;
+    case Keyboard::KEY_W:
+      *_model = *_model * trans::translate(glm::vec3{ .0f, +_speed, .0f });
+      break;
+    case Keyboard::KEY_S:
+      *_model = *_model * trans::translate(glm::vec3{ .0f, -_speed, .0f });
+    default:
+      toy::throwf("wrong keyboard event");
+    }
   }
-  void clearInput() { _handlers = {}; }
+  void setInput() {
+    using action::Keyboard;
+    action::KeyboardLoader::load(
+      { Keyboard::KEY_A, Keyboard::KEY_D, Keyboard::KEY_W, Keyboard::KEY_S }
+    );
+  }
+  void clearInput() { action::KeyboardLoader::unRegist(); }
 
 public:
   ModelInput(glm::mat4& model, const std::string& label = "default")
@@ -124,60 +124,117 @@ auto cameraController(glm::mat4& view, glm::vec3 location = glm::vec3{ -1.0f, 0.
     translate = trans::rotate<trans::Axis::Z>(-rotate_z) * trans::translate(moved) *
                 trans::rotate<trans::Axis::Z>(rotate_z) * translate;
   };
-  auto hold_handlers = std::array{
-    render::KeyHoldHandler{
-      GLFW_KEY_S,
-      [&](auto _) {
+  using action::Keyboard;
+
+  auto action_handler = action::KeyboardAction{
+    {
+      Keyboard::KEY_S,
+      Keyboard::KEY_W,
+      Keyboard::KEY_A,
+      Keyboard::KEY_D,
+      Keyboard::KEY_Z,
+      Keyboard::KEY_X,
+    },
+    [&](const action::KeyboardContext& ctx) {
+      switch (ctx.event.key) {
+      case Keyboard::KEY_S:
         move(glm::vec3{ move_speed * delta, 0.0f, 0.0f });
-      },
-    },
-    render::KeyHoldHandler{
-      GLFW_KEY_W,
-      [&](auto _) {
+        break;
+      case Keyboard::KEY_W:
         move(glm::vec3{ -move_speed * delta, 0.0f, 0.0f });
-      },
-    },
-    render::KeyHoldHandler{
-      GLFW_KEY_A,
-      [&](auto _) {
+        break;
+      case Keyboard::KEY_A:
         move(glm::vec3{ 0.0f, -move_speed * delta, 0.0f });
-      },
-    },
-    render::KeyHoldHandler{
-      GLFW_KEY_D,
-      [&](auto _) {
+        break;
+      case Keyboard::KEY_D:
         move(glm::vec3{ 0.0f, move_speed * delta, 0.0f });
-      },
-    },
-    render::KeyHoldHandler{
-      GLFW_KEY_Z,
-      [&](auto _) {
+        break;
+      case Keyboard::KEY_Z:
         move(glm::vec3{ 0.0f, 0.0f, -move_speed * delta });
-      },
-    },
-    render::KeyHoldHandler{
-      GLFW_KEY_X,
-      [&](auto _) {
+        break;
+      case Keyboard::KEY_X:
         move(glm::vec3{ 0.0f, 0.0f, move_speed * delta });
-      },
+        break;
+      default:
+        toy::throwf("camera input handler event error");
+      }
     },
   };
-  auto cursor_handlers = std::array{
-    render::CursorMoveHandler([&](double x, double y) {
-      // x: left, y: down
-      if (render::InputProcessor::getInstance().isCursorVisible()) {
-        return;
-      }
-      // x为正 -> 鼠标右移 -> 所有坐标沿z轴正旋转
-      rotate_z += x / 1920 * 360;
-      // y为正 -> 鼠标下移 -> 所有坐标沿y轴负旋转
-      rotate_y -= y / 1080 * 360;
-      rotate_y = std::clamp(rotate_y, -90.0f, 90.0f);
-    }),
-  };
+  auto cursor_handler = action::CursorAction{ [&](const action::ActionContext& ctx) {
+    // x: left, y: down
+    auto x = ctx.cursor.x_move;
+    auto y = ctx.cursor.y_move;
+    if (ctx.cursor.visible) {
+      return;
+    }
+    // x为正 -> 鼠标右移 -> 所有坐标沿z轴正旋转
+    rotate_z += x / 1920.0f * 360;
+    // y为正 -> 鼠标下移 -> 所有坐标沿y轴负旋转
+    rotate_y -= y / 1080.0f * 360;
+    rotate_y = std::clamp(rotate_y, -90.0f, 90.0f);
+  } };
   while (co_yield 0) {
     compute_view();
   }
 }
+
+void cursor2Plane(
+  float            pos_x,
+  float            pos_y,
+  const glm::mat4& perspective,
+  const glm::mat4& perspective_iv,
+  const glm::mat4& view,
+  glm::mat4&       model
+) {
+  auto& ctx = render::Context::getInstance().extent;
+  auto  ndc_x = pos_x / ctx.width * 2 - 1;
+  auto  ndc_y = pos_y / ctx.height * 2 - 1;
+  auto  start = glm::vec3{ ndc_x, ndc_y, -1.0f };
+  auto  end = glm::vec3{ ndc_x, ndc_y, 1.0f };
+  auto  start_2 =
+    trans::inverse(model) * trans::inverse(view) * perspective_iv * glm::vec4{ start, 1.0f };
+  start = start_2 / start_2.w;
+  auto end_2 =
+    trans::inverse(model) * trans::inverse(view) * perspective_iv * glm::vec4{ end, 1.0f };
+  end = end_2 / end_2.w;
+  auto inter = trans::intersection(
+    trans::Line{
+      .direction = end - start,
+      .point = start,
+    },
+    trans::Surface{
+      .normal = glm::vec3{ 1.0f, 0.0f, 0.0f },
+      .dot = 0.0f,
+    }
+  );
+  if (inter.index() == 0) {
+    auto inter_point = std::get<0>(inter);
+    if (glm::dot(inter_point - start, inter_point - end) < 0) {
+      toy::debug(std::tuple{ inter_point.x, inter_point.y, inter_point.z });
+      model = model * trans::translate(inter_point);
+    }
+  }
+}
+
+class CursorDragger : private action::ActionLoader {
+private:
+  const glm::mat4* _perspective;
+  const glm::mat4* _perspective_iv;
+  const glm::mat4* _view;
+  glm::mat4*       _model;
+
+public:
+  CursorDragger(
+    const glm::mat4& perspective,
+    const glm::mat4& perspective_iv,
+    const glm::mat4& view,
+    glm::mat4&       model
+  )
+    : _perspective(&perspective), _perspective_iv(&perspective_iv), _view(&view), _model(&model) {}
+  void run(const action::ActionContext& ctx) override {
+    auto& cursor = ctx.cursor;
+    cursor2Plane(cursor.x, cursor.y, *_perspective, *_perspective_iv, *_view, *_model);
+  }
+};
 
 } // namespace control

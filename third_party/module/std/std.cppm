@@ -406,4 +406,5 @@ export module std;
 export {
   namespace views = std::views;
   namespace ranges = std::ranges;
+  namespace chrono = std::chrono;
 }

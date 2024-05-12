@@ -1,0 +1,224 @@
+export module action;
+
+import std;
+import toy;
+
+import "vulkan_config.h";
+
+import render.context;
+import render.loop;
+import render.input;
+
+export namespace action {
+
+using Mouse = render::Mouse;
+using Keyboard = render::Keyboard;
+using ButtonState = render::ButtonState;
+using CursorState = render::CursorState;
+using KeyboardEvent = render::KeyboardEvent;
+using MouseEvent = render::MouseEvent;
+struct Screen {
+  uint32_t width;
+  uint32_t height;
+};
+struct KeyboardStateChecker {
+  auto operator[](Keyboard key) -> std::optional<ButtonState> {
+    return render::InputProcessor::getInstance().getState(key);
+  }
+};
+struct MouseStateChecker {
+  auto operator[](Mouse mouse) -> std::optional<ButtonState> {
+    return render::InputProcessor::getInstance().getState(mouse);
+  }
+};
+
+struct ActionContext {
+  uint32_t             interval_milli;
+  Screen               screen;
+  CursorState          cursor;
+  KeyboardStateChecker keyboard;
+  MouseStateChecker    mouse;
+};
+
+struct KeyboardContext : ActionContext {
+  KeyboardEvent event;
+};
+struct MouseContext : ActionContext {
+  MouseEvent event;
+};
+
+using ActionHandler = std::function<void(const ActionContext&)>;
+using KeyboardHandler = std::function<void(const KeyboardContext&)>;
+using MouseHandler = std::function<void(const MouseContext&)>;
+using CursorHandler = std::function<void(const ActionContext&)>;
+
+struct ActionInterface {
+  virtual void run(const ActionContext& ctx) = 0;
+};
+struct KeyboardInterface {
+  virtual void run(const KeyboardContext& ctx) = 0;
+};
+struct MouseInterface {
+  virtual void run(const MouseContext& ctx) = 0;
+};
+struct CursorInterface {
+  virtual void run(const ActionContext& ctx) = 0;
+};
+
+using KeyboardSet = toy::EnumSet<Keyboard>;
+using MouseSet = toy::EnumSet<Mouse>;
+using StateSet = toy::EnumSet<ButtonState::State>;
+
+class ActionManager : public toy::ProactiveSingleton<ActionManager>,
+                      private render::LoopActionLoader<render::LoopOrder::EXECUTE_ACTIONS> {
+public:
+  struct Action : ActionHandler, toy::AutoLoader<Action, ActionHandler> {
+    Action() = default;
+    Action(ActionHandler handler)
+      : ActionHandler(std::move(handler)),
+        toy::AutoLoader<Action, ActionHandler>(ActionManager::getInstance()._handlers) {}
+  };
+  struct ActionLoader : toy::InterfaceLoader<ActionInterface> {
+    ActionLoader()
+      : toy::InterfaceLoader<ActionInterface>(ActionManager::getInstance()._interfaces) {}
+  };
+  struct KeyboardAction : KeyboardHandler, toy::MultiLoader<KeyboardAction> {
+    KeyboardAction() = default;
+    KeyboardAction(KeyboardSet key_set, StateSet state_set, KeyboardHandler handler)
+      : KeyboardHandler(std::move(handler)) {
+      auto& mng = ActionManager::getInstance();
+      for (auto key : key_set) {
+        for (auto state : state_set) {
+          toy::MultiLoader<KeyboardAction>::regist(mng._keyboard_handlers[key][state]);
+        }
+      }
+    }
+    KeyboardAction(KeyboardSet key_set, KeyboardHandler handler)
+      : KeyboardAction(key_set, { ButtonState::DOWN, ButtonState::HOLD }, std::move(handler)) {}
+  };
+  struct KeyboardLoader : KeyboardInterface, toy::MultiLoader<KeyboardLoader, KeyboardInterface> {
+    KeyboardLoader() = default;
+    auto load(KeyboardSet key_set, StateSet state_set = { ButtonState::DOWN, ButtonState::HOLD }) {
+      auto& mng = ActionManager::getInstance();
+      for (auto key : key_set) {
+        for (auto state : state_set) {
+          toy::MultiLoader<KeyboardLoader, KeyboardInterface>::regist(
+            mng._keyboard_interfaces[key][state]
+          );
+        }
+      }
+    }
+    KeyboardLoader(
+      KeyboardSet key_set, StateSet state_set = { ButtonState::DOWN, ButtonState::HOLD }
+    ) {
+      load(key_set, state_set);
+    }
+  };
+  struct MouseAction : MouseHandler, toy::MultiLoader<MouseAction> {
+    MouseAction() = default;
+    MouseAction(MouseSet key_set, StateSet state_set, MouseHandler handler)
+      : MouseHandler(std::move(handler)) {
+      auto& mng = ActionManager::getInstance();
+      for (auto key : key_set) {
+        for (auto state : state_set) {
+          toy::MultiLoader<MouseAction>::regist(mng._mouse_handlers[key][state]);
+        }
+      }
+    }
+    MouseAction(MouseSet key_set, MouseHandler handler)
+      : MouseAction(key_set, { ButtonState::DOWN, ButtonState::HOLD }, std::move(handler)) {}
+  };
+  struct MouseLoader : MouseInterface, toy::MultiLoader<MouseLoader, MouseInterface> {
+    MouseLoader() = default;
+    auto load(MouseSet key_set, StateSet state_set = { ButtonState::DOWN, ButtonState::HOLD }) {
+      auto& mng = ActionManager::getInstance();
+      for (auto key : key_set) {
+        for (auto state : state_set) {
+          toy::MultiLoader<MouseLoader, MouseInterface>::regist(mng._mouse_interfaces[key][state]);
+        }
+      }
+    }
+    MouseLoader(MouseSet key_set, StateSet state_set = { ButtonState::DOWN, ButtonState::HOLD }) {
+      load(key_set, state_set);
+    }
+  };
+  struct CursorAction : CursorHandler, toy::AutoLoader<CursorAction> {
+    CursorAction() = default;
+    CursorAction(CursorHandler handler)
+      : CursorHandler(std::move(handler)),
+        toy::AutoLoader<CursorAction>(ActionManager::getInstance()._cursor_handlers) {}
+  };
+  struct CursorLoader : toy::InterfaceLoader<CursorInterface> {
+    CursorLoader()
+      : toy::InterfaceLoader<CursorInterface>(ActionManager::getInstance()._cursor_interfaces) {}
+  };
+
+private:
+  ActionContext _ctx;
+
+  toy::RefContainer<ActionHandler>   _handlers;
+  toy::RefContainer<ActionInterface> _interfaces;
+  std::map<Keyboard, std::map<ButtonState::State, toy::RefContainer<KeyboardAction>>>
+    _keyboard_handlers;
+  std::map<Keyboard, std::map<ButtonState::State, toy::RefContainer<KeyboardInterface>>>
+    _keyboard_interfaces;
+  std::map<Mouse, std::map<ButtonState::State, toy::RefContainer<MouseAction>>> _mouse_handlers;
+  std::map<Mouse, std::map<ButtonState::State, toy::RefContainer<MouseInterface>>>
+                                     _mouse_interfaces;
+  toy::RefContainer<CursorAction>    _cursor_handlers;
+  toy::RefContainer<CursorInterface> _cursor_interfaces;
+
+public:
+  ActionManager() = default;
+  void loopAction(uint32_t interval_milli) override {
+    auto& extent = render::Context::getInstance().extent;
+    auto& input = render::InputProcessor::getInstance();
+    _ctx.interval_milli = interval_milli;
+    _ctx.screen = { extent.width, extent.height };
+    _ctx.cursor = input.getCursorState();
+    for (auto& handler : _handlers) {
+      handler(_ctx);
+    }
+    for (auto& interface : _interfaces) {
+      interface.run(_ctx);
+    }
+    for (auto event : input.getKeyboardEvents()) {
+      auto ctx = KeyboardContext{ _ctx, event };
+      auto& [key, state] = event;
+      for (auto& handler : _keyboard_handlers[key][state.state]) {
+        handler(ctx);
+      }
+      for (auto& interface : _keyboard_interfaces[key][state.state]) {
+        interface.run(ctx);
+      }
+    }
+    for (auto event : input.getMouseEvents()) {
+      auto ctx = MouseContext{ _ctx, event };
+      auto& [key, state] = event;
+      for (auto& handler : _mouse_handlers[key][state.state]) {
+        handler(ctx);
+      }
+      for (auto& interface : _mouse_interfaces[key][state.state]) {
+        interface.run(ctx);
+      }
+    }
+    if (_ctx.cursor.x_move != 0 || _ctx.cursor.y_move != 0) {
+      for (auto& handler : _cursor_handlers) {
+        handler(_ctx);
+      }
+      for (auto& interface : _cursor_interfaces) {
+        interface.run(_ctx);
+      }
+    }
+  }
+};
+using Action = ActionManager::Action;
+using ActionLoader = ActionManager::ActionLoader;
+using KeyboardAction = ActionManager::KeyboardAction;
+using KeyboardLoader = ActionManager::KeyboardLoader;
+using MouseAction = ActionManager::MouseAction;
+using MouseLoader = ActionManager::MouseLoader;
+using CursorAction = ActionManager::CursorAction;
+using CursorLoader = ActionManager::CursorLoader;
+
+} // namespace action

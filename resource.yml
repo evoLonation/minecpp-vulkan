@@ -15,6 +15,7 @@ source:
 - control.ccm
 - axis.ccm
 - manager.ccm
+- action.ccm
 include_dir:
 - include
 

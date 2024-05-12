@@ -6,3 +6,5 @@
 // windows头文件中定义的逆天宏
 #undef near
 #undef far
+#undef DELETE
+#undef interface

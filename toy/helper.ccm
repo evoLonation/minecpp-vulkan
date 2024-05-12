@@ -2,6 +2,7 @@ export module toy.helper;
 
 import std;
 import toy.log;
+import toy.concepts;
 
 export namespace toy {
 
@@ -61,6 +62,8 @@ template <typename T>
 class RefContainer {
   template <typename, typename>
   friend class AutoLoader;
+  template <typename, typename>
+  friend class MultiLoader;
 
 private:
   std::map<size_t, T*>           _id2pointer;
@@ -118,8 +121,6 @@ public:
  */
 template <typename Derived, typename T = Derived>
 class AutoLoader {
-  friend RefContainer<T>;
-
 private:
   RefContainer<T>* _container;
 
@@ -142,11 +143,10 @@ private:
   }
   void setMoved() { _container = nullptr; }
 
-protected:
+public:
   AutoLoader() : _container(nullptr) {}
   AutoLoader(RefContainer<T>& container) { init(container); }
 
-public:
   ~AutoLoader() { remove(); }
 
   AutoLoader(const AutoLoader& e) : AutoLoader{ *e._container } {}
@@ -176,6 +176,69 @@ public:
   }
 };
 
+template <typename Derived, typename T = Derived>
+class MultiLoader {
+  friend RefContainer<T>;
+
+private:
+  std::unordered_set<RefContainer<T>*> _containers;
+
+private:
+  template <typename _ = void>
+    requires std::derived_from<Derived, T>
+  auto self() -> T& {
+    return static_cast<T&>(static_cast<Derived&>(*this));
+  }
+  template <typename RangeT>
+    requires std::convertible_to<ranges::range_reference_t<RangeT>, RefContainer<T>&>
+  void load(RangeT&& containers) {
+    for (RefContainer<T>& container : containers) {
+      toy::checkThrowf(
+        !_containers.contains(&container), "init with container which already in _containers"
+      );
+      _containers.insert(&container);
+      container.add(&self());
+    }
+  }
+  void unload() {
+    for (auto* container : _containers) {
+      container->remove(&self());
+    }
+    _containers.clear();
+  }
+  void unload(RefContainer<T>& container) {
+    toy::checkThrowf(
+      _containers.contains(&container), "unload error: _containers does not contain container"
+    );
+    _containers.erase(&container);
+    container.remove(&self());
+  }
+
+public:
+  MultiLoader() = default;
+  MultiLoader(auto&& containers) { load(std::forward<decltype(containers)>(containers)); }
+  ~MultiLoader() { unload(); }
+
+  MultiLoader(const MultiLoader& e) : MultiLoader{ e._containers } {}
+  MultiLoader(MultiLoader&& e) : MultiLoader{ e._containers } { e.unload(); }
+  auto operator=(const MultiLoader& e) -> MultiLoader& {
+    unload();
+    load(e._containers);
+    return *this;
+  }
+  auto operator=(MultiLoader&& e) -> MultiLoader& {
+    unload();
+    load(e._containers);
+    e.unload();
+    return *this;
+  }
+  void regist(RefContainer<T>& container) {
+    load(std::array<std::reference_wrapper<RefContainer<T>>, 1>{ container });
+  }
+  void unRegist() { unload(); }
+  void unRegist(RefContainer<T>& container) { unload(container); }
+};
+
 template <typename Interface, typename Container = RefContainer<Interface>>
 class InterfaceLoader : public Interface,
                         private toy::AutoLoader<InterfaceLoader<Interface, Container>, Interface> {
@@ -189,6 +252,11 @@ private:
 
 public:
   template <typename _ = void>
+    requires(!std::derived_from<Container, ProactiveSingleton<Container>>)
+  InterfaceLoader() {
+    conceptCheck();
+  }
+  template <typename _ = void>
     requires std::derived_from<Container, ProactiveSingleton<Container>>
   InterfaceLoader() : AutoLoader(Container::getInstance()) {
     conceptCheck();
@@ -198,6 +266,84 @@ public:
   InterfaceLoader(Container& container) : AutoLoader(container) {
     conceptCheck();
   }
+};
+
+// for macro generate to enum
+template <typename EnumT>
+constexpr auto enum2String(EnumT t) -> const char* {
+  return &EnumT::pair.first[EnumT::pair.second[t._value]];
+}
+template <typename EnumT>
+constexpr auto enumCount() -> std::size_t {
+  return EnumT::count;
+}
+
+template <int... Values, std::size_t N>
+consteval auto __splitString(const char (&buf)[N])
+  -> std::pair<std::array<char, N>, std::array<std::size_t, sizeof...(Values)>> {
+  auto writable = std::array<char, N>{};
+  auto indices = std::array<std::size_t, sizeof...(Values)>{};
+  std::copy(buf, buf + N, writable.begin());
+  auto i_indices = 0;
+  indices[i_indices] = 0;
+  i_indices++;
+  for (auto iter = writable.begin(); iter != writable.end(); iter++) {
+    auto& c = *iter;
+    if (c == ',') {
+      c = '\0';
+      indices[i_indices] = iter - writable.begin() + 2;
+      i_indices++;
+    }
+  }
+  return { writable, indices };
+}
+
+template <typename EnumT>
+struct EnumSet {
+  std::bitset<(size_t)EnumT::MAX_ENUM_VALUE> _bitset;
+  EnumSet(std::initializer_list<EnumT> values) {
+    for (auto value : values) {
+      _bitset.set((size_t)value);
+    }
+  }
+  EnumSet(EnumT value) { _bitset.set((size_t)value); }
+  EnumSet() = default;
+  friend auto operator|(EnumSet set, EnumT key) -> EnumSet {
+    set._bitset.set((size_t)key);
+    return set;
+  }
+  friend auto operator|(EnumSet a, EnumSet b) -> EnumSet { return a._bitset | b._bitset; }
+  class Iterator {
+  private:
+    size_t         _index;
+    const EnumSet* _set;
+
+  public:
+    Iterator() = default;
+    Iterator(const EnumSet& set, size_t index) : _index(index), _set(&set) {
+      while (_index < _set->_bitset.size() && !_set->_bitset[_index]) {
+        _index++;
+      }
+    }
+    using difference_type = std::ptrdiff_t;
+    auto operator*() -> EnumT { return (EnumT)_index; }
+    auto operator++() -> Iterator& {
+      _index++;
+      while (_index < _set->_bitset.size() && !_set->_bitset[_index]) {
+        _index++;
+      }
+      return *this;
+    }
+    auto operator++(int) -> Iterator {
+      auto iter = *this;
+      ++*this;
+      return iter;
+    }
+    friend auto operator==(const Iterator& a, const Iterator& b) -> bool = default;
+  };
+
+  auto begin() const { return Iterator(*this, 0); }
+  auto end() const { return Iterator(*this, _bitset.size()); }
 };
 
 namespace test_refContainer {
@@ -230,6 +376,28 @@ void test_base() {
   toy::debug(a | views::transform([](auto e) { return e.num; }));
 }
 
+class M : public MultiLoader<M> {
+public:
+  using MultiLoader<M>::MultiLoader;
+};
+class C1 : public RefContainer<M> {};
+
+void test_MultiLoader() {
+  auto containers = std::array{ C1{}, C1{}, C1{} };
+  {
+    auto m1 = M{ containers | views::take(2) };
+    // m1.regist(containers[0]);
+    toy::checkThrowf(&*containers[0].begin() == &m1, "test multiloader error");
+    toy::checkThrowf(&*containers[1].begin() == &m1, "test multiloader error");
+    toy::checkThrowf(containers[2].begin() == containers[2].end(), "test multiloader error");
+    m1.regist(containers[2]);
+    toy::checkThrowf(&*containers[2].begin() == &m1, "test multiloader error");
+    m1.unRegist(containers[1]);
+    toy::checkThrowf(containers[1].begin() == containers[1].end(), "test multiloader error");
+  }
+  toy::checkThrowf(containers[0].begin() == containers[0].end(), "test multiloader error");
+}
+
 class Interface {
   virtual void foo() = 0;
 };
@@ -260,5 +428,19 @@ void test_interfaceLoader() {
 }
 
 } // namespace test_refContainer
+
+namespace test_EnumSet {
+
+enum class A { A, B, C, MAX_ENUM_VALUE };
+
+void test() {
+  auto set = EnumSet<A>{};
+  for (A a : set) {
+    toy::checkThrowf(a != A::B && a != A::MAX_ENUM_VALUE, "enumset test wrong");
+  }
+  set = EnumSet<A>{ A::A, A::C };
+}
+
+} // namespace test_EnumSet
 
 } // namespace toy
