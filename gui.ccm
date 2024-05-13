@@ -61,8 +61,10 @@ public:
  *
  */
 class Context : public toy::ProactiveSingleton<Context>,
-                private render::DrawerLoader<render::DrawStage::GUI>,
-                private render::LoopActionLoader<render::LoopOrder::GUI_RENDER> {
+                private rd::DrawerLoader<rd::DrawStage::GUI>,
+                private rd::LoopActionLoader<rd::LoopOrder::GUI_RENDER> {
+  friend class DrawerLoader;
+
 private:
   static constexpr auto _base_font_size = 13;
   static constexpr auto _default_scale = 2.0f;
@@ -80,7 +82,7 @@ private:
 
 public:
   Context() {
-    auto& ctx = render::Context::getInstance();
+    auto& ctx = rd::Context::getInstance();
     // imgui 准备阶段 :
     // call ImGui::CreateContext()
     // call ImGui_ImplXXXX_Init() for each backend
@@ -148,13 +150,13 @@ public:
 
     slider("scale ratio", _scale, _min_scale, _max_scale);
     _io->FontGlobalScale = _scale / (_default_font_size * 1.0f / _base_font_size);
-    for (auto& drawer : _drawers) {
-      drawer.draw();
-    }
     for (auto& drawer : _co_drawers) {
       drawer.next();
     }
     ImGui::End();
+    for (auto& drawer : _drawers) {
+      drawer.draw();
+    }
     ImGui::Render();
   }
   void record(VkCommandBuffer cmdbuf, int in_flight_index) override {
@@ -163,11 +165,12 @@ public:
 
   void loopAction(uint32_t _) override { draw(); }
 
-  operator toy::RefContainer<Drawer>&() { return _drawers; }
   operator toy::RefContainer<toy::Generator>&() { return _co_drawers; }
 };
 
-using DrawerLoader = toy::InterfaceLoader<Drawer, Context>;
+struct DrawerLoader : toy::InterfaceLoader<Drawer> {
+  DrawerLoader() : toy::InterfaceLoader<Drawer>(Context::getInstance()._drawers) {}
+};
 
 class CoDrawer : public toy::Generator, public toy::AutoLoader<CoDrawer, toy::Generator> {
 public:

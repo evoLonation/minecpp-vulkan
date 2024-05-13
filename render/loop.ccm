@@ -6,7 +6,7 @@ import "vulkan_config.h";
 import std;
 import toy;
 
-export namespace render {
+export namespace rd {
 
 class LoopAction {
 public:
@@ -56,4 +56,4 @@ public:
   LoopActionLoader() : toy::InterfaceLoader<LoopAction>(Loop::getInstance()._action_map[order]) {}
 };
 
-} // namespace render
+} // namespace rd

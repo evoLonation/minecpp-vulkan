@@ -10,7 +10,7 @@ namespace fs = std::filesystem;
 
 export namespace model {
 
-using Vertex = render::Vertex<glm::vec3, glm::vec3, glm::vec2>;
+using Vertex = rd::Vertex<glm::vec3, glm::vec3, glm::vec2>;
 
 struct MeshInfo {
   std::vector<Vertex> vertex_data;

@@ -8,7 +8,7 @@ import "glfw_config.h";
 import std;
 import toy;
 
-export namespace render {
+export namespace rd {
 
 enum class Mouse {
   LEFT,
@@ -605,4 +605,4 @@ using KeyboardListenerLoader = InputProcessor::KeyboardListenerLoader;
 using MouseListenerLoader = InputProcessor::MouseListenerLoader;
 using CursorListenerLoader = InputProcessor::CursorListenerLoader;
 
-} // namespace render
+} // namespace rd

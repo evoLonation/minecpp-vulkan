@@ -12,7 +12,7 @@ import <vulkan_config.h>;
 import std;
 import toy;
 
-export namespace render {
+export namespace rd {
 
 class DrawRecorder {
 public:
@@ -246,4 +246,4 @@ public:
 template <DrawStage stage>
 using DrawerLoader = toy::InterfaceLoader<DrawRecorder, Drawer::StageContainer<stage>>;
 
-} // namespace render
+} // namespace rd

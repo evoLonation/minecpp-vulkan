@@ -15,12 +15,12 @@ import "imgui_config.h";
 export namespace control {
 
 auto cmdExecutorMoniter() -> toy::Generator {
-  auto  state = render::CommandExecutor::State{};
-  auto& executor = render::CommandExecutor::getInstance();
+  auto  state = rd::CommandExecutor::State{};
+  auto& executor = rd::CommandExecutor::getInstance();
 
   while (co_yield 0) {
     state = executor.getState();
-    auto show_pool = [](render::PoolState state, const std::string& name) {
+    auto show_pool = [](rd::PoolState state, const std::string& name) {
       ImGui::Text("%s", std::format("The {} pool:", name).c_str());
       ImGui::Text("%s", std::format("Total allocated resource: {}", state.allocate_n).c_str());
       ImGui::Text("%s", std::format("In use resource: {}", state.inuse_n).c_str());
@@ -186,7 +186,7 @@ void cursor2Plane(
   const glm::mat4& view,
   glm::mat4&       model
 ) {
-  auto& ctx = render::Context::getInstance().extent;
+  auto& ctx = rd::Context::getInstance().extent;
   auto  ndc_x = pos_x / ctx.width * 2 - 1;
   auto  ndc_y = pos_y / ctx.height * 2 - 1;
   auto  start = glm::vec3{ ndc_x, ndc_y, -1.0f };

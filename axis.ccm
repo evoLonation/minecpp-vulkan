@@ -5,7 +5,7 @@ import glm;
 import std;
 
 export namespace axis {
-using Vertex = render::Vertex<glm::vec3, glm::vec3>;
+using Vertex = rd::Vertex<glm::vec3, glm::vec3>;
 
 const auto axis_model = std::array{
   Vertex{ glm::vec3{ 0.0f, 0.0f, 0.0f }, glm::vec3{ 1.0f, 0.0f, 0.0f } },

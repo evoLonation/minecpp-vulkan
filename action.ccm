@@ -11,24 +11,24 @@ import render.input;
 
 export namespace action {
 
-using Mouse = render::Mouse;
-using Keyboard = render::Keyboard;
-using ButtonState = render::ButtonState;
-using CursorState = render::CursorState;
-using KeyboardEvent = render::KeyboardEvent;
-using MouseEvent = render::MouseEvent;
+using Mouse = rd::Mouse;
+using Keyboard = rd::Keyboard;
+using ButtonState = rd::ButtonState;
+using CursorState = rd::CursorState;
+using KeyboardEvent = rd::KeyboardEvent;
+using MouseEvent = rd::MouseEvent;
 struct Screen {
   uint32_t width;
   uint32_t height;
 };
 struct KeyboardStateChecker {
   auto operator[](Keyboard key) -> std::optional<ButtonState> {
-    return render::InputProcessor::getInstance().getState(key);
+    return rd::InputProcessor::getInstance().getState(key);
   }
 };
 struct MouseStateChecker {
   auto operator[](Mouse mouse) -> std::optional<ButtonState> {
-    return render::InputProcessor::getInstance().getState(mouse);
+    return rd::InputProcessor::getInstance().getState(mouse);
   }
 };
 
@@ -70,7 +70,7 @@ using MouseSet = toy::EnumSet<Mouse>;
 using StateSet = toy::EnumSet<ButtonState::State>;
 
 class ActionManager : public toy::ProactiveSingleton<ActionManager>,
-                      private render::LoopActionLoader<render::LoopOrder::EXECUTE_ACTIONS> {
+                      private rd::LoopActionLoader<rd::LoopOrder::EXECUTE_ACTIONS> {
 public:
   struct Action : ActionHandler, toy::AutoLoader<Action, ActionHandler> {
     Action() = default;
@@ -171,8 +171,8 @@ private:
 public:
   ActionManager() = default;
   void loopAction(uint32_t interval_milli) override {
-    auto& extent = render::Context::getInstance().extent;
-    auto& input = render::InputProcessor::getInstance();
+    auto& extent = rd::Context::getInstance().extent;
+    auto& input = rd::InputProcessor::getInstance();
     _ctx.interval_milli = interval_milli;
     _ctx.screen = { extent.width, extent.height };
     _ctx.cursor = input.getCursorState();

@@ -1,8 +1,10 @@
+module;
+#include "enum.h"
+
 export module manager;
 
 import "vulkan_config.h";
 import "imgui_config.h";
-import "enum.h";
 
 import std;
 import toy;
@@ -14,79 +16,53 @@ import action;
 
 export namespace mng {
 
-template <typename EnumT>
-auto __enum2Father();
-template <typename EnumT, typename T = decltype(__enum2Father<EnumT>())>
-constexpr auto enum2String(EnumT t) -> const char* {
-  return &T::pair.first[T::pair.second[t]];
-}
-template <typename EnumT, typename T = decltype(__enum2Father<EnumT>())>
-constexpr auto enumCount() -> std::size_t {
-  return T::count;
-}
-
-template <int... Values, std::size_t N>
-consteval auto splitString(const char (&buf)[N])
-  -> std::pair<std::array<char, N>, std::array<std::size_t, sizeof...(Values)>> {
-  auto writable = std::array<char, N>{};
-  auto indices = std::array<std::size_t, sizeof...(Values)>{};
-  std::copy(buf, buf + N, writable.begin());
-  auto i_indices = 0;
-  indices[i_indices] = 0;
-  i_indices++;
-  for (auto iter = writable.begin(); iter != writable.end(); iter++) {
-    auto& c = *iter;
-    if (c == ',') {
-      c = '\0';
-      indices[i_indices] = iter - writable.begin() + 2;
-      i_indices++;
-    }
-  }
-  return { writable, indices };
-}
-
 TOY_ENUM(PipelineType, DEFAULT, OUTLINE_1, OUTLINE_2);
 
-auto create(PipelineType type) -> render::Pipeline {
+class PipelineResource {
+private:
+  rd::Pipeline pipeline;
+};
+
+auto create(PipelineType type) -> rd::Pipeline {
   auto stencil_options = vk::getOutliningStencil();
   stencil_options.first.dynamic_reference = false;
   stencil_options.second.dynamic_reference = true;
   switch (type.value()) {
   case PipelineType::DEFAULT:
-    return render::Pipeline{ "hello.vert",
+    return rd::Pipeline{ "hello.vert",
                              "hello.frag",
                              VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                              model::Vertex::getVertexInfo(),
-                             std::array{ render::ResourceType::UNIFORM,
-                                         render::ResourceType::UNIFORM,
-                                         render::ResourceType::UNIFORM,
-                                         render::ResourceType::SAMPLER },
+                             std::array{ rd::ResourceType::UNIFORM,
+                                         rd::ResourceType::UNIFORM,
+                                         rd::ResourceType::UNIFORM,
+                                         rd::ResourceType::SAMPLER },
                              std::nullopt };
   case PipelineType::OUTLINE_1:
-    return render::Pipeline{ "hello.vert",
+    return rd::Pipeline{ "hello.vert",
                              "hello.frag",
                              VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                              model::Vertex::getVertexInfo(),
-                             std::array{ render::ResourceType::UNIFORM,
-                                         render::ResourceType::UNIFORM,
-                                         render::ResourceType::UNIFORM,
-                                         render::ResourceType::SAMPLER },
+                             std::array{ rd::ResourceType::UNIFORM,
+                                         rd::ResourceType::UNIFORM,
+                                         rd::ResourceType::UNIFORM,
+                                         rd::ResourceType::SAMPLER },
                              stencil_options.first };
   case PipelineType::OUTLINE_2:
-    return render::Pipeline{ "outline.vert",
+    return rd::Pipeline{ "outline.vert",
                              "outline.frag",
                              VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                              model::Vertex::getVertexInfo(),
-                             std::array{ render::ResourceType::UNIFORM,
-                                         render::ResourceType::UNIFORM,
-                                         render::ResourceType::UNIFORM },
+                             std::array{ rd::ResourceType::UNIFORM,
+                                         rd::ResourceType::UNIFORM,
+                                         rd::ResourceType::UNIFORM },
                              stencil_options.second };
   }
 }
 
 class Manager : private gui::DrawerLoader, private action::ActionLoader {
 private:
-  std::map<std::string, render::Pipeline> _resources;
+  std::map<std::string, rd::Pipeline> _resources;
 
   std::array<char, 128> _resource_name_buf;
   PipelineType          _pipeline_type;
@@ -108,8 +84,11 @@ public:
     );
     _selected_item = nullptr;
   }
+
   void draw() override {
-    ImGui::InputText("Resource Name", _resource_name_buf.begin(), _resource_name_buf.size());
+    ImGui::Begin("Resource manager");
+    ImGui::SeparatorText("Pipeline create");
+    ImGui::InputText("Resource name", _resource_name_buf.begin(), _resource_name_buf.size());
     ImGui::Combo(
       "Pipeline type",
       &_pipeline_type_item,
@@ -124,17 +103,22 @@ public:
         );
       });
     }
+    ImGui::SeparatorText("Pipeline list");
     for (auto& name : _resources | views::keys) {
       if (ImGui::Selectable(name.data(), _selected_item == &name)) {
         _selected_item = &name;
       }
     }
+    ImGui::SeparatorText("Pipeline info");
     if (_selected_item == nullptr) {
       ImGui::Text("No select any pipeline");
     } else {
       ImGui::Text("%s", std::format("Selected pipeline: {}", *_selected_item).data());
+      // ImGui::Text("%s", std::format("Pipeline type: {}", _resources[*_selected_item]).data());
     }
+    ImGui::End();
   }
+
   void run(const action::ActionContext& ctx) override {
     while (!_events.empty()) {
       _events.back()();

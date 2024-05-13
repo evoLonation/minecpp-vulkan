@@ -12,7 +12,7 @@ import std;
 import glm;
 import toy;
 
-export namespace render {
+export namespace rd {
 
 auto resourceType2Layout(ResourceType type) -> VkDescriptorSetLayout {
   auto& ctx = Context::getInstance();
@@ -244,4 +244,4 @@ inline void Pipeline::record(VkCommandBuffer cmdbuf, int in_flight_index) {
   );
 }
 
-} // namespace render
+} // namespace rd

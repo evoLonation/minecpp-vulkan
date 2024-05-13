@@ -10,7 +10,7 @@ import std;
 import glm;
 import toy;
 
-export namespace render {
+export namespace rd {
 
 enum class ResourceType { UNIFORM, SAMPLER };
 
@@ -26,4 +26,4 @@ public:
   virtual auto getResourceInfo() -> ResourceInfo = 0;
 };
 
-} // namespace render
+} // namespace rd

@@ -11,7 +11,7 @@ import std;
 import glm;
 import toy;
 
-export namespace render {
+export namespace rd {
 
 template <typename Type>
 consteval auto formatMapper() -> VkFormat {
@@ -95,7 +95,7 @@ public:
   DeviceLocalBuffer(
     VkBufferUsageFlagBits usage, std::span<const std::byte> buffer_data, vk::BufferUse dst_use
   ) {
-    auto& ctx = render::Context::getInstance();
+    auto& ctx = rd::Context::getInstance();
     auto  buffer_size = (uint32_t)buffer_data.size();
     std::tie(_staging_buffer, _staging_memory) =
       vk::createStagingBuffer(ctx.pdevice_info.device, ctx.device, buffer_data);
@@ -166,4 +166,4 @@ public:
   auto getIndexNumber() -> int { return _index_number; }
 };
 
-} // namespace render
+} // namespace rd

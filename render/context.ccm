@@ -6,7 +6,7 @@ import render.swapchain;
 import std;
 import toy;
 
-export namespace render {
+export namespace rd {
 
 struct Context : BaseContext, SwapchainContext, toy::ProactiveSingleton<Context> {
 
@@ -21,4 +21,4 @@ struct Context : BaseContext, SwapchainContext, toy::ProactiveSingleton<Context>
   auto tryRecreate() -> bool { return SwapchainContext::tryRecreate(*this); }
 };
 
-} // namespace render
+} // namespace rd

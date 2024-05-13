@@ -12,13 +12,12 @@ import std;
 import glm;
 import toy;
 
-export namespace render {
+export namespace rd {
 
 template <typename DataType>
   requires std::is_trivially_copyable_v<DataType>
 // using DataType = glm::vec3;
-class Uniform : public Resource,
-                private render::LoopActionLoader<render::LoopOrder::UPDATE_UNIFORM> {
+class Uniform : public Resource, private LoopActionLoader<LoopOrder::UPDATE_UNIFORM> {
 private:
   DataType  _cache_data;
   DataType* _p_data;
@@ -84,4 +83,4 @@ public:
   void loopAction(uint32_t _) override { update(Drawer::getInstance().currentFlightIndex()); }
 };
 
-} // namespace render
+} // namespace rd

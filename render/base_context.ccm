@@ -7,7 +7,7 @@ import std;
 import toy;
 import glfw;
 
-export namespace render {
+export namespace rd {
 
 struct BaseContext {
   uint32_t worker_count;
@@ -124,4 +124,4 @@ struct BaseContext {
   }
 };
 
-} // namespace render
+} // namespace rd

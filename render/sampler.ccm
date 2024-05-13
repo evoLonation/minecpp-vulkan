@@ -11,7 +11,7 @@ import "stb_image.h";
 import std;
 import toy;
 
-export namespace render {
+export namespace rd {
 
 class SampledTexture : public Resource {
 private:
@@ -202,4 +202,4 @@ public:
   }
 };
 
-} // namespace render
+} // namespace rd

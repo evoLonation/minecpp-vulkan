@@ -7,7 +7,7 @@ import toy;
 
 import render.context;
 
-export namespace render {
+export namespace rd {
 
 struct PoolState {
   std::size_t allocate_n;
@@ -473,4 +473,4 @@ public:
   auto operator[](Family family) -> QueueExecutor { return QueueExecutor{ *this, family, 0 }; }
 };
 
-} // namespace render
+} // namespace rd
