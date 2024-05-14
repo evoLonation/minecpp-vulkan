@@ -1,0 +1,4 @@
+source:
+- manager.ccm
+- pipeline.ccm
+- registry.cc

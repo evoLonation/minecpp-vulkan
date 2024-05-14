@@ -47,7 +47,7 @@ public:
     auto format = VK_FORMAT_R8G8B8A8_SRGB;
     // VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT: can do linear op, include magFilter,
     // minFilter, mipmapMode and filter in vkCmdBlitImage
-    toy::checkThrowf(
+    toy::throwf(
       vk::checkFormatSupport(
         ctx.pdevice_info.device,
         vk::FormatType::OPTIMAL_TILING,

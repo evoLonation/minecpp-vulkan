@@ -54,6 +54,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugHandler(
     }
   };
   toy::debugf(
+    toy::NoLocation{},
     "validation layer: ({},{}) {}",
     serverityGetter(message_severity),
     typeGetter(message_type),

@@ -8,3 +8,4 @@ source:
 - ranges_any_view.ccm
 - helper.ccm
 - coroutine.ccm
+- enums.ccm

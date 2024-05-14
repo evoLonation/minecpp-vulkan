@@ -5,6 +5,7 @@ sub_dir:
 - render
 - toy
 - shader
+- components
 source:
 - main.cc
 - header_impl.cc
@@ -14,7 +15,6 @@ source:
 - transform.ccm
 - control.ccm
 - axis.ccm
-- manager.ccm
 - action.ccm
 include_dir:
 - include

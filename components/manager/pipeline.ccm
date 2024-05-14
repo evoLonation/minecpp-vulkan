@@ -1,0 +1,70 @@
+module;
+#include "enum.h"
+export module manager.pipeline;
+
+import "vulkan_config.h";
+import "imgui_config.h";
+
+import std;
+import toy;
+import render;
+import model;
+import vulkan;
+import gui;
+import action;
+
+import manager;
+
+export namespace mng {
+
+TOY_ENUM(PipelineType, DEFAULT, OUTLINE_1, OUTLINE_2);
+
+struct PipelineResource {
+  static constexpr auto resource_name = "pipeline";
+  using resource = rd::Pipeline;
+  using type_infos = toy::TypePack<Info<"pipeline type", PipelineType>>;
+
+  // create the resourse using info
+  static auto create(PipelineType type) -> rd::Pipeline {
+    auto stencil_options = vk::getOutliningStencil();
+    stencil_options.first.dynamic_reference = false;
+    stencil_options.second.dynamic_reference = true;
+    switch (type.value()) {
+    case PipelineType::DEFAULT:
+      return rd::Pipeline{ "hello.vert",
+                           "hello.frag",
+                           VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                           model::Vertex::getVertexInfo(),
+                           std::array{ rd::ResourceType::UNIFORM,
+                                       rd::ResourceType::UNIFORM,
+                                       rd::ResourceType::UNIFORM,
+                                       rd::ResourceType::SAMPLER },
+                           std::nullopt };
+    case PipelineType::OUTLINE_1:
+      return rd::Pipeline{ "hello.vert",
+                           "hello.frag",
+                           VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                           model::Vertex::getVertexInfo(),
+                           std::array{ rd::ResourceType::UNIFORM,
+                                       rd::ResourceType::UNIFORM,
+                                       rd::ResourceType::UNIFORM,
+                                       rd::ResourceType::SAMPLER },
+                           stencil_options.first };
+    case PipelineType::OUTLINE_2:
+      return rd::Pipeline{ "outline.vert",
+                           "outline.frag",
+                           VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                           model::Vertex::getVertexInfo(),
+                           std::array{ rd::ResourceType::UNIFORM,
+                                       rd::ResourceType::UNIFORM,
+                                       rd::ResourceType::UNIFORM },
+                           stencil_options.second };
+    }
+  }
+  // update the info using resource
+  static void update(const rd::Pipeline& pipeline, PipelineType& type) { return; }
+};
+
+static_assert(ResourceMetable<PipelineResource>, "");
+
+} // namespace mng

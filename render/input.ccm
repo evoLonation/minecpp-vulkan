@@ -505,11 +505,11 @@ public:
     if (action == GLFW_REPEAT) {
       return;
     }
-    toy::checkThrowf(
+    toy::throwf(
       action == GLFW_PRESS || action == GLFW_RELEASE, "action equal to another value"
     );
     auto press = action == GLFW_PRESS;
-    toy::checkThrowf(
+    toy::throwf(
       press == (!states.contains(key) || states.at(key).state == ButtonState::RELEASE),
       "The state of InputProcessor is not match to glfw callback"
     );

@@ -245,7 +245,7 @@ auto perspectiveInverse(const ProjectionInfo& info) -> glm::mat4 {
 } // namespace proj
 
 void test_trans() {
-  auto assert = [](bool condition) { toy::checkThrowf(condition, "assert error!"); };
+  auto assert = [](bool condition) { toy::throwf(condition, "assert error!"); };
   auto view = view::create({ 1, 0, 0 }, { 1, 1, 0 }, { 0, -1, 1 });
   // assert(eq(view * glm::vec4{ 1, 0, 1, 1 }, glm::vec4{ 0, 0, 1, 1 }));
   assert(eq(view * glm::vec4{ 0, 0, 1, 1 }, glm::vec4{ 0, 1, 1, 1 }));

@@ -220,7 +220,7 @@ auto createGraphicsPipeline(
   };
 
   for (auto& descrip : vertex_attribute_descriptions) {
-    toy::checkThrowf(
+    toy::throwf(
       vk::checkFormatSupport(
         pdevice, vk::FormatType::BUFFER, descrip.format, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT
       ),

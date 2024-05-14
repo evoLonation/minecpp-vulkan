@@ -193,7 +193,7 @@ private:
     requires std::convertible_to<ranges::range_reference_t<RangeT>, RefContainer<T>&>
   void load(RangeT&& containers) {
     for (RefContainer<T>& container : containers) {
-      toy::checkThrowf(
+      toy::throwf(
         !_containers.contains(&container), "init with container which already in _containers"
       );
       _containers.insert(&container);
@@ -207,7 +207,7 @@ private:
     _containers.clear();
   }
   void unload(RefContainer<T>& container) {
-    toy::checkThrowf(
+    toy::throwf(
       _containers.contains(&container), "unload error: _containers does not contain container"
     );
     _containers.erase(&container);
@@ -268,82 +268,11 @@ public:
   }
 };
 
-// for macro generate to enum
-template <typename EnumT>
-constexpr auto enum2String(EnumT t) -> const char* {
-  return &EnumT::pair.first[EnumT::pair.second[t._value]];
-}
-template <typename EnumT>
-constexpr auto enumCount() -> std::size_t {
-  return EnumT::count;
-}
-
-template <int... Values, std::size_t N>
-consteval auto __splitString(const char (&buf)[N])
-  -> std::pair<std::array<char, N>, std::array<std::size_t, sizeof...(Values)>> {
-  auto writable = std::array<char, N>{};
-  auto indices = std::array<std::size_t, sizeof...(Values)>{};
-  std::copy(buf, buf + N, writable.begin());
-  auto i_indices = 0;
-  indices[i_indices] = 0;
-  i_indices++;
-  for (auto iter = writable.begin(); iter != writable.end(); iter++) {
-    auto& c = *iter;
-    if (c == ',') {
-      c = '\0';
-      indices[i_indices] = iter - writable.begin() + 2;
-      i_indices++;
-    }
-  }
-  return { writable, indices };
-}
-
-template <typename EnumT>
-struct EnumSet {
-  std::bitset<(size_t)EnumT::MAX_ENUM_VALUE> _bitset;
-  EnumSet(std::initializer_list<EnumT> values) {
-    for (auto value : values) {
-      _bitset.set((size_t)value);
-    }
-  }
-  EnumSet(EnumT value) { _bitset.set((size_t)value); }
-  EnumSet() = default;
-  friend auto operator|(EnumSet set, EnumT key) -> EnumSet {
-    set._bitset.set((size_t)key);
-    return set;
-  }
-  friend auto operator|(EnumSet a, EnumSet b) -> EnumSet { return a._bitset | b._bitset; }
-  class Iterator {
-  private:
-    size_t         _index;
-    const EnumSet* _set;
-
-  public:
-    Iterator() = default;
-    Iterator(const EnumSet& set, size_t index) : _index(index), _set(&set) {
-      while (_index < _set->_bitset.size() && !_set->_bitset[_index]) {
-        _index++;
-      }
-    }
-    using difference_type = std::ptrdiff_t;
-    auto operator*() -> EnumT { return (EnumT)_index; }
-    auto operator++() -> Iterator& {
-      _index++;
-      while (_index < _set->_bitset.size() && !_set->_bitset[_index]) {
-        _index++;
-      }
-      return *this;
-    }
-    auto operator++(int) -> Iterator {
-      auto iter = *this;
-      ++*this;
-      return iter;
-    }
-    friend auto operator==(const Iterator& a, const Iterator& b) -> bool = default;
-  };
-
-  auto begin() const { return Iterator(*this, 0); }
-  auto end() const { return Iterator(*this, _bitset.size()); }
+// helper for string literal as non-type template parameter
+template <size_t N>
+struct StringLiteral {
+  constexpr StringLiteral(const char (&str)[N]) { std::copy_n(str, N, value); }
+  char value[N];
 };
 
 namespace test_refContainer {
@@ -387,15 +316,15 @@ void test_MultiLoader() {
   {
     auto m1 = M{ containers | views::take(2) };
     // m1.regist(containers[0]);
-    toy::checkThrowf(&*containers[0].begin() == &m1, "test multiloader error");
-    toy::checkThrowf(&*containers[1].begin() == &m1, "test multiloader error");
-    toy::checkThrowf(containers[2].begin() == containers[2].end(), "test multiloader error");
+    toy::throwf(&*containers[0].begin() == &m1, "test multiloader error");
+    toy::throwf(&*containers[1].begin() == &m1, "test multiloader error");
+    toy::throwf(containers[2].begin() == containers[2].end(), "test multiloader error");
     m1.regist(containers[2]);
-    toy::checkThrowf(&*containers[2].begin() == &m1, "test multiloader error");
+    toy::throwf(&*containers[2].begin() == &m1, "test multiloader error");
     m1.unRegist(containers[1]);
-    toy::checkThrowf(containers[1].begin() == containers[1].end(), "test multiloader error");
+    toy::throwf(containers[1].begin() == containers[1].end(), "test multiloader error");
   }
-  toy::checkThrowf(containers[0].begin() == containers[0].end(), "test multiloader error");
+  toy::throwf(containers[0].begin() == containers[0].end(), "test multiloader error");
 }
 
 class Interface {
@@ -429,18 +358,13 @@ void test_interfaceLoader() {
 
 } // namespace test_refContainer
 
-namespace test_EnumSet {
+namespace test_StringLiteral {
 
-enum class A { A, B, C, MAX_ENUM_VALUE };
+template <StringLiteral a>
+void func() {}
 
-void test() {
-  auto set = EnumSet<A>{};
-  for (A a : set) {
-    toy::checkThrowf(a != A::B && a != A::MAX_ENUM_VALUE, "enumset test wrong");
-  }
-  set = EnumSet<A>{ A::A, A::C };
-}
+void test() { func<"abcd">(); }
 
-} // namespace test_EnumSet
+} // namespace test_StringLiteral
 
 } // namespace toy

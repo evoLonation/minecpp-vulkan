@@ -145,7 +145,7 @@ struct Scope {
   Scope(ImageUse use, bool is_dst) {
     switch (use) {
     case ImageUse::UNDEFINED:
-      toy::checkThrowf(!is_dst, "the UNDEFINED image use must with is_dst = false");
+      toy::throwf(!is_dst, "the UNDEFINED image use must with is_dst = false");
       *this = Scope(CommonUse::NONE, is_dst);
       break;
     case ImageUse::COPY_DST:

@@ -180,7 +180,7 @@ public:
           } else {
             checkVkResult(creator_(args..., &handle), action);
           }
-          toy::debug(action);
+          toy::debug{ action };
           if constexpr (destroy_multi_) {
             resource.handle_.push_back(handle);
           } else {
@@ -202,7 +202,7 @@ public:
           } else {
             checkVkResult(creator_(args..., handles.data()), action);
           }
-          toy::debug(action);
+          toy::debug{ action };
           if constexpr (destroy_multi_) {
             auto resource = Resource{};
             resource.handle_ = std::move(handles);

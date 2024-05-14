@@ -1,0 +1,178 @@
+module;
+#include "enum.h"
+
+export module manager;
+
+import "vulkan_config.h";
+import "imgui_config.h";
+
+import std;
+import toy;
+import render;
+import model;
+import vulkan;
+import gui;
+import action;
+
+export namespace mng {
+
+template <toy::StringLiteral str, typename T>
+struct Info {
+  static constexpr auto name = str.value;
+  using type = T;
+};
+
+template <typename T>
+struct IsInfo {
+  static constexpr auto value = false;
+};
+template <toy::StringLiteral str, typename T>
+struct IsInfo<Info<str, T>> {
+  static constexpr auto value = true;
+};
+template <typename T>
+struct InfoTypeMapper {
+  using type = T::type;
+};
+
+template <typename T>
+concept ResourceMetable = requires() {
+  typename T::resource;
+  { T::resource_name } -> std::same_as<const char* const&>;
+  // every element in type_infos is NamedValue
+  requires toy::Filter<typename T::type_infos, IsInfo>::size == T::type_infos::size;
+  // T::create returns R, parameter is match with T::type_infos
+  requires toy::Merge<
+    toy::TypePack<typename T::resource, decltype(T::create)>,
+    toy::MapTo<typename T::type_infos, InfoTypeMapper>>::template apply<std::is_invocable_r>::value;
+  // T::update parameter: const R&, type_infos&...
+  requires toy::Merge<
+    toy::TypePack<decltype(T::update), const typename T::resource&>,
+    toy::MapTo<toy::MapTo<typename T::type_infos, InfoTypeMapper>, std::add_lvalue_reference>>::
+    template apply<std::is_invocable>::value;
+};
+
+// template <typename Derived>
+// struct ResourceMeta {
+//   template <typename = void>
+//     requires ResourceMetable<Derived>
+//   ResourceMeta() {}
+// };
+
+template <ResourceMetable T>
+struct ResourceHelper {
+  using type_infos = T::type_infos;
+  using ResourceInfos =
+    toy::MapTo<typename T::type_infos, InfoTypeMapper>::template apply<std::tuple>;
+  static constexpr auto resource_name = T::resource_name;
+  static constexpr auto info_size = T::type_infos::size;
+  using Resource = T::resource;
+};
+
+struct SubManagerInterface {
+  virtual void draw() = 0;
+  virtual ~SubManagerInterface() = default;
+};
+
+template <typename ResourceT>
+// using ResourceT = PipelineResource;
+class SubManager : private action::ActionLoader, public SubManagerInterface {
+private:
+  using Helper = ResourceHelper<ResourceT>;
+
+  std::array<char, 128> _resource_name_buf;
+
+  Helper::ResourceInfos _create_infos;
+
+  std::queue<std::function<void()>> _events;
+
+  std::map<std::string, std::pair<typename Helper::Resource, typename Helper::ResourceInfos>>
+    _resources;
+
+  const std::string* _selected_item;
+
+public:
+  static void drawWithInfos(Helper::ResourceInfos infos, auto lambda) {
+    [&]<size_t... indices>(std::index_sequence<indices...> _) {
+      (lambda(std::get<indices>(infos), Helper::type_infos::template at<indices>::name), ...);
+    }(std::make_index_sequence<Helper::info_size>{});
+  }
+  void drawCreate() {
+    ImGui::InputText("resource name", _resource_name_buf.begin(), _resource_name_buf.size());
+    drawWithInfos(_create_infos, [&]<typename T>(T& info, const char* name) {
+      if constexpr (std::derived_from<T, toy::EnumBase>) {
+        [&]<size_t... enum_indices>(std::index_sequence<enum_indices...> _) {
+          constexpr auto enum_items =
+            std::array<const char*, T::count>{ toy::enum2String(T{ enum_indices })... };
+          auto selected_item = static_cast<int>(info.value());
+          ImGui::Combo(name, &selected_item, enum_items.data(), enum_items.size());
+          info = selected_item;
+        }(std::make_index_sequence<T::count>{});
+      } else if (std::same_as<T, class Up>) {
+      }
+    });
+    if (ImGui::Button(std::format("create {}", Helper::resource_name).data())) {
+      _events.emplace([&]() {
+        _resources.emplace(
+          std::string{ _resource_name_buf.data() },
+          std::pair{ std::apply(&ResourceT::create, _create_infos), _create_infos }
+        );
+      });
+    }
+  }
+  void drawInfo(const std::string& name) {
+    drawWithInfos(_resources[name].second, [&]<typename T>(T& info, const char* name) {
+      ImGui::Text("%s", std::format("{} : {}", name, toy::enum2String(info)).data());
+    });
+  }
+
+  void draw() override {
+    ImGui::SeparatorText(std::format("{} create", Helper::resource_name).data());
+    drawCreate();
+    ImGui::SeparatorText(std::format("{} list", Helper::resource_name).data());
+    for (auto& name : _resources | views::keys) {
+      if (ImGui::Selectable(name.data(), _selected_item == &name)) {
+        _selected_item = &name;
+      }
+    }
+    ImGui::SeparatorText(std::format("{} info", Helper::resource_name).data());
+    if (_selected_item == nullptr) {
+      ImGui::Text("%s", std::format("no select any {}", Helper::resource_name).data());
+    } else {
+      ImGui::Text(
+        "%s", std::format("selected {}: {}", Helper::resource_name, *_selected_item).data()
+      );
+      drawInfo(*_selected_item);
+    }
+  }
+  void run(const action::ActionContext& ctx) override {
+    while (!_events.empty()) {
+      _events.back()();
+      _events.pop();
+    }
+  }
+  void serialize()  {
+
+  }
+};
+
+class Manager : private gui::DrawerLoader {
+private:
+  std::vector<std::unique_ptr<SubManagerInterface>> _sub_managers;
+
+public:
+  Manager() { registerSubManagers(); }
+  void registerSubManagers();
+  void draw() override {
+    ImGui::Begin("Resource manager");
+    for (auto& sub_manager : _sub_managers) {
+      sub_manager->draw();
+    }
+    if(ImGui::Button("save scene")){
+
+    }
+
+    ImGui::End();
+  }
+};
+} // namespace mng

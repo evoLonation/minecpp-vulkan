@@ -248,9 +248,9 @@ void test_AnyView() {
   static_assert(ranges::sized_range<AnyView<int, true>>, "");
   static_assert(ranges::borrowed_range<AnyView<int, true>>, "");
   auto view_a = AnyView<int>{ transform_view };
-  toy::debug(view_a);
+  debug{ view_a };
   auto view_b = AnyView<int, false>{ views::repeat(10) } | views::take(10);
-  toy::debug(view_b);
-  toy::debug(AnyView<std::pair<int, int>, false>{ views::zip(view_b, views::iota(0, 10)) });
+  debug{ view_b };
+  debug(AnyView<std::pair<int, int>, false>{ views::zip(view_b, views::iota(0, 10)) });
 }
 } // namespace toy

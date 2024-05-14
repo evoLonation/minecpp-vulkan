@@ -42,6 +42,7 @@ private:
   VertexInfo _vertex_info;
 
 public:
+  Pipeline() = default;
   Pipeline(
     std::string_view                 vertex_shader_name,
     std::string_view                 frag_shader_name,
@@ -132,7 +133,7 @@ public:
       } else {
         auto dsp_resources = std::get<1>(desc_resource);
         uniform_count += dsp_resources.size();
-        toy::checkThrowf(
+        toy::throwf(
           ctx.worker_count == dsp_resources.size(),
           "The dsp_resources size is not equal to number of worker"
         );
@@ -184,7 +185,7 @@ public:
       }
       vk::updateDescriptorSets(ctx.device, ds_updates);
     }
-    toy::checkThrowf(
+    toy::throwf(
       vertex_buffer.getVertexInfo() == pipeline._vertex_info,
       "The vertex info between draw unit and pipeline is different "
     );
@@ -213,7 +214,7 @@ auto getStencilReferences(std::span<const uint32_t> references)
 inline void Pipeline::record(VkCommandBuffer cmdbuf, int in_flight_index) {
   auto& ctx = Context::getInstance();
   // todo: the exception can not throw outside, find out why
-  toy::checkThrowf(
+  toy::throwf(
     ranges::all_of(
       _draw_units,
       [&](auto& unit) { return unit._stencil_reference.has_value() == _dynamic_stencil_reference; }
