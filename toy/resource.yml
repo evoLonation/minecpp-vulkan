@@ -9,3 +9,4 @@ source:
 - helper.ccm
 - coroutine.ccm
 - enums.ccm
+- json.ccm

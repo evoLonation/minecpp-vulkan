@@ -1,0 +1,266 @@
+export module toy.json;
+
+import std;
+
+import toy.log;
+import toy.trait;
+import toy.ranges;
+
+export namespace toy {
+
+// class Json;
+// class Null {};
+// using Integer = int64_t;
+// using Float = double;
+// using String = std::string;
+// using Object = std::map<String, Json>;
+// using List = std::vector<Json>;
+
+class Json {
+public:
+  class Null {};
+  using Bool = bool;
+  using Integer = int64_t;
+  using Float = double;
+  using String = std::string;
+  using Object = std::map<String, Json>;
+  using List = std::vector<Json>;
+
+private:
+  using Types = TypePack<Null, Bool, Integer, Float, String, Object, List>;
+  Types::apply<std::variant> _value;
+
+public:
+  template <typename T>
+  Json(T&& value) : _value(std::forward<decltype(value)>(value)) {}
+  template <typename T>
+  auto is() const -> bool {
+    return std::holds_alternative<T>(_value);
+  }
+  template <typename T>
+  auto to() const -> const T& {
+    return std::get<T>(_value);
+  }
+  auto toString() const -> std::string {
+    if (is<Null>()) {
+      return "null";
+    } else if (is<Bool>()) {
+      return std::format("{}", to<Bool>());
+    } else if (is<Integer>()) {
+      return std::format("{}", to<Integer>());
+    } else if (is<Float>()) {
+      return std::format("{}", to<Float>());
+    } else if (is<String>()) {
+      return to<String>();
+    } else if (is<Object>()) {
+      std::stringstream ss;
+      ss << '{';
+      auto& object = to<Object>();
+      for (auto [index, pair] : object | enumerate) {
+        auto& [key, value] = pair;
+        ss << key << " : " << value.toString() << (index == object.size() - 1 ? "" : ",") << "\n";
+      }
+      ss << "}";
+      return ss.str();
+    } else if (is<List>()) {
+      std::stringstream ss;
+      ss << '[';
+      auto& list = to<List>();
+      for (auto [index, value] : list | enumerate) {
+        ss << value.toString() << (index == list.size() - 1 ? "" : ",");
+      }
+      ss << "]";
+      return ss.str();
+    } else {
+      toy::throwf("");
+    }
+  }
+};
+
+using Null = Json::Null;
+using Integer = Json::Integer;
+using Float = Json::Float;
+using String = Json::String;
+using Object = Json::Object;
+using List = Json::List;
+using Bool = Json::Bool;
+
+class Parser {
+public:
+  Parser(const std::string& str) {
+    _iter = str.begin();
+    _end = str.end();
+  }
+  auto parse() -> Json { return parseJson(); }
+
+private:
+  decltype(std::declval<const std::string>().end())   _end;
+  decltype(std::declval<const std::string>().begin()) _iter;
+
+  auto skipSpace() -> char {
+    while (std::isspace(*_iter)) {
+      _iter++;
+    }
+    return *_iter;
+  }
+
+  auto parseJson() -> Json {
+    auto c = skipSpace();
+    if (auto res = parseInteger(); res.has_value()) {
+      return res.value();
+    } else if (auto res = parseFloat(); res.has_value()) {
+      return res.value();
+    } else if (c == '{') {
+      return parseObject();
+    } else if (c == '[') {
+      return parseList();
+    } else if (c == 't' || c == 'f') {
+      return parseBool();
+    } else if (c == '\"') {
+      return parseString();
+    } else if (c == 'n') {
+      return parseNull();
+    } else {
+      toy::throwf("error");
+    }
+  }
+
+  auto parseObject() -> Object {
+    // skip {
+    _iter++;
+    auto map = std::map<std::string, Json>{};
+    while (true) {
+      auto c = skipSpace();
+      auto key = parseString();
+      if (map.contains(key)) {
+        toy::throwf("key repeat: {}", key);
+      }
+      c = skipSpace();
+      toy::throwf(c == ':', "error");
+      _iter++;
+      c = skipSpace();
+      auto value = parseJson();
+      map.emplace(std::move(key), std::move(value));
+      c = skipSpace();
+      if (c == ',') {
+        _iter++;
+        continue;
+      } else if (c == '}') {
+        _iter++;
+        break;
+      }
+    }
+    return map;
+  }
+  auto parseList() -> List {
+    // skip [
+    _iter++;
+    auto list = std::vector<Json>{};
+    while (true) {
+      auto c = skipSpace();
+      auto element = parseJson();
+      list.push_back(std::move(element));
+      c = skipSpace();
+      if (c == ',') {
+        _iter++;
+        continue;
+      } else if (c == ']') {
+        _iter++;
+        break;
+      }
+    }
+    return list;
+  }
+  auto parseString() -> String {
+    // skip "
+    _iter++;
+    std::vector<char> string_builder;
+    while (true) {
+      auto c = *_iter;
+      if (c == '"') {
+        _iter++;
+        return { string_builder.begin(), string_builder.end() };
+      } else if (c == '\\') {
+        _iter++;
+        c = *_iter;
+        if (c == '"' || c == '\\' || c == '/') {
+          string_builder.push_back(c);
+        } else if (c == 'b') {
+          string_builder.push_back('\b');
+        } else if (c == 'f') {
+          string_builder.push_back('\f');
+        } else if (c == 'n') {
+          string_builder.push_back('\n');
+        } else if (c == 'r') {
+          string_builder.push_back('\r');
+        } else if (c == 't') {
+          string_builder.push_back('\t');
+        } else if (c == 'u') {
+          toy::throwf("\\u unimplement");
+        } else {
+          toy::throwf("error escape");
+        }
+        _iter++;
+      } else {
+        string_builder.push_back(c);
+        _iter++;
+      }
+    }
+  }
+
+  auto parseInteger() -> std::optional<Integer> {
+    auto index = size_t{};
+    auto value = int64_t{};
+    auto [ptr, ec] = std::from_chars(_iter.base(), _end.base(), value);
+    if (ec == std::errc::invalid_argument || ec == std::errc::result_out_of_range) {
+      return std::nullopt;
+    } else {
+      _iter += ptr - _iter.base();
+      return value;
+    }
+  }
+  auto parseFloat() -> std::optional<Float> {
+    auto end = (char*)nullptr;
+    auto result = std::strtod(_iter.base(), &end);
+    if (end == _iter.base()) {
+      return std::nullopt;
+    } else {
+      _iter += end - _iter.base();
+      return result;
+    }
+  }
+  auto parseNull() -> Null {
+    toy::throwf(std::string{ _iter, _iter + 4 } == "null", "error");
+    return {};
+  }
+  auto parseBool() -> Bool {
+    if (std::string{ _iter, _iter + 4 } == "true") {
+      return true;
+    } else if (std::string{ _iter, _iter + 5 } == "false") {
+      return false;
+    } else {
+      toy::throwf("failed to parse bool");
+    }
+  }
+};
+
+void test_json() {
+  auto              fs = std::ifstream("test.json", std::ios_base::in);
+  std::vector<char> buffer;
+  std::copy(
+    std::istreambuf_iterator<char>{ fs },
+    std::istreambuf_iterator<char>{},
+    std::back_inserter(buffer)
+  );
+  auto  content = std::string{ buffer.begin(), buffer.end() };
+  auto  parser = Parser{ content };
+  auto  json = parser.parse();
+  auto& object = json.to<Object>();
+  toy::checkf(object.at("a").to<Integer>() == 1, "error test json");
+  toy::checkf(object.at("b").to<List>()[0].to<Integer>() == 1, "error test json");
+  toy::debug{ json.to<Object>() | views::keys };
+  toy::debug(json.toString());
+  toy::throwf("end test");
+}
+
+} // namespace toy

@@ -15,9 +15,11 @@ import axis;
 import transform;
 import manager;
 import action;
+import toy.json;
 
 int main() {
   try {
+    toy::test_json();
     toy::test_EnumerateAdaptor();
     toy::test_SortedRange();
     toy::test_ChunkBy();
@@ -57,22 +59,22 @@ int main() {
     stencil_options.first.dynamic_reference = false;
     stencil_options.second.dynamic_reference = true;
     auto pipeline_outline_1 = rd::Pipeline{ "hello.vert",
-                                                "hello.frag",
-                                                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-                                                model::Vertex::getVertexInfo(),
-                                                std::array{ rd::ResourceType::UNIFORM,
-                                                            rd::ResourceType::UNIFORM,
-                                                            rd::ResourceType::UNIFORM,
-                                                            rd::ResourceType::SAMPLER },
-                                                stencil_options.first };
-    auto pipeline_outline_2 = rd::Pipeline{ "outline.vert",
-                                                "outline.frag",
-                                                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-                                                model::Vertex::getVertexInfo(),
-                                                std::array{ rd::ResourceType::UNIFORM,
-                                                            rd::ResourceType::UNIFORM,
-                                                            rd::ResourceType::UNIFORM },
-                                                stencil_options.second };
+                                            "hello.frag",
+                                            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                                            model::Vertex::getVertexInfo(),
+                                            std::array{ rd::ResourceType::UNIFORM,
+                                                        rd::ResourceType::UNIFORM,
+                                                        rd::ResourceType::UNIFORM,
+                                                        rd::ResourceType::SAMPLER },
+                                            stencil_options.first };
+    auto pipeline_outline_2 = rd::Pipeline{
+      "outline.vert",
+      "outline.frag",
+      VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+      model::Vertex::getVertexInfo(),
+      std::array{ rd::ResourceType::UNIFORM, rd::ResourceType::UNIFORM, rd::ResourceType::UNIFORM },
+      stencil_options.second
+    };
     auto [vertex_data, vertex_indices] = model::getModelInfo("model/viking_room.obj");
     auto vertex_buffer = rd::VertexBuffer{ std::span<const model::Vertex>{ vertex_data } };
     auto index_buffer = rd::IndexBuffer{ vertex_indices };
@@ -98,13 +100,12 @@ int main() {
     uniforms.emplace_back(proj);
     uniforms.emplace_back(model_data);
     uniforms.emplace_back(outline_data);
-    auto draw_unit =
-      rd::DrawUnit{ pipeline_outline_1,
-                        vertex_buffer,
-                        index_buffer,
-                        std::array<rd::Resource*, 4>{
-                          &uniforms[0], &uniforms[1], &uniforms[2], &sampled_texture },
-                        std::nullopt };
+    auto draw_unit = rd::DrawUnit{ pipeline_outline_1,
+                                   vertex_buffer,
+                                   index_buffer,
+                                   std::array<rd::Resource*, 4>{
+                                     &uniforms[0], &uniforms[1], &uniforms[2], &sampled_texture },
+                                   std::nullopt };
     // auto draw_unit_outline = rd::DrawUnit{ pipeline_outline_2,
     //                                            vertex_buffer,
     //                                            index_buffer,
@@ -112,24 +113,23 @@ int main() {
     //                                              &uniforms[0], &uniforms[1], &uniforms[3] },
     //                                            1 };
     // auto model_control = control::ModelInput{ model_datas[0] };
-    auto pipeline_axis = rd::Pipeline{ "axis.vert",
-                                           "axis.frag",
-                                           VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
-                                           axis::Vertex::getVertexInfo(),
-                                           std::array{ rd::ResourceType::UNIFORM,
-                                                       rd::ResourceType::UNIFORM,
-                                                       rd::ResourceType::UNIFORM },
-                                           std::nullopt };
+    auto pipeline_axis = rd::Pipeline{
+      "axis.vert",
+      "axis.frag",
+      VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
+      axis::Vertex::getVertexInfo(),
+      std::array{ rd::ResourceType::UNIFORM, rd::ResourceType::UNIFORM, rd::ResourceType::UNIFORM },
+      std::nullopt
+    };
     auto axis_vertex_buffer = rd::VertexBuffer::create<axis::Vertex>(axis::axis_model);
-    auto axis_index_buffer =
-      rd::IndexBuffer{ views::iota(uint16_t(0), axis::axis_model.size()) |
-                           ranges::to<std::vector>() };
-    auto axis_draw_unit = rd::DrawUnit{ pipeline_axis,
-                                            axis_vertex_buffer,
-                                            axis_index_buffer,
-                                            std::array<rd::Resource*, 3>{
-                                              &uniforms[0], &uniforms[1], &uniforms[2] },
-                                            std::nullopt };
+    auto axis_index_buffer = rd::IndexBuffer{ views::iota(uint16_t(0), axis::axis_model.size()) |
+                                              ranges::to<std::vector>() };
+    auto axis_draw_unit =
+      rd::DrawUnit{ pipeline_axis,
+                    axis_vertex_buffer,
+                    axis_index_buffer,
+                    std::array<rd::Resource*, 3>{ &uniforms[0], &uniforms[1], &uniforms[2] },
+                    std::nullopt };
     // auto controller = control::model::Controller{ model_datas[0] };
     // auto camera_controller = control::camera::Controller{ view, proj };
     // camera_controller.setInput();
