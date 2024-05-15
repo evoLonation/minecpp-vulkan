@@ -147,14 +147,14 @@ auto getQueueFamilyIndices(
 }
 
 auto checkPhysicalDeviceSupport(const DeviceCheckContext& ctx) -> bool {
-  return toy::checkDebugf(
+  return toy::checkf(
            ctx.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
            "device not satisfied VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU"
          ) &&
-         toy::checkDebugf(
+         toy::checkf(
            ctx.features.geometryShader == VK_TRUE, "device not support geometryShader feature"
          ) &&
-         toy::checkDebugf(
+         toy::checkf(
            ctx.features.samplerAnisotropy == VK_TRUE, "device not support samplerAnisotropy feature"
          );
 }

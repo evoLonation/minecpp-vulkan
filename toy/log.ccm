@@ -42,75 +42,57 @@ auto formatSourceLocation(const std::source_location& location) -> std::string {
 struct NoLocation {};
 
 template <typename... Args>
-struct debugf {
-  debugf(
-    NoLocation                  tag,
-    std::format_string<Args...> fmt,
-    Args&&... args,
-    std::source_location location = std::source_location::current()
-  ) {
-    if constexpr (enable_debug) {
-      std::println(fmt, std::forward<Args>(args)...);
-    }
+struct BasicFormatWithLocation {
+  consteval BasicFormatWithLocation(
+    const char* fmt, std::source_location location = std::source_location::current()
+  )
+    : _fmt(fmt), _location(std::move(location)) {}
+  std::format_string<Args...> _fmt;
+  std::source_location        _location;
+};
+
+// use std::type_identity_t make Non-deduced contexts
+template <typename... Args>
+using FormatWithLocation = BasicFormatWithLocation<std::type_identity_t<Args>...>;
+
+template <typename... Args>
+void debugf(FormatWithLocation<Args...> fmt_location, Args&&... args) {
+  auto& [fmt, location] = fmt_location;
+  if constexpr (enable_debug) {
+    std::println(
+      "{}: {}", formatSourceLocation(location), std::format(fmt, std::forward<Args>(args)...)
+    );
   }
-  debugf(
-    std::format_string<Args...> fmt,
-    Args&&... args,
-    std::source_location location = std::source_location::current()
-  ) {
-    if constexpr (enable_debug) {
+}
+template <typename... Args>
+void debugf(NoLocation tag, std::format_string<Args...> fmt, Args&&... args) {
+  if constexpr (enable_debug) {
+    std::println(fmt, std::forward<Args>(args)...);
+  }
+}
+
+template <typename... Args>
+auto checkf(bool condition, FormatWithLocation<Args...> fmt_location, Args&&... args) -> bool {
+  auto& [fmt, location] = fmt_location;
+  if constexpr (enable_debug) {
+    if (!condition) {
       std::println(
         "{}: {}", formatSourceLocation(location), std::format(fmt, std::forward<Args>(args)...)
       );
     }
   }
-};
-
+  return condition;
+}
 template <typename... Args>
-debugf(std::format_string<Args...> fmt, Args&&... args) -> debugf<Args...>;
-template <typename... Args>
-debugf(NoLocation tag, std::format_string<Args...> fmt, Args&&... args) -> debugf<Args...>;
-
-template <typename... Args>
-struct checkDebugf {
-  bool _condition;
-  checkDebugf(
-    NoLocation                  tag,
-    bool                        condition,
-    std::format_string<Args...> fmt,
-    Args&&... args,
-    std::source_location location = std::source_location::current()
-  ) {
-    _condition = condition;
-    if constexpr (enable_debug) {
-      debugf(NoLocation{}, fmt, std::forward<Args>(args)...);
+auto checkf(NoLocation tag, bool condition, std::format_string<Args...> fmt, Args&&... args)
+  -> bool {
+  if constexpr (enable_debug) {
+    if (!condition) {
+      std::println(fmt, std::forward<Args>(args)...);
     }
   }
-  checkDebugf(
-    bool                        condition,
-    std::format_string<Args...> fmt,
-    Args&&... args,
-    std::source_location location = std::source_location::current()
-  ) {
-    _condition = condition;
-    if constexpr (enable_debug) {
-      debugf(
-        NoLocation{},
-        "{}: {}",
-        formatSourceLocation(location),
-        std::format(fmt, std::forward<Args>(args)...)
-      );
-    }
-  }
-  operator bool() { return _condition; }
-};
-
-template <typename... Args>
-checkDebugf(bool condition, std::format_string<Args...> fmt, Args&&... args)
-  -> checkDebugf<Args...>;
-template <typename... Args>
-checkDebugf(NoLocation tag, bool condition, std::format_string<Args...> fmt, Args&&... args)
-  -> checkDebugf<Args...>;
+  return condition;
+}
 
 template <typename... Args>
 struct debug {
@@ -131,40 +113,28 @@ template <typename... Args>
 debug(Args&&... args) -> debug<Args...>;
 
 template <typename... Args>
-struct throwf {
-  [[noreturn]] throwf(
-    std::format_string<Args...> fmt,
-    Args&&... args,
-    std::source_location location = std::source_location::current()
-  ) {
+[[noreturn]] void throwf(FormatWithLocation<Args...> fmt_location, Args&&... args) {
+  auto& [fmt, location] = fmt_location;
+  throw std::runtime_error{ std::format(
+    "{}: {}", formatSourceLocation(location), std::format(fmt, std::forward<Args>(args)...)
+  ) };
+}
+template <typename First, typename... Args>
+  requires std::same_as<std::decay_t<First>, bool>
+void throwf(First condition, FormatWithLocation<Args...> fmt_location, Args&&... args) {
+  auto& [fmt, location] = fmt_location;
+  if (!condition) {
     throw std::runtime_error{ std::format(
       "{}: {}", formatSourceLocation(location), std::format(fmt, std::forward<Args>(args)...)
     ) };
   }
-  template <typename First>
-    requires std::same_as<std::decay_t<First>, bool>
-  throwf(
-    First                       condition,
-    std::format_string<Args...> fmt,
-    Args&&... args,
-    std::source_location location = std::source_location::current()
-  ) {
-    if (!condition) {
-      throw std::runtime_error{ std::format(
-        "{}: {}", formatSourceLocation(location), std::format(fmt, std::forward<Args>(args)...)
-      ) };
-    }
-  }
-};
-template <typename... Args>
-throwf(std::format_string<Args...> fmt, Args&&... args) -> throwf<Args...>;
-template <typename First, typename... Args>
-  requires std::same_as<std::decay_t<First>, bool>
-throwf(First condition, std::format_string<Args...> fmt, Args&&... args) -> throwf<Args...>;
+}
 
 void test() {
-  debugf(NoLocation{}, "{}", "no location");
-  debugf("{}", "with location");
+  constexpr auto location = std::source_location::current();
+  constexpr auto func = location.function_name();
+  // debugf(NoLocation{}, "{}", "no location");
+  debug("{}", "with location");
   throwf("asdfads{}", "");
   throwf(true, "");
 }
