@@ -1,4 +1,5 @@
 source:
 - manager.ccm
-- pipeline.ccm
 - registry.cc
+- pipeline.ccm
+- draw_unit.ccm

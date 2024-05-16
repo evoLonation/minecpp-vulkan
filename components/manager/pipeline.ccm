@@ -22,10 +22,10 @@ TOY_ENUM(PipelineType, DEFAULT, OUTLINE_1, OUTLINE_2);
 struct PipelineResource {
   static constexpr auto resource_name = "pipeline";
   using resource = rd::Pipeline;
-  using type_infos = toy::TypePack<Info<"pipeline type", PipelineType>>;
+  using create_infos = toy::TypePack<Info<"pipeline type", PipelineType>>;
 
   // create the resourse using info
-  static auto create(PipelineType type) -> rd::Pipeline {
+  static auto create(const action::ActionContext& _, PipelineType type) -> rd::Pipeline {
     auto stencil_options = vk::getOutliningStencil();
     stencil_options.first.dynamic_reference = false;
     stencil_options.second.dynamic_reference = true;

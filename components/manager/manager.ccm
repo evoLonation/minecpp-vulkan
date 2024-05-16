@@ -8,9 +8,6 @@ import "imgui_config.h";
 
 import std;
 import toy;
-import render;
-import model;
-import vulkan;
 import gui;
 import action;
 
@@ -36,19 +33,62 @@ struct InfoTypeMapper {
 };
 
 template <typename T>
-concept ResourceMetable = requires() {
+concept ResourceMetable_1 = requires() {
   typename T::resource;
   { T::resource_name } -> std::same_as<const char* const&>;
-  // every element in type_infos is NamedValue
-  requires toy::Filter<typename T::type_infos, IsInfo>::size == T::type_infos::size;
-  // T::create returns R, parameter is match with T::type_infos
+  // TypePack for all info, type of info could be:
+  // 1. basic type
+  // 2. satisfy ResourceMetable
+  typename T::create_infos;
+  // every element in create_infos is NamedValue
+  requires toy::Filter<typename T::create_infos, IsInfo>::size == T::create_infos::size;
+};
+
+// make ResourceMeta to pointer of ResourceMeta::resource
+template <typename T>
+struct ReferenceMapper;
+template <typename T>
+  requires ResourceMetable_1<T>
+struct ReferenceMapper<T> {
+  using type = T::resource*;
+};
+template <typename T>
+  requires(!ResourceMetable_1<T>)
+struct ReferenceMapper<T> {
+  using type = T;
+};
+template <typename T>
+struct IsReferenceMeta {
+  static constexpr auto value = ResourceMetable_1<T>;
+};
+
+template <ResourceMetable_1 T>
+struct Helper_1 {
+  using resource = T::resource;
+  using create_infos = T::create_infos;
+  // for ReferenceMeta, change to pointer of ReferenceMeta::resource
+  using create_types = toy::MapTo<toy::MapTo<create_infos, InfoTypeMapper>, ReferenceMapper>;
+  using update_types = toy::Filter<toy::MapTo<create_infos, InfoTypeMapper>, IsReferenceMeta, true>;
+  using reference_metas = toy::Filter<toy::MapTo<create_infos, InfoTypeMapper>, IsReferenceMeta>;
+
+  static constexpr auto resource_name = T::resource_name;
+};
+
+template <typename T>
+concept ResourceMetable = requires() {
+  requires ResourceMetable_1<T>;
+  // resource is moveable
+  requires std::is_nothrow_move_constructible_v<typename Helper_1<T>::resource>;
+  // T::create returns R, parameter is match with ActionContext + const create_types...
   requires toy::Merge<
-    toy::TypePack<typename T::resource, decltype(T::create)>,
-    toy::MapTo<typename T::type_infos, InfoTypeMapper>>::template apply<std::is_invocable_r>::value;
-  // T::update parameter: const R&, type_infos&...
+    toy::
+      TypePack<typename Helper_1<T>::resource, decltype(T::create), const action::ActionContext&>,
+    toy::MapTo<typename Helper_1<T>::create_types, std::add_const>>::
+    template apply<std::is_invocable_r>::value;
+  // T::update parameter: const R&, update_types&...(remove pointer type)
   requires toy::Merge<
-    toy::TypePack<decltype(T::update), const typename T::resource&>,
-    toy::MapTo<toy::MapTo<typename T::type_infos, InfoTypeMapper>, std::add_lvalue_reference>>::
+    toy::TypePack<decltype(T::update), const typename Helper_1<T>::resource&>,
+    toy::MapTo<typename Helper_1<T>::update_types, std::add_lvalue_reference>>::
     template apply<std::is_invocable>::value;
 };
 
@@ -59,9 +99,25 @@ concept ResourceMetable = requires() {
 //   ResourceMeta() {}
 // };
 
+// template <typename T>
+// struct Reference {
+//   using type = T;
+// };
+// template <typename T>
+// struct IsReferenceS {
+//   static constexpr auto value = false;
+// };
+// template <toy::StringLiteral str, typename T>
+// struct IsReferenceS<Info<str, Reference<T>>> {
+//   static constexpr auto value = true;
+// };
+
+// static_assert(IsReferenceS<Info<"a", Reference<int>>>::value);
+
 template <ResourceMetable T>
-struct ResourceHelper {
+struct ResourceHelper : Helper_1<T> {
   using type_infos = T::type_infos;
+  // using editable_infos = toy::Filter<type_infos, IsReferenceS, true>;
   using ResourceInfos =
     toy::MapTo<typename T::type_infos, InfoTypeMapper>::template apply<std::tuple>;
   static constexpr auto resource_name = T::resource_name;
@@ -78,51 +134,95 @@ template <typename ResourceT>
 // using ResourceT = PipelineResource;
 class SubManager : private action::ActionLoader, public SubManagerInterface {
 private:
-  using Helper = ResourceHelper<ResourceT>;
+  template <typename>
+  friend class SubManager;
+  using Helper = Helper_1<ResourceT>;
+  using InfoTuple = Helper::create_types::template apply<std::tuple>;
 
-  std::array<char, 128> _resource_name_buf;
+  InfoTuple _create_infos;
 
-  Helper::ResourceInfos _create_infos;
+  std::queue<std::function<void(const action::ActionContext&)>> _events;
 
-  std::queue<std::function<void()>> _events;
+  std::map<std::string, std::pair<typename Helper::resource, InfoTuple>> _resources;
 
-  std::map<std::string, std::pair<typename Helper::Resource, typename Helper::ResourceInfos>>
-    _resources;
+  toy::MapTo<toy::ApplyTo<typename Helper::reference_metas, SubManager>, std::add_pointer>::
+    template apply<std::tuple>
+      _ref_managers;
 
-  const std::string* _selected_item;
+  std::array<gui::SelectableList<std::string>, Helper::reference_metas::size> _ref_select_lists;
+
+  gui::TextInput                   _resource_name_input;
+  gui::SelectableList<std::string> _resource_name_list;
 
 public:
-  static void drawWithInfos(Helper::ResourceInfos infos, auto lambda) {
+  SubManager() = default;
+
+  template <typename RefResourceMeta>
+  void registerRefManager(SubManager<RefResourceMeta>* sub_manager) {
+    constexpr auto index = toy::search<RefResourceMeta>(typename Helper::reference_metas{});
+    std::get<index>(_ref_managers) = sub_manager;
+  }
+
+  // second: the index of _ref_select
+  template <typename RefResourceMeta>
+  auto getRefManager() -> std::pair<SubManager<RefResourceMeta>&, size_t> {
+    constexpr auto index = toy::search<RefResourceMeta>(typename Helper::reference_metas{});
+    return { *std::get<index>(_ref_managers), index };
+  }
+
+  static void drawWithInfos(InfoTuple& infos, auto lambda) {
     [&]<size_t... indices>(std::index_sequence<indices...> _) {
-      (lambda(std::get<indices>(infos), Helper::type_infos::template at<indices>::name), ...);
-    }(std::make_index_sequence<Helper::info_size>{});
+      (lambda.template operator()<indices>(std::get<indices>(infos)), ...);
+    }(std::make_index_sequence<Helper::create_infos::size>{});
   }
   void drawCreate() {
-    ImGui::InputText("resource name", _resource_name_buf.begin(), _resource_name_buf.size());
-    drawWithInfos(_create_infos, [&]<typename T>(T& info, const char* name) {
-      if constexpr (std::derived_from<T, toy::EnumBase>) {
+    _resource_name_input.draw(std::format("{} name", Helper::resource_name));
+    drawWithInfos(_create_infos, [&]<size_t indice>(auto& info) {
+      constexpr auto name = Helper::create_infos::template at<indice>::name;
+      using Type = Helper::create_infos::template at<indice>::type;
+      if constexpr (std::derived_from<Type, toy::EnumBase>) {
         [&]<size_t... enum_indices>(std::index_sequence<enum_indices...> _) {
           constexpr auto enum_items =
-            std::array<const char*, T::count>{ toy::enum2String(T{ enum_indices })... };
+            std::array<const char*, Type::count>{ toy::enum2String(Type{ enum_indices })... };
           auto selected_item = static_cast<int>(info.value());
           ImGui::Combo(name, &selected_item, enum_items.data(), enum_items.size());
           info = selected_item;
-        }(std::make_index_sequence<T::count>{});
-      } else if (std::same_as<T, class Up>) {
+        }(std::make_index_sequence<Type::count>{});
+      } else if constexpr (ResourceMetable<Type>) {
+        auto [sub_manager, index] = getRefManager<Type>();
+        auto& ref_list = _ref_select_lists[index];
+        auto* selected = ref_list.getSelected();
+        ImGui::Text(
+          "%s",
+          std::format(
+            "selected {}: {}", name, selected == nullptr ? std::string("None") : *selected
+          )
+            .data()
+        );
+        ref_list.draw(sub_manager._resources | views::keys);
       }
     });
     if (ImGui::Button(std::format("create {}", Helper::resource_name).data())) {
-      _events.emplace([&]() {
+      _events.emplace([&](const action::ActionContext& ctx) {
         _resources.emplace(
-          std::string{ _resource_name_buf.data() },
-          std::pair{ std::apply(&ResourceT::create, _create_infos), _create_infos }
+          _resource_name_input.getText(),
+          std::pair{ std::apply(
+                       &ResourceT::create, std::tuple_cat(std::forward_as_tuple(ctx), _create_infos)
+                     ),
+                     _create_infos }
         );
       });
     }
   }
+
   void drawInfo(const std::string& name) {
-    drawWithInfos(_resources[name].second, [&]<typename T>(T& info, const char* name) {
-      ImGui::Text("%s", std::format("{} : {}", name, toy::enum2String(info)).data());
+    drawWithInfos(_resources.at(name).second, [&]<size_t indice>(auto& info) {
+      constexpr auto name = Helper::create_infos::template at<indice>::name;
+      using Type = Helper::create_infos::template at<indice>::type;
+      if constexpr (std::derived_from<Type, toy::EnumBase>) {
+        ImGui::Text("%s", std::format("{} : {}", name, toy::enum2String(info)).data());
+      } else if constexpr (ResourceMetable<Type>) {
+      }
     });
   }
 
@@ -130,30 +230,31 @@ public:
     ImGui::SeparatorText(std::format("{} create", Helper::resource_name).data());
     drawCreate();
     ImGui::SeparatorText(std::format("{} list", Helper::resource_name).data());
-    for (auto& name : _resources | views::keys) {
-      if (ImGui::Selectable(name.data(), _selected_item == &name)) {
-        _selected_item = &name;
-      }
-    }
+    _resource_name_list.draw(_resources | views::keys);
+    // for (auto& name : _resources | views::keys) {
+    //   if (ImGui::Selectable(name.data(), _selected_item == &name)) {
+    //     _selected_item = &name;
+    //   }
+    // }
     ImGui::SeparatorText(std::format("{} info", Helper::resource_name).data());
-    if (_selected_item == nullptr) {
+    if (auto* selected = _resource_name_list.getSelected(); selected == nullptr) {
       ImGui::Text("%s", std::format("no select any {}", Helper::resource_name).data());
     } else {
-      ImGui::Text(
-        "%s", std::format("selected {}: {}", Helper::resource_name, *_selected_item).data()
-      );
-      drawInfo(*_selected_item);
+      ImGui::Text("%s", std::format("selected {}: {}", Helper::resource_name, *selected).data());
+      drawInfo(*selected);
     }
   }
   void run(const action::ActionContext& ctx) override {
     while (!_events.empty()) {
-      _events.back()();
+      _events.back()(ctx);
       _events.pop();
     }
   }
-  void serialize()  {
-
-  }
+  void serialize() {}
+  SubManager(const SubManager&) noexcept = delete;
+  SubManager(SubManager&&) noexcept = default;
+  auto operator=(const SubManager&) noexcept -> SubManager& = delete;
+  auto operator=(SubManager&&) noexcept -> SubManager& = default;
 };
 
 class Manager : private gui::DrawerLoader {
@@ -168,8 +269,7 @@ public:
     for (auto& sub_manager : _sub_managers) {
       sub_manager->draw();
     }
-    if(ImGui::Button("save scene")){
-
+    if (ImGui::Button("save scene")) {
     }
 
     ImGui::End();

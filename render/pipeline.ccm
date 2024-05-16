@@ -73,6 +73,10 @@ public:
     _vertex_info = vertex_info;
   }
   void record(VkCommandBuffer cmdbuf, int in_flight_index) override;
+  Pipeline(const Pipeline&) noexcept = delete;
+  Pipeline(Pipeline&&) noexcept = default;
+  auto operator=(const Pipeline&) noexcept -> Pipeline& = delete;
+  auto operator=(Pipeline&&) noexcept -> Pipeline& = default;
 };
 
 class DrawUnit : private toy::AutoLoader<DrawUnit> {
@@ -197,6 +201,10 @@ public:
 
     _stencil_reference = stencil_reference;
   }
+  DrawUnit(const DrawUnit&) noexcept = delete;
+  DrawUnit(DrawUnit&&) noexcept = default;
+  auto operator=(const DrawUnit&) noexcept -> DrawUnit& = delete;
+  auto operator=(DrawUnit&&) noexcept -> DrawUnit& = default;
 };
 
 auto getStencilReferences(std::span<const uint32_t> references)

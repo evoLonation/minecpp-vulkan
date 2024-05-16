@@ -1,0 +1,221 @@
+export module manager.draw_unit;
+
+import std;
+import toy;
+import glm;
+import model;
+import transform;
+
+import manager;
+import manager.pipeline;
+
+import render.pipeline;
+import render.vertex;
+import render.resource;
+import render.sampler;
+import render.uniform;
+
+import gui;
+
+import action;
+
+export namespace mng {
+
+class CameraBase : private action::KeyboardLoader {
+  friend class Camera;
+
+private:
+  float     _fovy_degree;
+  float     _move_speed;
+  float     _rotate_speed;
+  float     _rotate_z;
+  float     _rotate_y;
+  glm::mat4 _translate;
+  glm::mat4 _trans_view;
+
+  glm::mat4 _trans_proj;
+
+  auto compute_view() {
+    _trans_view = trans::rotate<trans::Axis::Y>(_rotate_y) *
+                  trans::rotate<trans::Axis::Z>(_rotate_z) * _translate;
+  }
+  auto move(glm::vec3 moved) {
+    _translate = trans::rotate<trans::Axis::Z>(-_rotate_z) * trans::translate(moved) *
+                 trans::rotate<trans::Axis::Z>(_rotate_z) * _translate;
+  }
+
+  void run(const action::KeyboardContext& ctx) override {
+    using Keyboard = action::Keyboard;
+    auto delta = ctx.interval_milli / 1000;
+    switch (ctx.event.key) {
+    case Keyboard::KEY_S:
+      move(glm::vec3{ _move_speed * delta, 0.0f, 0.0f });
+      break;
+    case Keyboard::KEY_W:
+      move(glm::vec3{ -_move_speed * delta, 0.0f, 0.0f });
+      break;
+    case Keyboard::KEY_A:
+      move(glm::vec3{ 0.0f, -_move_speed * delta, 0.0f });
+      break;
+    case Keyboard::KEY_D:
+      move(glm::vec3{ 0.0f, _move_speed * delta, 0.0f });
+      break;
+    case Keyboard::KEY_Z:
+      move(glm::vec3{ 0.0f, 0.0f, -_move_speed * delta });
+      break;
+    case Keyboard::KEY_X:
+      move(glm::vec3{ 0.0f, 0.0f, _move_speed * delta });
+      break;
+    default:
+      toy::throwf("camera input handler event error");
+    }
+    compute_view();
+  }
+
+public:
+  CameraBase(
+    const action::ActionContext& ctx,
+    const glm::vec3&             position,
+    const glm::vec3&             target,
+    float                        fovy_degree
+  ) {
+    using Keyboard = action::Keyboard;
+    action::KeyboardLoader::load({
+      Keyboard::KEY_S,
+      Keyboard::KEY_W,
+      Keyboard::KEY_A,
+      Keyboard::KEY_D,
+      Keyboard::KEY_Z,
+      Keyboard::KEY_X,
+    });
+    _fovy_degree = fovy_degree;
+    _move_speed = 1.0f;
+    _rotate_speed = 1.0f;
+    auto front = target - position;
+    auto axis_x = glm::vec3{ 1.0f, 0.0f, 0.0f };
+    {
+      auto front_xy = glm::vec3{ front.x, front.y, 0.0f };
+      _rotate_z =
+        glm::degrees(glm::asin(glm::length(glm::cross(axis_x, front_xy)) / glm::length(front_xy)));
+    }
+    {
+      auto front_xz = glm::vec3{ front.x, 0.0f, front.z };
+      _rotate_y =
+        glm::degrees(glm::asin(glm::length(glm::cross(axis_x, front_xz)) / glm::length(front_xz)));
+    }
+    _translate = trans::translate(-position);
+    compute_view();
+    _trans_proj = trans::proj::perspective({
+      .width = ctx.screen.width,
+      .height = ctx.screen.height,
+      .fovy_degree = _fovy_degree,
+    });
+  }
+
+  CameraBase(const CameraBase&) noexcept = default;
+  CameraBase(CameraBase&&) noexcept = default;
+  auto operator=(const CameraBase&) noexcept -> CameraBase& = default;
+  auto operator=(CameraBase&&) noexcept -> CameraBase& = default;
+};
+
+class Camera : public CameraBase {
+private:
+  rd::Uniform<glm::mat4> _uniform_view;
+  rd::Uniform<glm::mat4> _uniform_proj;
+
+public:
+  Camera(
+    const action::ActionContext& ctx,
+    const glm::vec3&             position,
+    const glm::vec3&             target,
+    float                        fovy_degree
+  )
+    : CameraBase(ctx, position, target, fovy_degree) {
+    _uniform_view = { _trans_view };
+    _uniform_proj = { _trans_proj };
+  }
+  Camera(const Camera&) noexcept = delete;
+  Camera(Camera&& e) noexcept
+    : CameraBase(std::move(e)), _uniform_view(std::move(e._uniform_view)),
+      _uniform_proj(std::move(e._uniform_proj)) {
+    _uniform_view.set(_trans_view);
+    _uniform_proj.set(_trans_proj);
+  }
+  auto operator=(const Camera&) noexcept -> Camera& = delete;
+  auto operator=(Camera&& e) noexcept -> Camera& {
+    CameraBase::operator=(std::move(e));
+    _uniform_view = std::move(e)._uniform_view;
+    _uniform_proj = std::move(e)._uniform_proj;
+    _uniform_view.set(_trans_view);
+    _uniform_proj.set(_trans_proj);
+    return *this;
+  }
+};
+
+struct CameraResource {
+  static constexpr auto resource_name = "camera";
+  using resource = Camera;
+  using create_infos = toy::
+    TypePack<Info<"position", glm::vec3>, Info<"target", glm::vec3>, Info<"fovy degree", float>>;
+  static auto create(
+    const action::ActionContext& ctx,
+    const glm::vec3&             position,
+    const glm::vec3&             target,
+    float                        fovy_degree
+  ) -> Camera {
+    return Camera{ ctx, position, target, fovy_degree };
+  }
+  static void update(const Camera& ctx, glm::vec3& position, glm::vec3& target, float fovy_degree) {
+  }
+};
+
+static_assert(ResourceMetable<CameraResource>, "");
+
+struct DrawUnit {
+  rd::VertexBuffer   vertex_buffer;
+  rd::IndexBuffer    index_buffer;
+  rd::SampledTexture sampled_texture;
+  glm::mat4          trans_model;
+
+  std::array<rd::Uniform<glm::mat4>, 3> uniforms;
+
+  rd::DrawUnit draw_unit;
+};
+
+struct DrawUnitResource {
+  static constexpr auto resource_name = "draw unit";
+  using resource = rd::DrawUnit;
+  using create_infos = toy::TypePack<Info<"ref pipeline", PipelineResource>>;
+
+  // create the resourse using info
+  static auto create(const action::ActionContext& ctx, rd::Pipeline* pipeline) -> rd::DrawUnit {
+    auto [vertex_data, vertex_indices] = model::getModelInfo("model/viking_room.obj");
+    auto vertex_buffer = rd::VertexBuffer{ std::span<const model::Vertex>{ vertex_data } };
+    auto index_buffer = rd::IndexBuffer{ vertex_indices };
+    auto sampled_texture = rd::SampledTexture{ "model/viking_room.png", true };
+    auto model_data = trans::model::create();
+    auto view = trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f });
+    auto proj = trans::proj::perspective({
+      .width = 1920,
+      .height = 1080,
+    });
+    auto uniforms = std::vector<rd::Uniform<glm::mat4>>{};
+    uniforms.reserve(3);
+    uniforms.emplace_back(view);
+    uniforms.emplace_back(proj);
+    uniforms.emplace_back(model_data);
+    return rd::DrawUnit{
+      *pipeline,
+      vertex_buffer,
+      index_buffer,
+      std::array<rd::Resource*, 4>{ &uniforms[0], &uniforms[1], &uniforms[2], &sampled_texture },
+      std::nullopt,
+    };
+  }
+  // update the info using resource
+  static void update(const rd::DrawUnit&) { return; }
+};
+
+static_assert(ResourceMetable<DrawUnitResource>, "");
+
+} // namespace mng

@@ -47,6 +47,42 @@ void showPopup(T& t, std::map<T, const char*> elements) {
   }
 }
 
+class TextInput {
+private:
+  static constexpr auto buf_size = 128;
+
+  std::array<char, buf_size> _text_buf;
+
+public:
+  void draw(const std::string& label) {
+    ImGui::InputText(label.data(), _text_buf.begin(), _text_buf.size());
+  }
+  auto getText() -> std::string { return { _text_buf.data() }; }
+};
+
+auto selectable_id = 0;
+
+template <typename T>
+class SelectableList {
+private:
+  const T* _selected = nullptr;
+  int      _id = selectable_id++;
+
+public:
+  template <typename RangeT>
+    requires std::same_as<ranges::range_value_t<RangeT>, T>
+  void draw(const RangeT& range) {
+    for (auto& item : range) {
+      ImGui::PushID(_id);
+      if (ImGui::Selectable(item.data(), _selected == &item)) {
+        _selected = &item;
+      }
+      ImGui::PopID();
+    }
+  }
+  auto getSelected() -> const T* { return _selected; }
+};
+
 /**
  * @brief the draw implement should only contain codes relevant to GUI draw
  */

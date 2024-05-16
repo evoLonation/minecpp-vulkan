@@ -190,14 +190,25 @@ private:
     return static_cast<T&>(static_cast<Derived&>(*this));
   }
   template <typename RangeT>
-    requires std::convertible_to<ranges::range_reference_t<RangeT>, RefContainer<T>&>
+    requires std::convertible_to<ranges::range_reference_t<RangeT>, RefContainer<T>&> ||
+             std::convertible_to<ranges::range_reference_t<RangeT>, RefContainer<T>*>
   void load(RangeT&& containers) {
-    for (RefContainer<T>& container : containers) {
-      toy::throwf(
-        !_containers.contains(&container), "init with container which already in _containers"
-      );
-      _containers.insert(&container);
-      container.add(&self());
+    if constexpr (std::convertible_to<ranges::range_reference_t<RangeT>, RefContainer<T>&>) {
+      for (RefContainer<T>& container : containers) {
+        toy::throwf(
+          !_containers.contains(&container), "init with container which already in _containers"
+        );
+        _containers.insert(&container);
+        container.add(&self());
+      }
+    } else {
+      for (RefContainer<T>* container : containers) {
+        toy::throwf(
+          !_containers.contains(container), "init with container which already in _containers"
+        );
+        _containers.insert(container);
+        container->add(&self());
+      }
     }
   }
   void unload() {
@@ -232,9 +243,7 @@ public:
     e.unload();
     return *this;
   }
-  void regist(RefContainer<T>& container) {
-    load(std::array<std::reference_wrapper<RefContainer<T>>, 1>{ container });
-  }
+  void regist(RefContainer<T>& container) { load(std::array<RefContainer<T>*, 1>{ &container }); }
   void unRegist() { unload(); }
   void unRegist(RefContainer<T>& container) { unload(container); }
 };

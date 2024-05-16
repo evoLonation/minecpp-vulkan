@@ -35,6 +35,7 @@ public:
   auto operator=(const Uniform&) -> Uniform& = delete;
   auto operator=(Uniform&&) -> Uniform& = default;
 
+  Uniform() = default;
   Uniform(DataType& data) {
     auto& ctx = Context::getInstance();
     _p_data = &data;
@@ -81,6 +82,8 @@ public:
              .resource_type = ResourceType::UNIFORM };
   }
   void loopAction(uint32_t _) override { update(Drawer::getInstance().currentFlightIndex()); }
+
+  void set(DataType& data) { _p_data = &data; }
 };
 
 } // namespace rd

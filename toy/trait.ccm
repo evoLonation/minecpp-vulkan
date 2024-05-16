@@ -91,13 +91,27 @@ struct MapToS<TypePack<TypeList...>, Mapper> {
   using type = TypePack<typename Mapper<TypeList>::type...>;
 };
 
-template <typename TypePack, template <typename> typename Condition>
+template <typename TypePack, template <typename...> typename Target>
+struct ApplyToS;
+
+template <typename TypePack, template <typename...> typename Target>
+using ApplyTo = ApplyToS<TypePack, Target>::type;
+
+template <typename... TypeList, template <typename...> typename Target>
+struct ApplyToS<TypePack<TypeList...>, Target> {
+  using type = TypePack<Target<TypeList>...>;
+};
+
+template <typename TypePack, template <typename> typename Condition, bool inverse>
 struct FilterS;
-template <typename TypePack, template <typename> typename Condition>
-using Filter = FilterS<TypePack, Condition>::type;
-template <typename... Args, template <typename> typename Condition>
-struct FilterS<TypePack<Args...>, Condition> {
-  using type = Merge<std::conditional_t<Condition<Args>::value, TypePack<Args>, TypePack<>>...>;
+template <typename TypePack, template <typename> typename Condition, bool inverse = false>
+using Filter = FilterS<TypePack, Condition, inverse>::type;
+template <typename... Args, template <typename> typename Condition, bool inverse>
+struct FilterS<TypePack<Args...>, Condition, inverse> {
+  using type = Merge<std::conditional_t<
+    inverse ? !Condition<Args>::value : Condition<Args>::value,
+    TypePack<Args>,
+    TypePack<>>...>;
 };
 
 template <typename TypePack, typename Seq, template <typename> typename Condition>
@@ -120,6 +134,12 @@ struct FilterIndicesS<TypePack<Args...>, std::index_sequence<Is...>, Condition> 
   }
   static constexpr auto value = getIndices<getIndicesNumber()>();
 };
+
+template <typename T, typename... TypeList>
+consteval auto search(TypePack<TypeList...>) -> size_t {
+  auto array = std::array{ std::same_as<T, TypeList>... };
+  return ranges::find(array, true) - array.begin();
+}
 
 /**
  * @brief get type information of a function
@@ -222,9 +242,16 @@ void test() {
   static_assert(std::same_as<
                 TypePack<std::vector<int>, std::vector<float>>,
                 MapTo<TypePack<int, float>, Mapper>>);
+  // ApplyTo
+  static_assert(std::same_as<
+                TypePack<std::vector<int>, std::vector<float>>,
+                ApplyTo<TypePack<int, float>, std::vector>>);
   // Filter
   static_assert(std::same_as<TypePack<char>, Filter<type_pack_1, Condition>>);
+  static_assert(std::same_as<TypePack<int, float, double>, Filter<type_pack_1, Condition, true>>);
   static_assert(std::array<size_t, 1>{ 3 } == FilterIndices<type_pack_1, Condition>);
+  // search
+  static_assert(search<float>(type_pack_1{}) == 1);
 }
 
 } // namespace test_TypePack
