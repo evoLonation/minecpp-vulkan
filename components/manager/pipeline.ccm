@@ -22,7 +22,9 @@ TOY_ENUM(PipelineType, DEFAULT, OUTLINE_1, OUTLINE_2);
 struct PipelineResource {
   static constexpr auto resource_name = "pipeline";
   using resource = rd::Pipeline;
+  using reference_infos = toy::TypePack<>;
   using create_infos = toy::TypePack<Info<"pipeline type", PipelineType>>;
+  using serialize_infos = create_infos;
 
   // create the resourse using info
   static auto create(const action::ActionContext& _, PipelineType type) -> rd::Pipeline {
@@ -61,8 +63,9 @@ struct PipelineResource {
                            stencil_options.second };
     }
   }
-  // update the info using resource
-  static void update(const rd::Pipeline& pipeline, PipelineType& type) { return; }
+  static auto serialize(const action::ActionContext& _, const rd::Pipeline&)
+    -> std::tuple<PipelineType> {}
+  static auto deserialize(const action::ActionContext& _, PipelineType) -> rd::Pipeline {}
 };
 
 static_assert(ResourceMetable<PipelineResource>, "");

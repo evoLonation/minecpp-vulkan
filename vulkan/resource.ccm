@@ -71,7 +71,7 @@ private:
   void destroyResource() {
     if constexpr (!destroy_multi_) {
       if (handle_ != VK_NULL_HANDLE) {
-        toy::debugf("destroy resource {}", getResourceName<VkHandle>());
+        toy::debugf(toy::NoLocation{}, "destroy resource {}", getResourceName<VkHandle>());
         std::apply(
           [handle = handle_](auto... args) {
             if constexpr (has_allocator_) {
@@ -85,7 +85,12 @@ private:
       }
     } else {
       if (!handle_.empty()) {
-        toy::debugf("destroy {} resources of {}", handle_.size(), getResourceName<VkHandle>());
+        toy::debugf(
+          toy::NoLocation{},
+          "destroy {} resources of {}",
+          handle_.size(),
+          getResourceName<VkHandle>()
+        );
         std::apply(
           [&handles = handle_](auto... args) {
             if constexpr (has_allocator_) {
@@ -180,7 +185,7 @@ public:
           } else {
             checkVkResult(creator_(args..., &handle), action);
           }
-          toy::debug{ action };
+          toy::debug(toy::NoLocation{}, action);
           if constexpr (destroy_multi_) {
             resource.handle_.push_back(handle);
           } else {
@@ -202,7 +207,7 @@ public:
           } else {
             checkVkResult(creator_(args..., handles.data()), action);
           }
-          toy::debug{ action };
+          toy::debug(toy::NoLocation{}, action);
           if constexpr (destroy_multi_) {
             auto resource = Resource{};
             resource.handle_ = std::move(handles);

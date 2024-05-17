@@ -111,6 +111,26 @@ public:
   Iterator       begin() { return _id2pointer.begin(); }
   Iterator       end() { return _id2pointer.end(); }
   decltype(auto) size() { return _id2pointer.size(); }
+  RefContainer(const RefContainer& e) noexcept : RefContainer() {
+    if (!e._id2pointer.empty()) {
+      toy::throwf("ref container should not move or copy when have references");
+    }
+  }
+  RefContainer(RefContainer&& e) noexcept : RefContainer() {
+    if (!e._id2pointer.empty()) {
+      toy::throwf("ref container should not move or copy when have references");
+    }
+  }
+  auto operator=(const RefContainer& e) noexcept -> RefContainer& {
+    if (!e._id2pointer.empty() || !_id2pointer.empty()) {
+      toy::throwf("ref container should not move or copy when have references");
+    }
+  }
+  auto operator=(RefContainer&& e) noexcept -> RefContainer& {
+    if (!e._id2pointer.empty() || !_id2pointer.empty()) {
+      toy::throwf("ref container should not move or copy when have references");
+    }
+  }
 };
 
 /**
@@ -284,6 +304,14 @@ struct StringLiteral {
   char value[N];
 };
 
+template <size_t size, typename Func>
+  requires(size == 0) || requires(Func&& func) { func.template operator()<0>(); }
+void templateForEach(Func&& func) {
+  [&]<size_t... indices>(std::index_sequence<indices...> _) {
+    (func.template operator()<indices>(), ...);
+  }(std::make_index_sequence<size>{});
+}
+
 namespace test_refContainer {
 class B : public AutoLoader<B> {
 public:
@@ -375,5 +403,12 @@ void func() {}
 void test() { func<"abcd">(); }
 
 } // namespace test_StringLiteral
+
+void test_templateForEach() {
+  templateForEach<10>([]<size_t indice>() {
+    if constexpr (indice == 0) {
+    }
+  });
+}
 
 } // namespace toy

@@ -8,8 +8,12 @@ import "imgui_config.h";
 
 import std;
 import toy;
+import toy.json;
 import gui;
 import action;
+import glm;
+
+import manager.helper;
 
 export namespace mng {
 
@@ -36,40 +40,73 @@ template <typename T>
 concept ResourceMetable_1 = requires() {
   typename T::resource;
   { T::resource_name } -> std::same_as<const char* const&>;
-  // TypePack for all info, type of info could be:
-  // 1. basic type
-  // 2. satisfy ResourceMetable
+  // TypePack of reference type infos which resource need associated with
+  typename T::reference_infos;
+  requires toy::Filter<typename T::reference_infos, IsInfo>::size == T::reference_infos::size;
+  // TypePack of basic type infos which resource need created by
   typename T::create_infos;
-  // every element in create_infos is NamedValue
   requires toy::Filter<typename T::create_infos, IsInfo>::size == T::create_infos::size;
+  // TypePack of basic type infos which resource serialized and deserialized by
+  typename T::serialize_infos;
+  requires toy::Filter<typename T::serialize_infos, IsInfo>::size == T::serialize_infos::size;
 };
 
 // make ResourceMeta to pointer of ResourceMeta::resource
 template <typename T>
-struct ReferenceMapper;
-template <typename T>
   requires ResourceMetable_1<T>
-struct ReferenceMapper<T> {
+struct ReferenceMapper {
   using type = T::resource*;
-};
-template <typename T>
-  requires(!ResourceMetable_1<T>)
-struct ReferenceMapper<T> {
-  using type = T;
-};
-template <typename T>
-struct IsReferenceMeta {
-  static constexpr auto value = ResourceMetable_1<T>;
 };
 
 template <ResourceMetable_1 T>
 struct Helper_1 {
+  static constexpr auto info_type_mapper = []<typename... Args>() {
+    return toy::TypePack<typename Args::type...>{};
+  };
+  static constexpr auto info_name_mapper = []<typename... Args>() {
+    if constexpr (sizeof...(Args) == 0) {
+      return std::array<int, 0>{};
+    } else {
+      return std::array{ Args::name... };
+    }
+  };
+  static constexpr auto reference_pointer_mapper = []<ResourceMetable_1... Args>() {
+    return toy::TypePack<typename Args::resource*...>{};
+  };
   using resource = T::resource;
+
+  // reference
+  using reference_infos = T::reference_infos;
+  using reference_metas = decltype(reference_infos::applyFunc(info_type_mapper));
+  static constexpr auto reference_names = reference_infos::applyFunc(info_name_mapper);
+  using reference_pointers = decltype(reference_metas::applyFunc(reference_pointer_mapper));
+  using reference_pointer_tuple = reference_pointers::template apply<std::tuple>;
+  using reference_name_array = std::array<std::string, reference_infos::size>;
+
+  // create
   using create_infos = T::create_infos;
-  // for ReferenceMeta, change to pointer of ReferenceMeta::resource
-  using create_types = toy::MapTo<toy::MapTo<create_infos, InfoTypeMapper>, ReferenceMapper>;
-  using update_types = toy::Filter<toy::MapTo<create_infos, InfoTypeMapper>, IsReferenceMeta, true>;
-  using reference_metas = toy::Filter<toy::MapTo<create_infos, InfoTypeMapper>, IsReferenceMeta>;
+  using create_types = decltype(create_infos::applyFunc(info_type_mapper));
+  static constexpr auto create_names = create_infos::applyFunc(info_name_mapper);
+  // combine with reference
+  using create_params = toy::Merge<create_types, reference_pointers>;
+  using create_tuple = create_params::template apply<std::tuple>;
+
+  // using create_params = decltype(create_types::applyFunc([]<typename... Types>() {
+  //   return toy::TypePack<
+  //     std::conditional_t<ResourceMetable_1<Types>, typename Types::resource*, Types>...>{};
+  // }));
+  // using create_tuple = create_params::template apply<std::tuple>;
+  // equals T::serialize_infos + reference_infos
+  using serialize_infos = T::serialize_infos;
+  using serialize_types = decltype(serialize_infos::applyFunc(info_type_mapper));
+  static constexpr auto serialize_names = serialize_infos::applyFunc(info_name_mapper);
+  using serialize_ret = serialize_types::template apply<std::tuple>;
+  using deserialize_params = toy::Merge<serialize_types, reference_pointers>;
+  // using serialize_types = toy::MapTo<serialize_infos, InfoTypeMapper>;
+  // using serialize_tuple = decltype(serialize_infos::applyFunc([]<typename... Infos>() {
+  //   return std::declval<std::tuple<typename Infos::type...>>();
+  // }()));
+  // using deserialize_types = toy::Merge<serialize_types, reference_type_pointers>;
 
   static constexpr auto resource_name = T::resource_name;
 };
@@ -78,18 +115,42 @@ template <typename T>
 concept ResourceMetable = requires() {
   requires ResourceMetable_1<T>;
   // resource is moveable
-  requires std::is_nothrow_move_constructible_v<typename Helper_1<T>::resource>;
-  // T::create returns R, parameter is match with ActionContext + const create_types...
-  requires toy::Merge<
-    toy::
-      TypePack<typename Helper_1<T>::resource, decltype(T::create), const action::ActionContext&>,
-    toy::MapTo<typename Helper_1<T>::create_types, std::add_const>>::
-    template apply<std::is_invocable_r>::value;
-  // T::update parameter: const R&, update_types&...(remove pointer type)
-  requires toy::Merge<
-    toy::TypePack<decltype(T::update), const typename Helper_1<T>::resource&>,
-    toy::MapTo<typename Helper_1<T>::update_types, std::add_lvalue_reference>>::
-    template apply<std::is_invocable>::value;
+  // requires std::is_nothrow_move_constructible_v<typename Helper_1<T>::resource>;
+  // each type of create_types can used to call modifyByGui
+  requires Helper_1<T>::create_types::applyFunc([]<typename... Args>() {
+    return requires(Args... e) { (modifyByGui("", e), ...); };
+  });
+  // T::create returns R, parameter is match with const ActionContext& + const create_params&...
+  requires Helper_1<T>::create_params::applyFunc([]<typename... Params>() {
+    return requires(const action::ActionContext& ctx, const Params&... param) {
+      // crash on clang 17.06
+      // { T::create(ctx, param...) } -> std::same_as<typename Helper_1<T>::resource>;
+      T::create(ctx, param...);
+    };
+  });
+  requires std::same_as<toy::FuncRet<decltype(T::create)>, typename Helper_1<T>::resource>;
+  // each type of serialize_types can used to call serialize and deserialize
+  requires Helper_1<T>::serialize_types::applyFunc([]<typename... Args>() {
+    return requires(Args... e) {
+      (serialize(e), ...);
+      (deserialize<Args>(std::declval<json::Json>()), ...);
+    };
+  });
+  // T::serialize receives the ctx, resource and returns serialize_tuple
+  requires requires(
+    const action::ActionContext& ctx, const typename Helper_1<T>::resource& resource
+  ) {
+    { T::serialize(ctx, resource) } -> std::same_as<typename Helper_1<T>::serialize_ret>;
+  };
+  // T::deserialize receives the ctx, const deserialize_params&... and returns resource
+  requires Helper_1<T>::deserialize_params::applyFunc([]<typename... Params>() {
+    return requires(const action::ActionContext& ctx, const Params&... param) {
+      // crash on clang 17.06
+      // { T::deserialize(ctx, param...) } -> std::same_as<typename Helper_1<T>::resource>;
+      T::deserialize(ctx, param...);
+    };
+  });
+  requires std::same_as<toy::FuncRet<decltype(T::deserialize)>, typename Helper_1<T>::resource>;
 };
 
 // template <typename Derived>
@@ -114,16 +175,16 @@ concept ResourceMetable = requires() {
 
 // static_assert(IsReferenceS<Info<"a", Reference<int>>>::value);
 
-template <ResourceMetable T>
-struct ResourceHelper : Helper_1<T> {
-  using type_infos = T::type_infos;
-  // using editable_infos = toy::Filter<type_infos, IsReferenceS, true>;
-  using ResourceInfos =
-    toy::MapTo<typename T::type_infos, InfoTypeMapper>::template apply<std::tuple>;
-  static constexpr auto resource_name = T::resource_name;
-  static constexpr auto info_size = T::type_infos::size;
-  using Resource = T::resource;
-};
+// template <ResourceMetable T>
+// struct ResourceHelper : Helper_1<T> {
+//   using type_infos = T::type_infos;
+//   // using editable_infos = toy::Filter<type_infos, IsReferenceS, true>;
+//   using ResourceInfos =
+//     toy::MapTo<typename T::type_infos, InfoTypeMapper>::template apply<std::tuple>;
+//   static constexpr auto resource_name = T::resource_name;
+//   static constexpr auto info_size = T::type_infos::size;
+//   using Resource = T::resource;
+// };
 
 struct SubManagerInterface {
   virtual void draw() = 0;
@@ -137,21 +198,26 @@ private:
   template <typename>
   friend class SubManager;
   using Helper = Helper_1<ResourceT>;
-  using InfoTuple = Helper::create_types::template apply<std::tuple>;
 
-  InfoTuple _create_infos;
+  std::string                  _create_name;
+  Helper::create_tuple         _create_infos;
+  Helper::reference_name_array _create_reference_names;
 
-  std::queue<std::function<void(const action::ActionContext&)>> _events;
+  std::queue<std::function<void(const action::ActionContext&)>> _create_events;
 
-  std::map<std::string, std::pair<typename Helper::resource, InfoTuple>> _resources;
+  std::map<std::string, std::array<uint8_t, sizeof(typename Helper::resource)>> _resource_contents;
+  std::map<std::string, typename Helper::resource*>                             _resources;
+  std::map<std::string, typename Helper::reference_name_array> _resource_references;
 
-  toy::MapTo<toy::ApplyTo<typename Helper::reference_metas, SubManager>, std::add_pointer>::
-    template apply<std::tuple>
-      _ref_managers;
+  std::map<typename Helper::resource*, std::string> _resource_names;
+
+  using reference_manager_tuple =
+    toy::MapTo<toy::ApplyTo<typename Helper::reference_metas, SubManager>, std::add_pointer>::
+      template apply<std::tuple>;
+  reference_manager_tuple _ref_managers;
 
   std::array<gui::SelectableList<std::string>, Helper::reference_metas::size> _ref_select_lists;
 
-  gui::TextInput                   _resource_name_input;
   gui::SelectableList<std::string> _resource_name_list;
 
 public:
@@ -159,37 +225,29 @@ public:
 
   template <typename RefResourceMeta>
   void registerRefManager(SubManager<RefResourceMeta>* sub_manager) {
-    constexpr auto index = toy::search<RefResourceMeta>(typename Helper::reference_metas{});
+    constexpr auto index = Helper::reference_metas::template search<RefResourceMeta>();
     std::get<index>(_ref_managers) = sub_manager;
   }
 
   // second: the index of _ref_select
   template <typename RefResourceMeta>
   auto getRefManager() -> std::pair<SubManager<RefResourceMeta>&, size_t> {
-    constexpr auto index = toy::search<RefResourceMeta>(typename Helper::reference_metas{});
+    constexpr auto index = Helper::reference_metas::template search<RefResourceMeta>();
     return { *std::get<index>(_ref_managers), index };
   }
 
-  static void drawWithInfos(InfoTuple& infos, auto lambda) {
-    [&]<size_t... indices>(std::index_sequence<indices...> _) {
-      (lambda.template operator()<indices>(std::get<indices>(infos)), ...);
-    }(std::make_index_sequence<Helper::create_infos::size>{});
-  }
   void drawCreate() {
-    _resource_name_input.draw(std::format("{} name", Helper::resource_name));
-    drawWithInfos(_create_infos, [&]<size_t indice>(auto& info) {
-      constexpr auto name = Helper::create_infos::template at<indice>::name;
-      using Type = Helper::create_infos::template at<indice>::type;
-      if constexpr (std::derived_from<Type, toy::EnumBase>) {
-        [&]<size_t... enum_indices>(std::index_sequence<enum_indices...> _) {
-          constexpr auto enum_items =
-            std::array<const char*, Type::count>{ toy::enum2String(Type{ enum_indices })... };
-          auto selected_item = static_cast<int>(info.value());
-          ImGui::Combo(name, &selected_item, enum_items.data(), enum_items.size());
-          info = selected_item;
-        }(std::make_index_sequence<Type::count>{});
-      } else if constexpr (ResourceMetable<Type>) {
-        auto [sub_manager, index] = getRefManager<Type>();
+    gui::inputText(std::format("{} name", Helper::resource_name), _create_name);
+    toy::templateForEach<Helper::create_types::size>([&]<size_t indice>() {
+      constexpr auto name = Helper::create_names[indice];
+      using Type = Helper::create_params::template at<indice>;
+      modifyByGui<Type>(name, std::get<indice>(_create_infos));
+    });
+    toy::templateForEach<Helper::create_params::size - Helper::create_types::size>(
+      [&]<size_t indice>() {
+        constexpr auto name = Helper::reference_names[indice];
+        using ReferenceMeta = Helper::reference_metas::template at<indice>;
+        auto [sub_manager, index] = getRefManager<ReferenceMeta>();
         auto& ref_list = _ref_select_lists[index];
         auto* selected = ref_list.getSelected();
         ImGui::Text(
@@ -199,32 +257,41 @@ public:
           )
             .data()
         );
+        if (selected != nullptr) {
+          _create_reference_names[indice] = *selected;
+          std::get<indice + Helper::create_types::size>(_create_infos) =
+            sub_manager._resources.at(*selected);
+        }
         ref_list.draw(sub_manager._resources | views::keys);
       }
-    });
+    );
     if (ImGui::Button(std::format("create {}", Helper::resource_name).data())) {
-      _events.emplace([&](const action::ActionContext& ctx) {
-        _resources.emplace(
-          _resource_name_input.getText(),
-          std::pair{ std::apply(
-                       &ResourceT::create, std::tuple_cat(std::forward_as_tuple(ctx), _create_infos)
-                     ),
-                     _create_infos }
-        );
+      _create_events.emplace([&](const action::ActionContext& ctx) {
+        auto iter =
+          _resources
+            .emplace(
+              _create_name,
+              new (_resource_contents[_create_name].data()) Helper::resource{ std::apply(
+                &ResourceT::create, std::tuple_cat(std::forward_as_tuple(ctx), _create_infos)
+              ) }
+            )
+            .first;
+        _resource_references.emplace(_create_name, _create_reference_names);
+        _resource_names.emplace(iter->second, _create_name);
       });
     }
   }
 
-  void drawInfo(const std::string& name) {
-    drawWithInfos(_resources.at(name).second, [&]<size_t indice>(auto& info) {
-      constexpr auto name = Helper::create_infos::template at<indice>::name;
-      using Type = Helper::create_infos::template at<indice>::type;
-      if constexpr (std::derived_from<Type, toy::EnumBase>) {
-        ImGui::Text("%s", std::format("{} : {}", name, toy::enum2String(info)).data());
-      } else if constexpr (ResourceMetable<Type>) {
-      }
-    });
-  }
+  // void drawInfo(const std::string& name) {
+  //   drawWithInfos(_resources.at(name).second, [&]<size_t indice>(auto& info) {
+  //     constexpr auto name = Helper::create_infos::template at<indice>::name;
+  //     using Type = Helper::create_infos::template at<indice>::type;
+  //     if constexpr (std::derived_from<Type, toy::EnumBase>) {
+  //       ImGui::Text("%s", std::format("{} : {}", name, toy::enum2String(info)).data());
+  //     } else if constexpr (ResourceMetable<Type>) {
+  //     }
+  //   });
+  // }
 
   void draw() override {
     ImGui::SeparatorText(std::format("{} create", Helper::resource_name).data());
@@ -236,18 +303,18 @@ public:
     //     _selected_item = &name;
     //   }
     // }
-    ImGui::SeparatorText(std::format("{} info", Helper::resource_name).data());
-    if (auto* selected = _resource_name_list.getSelected(); selected == nullptr) {
-      ImGui::Text("%s", std::format("no select any {}", Helper::resource_name).data());
-    } else {
-      ImGui::Text("%s", std::format("selected {}: {}", Helper::resource_name, *selected).data());
-      drawInfo(*selected);
-    }
+    // ImGui::SeparatorText(std::format("{} info", Helper::resource_name).data());
+    // if (auto* selected = _resource_name_list.getSelected(); selected == nullptr) {
+    //   ImGui::Text("%s", std::format("no select any {}", Helper::resource_name).data());
+    // } else {
+    //   ImGui::Text("%s", std::format("selected {}: {}", Helper::resource_name, *selected).data());
+    //   // drawInfo(*selected);
+    // }
   }
   void run(const action::ActionContext& ctx) override {
-    while (!_events.empty()) {
-      _events.back()(ctx);
-      _events.pop();
+    while (!_create_events.empty()) {
+      _create_events.back()(ctx);
+      _create_events.pop();
     }
   }
   void serialize() {}

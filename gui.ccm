@@ -60,6 +60,46 @@ public:
   auto getText() -> std::string { return { _text_buf.data() }; }
 };
 
+/**
+ * @brief
+ * @param label
+ * @param text must not have any empty char
+ */
+void inputText(const std::string& label, std::string& text) {
+  // make text has at least 3 empty char
+  // size_t len = std::find(text.data(), text.data() + text.size() + 1, '\0') - text.data();
+  // todo: need fix, could not work as expected
+  text.resize(text.size() + 6);
+  // toy::debugf("text size: {}", text.size());
+  ImGui::InputText(label.data(), text.data(), text.size());
+  auto iter = std::find_if(
+    std::reverse_iterator{ text.data() + text.size() + 1 },
+    std::reverse_iterator{ text.data() },
+    [](auto c) { return c != 0; }
+  );
+  // the base() point to next element of reserve_iterator, which is first zero char
+  auto size = iter.base() - text.data();
+  // toy::debugf("new size: {}", size);
+  text.resize(size);
+}
+
+template <std::derived_from<toy::EnumBase> T>
+void selectEnum(const std::string& label, T& value) {
+  [&]<size_t... enum_indices>(std::index_sequence<enum_indices...> _) {
+    constexpr auto enum_items =
+      std::array<const char*, T::count>{ toy::enum2String(T{ enum_indices })... };
+    auto selected_item = static_cast<int>(value);
+    ImGui::Combo(label.data(), &selected_item, enum_items.data(), enum_items.size());
+    value = selected_item;
+  }(std::make_index_sequence<T::count>{});
+}
+
+void inputVec3(const std::string& label, glm::vec3& input) {
+  ImGui::InputFloat(std::format("{}: x", label).data(), &input.x);
+  ImGui::InputFloat(std::format("{}: y", label).data(), &input.y);
+  ImGui::InputFloat(std::format("{}: z", label).data(), &input.z);
+}
+
 auto selectable_id = 0;
 
 template <typename T>

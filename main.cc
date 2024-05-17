@@ -19,7 +19,7 @@ import toy.json;
 
 int main() {
   try {
-    toy::test_json();
+    json::test_json();
     toy::test_EnumerateAdaptor();
     toy::test_SortedRange();
     toy::test_ChunkBy();
@@ -100,12 +100,12 @@ int main() {
     uniforms.emplace_back(proj);
     uniforms.emplace_back(model_data);
     uniforms.emplace_back(outline_data);
-    auto draw_unit = rd::DrawUnit{ pipeline_outline_1,
-                                   vertex_buffer,
-                                   index_buffer,
-                                   std::array<rd::Resource*, 4>{
-                                     &uniforms[0], &uniforms[1], &uniforms[2], &sampled_texture },
-                                   std::nullopt };
+    // auto draw_unit = rd::DrawUnit{ pipeline_outline_1,
+    //                                vertex_buffer,
+    //                                index_buffer,
+    //                                std::array<rd::Resource*, 4>{
+    //                                  &uniforms[0], &uniforms[1], &uniforms[2], &sampled_texture },
+    //                                std::nullopt };
     // auto draw_unit_outline = rd::DrawUnit{ pipeline_outline_2,
     //                                            vertex_buffer,
     //                                            index_buffer,
@@ -124,12 +124,12 @@ int main() {
     auto axis_vertex_buffer = rd::VertexBuffer::create<axis::Vertex>(axis::axis_model);
     auto axis_index_buffer = rd::IndexBuffer{ views::iota(uint16_t(0), axis::axis_model.size()) |
                                               ranges::to<std::vector>() };
-    auto axis_draw_unit =
-      rd::DrawUnit{ pipeline_axis,
-                    axis_vertex_buffer,
-                    axis_index_buffer,
-                    std::array<rd::Resource*, 3>{ &uniforms[0], &uniforms[1], &uniforms[2] },
-                    std::nullopt };
+    // auto axis_draw_unit =
+    //   rd::DrawUnit{ pipeline_axis,
+    //                 axis_vertex_buffer,
+    //                 axis_index_buffer,
+    //                 std::array<rd::Resource*, 3>{ &uniforms[0], &uniforms[1], &uniforms[2] },
+    //                 std::nullopt };
     // auto controller = control::model::Controller{ model_datas[0] };
     // auto camera_controller = control::camera::Controller{ view, proj };
     // camera_controller.setInput();

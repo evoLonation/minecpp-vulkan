@@ -21,7 +21,7 @@ import action;
 
 export namespace mng {
 
-class CameraBase : private action::KeyboardLoader {
+class CameraBase : private action::KeyboardLoader, private action::ActionLoader {
   friend class Camera;
 
 private:
@@ -46,7 +46,7 @@ private:
 
   void run(const action::KeyboardContext& ctx) override {
     using Keyboard = action::Keyboard;
-    auto delta = ctx.interval_milli / 1000;
+    auto delta = ctx.interval_milli / 1000.0f;
     switch (ctx.event.key) {
     case Keyboard::KEY_S:
       move(glm::vec3{ _move_speed * delta, 0.0f, 0.0f });
@@ -69,6 +69,20 @@ private:
     default:
       toy::throwf("camera input handler event error");
     }
+    // compute_view();
+  }
+  void run(const action::ActionContext& ctx) override {
+    // x: left, y: down
+    auto x = ctx.cursor.x_move;
+    auto y = ctx.cursor.y_move;
+    if (ctx.cursor.visible) {
+      return;
+    }
+    // x为正 -> 鼠标右移 -> 所有坐标沿z轴正旋转
+    _rotate_z += x * 1.0f / ctx.screen.width * 360;
+    // y为正 -> 鼠标下移 -> 所有坐标沿y轴负旋转
+    _rotate_y -= y * 1.0f / ctx.screen.height * 360;
+    _rotate_y = std::clamp(_rotate_y, -90.0f, 90.0f);
     compute_view();
   }
 
@@ -92,17 +106,43 @@ public:
     _move_speed = 1.0f;
     _rotate_speed = 1.0f;
     auto front = target - position;
-    auto axis_x = glm::vec3{ 1.0f, 0.0f, 0.0f };
-    {
-      auto front_xy = glm::vec3{ front.x, front.y, 0.0f };
-      _rotate_z =
-        glm::degrees(glm::asin(glm::length(glm::cross(axis_x, front_xy)) / glm::length(front_xy)));
+    if (trans::eq(front.x, 0) && trans::eq(front.y, 0)) {
+      if (trans::eq(front.z, 0)) {
+        toy::throwf(
+          "the front vector = {} which can't compute _rotate_y and _rotate_z",
+          std::tuple{ front.x, front.y, front.z }
+        );
+      }
+      _rotate_z = 0.0f;
+      _rotate_y = front.z > 0 ? 90.0f : -90.0f;
+    } else {
+      auto axis_x = glm::vec3{ 1.0f, 0.0f, 0.0f };
+      {
+        // map front to xy plane
+        auto front_xy = glm::vec2{ front.x, front.y };
+        // compute angle between (1, 0) and front_xy
+        auto axis_xy = glm::vec2{ 1.0f, 0.0f };
+        _rotate_z = glm::degrees(glm::acos(glm::dot(axis_xy, front_xy) / glm::length(front_xy)));
+        if (trans::cross(axis_xy, front_xy) > 0) {
+          _rotate_z = -_rotate_z;
+        }
+      }
+      {
+        // map front to xy plane (leave z to 0)
+        auto front_xy = glm::vec3{ front.x, front.y, 0.0f };
+        auto cross = glm::cross(front_xy, front);
+        toy::throwf(trans::eq(cross.z, 0), "cross.z != 0 ({})", cross.z);
+        _rotate_y =
+          glm::degrees(glm::asin(glm::length(cross) / glm::length(front_xy) / glm::length(front)));
+        if (trans::cross(glm::vec2{ front_xy.x, front_xy.y }, glm::vec2{ cross.x, cross.y }) > 0) {
+          _rotate_y = -_rotate_y;
+        }
+      }
     }
-    {
-      auto front_xz = glm::vec3{ front.x, 0.0f, front.z };
-      _rotate_y =
-        glm::degrees(glm::asin(glm::length(glm::cross(axis_x, front_xz)) / glm::length(front_xz)));
-    }
+
+    toy::debugf("_position: {}", std::tuple{ position.x, position.y, position.z });
+    toy::debugf("_rotate_z: {}", _rotate_z);
+    toy::debugf("_rotate_y: {}", _rotate_y);
     _translate = trans::translate(-position);
     compute_view();
     _trans_proj = trans::proj::perspective({
@@ -134,29 +174,22 @@ public:
     _uniform_view = { _trans_view };
     _uniform_proj = { _trans_proj };
   }
+
   Camera(const Camera&) noexcept = delete;
-  Camera(Camera&& e) noexcept
-    : CameraBase(std::move(e)), _uniform_view(std::move(e._uniform_view)),
-      _uniform_proj(std::move(e._uniform_proj)) {
-    _uniform_view.set(_trans_view);
-    _uniform_proj.set(_trans_proj);
-  }
+  Camera(Camera&&) noexcept = delete;
   auto operator=(const Camera&) noexcept -> Camera& = delete;
-  auto operator=(Camera&& e) noexcept -> Camera& {
-    CameraBase::operator=(std::move(e));
-    _uniform_view = std::move(e)._uniform_view;
-    _uniform_proj = std::move(e)._uniform_proj;
-    _uniform_view.set(_trans_view);
-    _uniform_proj.set(_trans_proj);
-    return *this;
-  }
+  auto operator=(Camera&&) noexcept -> Camera& = delete;
+  auto getViewUniform() -> rd::Uniform<glm::mat4>& { return _uniform_view; }
+  auto getProjUniform() -> rd::Uniform<glm::mat4>& { return _uniform_proj; }
 };
 
 struct CameraResource {
   static constexpr auto resource_name = "camera";
   using resource = Camera;
+  using reference_infos = toy::TypePack<>;
   using create_infos = toy::
     TypePack<Info<"position", glm::vec3>, Info<"target", glm::vec3>, Info<"fovy degree", float>>;
+  using serialize_infos = toy::TypePack<>;
   static auto create(
     const action::ActionContext& ctx,
     const glm::vec3&             position,
@@ -165,55 +198,64 @@ struct CameraResource {
   ) -> Camera {
     return Camera{ ctx, position, target, fovy_degree };
   }
-  static void update(const Camera& ctx, glm::vec3& position, glm::vec3& target, float fovy_degree) {
-  }
+  static auto serialize(const action::ActionContext& _, const Camera&)
+    -> serialize_infos::apply<std::tuple> {}
+  static auto deserialize(const action::ActionContext& _) -> Camera {}
 };
 
 static_assert(ResourceMetable<CameraResource>, "");
 
-struct DrawUnit {
-  rd::VertexBuffer   vertex_buffer;
-  rd::IndexBuffer    index_buffer;
-  rd::SampledTexture sampled_texture;
-  glm::mat4          trans_model;
+class DrawUnit {
+private:
+  rd::VertexBuffer   _vertex_buffer;
+  rd::IndexBuffer    _index_buffer;
+  rd::SampledTexture _sampled_texture;
+  glm::mat4          _trans_model;
 
-  std::array<rd::Uniform<glm::mat4>, 3> uniforms;
+  rd::Uniform<glm::mat4> _uniform_model;
 
-  rd::DrawUnit draw_unit;
+  rd::DrawUnit _draw_unit;
+
+public:
+  DrawUnit(const action::ActionContext& ctx, rd::Pipeline& pipeline, Camera& camera) {
+    auto [vertex_data, vertex_indices] = model::getModelInfo("model/viking_room.obj");
+    _vertex_buffer = rd::VertexBuffer{ std::span<const model::Vertex>{ vertex_data } };
+    _index_buffer = rd::IndexBuffer{ vertex_indices };
+    _sampled_texture = rd::SampledTexture{ "model/viking_room.png", true };
+    _trans_model = trans::model::create();
+    _uniform_model = rd::Uniform<glm::mat4>{ _trans_model };
+    _draw_unit = rd::DrawUnit{
+      pipeline,
+      _vertex_buffer,
+      _index_buffer,
+      std::array<rd::Resource*, 4>{
+        &camera.getViewUniform(), &camera.getProjUniform(), &_uniform_model, &_sampled_texture },
+      std::nullopt,
+    };
+  }
+  DrawUnit(const DrawUnit&) noexcept = delete;
+  DrawUnit(DrawUnit&&) noexcept = delete;
+  auto operator=(const DrawUnit&) noexcept -> DrawUnit& = delete;
+  auto operator=(DrawUnit&&) noexcept -> DrawUnit& = delete;
 };
 
 struct DrawUnitResource {
   static constexpr auto resource_name = "draw unit";
-  using resource = rd::DrawUnit;
-  using create_infos = toy::TypePack<Info<"ref pipeline", PipelineResource>>;
+  using resource = DrawUnit;
+  using reference_infos =
+    toy::TypePack<Info<"ref pipeline", PipelineResource>, Info<"ref camera", CameraResource>>;
+  using create_infos = toy::TypePack<>;
+  using serialize_infos = toy::TypePack<>;
 
   // create the resourse using info
-  static auto create(const action::ActionContext& ctx, rd::Pipeline* pipeline) -> rd::DrawUnit {
-    auto [vertex_data, vertex_indices] = model::getModelInfo("model/viking_room.obj");
-    auto vertex_buffer = rd::VertexBuffer{ std::span<const model::Vertex>{ vertex_data } };
-    auto index_buffer = rd::IndexBuffer{ vertex_indices };
-    auto sampled_texture = rd::SampledTexture{ "model/viking_room.png", true };
-    auto model_data = trans::model::create();
-    auto view = trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f });
-    auto proj = trans::proj::perspective({
-      .width = 1920,
-      .height = 1080,
-    });
-    auto uniforms = std::vector<rd::Uniform<glm::mat4>>{};
-    uniforms.reserve(3);
-    uniforms.emplace_back(view);
-    uniforms.emplace_back(proj);
-    uniforms.emplace_back(model_data);
-    return rd::DrawUnit{
-      *pipeline,
-      vertex_buffer,
-      index_buffer,
-      std::array<rd::Resource*, 4>{ &uniforms[0], &uniforms[1], &uniforms[2], &sampled_texture },
-      std::nullopt,
-    };
+  static auto create(const action::ActionContext& ctx, rd::Pipeline* pipeline, Camera* camera)
+    -> DrawUnit {
+    return DrawUnit{ ctx, *pipeline, *camera };
   }
-  // update the info using resource
-  static void update(const rd::DrawUnit&) { return; }
+  static auto serialize(const action::ActionContext& _, const DrawUnit&)
+    -> serialize_infos::apply<std::tuple> {}
+  static auto deserialize(const action::ActionContext& _, rd::Pipeline* pipeline, Camera* camera)
+    -> DrawUnit {}
 };
 
 static_assert(ResourceMetable<DrawUnitResource>, "");

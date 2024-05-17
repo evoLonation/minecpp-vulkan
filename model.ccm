@@ -63,8 +63,8 @@ auto getModelInfo(const std::string& path)
   indices.reserve(attrib.num_faces);
 
   toy::debugf("number of shape: {}, number of material: {}", shape_num, material_num);
-  toy::debug(p_shape[0].face_offset, p_shape[0].length);
-  toy::debug(
+  toy::debugs(p_shape[0].face_offset, p_shape[0].length);
+  toy::debugs(
     attrib.num_faces,
     attrib.num_normals,
     attrib.num_vertices,

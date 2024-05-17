@@ -6,7 +6,9 @@ import toy.log;
 import toy.trait;
 import toy.ranges;
 
-export namespace toy {
+using namespace toy;
+
+export namespace json {
 
 // class Json;
 // class Null {};
@@ -51,9 +53,31 @@ public:
     } else if (is<Float>()) {
       return std::format("{}", to<Float>());
     } else if (is<String>()) {
-      return to<String>();
+      auto str = to<String>();
+      auto escaped = std::string{};
+      escaped.push_back('"');
+      for (auto c : str) {
+        if (c == '"' || c == '\\' || c == '/') {
+          escaped.push_back('\\');
+          escaped.push_back(c);
+        } else if (c == '\b') {
+          escaped += "\\b";
+        } else if (c == '\f') {
+          escaped += "\\f";
+        } else if (c == '\n') {
+          escaped += "\\n";
+        } else if (c == '\r') {
+          escaped += "\\r";
+        } else if (c == '\t') {
+          escaped += "\\t";
+        } else {
+          escaped.push_back(c);
+        }
+      }
+      escaped.push_back('"');
+      return escaped;
     } else if (is<Object>()) {
-      std::stringstream ss;
+      auto ss = std::stringstream{};
       ss << '{';
       auto& object = to<Object>();
       for (auto [index, pair] : object | enumerate) {
@@ -63,7 +87,7 @@ public:
       ss << "}";
       return ss.str();
     } else if (is<List>()) {
-      std::stringstream ss;
+      auto ss = std::stringstream{};
       ss << '[';
       auto& list = to<List>();
       for (auto [index, value] : list | enumerate) {
@@ -258,9 +282,8 @@ void test_json() {
   auto& object = json.to<Object>();
   toy::checkf(object.at("a").to<Integer>() == 1, "error test json");
   toy::checkf(object.at("b").to<List>()[0].to<Integer>() == 1, "error test json");
-  toy::debug{ json.to<Object>() | views::keys };
+  toy::debug(json.to<Object>() | views::keys);
   toy::debug(json.toString());
-  toy::throwf("end test");
 }
 
-} // namespace toy
+} // namespace json

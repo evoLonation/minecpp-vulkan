@@ -1,4 +1,5 @@
 source:
+- helper.ccm
 - manager.ccm
 - registry.cc
 - pipeline.ccm

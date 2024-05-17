@@ -1,0 +1,47 @@
+export module manager.helper;
+
+import std;
+import glm;
+import toy;
+import toy.json;
+import gui;
+
+import "imgui_config.h";
+
+export namespace mng {
+
+struct UnSupported {};
+
+template <typename T>
+  requires std::derived_from<T, toy::EnumBase> || std::same_as<T, glm::vec3> ||
+           std::same_as<T, float>
+void modifyByGui(const std::string& label, T& value) {
+  if constexpr (std::derived_from<T, toy::EnumBase>) {
+    gui::selectEnum(label, value);
+  } else if constexpr (std::same_as<T, glm::vec3>) {
+    gui::inputVec3(label, value);
+  } else if constexpr (std::same_as<T, float>) {
+    ImGui::InputFloat(label.data(), &value);
+  } else {
+    // this can not catched by concept check because if check, the compile will stop
+    static_assert(false);
+  }
+}
+template <typename T>
+auto serialize(const T& value) -> json::Json {
+  if constexpr (true) {
+
+  } else {
+    static_assert(false);
+  }
+}
+template <typename T>
+auto deserialize(const json::Json& json) -> T {
+  if constexpr (true) {
+
+  } else {
+    static_assert(false);
+  }
+}
+
+} // namespace mng

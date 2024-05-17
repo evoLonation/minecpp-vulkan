@@ -95,8 +95,8 @@ auto checkf(NoLocation tag, bool condition, std::format_string<Args...> fmt, Arg
 }
 
 template <typename... Args>
-struct debug {
-  debug(Args&&... args, std::source_location location = std::source_location::current()) {
+struct debugs {
+  debugs(Args&&... args, std::source_location location = std::source_location::current()) {
     if constexpr (enable_debug) {
       std::println(
         "{}: {}",
@@ -110,7 +110,21 @@ struct debug {
   }
 };
 template <typename... Args>
-debug(Args&&... args) -> debug<Args...>;
+debugs(Args&&... args) -> debugs<Args...>;
+
+template <typename Arg>
+void debug(Arg&& arg, std::source_location location = std::source_location::current()) {
+  if constexpr (enable_debug) {
+    std::println("{}: {}", formatSourceLocation(location), std::forward<Arg>(arg));
+  }
+}
+
+template <typename Arg>
+void debug(NoLocation tag, Arg&& arg) {
+  if constexpr (enable_debug) {
+    std::println("{}", std::forward<Arg>(arg));
+  }
+}
 
 template <typename... Args>
 [[noreturn]] void throwf(FormatWithLocation<Args...> fmt_location, Args&&... args) {
@@ -134,7 +148,7 @@ void test() {
   constexpr auto location = std::source_location::current();
   constexpr auto func = location.function_name();
   // debugf(NoLocation{}, "{}", "no location");
-  debug("{}", "with location");
+  debugs("{}", "with location");
   throwf("asdfads{}", "");
   throwf(true, "");
 }

@@ -97,6 +97,7 @@ private:
   std::optional<uint32_t> _stencil_reference;
 
 public:
+  DrawUnit() = default;
   DrawUnit(
     Pipeline&                  pipeline,
     VertexBuffer&              vertex_buffer,

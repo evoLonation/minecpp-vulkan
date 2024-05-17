@@ -16,6 +16,8 @@ auto eq(const glm::mat4 a, const glm::mat4 b) {
 }
 auto equivalence(glm::vec4 a, glm::vec4 b) { return eq(a / a.w, b / b.w); }
 
+auto cross(const glm::vec2& a, const glm::vec2& b) -> float { return a.x * b.y - b.x * a.y; }
+
 // 按照行向量的方式构造矩阵
 auto matrix(const std::array<glm::vec4, 4>& vecs) -> glm::mat4 {
   return glm::transpose(glm::mat4{ vecs[0], vecs[1], vecs[2], vecs[3] });

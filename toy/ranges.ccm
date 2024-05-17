@@ -174,7 +174,7 @@ void test_SortedRange() {
   auto view3 =
     SortedView{ view, [](auto a, auto b) { return a > b; }, [](auto a) { return a + 10; } };
   auto view4 = SortedView{ view, {}, [](auto a) { return 10 - a; } };
-  debug{ view2 };
+  debug(view2);
   throwf(
     ranges::all_of(views::zip(view2, std::move(view3)), [](auto a) { return a.first == a.second; }),
     "test_SortedRange"
@@ -197,16 +197,16 @@ void test_ChunkBy() {
   auto       view = toy::chunkBy(arr, std::less{});
   auto       i = view.begin();
   for (auto _ : views::iota(0, 5)) {
-    debug{ *i };
+    debug(*i);
     i++;
   }
   throwf(i == view.end(), "i == view.end()");
   i--;
   for (auto _ : views::iota(0, 4)) {
-    debug{ *i };
+    debug(*i);
     i--;
   }
-  debug{ *i };
+  debug(*i);
   throwf(i == view.begin(), "i == view.begin()");
 }
 
