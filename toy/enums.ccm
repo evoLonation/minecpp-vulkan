@@ -8,7 +8,9 @@ import toy.log;
 
 export namespace toy {
 
-struct EnumBase {};
+struct EnumBase {
+  constexpr EnumBase() = default;
+};
 
 } // namespace toy
 

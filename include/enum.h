@@ -9,11 +9,20 @@
     constexpr name(size_t value) : _value(static_cast<Enum>(value)) {}                             \
     constexpr name() = default;                                                                    \
     static constexpr auto count = [](auto... values) { return sizeof...(values); }(__VA_ARGS__);   \
-    auto                  value() -> Enum& { return _value; }                                      \
-    auto                  value() const -> const Enum& { return _value; }                          \
-    auto                  str() const -> const char* { return &pair.first[pair.second[_value]]; }  \
-    operator size_t() { return static_cast<size_t>(_value); }                                      \
-    operator Enum() { return _value; }                                                             \
+    constexpr auto        value() -> Enum& { return _value; }                                      \
+    constexpr auto        value() const -> const Enum& { return _value; }                          \
+    constexpr auto        str() const -> const char* { return &pair.first[pair.second[_value]]; }  \
+    constexpr             operator size_t() { return static_cast<size_t>(_value); }                \
+    constexpr             operator Enum() { return _value; }                                       \
+    friend constexpr auto operator==(name a, name b) {                                             \
+      return static_cast<size_t>(a) == static_cast<size_t>(b);                                     \
+    }                                                                                              \
+    friend constexpr auto operator==(name a, name::Enum b) {                                       \
+      return static_cast<size_t>(a) == static_cast<size_t>(b);                                     \
+    }                                                                                              \
+    friend constexpr auto operator==(name::Enum a, name b) {                                       \
+      return static_cast<size_t>(a) == static_cast<size_t>(b);                                     \
+    }                                                                                              \
                                                                                                    \
   private:                                                                                         \
     Enum                  _value;                                                                  \

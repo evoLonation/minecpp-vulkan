@@ -3,7 +3,6 @@ export module manager.helper;
 import std;
 import glm;
 import toy;
-import toy.json;
 import gui;
 
 import "imgui_config.h";

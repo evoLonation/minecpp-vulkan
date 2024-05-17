@@ -1,3 +1,5 @@
+module;
+#include "enum.h"
 export module toy.json;
 
 import std;
@@ -5,36 +7,57 @@ import std;
 import toy.log;
 import toy.trait;
 import toy.ranges;
+import toy.enums;
 
 using namespace toy;
 
 export namespace json {
 
-// class Json;
-// class Null {};
-// using Integer = int64_t;
-// using Float = double;
-// using String = std::string;
-// using Object = std::map<String, Json>;
-// using List = std::vector<Json>;
+class Json;
+
+class Null {
+  friend auto operator==(Null a, Null b) -> bool { return true; }
+};
+constexpr auto null = Null{};
+using Bool = bool;
+using Integer = int64_t;
+using Float = double;
+using String = std::string;
+using Object = std::map<String, Json>;
+using List = std::vector<Json>;
+
+TOY_ENUM(Type, NULL, BOOL, INTEGER, FLOAT, STRING, OBJECT, LIST);
 
 class Json {
 public:
-  class Null {};
-  using Bool = bool;
-  using Integer = int64_t;
-  using Float = double;
-  using String = std::string;
-  using Object = std::map<String, Json>;
-  using List = std::vector<Json>;
-
 private:
   using Types = TypePack<Null, Bool, Integer, Float, String, Object, List>;
   Types::apply<std::variant> _value;
 
 public:
+  Json() : _value(Object{}) {}
   template <typename T>
+    requires std::same_as<std::decay_t<T>, Null> || std::same_as<std::decay_t<T>, Bool> ||
+             std::convertible_to<std::decay_t<T>, Integer> ||
+             std::convertible_to<std::decay_t<T>, Float> || std::same_as<std::decay_t<T>, String>
   Json(T&& value) : _value(std::forward<decltype(value)>(value)) {}
+  Json(const char* content) : _value(std::string(content)) {}
+  Json(Object object) : _value(std::move(object)) {}
+  Json(List list) : _value(std::move(list)) {}
+  Json(std::initializer_list<std::pair<std::string, Json>> map) {
+    auto object = Object{};
+    for (auto [key, value] : map) {
+      object.emplace(std::move(key), std::move(value));
+    }
+    _value = std::move(object);
+  }
+  static auto array(std::initializer_list<Json> elements) -> Json {
+    auto json = Json{};
+    json._value = List{ std::move(elements) };
+    return json;
+  }
+
+  auto type() const -> Type { return _value.index(); }
   template <typename T>
   auto is() const -> bool {
     return std::holds_alternative<T>(_value);
@@ -43,7 +66,24 @@ public:
   auto to() const -> const T& {
     return std::get<T>(_value);
   }
-  auto toString() const -> std::string {
+  template <typename T>
+  auto to() -> T& {
+    return std::get<T>(_value);
+  }
+
+public:
+  template <Type::Enum T>
+  decltype(auto) to() const {
+    return std::get<T>(_value);
+  }
+  template <Type::Enum T>
+  decltype(auto) to() {
+    return std::get<T>(_value);
+  }
+  auto operator[](const std::string& key) const -> json::Json { return to<Object>().at(key); }
+  auto operator[](const std::string& key) -> json::Json& { return to<Object>()[key]; }
+
+  auto dump() const -> std::string {
     if (is<Null>()) {
       return "null";
     } else if (is<Bool>()) {
@@ -82,7 +122,7 @@ public:
       auto& object = to<Object>();
       for (auto [index, pair] : object | enumerate) {
         auto& [key, value] = pair;
-        ss << key << " : " << value.toString() << (index == object.size() - 1 ? "" : ",") << "\n";
+        ss << key << " : " << value.dump() << (index == object.size() - 1 ? "" : ",") << "\n";
       }
       ss << "}";
       return ss.str();
@@ -91,7 +131,7 @@ public:
       ss << '[';
       auto& list = to<List>();
       for (auto [index, value] : list | enumerate) {
-        ss << value.toString() << (index == list.size() - 1 ? "" : ",");
+        ss << value.dump() << (index == list.size() - 1 ? "" : ",");
       }
       ss << "]";
       return ss.str();
@@ -99,15 +139,46 @@ public:
       toy::throwf("");
     }
   }
-};
+  auto dump(size_t indent) const -> std::string { toy::throwf("unimplemented"); }
 
-using Null = Json::Null;
-using Integer = Json::Integer;
-using Float = Json::Float;
-using String = Json::String;
-using Object = Json::Object;
-using List = Json::List;
-using Bool = Json::Bool;
+  static auto parse(const std::string& str) -> Json;
+  static auto parse(std::ifstream fs) -> Json {
+    std::string str;
+    std::copy(
+      std::istreambuf_iterator<char>{ fs },
+      std::istreambuf_iterator<char>{},
+      std::back_inserter(str)
+    );
+    return parse(str);
+  }
+
+  friend auto operator==(const Json& a, const Json& b) {
+    if (a.type() != b.type()) {
+      return false;
+    }
+    auto type = a.type();
+    switch (type.value()) {
+    case Type::NULL:
+      return a.to<Null>() == a.to<Null>();
+    case Type::BOOL:
+      return a.to<Bool>() == a.to<Bool>();
+    case Type::FLOAT:
+      return a.to<Float>() == a.to<Float>();
+    case Type::INTEGER:
+      return a.to<Integer>() == a.to<Integer>();
+    case Type::STRING:
+      return a.to<String>() == a.to<String>();
+    case Type::OBJECT:
+      return ranges::all_of(views::zip(a.to<Object>(), b.to<Object>()), [](auto a) {
+        return a.first == a.second;
+      });
+    case Type::LIST:
+      return ranges::all_of(views::zip(a.to<List>(), b.to<List>()), [](auto a) {
+        return a.first == a.second;
+      });
+    }
+  }
+};
 
 class Parser {
 public:
@@ -268,22 +339,71 @@ private:
   }
 };
 
+auto Json::parse(const std::string& str) -> Json {
+  auto parser = Parser{ str };
+  return parser.parse();
+}
+
+} // namespace json
+
+template <>
+class std::formatter<json::Json> : public std::formatter<std::string> {
+public:
+  template <typename FormatContext, typename... Args>
+  auto format(const json::Json& e, FormatContext& ctx) const {
+    return std::formatter<std::string>::format(formatString(e), ctx);
+  }
+
+private:
+  auto formatString(const json::Json& e) const -> std::string { return e.dump(); }
+};
+
+export namespace json {
+
 void test_json() {
-  auto              fs = std::ifstream("test.json", std::ios_base::in);
-  std::vector<char> buffer;
-  std::copy(
-    std::istreambuf_iterator<char>{ fs },
-    std::istreambuf_iterator<char>{},
-    std::back_inserter(buffer)
-  );
-  auto  content = std::string{ buffer.begin(), buffer.end() };
-  auto  parser = Parser{ content };
-  auto  json = parser.parse();
+  auto j0 = Json{};
+  toy::throwf(j0.is<Object>(), "error");
+  toy::throwf(j0.type() == Type::OBJECT, "error");
+  auto j1 = Json{ null };
+  toy::throwf(j1.is<Null>(), "error");
+  toy::throwf(j1.type() == Type::NULL, "error");
+  auto j2 = Json{ 1 };
+  toy::throwf(j2.is<Integer>(), "error");
+  toy::throwf(j2.type() == Type::INTEGER, "error");
+  auto j3 = Json{ 1ll };
+  toy::throwf(j3.is<Integer>(), "error");
+  toy::throwf(j3.type() == Type::INTEGER, "error");
+  auto j4 = Json{ true };
+  toy::throwf(j4.is<Bool>(), "error");
+  toy::throwf(j4.type() == Type::BOOL, "error");
+  auto j5 = Json{ 1.0f };
+  toy::throwf(j5.is<Float>(), "error");
+  toy::throwf(j5.type() == Type::FLOAT, "error");
+  auto j6 = Json{ 1.0 };
+  toy::throwf(j6.is<Float>(), "error");
+  toy::throwf(j6.type() == Type::FLOAT, "error");
+  auto j7 = Json{ std::string{ "123" } };
+  toy::throwf(j7.is<String>(), "error");
+  toy::throwf(j7.type() == Type::STRING, "error");
+  auto j8 = Json{ "123" };
+  toy::throwf(j8.is<String>(), "error");
+  toy::throwf(j8.type() == Type::STRING, "error");
+  auto j9 = Json{ { std::string("Xiaoming"), std::string("Genshin") } };
+  toy::throwf(j9.is<Object>(), "error");
+  toy::throwf(j9.type() == Type::OBJECT, "error");
+  auto j10 = Json::array({ { { "Xiaoming", j9 } }, std::string("Genshin") });
+  toy::throwf(j10.is<List>(), "error");
+  toy::throwf(j10.type() == Type::LIST, "error");
+  j0["123"] = 456;
+  toy::throwf(j0["123"].to<Integer>() == 456, "error");
+  toy::throwf(j0["123"] == 456, "error");
+  auto  json = Json::parse(std::ifstream("test.json", std::ios_base::in));
   auto& object = json.to<Object>();
-  toy::checkf(object.at("a").to<Integer>() == 1, "error test json");
-  toy::checkf(object.at("b").to<List>()[0].to<Integer>() == 1, "error test json");
+  toy::throwf(object.at("a").to<Integer>() == 1, "error test json");
+  toy::throwf(object.at("b").to<List>()[0].to<Integer>() == 1, "error test json");
   toy::debug(json.to<Object>() | views::keys);
-  toy::debug(json.toString());
+  toy::debug(json.dump());
+  toy::debug(json);
 }
 
 } // namespace json

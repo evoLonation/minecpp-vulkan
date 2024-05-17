@@ -15,7 +15,6 @@ import axis;
 import transform;
 import manager;
 import action;
-import toy.json;
 
 int main() {
   try {
