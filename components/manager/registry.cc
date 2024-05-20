@@ -9,7 +9,7 @@ void mng::Manager::registerSubManagers() {
   auto draw_unit_manager = new SubManager<DrawUnitResource>{};
   draw_unit_manager->registerRefManager(camera_manager);
   draw_unit_manager->registerRefManager(pipeline_manager);
-  _sub_managers.emplace_back(camera_manager);
-  _sub_managers.emplace_back(pipeline_manager);
-  _sub_managers.emplace_back(draw_unit_manager);
+  registerSubManager(camera_manager);
+  registerSubManager(pipeline_manager);
+  registerSubManager(draw_unit_manager);
 }

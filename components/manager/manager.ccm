@@ -50,13 +50,6 @@ concept ResourceMetable_1 = requires() {
   requires toy::Filter<typename T::serialize_infos, IsInfo>::size == T::serialize_infos::size;
 };
 
-// make ResourceMeta to pointer of ResourceMeta::resource
-template <typename T>
-  requires ResourceMetable_1<T>
-struct ReferenceMapper {
-  using type = T::resource*;
-};
-
 template <ResourceMetable_1 T>
 struct Helper_1 {
   static constexpr auto info_type_mapper = []<typename... Args>() {
@@ -64,7 +57,7 @@ struct Helper_1 {
   };
   static constexpr auto info_name_mapper = []<typename... Args>() {
     if constexpr (sizeof...(Args) == 0) {
-      return std::array<int, 0>{};
+      return std::array<const char*, 0>{};
     } else {
       return std::array{ Args::name... };
     }
@@ -90,22 +83,11 @@ struct Helper_1 {
   using create_params = toy::Merge<create_types, reference_pointers>;
   using create_tuple = create_params::template apply<std::tuple>;
 
-  // using create_params = decltype(create_types::applyFunc([]<typename... Types>() {
-  //   return toy::TypePack<
-  //     std::conditional_t<ResourceMetable_1<Types>, typename Types::resource*, Types>...>{};
-  // }));
-  // using create_tuple = create_params::template apply<std::tuple>;
-  // equals T::serialize_infos + reference_infos
   using serialize_infos = T::serialize_infos;
   using serialize_types = decltype(serialize_infos::applyFunc(info_type_mapper));
   static constexpr auto serialize_names = serialize_infos::applyFunc(info_name_mapper);
   using serialize_ret = serialize_types::template apply<std::tuple>;
   using deserialize_params = toy::Merge<serialize_types, reference_pointers>;
-  // using serialize_types = toy::MapTo<serialize_infos, InfoTypeMapper>;
-  // using serialize_tuple = decltype(serialize_infos::applyFunc([]<typename... Infos>() {
-  //   return std::declval<std::tuple<typename Infos::type...>>();
-  // }()));
-  // using deserialize_types = toy::Merge<serialize_types, reference_type_pointers>;
 
   static constexpr auto resource_name = T::resource_name;
 };
@@ -152,49 +134,22 @@ concept ResourceMetable = requires() {
   requires std::same_as<toy::FuncRet<decltype(T::deserialize)>, typename Helper_1<T>::resource>;
 };
 
-// template <typename Derived>
-// struct ResourceMeta {
-//   template <typename = void>
-//     requires ResourceMetable<Derived>
-//   ResourceMeta() {}
-// };
-
-// template <typename T>
-// struct Reference {
-//   using type = T;
-// };
-// template <typename T>
-// struct IsReferenceS {
-//   static constexpr auto value = false;
-// };
-// template <toy::StringLiteral str, typename T>
-// struct IsReferenceS<Info<str, Reference<T>>> {
-//   static constexpr auto value = true;
-// };
-
-// static_assert(IsReferenceS<Info<"a", Reference<int>>>::value);
-
-// template <ResourceMetable T>
-// struct ResourceHelper : Helper_1<T> {
-//   using type_infos = T::type_infos;
-//   // using editable_infos = toy::Filter<type_infos, IsReferenceS, true>;
-//   using ResourceInfos =
-//     toy::MapTo<typename T::type_infos, InfoTypeMapper>::template apply<std::tuple>;
-//   static constexpr auto resource_name = T::resource_name;
-//   static constexpr auto info_size = T::type_infos::size;
-//   using Resource = T::resource;
-// };
-
 struct SubManagerInterface {
   virtual void draw() = 0;
+  virtual auto save(const action::ActionContext& ctx) -> json::Json = 0;
+  /**
+   * @brief make sure already call load for all reference sub managers
+   */
+  virtual void load(const action::ActionContext& ctx, const json::Json&) = 0;
+  virtual auto getRefManagers() -> std::vector<SubManagerInterface*> = 0;
   virtual ~SubManagerInterface() = default;
 };
 
-template <typename ResourceT>
+template <ResourceMetable ResourceT>
 // using ResourceT = PipelineResource;
 class SubManager : private action::ActionLoader, public SubManagerInterface {
 private:
-  template <typename>
+  template <ResourceMetable>
   friend class SubManager;
   using Helper = Helper_1<ResourceT>;
 
@@ -207,8 +162,6 @@ private:
   std::map<std::string, std::array<uint8_t, sizeof(typename Helper::resource)>> _resource_contents;
   std::map<std::string, typename Helper::resource*>                             _resources;
   std::map<std::string, typename Helper::reference_name_array> _resource_references;
-
-  std::map<typename Helper::resource*, std::string> _resource_names;
 
   using reference_manager_tuple =
     toy::MapTo<toy::ApplyTo<typename Helper::reference_metas, SubManager>, std::add_pointer>::
@@ -229,24 +182,37 @@ public:
   }
 
   // second: the index of _ref_select
-  template <typename RefResourceMeta>
-  auto getRefManager() -> std::pair<SubManager<RefResourceMeta>&, size_t> {
-    constexpr auto index = Helper::reference_metas::template search<RefResourceMeta>();
-    return { *std::get<index>(_ref_managers), index };
+  template <size_t index, typename RefResourceMeta = Helper::reference_metas::template at<index>>
+  auto getRefManager() -> SubManager<RefResourceMeta>& {
+    return *std::get<index>(_ref_managers);
+  }
+  auto getRefManagers() -> std::vector<SubManagerInterface*> override {
+    return toy::applyIndexSequence<Helper::reference_infos::size>([&]<size_t... index>() {
+      return std::vector<SubManagerInterface*>{ &getRefManager<index>()... };
+    });
+  }
+
+  void createResource(
+    std::string resource_name, Helper::reference_name_array reference_names, auto creator
+  ) {
+    _resources.emplace(
+      resource_name, new (_resource_contents[resource_name].data()) Helper::resource{ creator() }
+    );
+    _resource_references.emplace(resource_name, std::move(reference_names));
   }
 
   void drawCreate() {
     gui::inputText(std::format("{} name", Helper::resource_name), _create_name);
-    toy::templateForEach<Helper::create_types::size>([&]<size_t indice>() {
-      constexpr auto name = Helper::create_names[indice];
-      using Type = Helper::create_params::template at<indice>;
-      modifyByGui<Type>(name, std::get<indice>(_create_infos));
+    toy::templateForEach<Helper::create_types::size>([&]<size_t index>() {
+      constexpr auto name = Helper::create_names[index];
+      using Type = Helper::create_params::template at<index>;
+      modifyByGui<Type>(name, std::get<index>(_create_infos));
     });
     toy::templateForEach<Helper::create_params::size - Helper::create_types::size>(
-      [&]<size_t indice>() {
-        constexpr auto name = Helper::reference_names[indice];
-        using ReferenceMeta = Helper::reference_metas::template at<indice>;
-        auto [sub_manager, index] = getRefManager<ReferenceMeta>();
+      [&]<size_t index>() {
+        constexpr auto name = Helper::reference_names[index];
+
+        auto& sub_manager = getRefManager<index>();
         auto& ref_list = _ref_select_lists[index];
         auto* selected = ref_list.getSelected();
         ImGui::Text(
@@ -257,8 +223,8 @@ public:
             .data()
         );
         if (selected != nullptr) {
-          _create_reference_names[indice] = *selected;
-          std::get<indice + Helper::create_types::size>(_create_infos) =
+          _create_reference_names[index] = *selected;
+          std::get<index + Helper::create_types::size>(_create_infos) =
             sub_manager._resources.at(*selected);
         }
         ref_list.draw(sub_manager._resources | views::keys);
@@ -266,79 +232,215 @@ public:
     );
     if (ImGui::Button(std::format("create {}", Helper::resource_name).data())) {
       _create_events.emplace([&](const action::ActionContext& ctx) {
-        auto iter =
-          _resources
-            .emplace(
-              _create_name,
-              new (_resource_contents[_create_name].data()) Helper::resource{ std::apply(
-                &ResourceT::create, std::tuple_cat(std::forward_as_tuple(ctx), _create_infos)
-              ) }
-            )
-            .first;
-        _resource_references.emplace(_create_name, _create_reference_names);
-        _resource_names.emplace(iter->second, _create_name);
+        createResource(
+          std::move(_create_name),
+          std::move(_create_reference_names),
+          [&]() -> decltype(auto) {
+            return std::apply(
+              &ResourceT::create, std::tuple_cat(std::forward_as_tuple(ctx), _create_infos)
+            );
+          }
+        );
       });
     }
   }
-
-  // void drawInfo(const std::string& name) {
-  //   drawWithInfos(_resources.at(name).second, [&]<size_t indice>(auto& info) {
-  //     constexpr auto name = Helper::create_infos::template at<indice>::name;
-  //     using Type = Helper::create_infos::template at<indice>::type;
-  //     if constexpr (std::derived_from<Type, toy::EnumBase>) {
-  //       ImGui::Text("%s", std::format("{} : {}", name, toy::enum2String(info)).data());
-  //     } else if constexpr (ResourceMetable<Type>) {
-  //     }
-  //   });
-  // }
 
   void draw() override {
     ImGui::SeparatorText(std::format("{} create", Helper::resource_name).data());
     drawCreate();
     ImGui::SeparatorText(std::format("{} list", Helper::resource_name).data());
     _resource_name_list.draw(_resources | views::keys);
-    // for (auto& name : _resources | views::keys) {
-    //   if (ImGui::Selectable(name.data(), _selected_item == &name)) {
-    //     _selected_item = &name;
-    //   }
-    // }
-    // ImGui::SeparatorText(std::format("{} info", Helper::resource_name).data());
-    // if (auto* selected = _resource_name_list.getSelected(); selected == nullptr) {
-    //   ImGui::Text("%s", std::format("no select any {}", Helper::resource_name).data());
-    // } else {
-    //   ImGui::Text("%s", std::format("selected {}: {}", Helper::resource_name, *selected).data());
-    //   // drawInfo(*selected);
-    // }
   }
+
+  auto save(const action::ActionContext& ctx) -> json::Json override {
+    using namespace json;
+    auto json_list = std::vector<Json>{};
+    for (auto& [name, resource] : _resources) {
+      auto json = Json{};
+      auto ret = ResourceT::serialize(ctx, *resource);
+      auto reference_array = _resource_references.at(name);
+      toy::templateForEach<Helper::serialize_infos::size>([&]<size_t index>() {
+        json[Helper::serialize_names[index]] = serialize(std::get<index>(ret));
+      });
+      toy::templateForEach<Helper::reference_infos::size>([&]<size_t index>() {
+        json[Helper::reference_names[index]] = reference_array[index];
+      });
+      json_list.push_back(Json{ { "resource_name", name }, { "info", std::move(json) } });
+    }
+    return json_list;
+  }
+
+  void load(const action::ActionContext& ctx, const json::Json& json_list) override {
+    using namespace json;
+    for (auto& json_ : json_list.to<List>()) {
+      auto name = json_["resource_name"].to<String>();
+      auto json_info = json_["info"];
+      auto reference_names =
+        toy::applyIndexSequence<Helper::reference_infos::size>([&]<size_t... index>() {
+          return typename Helper::reference_name_array{
+            json_info[Helper::reference_names[index]].template to<String>()...
+          };
+        });
+      createResource(name, reference_names, [&]() {
+        return toy::applyIndexSequence<Helper::deserialize_params::size>(
+          [&]<size_t... index>() -> auto {
+            return ResourceT::deserialize(ctx, [&]() -> auto {
+              if constexpr (index < Helper::serialize_infos::size) {
+                return deserialize<typename Helper::serialize_types::template at<index>>(
+                  json_info[Helper::serialize_names[index]]
+                );
+              } else {
+                constexpr auto index_ref = index - Helper::serialize_infos::size;
+
+                auto& ref_manager = getRefManager<index_ref>();
+                auto* ref_resource = ref_manager._resources.at(reference_names[index_ref]);
+                return ref_resource;
+              }
+            }()...);
+          }
+        );
+      });
+    }
+  }
+
   void run(const action::ActionContext& ctx) override {
     while (!_create_events.empty()) {
       _create_events.back()(ctx);
       _create_events.pop();
     }
   }
-  void serialize() {}
   SubManager(const SubManager&) noexcept = delete;
   SubManager(SubManager&&) noexcept = default;
   auto operator=(const SubManager&) noexcept -> SubManager& = delete;
   auto operator=(SubManager&&) noexcept -> SubManager& = default;
 };
-
-class Manager : private gui::DrawerLoader {
+namespace fs = std::filesystem;
+class Manager : private gui::DrawerLoader, private action::ActionLoader {
 private:
   std::vector<std::unique_ptr<SubManagerInterface>> _sub_managers;
+  std::map<SubManagerInterface*, const char*>       _manager_names;
+
+  bool        _click_save;
+  bool        _open_save_input;
+  std::string _save_name;
+
+  bool                     _open_load_input;
+  bool                     _fresh_save_files;
+  std::vector<std::string> _save_files;
+  int32_t                  _selected_load;
+  bool                     _click_load;
+
+  static inline auto _save_dir = std::filesystem::path{ "save" };
 
 public:
-  Manager() { registerSubManagers(); }
+  Manager()
+    : _click_save(), _open_save_input(), _selected_load(-1), _fresh_save_files(), _click_load() {
+    registerSubManagers();
+    if (!fs::exists(_save_dir)) {
+      toy::throwf(
+        fs::create_directories(_save_dir), "create save dir {} failed", _save_dir.string()
+      );
+    } else {
+      toy::debugf("save dir {} already exists", _save_dir.string());
+    }
+  }
+
   void registerSubManagers();
+
+  template <ResourceMetable ResourceT>
+  void registerSubManager(SubManager<ResourceT>* sub_manager) {
+    using Helper = Helper_1<ResourceT>;
+    _sub_managers.emplace_back(sub_manager);
+    _manager_names.emplace(sub_manager, Helper::resource_name);
+  }
+
   void draw() override {
-    ImGui::Begin("Resource manager");
+    // ImGuiWindowFlags_MenuBar: enable menu bar
+    ImGui::Begin("Resource manager", nullptr, ImGuiWindowFlags_MenuBar);
+    if (ImGui::BeginMenuBar()) {
+      if (ImGui::BeginMenu("File")) {
+        if (ImGui::MenuItem("Save")) {
+          _open_save_input = true;
+        }
+        if (ImGui::MenuItem("Load")) {
+          _open_load_input = true;
+          _fresh_save_files = false;
+          _selected_load = -1;
+        }
+        ImGui::EndMenu();
+      }
+      ImGui::EndMenuBar();
+    }
     for (auto& sub_manager : _sub_managers) {
       sub_manager->draw();
     }
     if (ImGui::Button("save scene")) {
     }
-
     ImGui::End();
+    if (_open_save_input) {
+      ImGui::Begin("save scene");
+      gui::inputText("filename", _save_name);
+      _click_save = ImGui::Button("save");
+      if (_click_save) {
+        _open_save_input = false;
+      }
+      ImGui::End();
+    }
+    if (_open_load_input) {
+      if (!_fresh_save_files) {
+        _save_files =
+          fs::directory_iterator{ _save_dir } |
+          views::filter([](auto& entry) { return entry.is_regular_file(); }) |
+          views::transform([](auto& entry) { return entry.path().filename().string(); }) |
+          ranges::to<std::vector>();
+        _fresh_save_files = true;
+      }
+      ImGui::Begin("load scene");
+      gui::selectable(_save_files, _selected_load);
+      if (_selected_load != -1) {
+        _open_load_input = false;
+        _click_load = true;
+      }
+      ImGui::End();
+    }
+  }
+
+  void run(const action::ActionContext& ctx) override {
+    if (_click_save) {
+      _click_save = false;
+      toy::debug("click save!");
+      auto json = json::Json{};
+      for (auto& [sub_manager, name] : _manager_names) {
+        json[name] = sub_manager->save(ctx);
+      }
+      auto path = _save_dir / (_save_name + ".json");
+      auto fs = std::ofstream{ path };
+      toy::throwf(fs.is_open(), "failed to open {}", path.string());
+      fs << json.dump();
+    }
+    if (_click_load) {
+      _click_load = false;
+      auto load_file = _save_dir / _save_files[_selected_load];
+      auto fs = std::ifstream{ load_file };
+      toy::throwf(fs.is_open(), "failed to open file {}", load_file.string());
+      auto json = json::Json::parse(std::move(fs));
+      auto loaded_managers = std::set<SubManagerInterface*>{};
+      std::function<void(SubManagerInterface * sub_manager)> load =
+        [&](SubManagerInterface* sub_manager) {
+          if (loaded_managers.contains(sub_manager)) {
+            return;
+          }
+          for (auto* ref_manager : sub_manager->getRefManagers()) {
+            load(ref_manager);
+          }
+          sub_manager->load(ctx, json[_manager_names[sub_manager]]);
+          loaded_managers.insert(sub_manager);
+        };
+      for (auto& sub_manager : _sub_managers) {
+        load(sub_manager.get());
+      }
+    }
   }
 };
+
 } // namespace mng

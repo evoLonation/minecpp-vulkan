@@ -95,9 +95,25 @@ void selectEnum(const std::string& label, T& value) {
 }
 
 void inputVec3(const std::string& label, glm::vec3& input) {
-  ImGui::InputFloat(std::format("{}: x", label).data(), &input.x);
-  ImGui::InputFloat(std::format("{}: y", label).data(), &input.y);
-  ImGui::InputFloat(std::format("{}: z", label).data(), &input.z);
+  ImGui::Text("%s", std::format("{}: ", label).data());
+  ImGui::SameLine();
+  ImGui::PushItemWidth(80);
+  ImGui::InputFloat(std::format("x##{}", label).data(), &input.x);
+  ImGui::SameLine();
+  ImGui::InputFloat(std::format("y##{}", label).data(), &input.y);
+  ImGui::SameLine();
+  ImGui::InputFloat(std::format("z##{}", label).data(), &input.z);
+  ImGui::PopItemWidth();
+}
+
+// todo: replace to anyview when have reference version
+template <toy::RangeOf<std::string> RangeT>
+void selectable(RangeT&& range, int32_t& selected) {
+  for (auto [index, item] : range | toy::enumerate) {
+    if (ImGui::Selectable(item.data(), selected == index)) {
+      selected = index;
+    }
+  }
 }
 
 auto selectable_id = 0;

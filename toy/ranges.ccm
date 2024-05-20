@@ -9,7 +9,7 @@ import std;
 export namespace toy {
 
 struct EnumerateAdaptor : AdaptorClosureHelper<EnumerateAdaptor> {
-  template <ranges::forward_range Range>
+  template <ranges::input_range Range>
   auto operator()(Range&& range) {
     return views::zip(views::iota(0u), std::forward<Range>(range));
   }

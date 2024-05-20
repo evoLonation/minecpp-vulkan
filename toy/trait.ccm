@@ -18,7 +18,7 @@ struct TypePack {
   template <int N>
   using at = std::tuple_element_t<RealIndex<N>, typename TypePack::template apply<std::tuple>>;
 
-  static consteval auto applyFunc(auto lambda) { return lambda.template operator()<P...>(); }
+  static constexpr auto applyFunc(auto lambda) { return lambda.template operator()<P...>(); }
 
   template <typename T>
   static consteval auto search() -> size_t {

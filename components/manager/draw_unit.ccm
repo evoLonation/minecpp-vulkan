@@ -21,27 +21,35 @@ import action;
 
 export namespace mng {
 
+// transform order: world -> translate -> rotate_z -> rotate_y
+struct CameraState {
+  glm::vec3 translate = glm::vec3{ 0.0f };
+  float     rotate_z = 0.0f;
+  float     rotate_y = 0.0f;
+  float     fovy_degree = 45.0f;
+  float     move_speed = 1.0f;
+  float     rotate_speed = 1.0f;
+};
+
 class CameraBase : private action::KeyboardLoader, private action::ActionLoader {
   friend class Camera;
 
 private:
-  float     _fovy_degree;
-  float     _move_speed;
-  float     _rotate_speed;
-  float     _rotate_z;
-  float     _rotate_y;
-  glm::mat4 _translate;
+  CameraState _state;
+
   glm::mat4 _trans_view;
 
   glm::mat4 _trans_proj;
 
   auto compute_view() {
-    _trans_view = trans::rotate<trans::Axis::Y>(_rotate_y) *
-                  trans::rotate<trans::Axis::Z>(_rotate_z) * _translate;
+    _trans_view = trans::rotate<trans::Axis::Y>(_state.rotate_y) *
+                  trans::rotate<trans::Axis::Z>(_state.rotate_z) *
+                  trans::translate(_state.translate);
   }
   auto move(glm::vec3 moved) {
-    _translate = trans::rotate<trans::Axis::Z>(-_rotate_z) * trans::translate(moved) *
-                 trans::rotate<trans::Axis::Z>(_rotate_z) * _translate;
+    _state.translate = trans::rotate<trans::Axis::Z>(-_state.rotate_z) * trans::translate(moved) *
+                       trans::rotate<trans::Axis::Z>(_state.rotate_z) *
+                       glm::vec4{ _state.translate, 1.0f };
   }
 
   void run(const action::KeyboardContext& ctx) override {
@@ -49,22 +57,22 @@ private:
     auto delta = ctx.interval_milli / 1000.0f;
     switch (ctx.event.key) {
     case Keyboard::KEY_S:
-      move(glm::vec3{ _move_speed * delta, 0.0f, 0.0f });
+      move(glm::vec3{ _state.move_speed * delta, 0.0f, 0.0f });
       break;
     case Keyboard::KEY_W:
-      move(glm::vec3{ -_move_speed * delta, 0.0f, 0.0f });
+      move(glm::vec3{ -_state.move_speed * delta, 0.0f, 0.0f });
       break;
     case Keyboard::KEY_A:
-      move(glm::vec3{ 0.0f, -_move_speed * delta, 0.0f });
+      move(glm::vec3{ 0.0f, -_state.move_speed * delta, 0.0f });
       break;
     case Keyboard::KEY_D:
-      move(glm::vec3{ 0.0f, _move_speed * delta, 0.0f });
+      move(glm::vec3{ 0.0f, _state.move_speed * delta, 0.0f });
       break;
     case Keyboard::KEY_Z:
-      move(glm::vec3{ 0.0f, 0.0f, -_move_speed * delta });
+      move(glm::vec3{ 0.0f, 0.0f, -_state.move_speed * delta });
       break;
     case Keyboard::KEY_X:
-      move(glm::vec3{ 0.0f, 0.0f, _move_speed * delta });
+      move(glm::vec3{ 0.0f, 0.0f, _state.move_speed * delta });
       break;
     default:
       toy::throwf("camera input handler event error");
@@ -79,20 +87,14 @@ private:
       return;
     }
     // x为正 -> 鼠标右移 -> 所有坐标沿z轴正旋转
-    _rotate_z += x * 1.0f / ctx.screen.width * 360;
+    _state.rotate_z += x * 1.0f / ctx.screen.width * 360;
     // y为正 -> 鼠标下移 -> 所有坐标沿y轴负旋转
-    _rotate_y -= y * 1.0f / ctx.screen.height * 360;
-    _rotate_y = std::clamp(_rotate_y, -90.0f, 90.0f);
+    _state.rotate_y -= y * 1.0f / ctx.screen.height * 360;
+    _state.rotate_y = std::clamp(_state.rotate_y, -90.0f, 90.0f);
     compute_view();
   }
-
-public:
-  CameraBase(
-    const action::ActionContext& ctx,
-    const glm::vec3&             position,
-    const glm::vec3&             target,
-    float                        fovy_degree
-  ) {
+  void init(const action::ActionContext& ctx, const CameraState& state) {
+    _state = state;
     using Keyboard = action::Keyboard;
     action::KeyboardLoader::load({
       Keyboard::KEY_S,
@@ -102,9 +104,26 @@ public:
       Keyboard::KEY_Z,
       Keyboard::KEY_X,
     });
-    _fovy_degree = fovy_degree;
-    _move_speed = 1.0f;
-    _rotate_speed = 1.0f;
+    compute_view();
+    _trans_proj = trans::proj::perspective({
+      .width = ctx.screen.width,
+      .height = ctx.screen.height,
+      .fovy_degree = _state.fovy_degree,
+    });
+  }
+
+public:
+  CameraBase() = default;
+  CameraBase(const action::ActionContext& ctx, const CameraState& state) { init(ctx, state); }
+  CameraBase(
+    const action::ActionContext& ctx,
+    const glm::vec3&             position,
+    const glm::vec3&             target,
+    float                        fovy_degree
+  ) {
+    auto state = CameraState{
+      .fovy_degree = fovy_degree,
+    };
     auto front = target - position;
     if (trans::eq(front.x, 0) && trans::eq(front.y, 0)) {
       if (trans::eq(front.z, 0)) {
@@ -113,8 +132,8 @@ public:
           std::tuple{ front.x, front.y, front.z }
         );
       }
-      _rotate_z = 0.0f;
-      _rotate_y = front.z > 0 ? 90.0f : -90.0f;
+      state.rotate_z = 0.0f;
+      state.rotate_y = front.z > 0 ? 90.0f : -90.0f;
     } else {
       auto axis_x = glm::vec3{ 1.0f, 0.0f, 0.0f };
       {
@@ -122,9 +141,10 @@ public:
         auto front_xy = glm::vec2{ front.x, front.y };
         // compute angle between (1, 0) and front_xy
         auto axis_xy = glm::vec2{ 1.0f, 0.0f };
-        _rotate_z = glm::degrees(glm::acos(glm::dot(axis_xy, front_xy) / glm::length(front_xy)));
+        state.rotate_z =
+          glm::degrees(glm::acos(glm::dot(axis_xy, front_xy) / glm::length(front_xy)));
         if (trans::cross(axis_xy, front_xy) > 0) {
-          _rotate_z = -_rotate_z;
+          state.rotate_z = -state.rotate_z;
         }
       }
       {
@@ -132,24 +152,19 @@ public:
         auto front_xy = glm::vec3{ front.x, front.y, 0.0f };
         auto cross = glm::cross(front_xy, front);
         toy::throwf(trans::eq(cross.z, 0), "cross.z != 0 ({})", cross.z);
-        _rotate_y =
+        state.rotate_y =
           glm::degrees(glm::asin(glm::length(cross) / glm::length(front_xy) / glm::length(front)));
         if (trans::cross(glm::vec2{ front_xy.x, front_xy.y }, glm::vec2{ cross.x, cross.y }) > 0) {
-          _rotate_y = -_rotate_y;
+          state.rotate_y = -state.rotate_y;
         }
       }
     }
 
     toy::debugf("_position: {}", std::tuple{ position.x, position.y, position.z });
-    toy::debugf("_rotate_z: {}", _rotate_z);
-    toy::debugf("_rotate_y: {}", _rotate_y);
-    _translate = trans::translate(-position);
-    compute_view();
-    _trans_proj = trans::proj::perspective({
-      .width = ctx.screen.width,
-      .height = ctx.screen.height,
-      .fovy_degree = _fovy_degree,
-    });
+    toy::debugf("_rotate_z: {}", state.rotate_z);
+    toy::debugf("_rotate_y: {}", state.rotate_y);
+    state.translate = -position;
+    init(ctx, state);
   }
 
   CameraBase(const CameraBase&) noexcept = default;
@@ -164,13 +179,7 @@ private:
   rd::Uniform<glm::mat4> _uniform_proj;
 
 public:
-  Camera(
-    const action::ActionContext& ctx,
-    const glm::vec3&             position,
-    const glm::vec3&             target,
-    float                        fovy_degree
-  )
-    : CameraBase(ctx, position, target, fovy_degree) {
+  Camera(CameraBase base) : CameraBase(std::move(base)) {
     _uniform_view = { _trans_view };
     _uniform_proj = { _trans_proj };
   }
@@ -181,6 +190,7 @@ public:
   auto operator=(Camera&&) noexcept -> Camera& = delete;
   auto getViewUniform() -> rd::Uniform<glm::mat4>& { return _uniform_view; }
   auto getProjUniform() -> rd::Uniform<glm::mat4>& { return _uniform_proj; }
+  auto getState() const -> const CameraState& { return _state; }
 };
 
 struct CameraResource {
@@ -189,18 +199,50 @@ struct CameraResource {
   using reference_infos = toy::TypePack<>;
   using create_infos = toy::
     TypePack<Info<"position", glm::vec3>, Info<"target", glm::vec3>, Info<"fovy degree", float>>;
-  using serialize_infos = toy::TypePack<>;
+  using serialize_infos = toy::TypePack<
+    Info<"translate", glm::vec3>,
+    Info<"rotate_z", float>,
+    Info<"rotate_y", float>,
+    Info<"fovy_degree", float>,
+    Info<"move_speed", float>,
+    Info<"rotate_speed", float>>;
   static auto create(
     const action::ActionContext& ctx,
     const glm::vec3&             position,
     const glm::vec3&             target,
     float                        fovy_degree
   ) -> Camera {
-    return Camera{ ctx, position, target, fovy_degree };
+    return Camera{ { ctx, position, target, fovy_degree } };
   }
-  static auto serialize(const action::ActionContext& _, const Camera&)
-    -> serialize_infos::apply<std::tuple> {}
-  static auto deserialize(const action::ActionContext& _) -> Camera {}
+  static auto serialize(const action::ActionContext& _, const Camera& camera)
+    -> std::tuple<glm::vec3, float, float, float, float, float> {
+    auto& state = camera.getState();
+    return {
+      state.translate,   state.rotate_z,   state.rotate_y,
+      state.fovy_degree, state.move_speed, state.rotate_speed,
+    };
+  }
+  static auto deserialize(
+    const action::ActionContext& ctx,
+    glm::vec3                    translate,
+    float                        rotate_z,
+    float                        rotate_y,
+    float                        fovy_degree,
+    float                        move_speed,
+    float                        rotate_speed
+  ) -> Camera {
+    return CameraBase{
+      ctx,
+      CameraState{
+        translate,
+        rotate_z,
+        rotate_y,
+        fovy_degree,
+        move_speed,
+        rotate_speed,
+      },
+    };
+  }
 };
 
 static_assert(ResourceMetable<CameraResource>, "");
@@ -252,10 +294,13 @@ struct DrawUnitResource {
     -> DrawUnit {
     return DrawUnit{ ctx, *pipeline, *camera };
   }
-  static auto serialize(const action::ActionContext& _, const DrawUnit&)
-    -> serialize_infos::apply<std::tuple> {}
-  static auto deserialize(const action::ActionContext& _, rd::Pipeline* pipeline, Camera* camera)
-    -> DrawUnit {}
+  static auto serialize(const action::ActionContext& _, const DrawUnit&) -> std::tuple<> {
+    return {};
+  }
+  static auto deserialize(const action::ActionContext& ctx, rd::Pipeline* pipeline, Camera* camera)
+    -> DrawUnit {
+    return { ctx, *pipeline, *camera };
+  }
 };
 
 static_assert(ResourceMetable<DrawUnitResource>, "");

@@ -27,18 +27,43 @@ void modifyByGui(const std::string& label, T& value) {
   }
 }
 template <typename T>
+  requires std::derived_from<T, toy::EnumBase> || std::same_as<T, glm::vec3> ||
+           std::same_as<T, float>
 auto serialize(const T& value) -> json::Json {
-  if constexpr (true) {
-
+  using namespace json;
+  if constexpr (std::derived_from<T, toy::EnumBase>) {
+    return value.str();
+  } else if constexpr (std::same_as<T, glm::vec3>) {
+    return Json::array({ value.x, value.y, value.z });
+  } else if constexpr (std::same_as<T, float>) {
+    return value;
   } else {
+    // this can not catched by concept check because if check, the compile will stop
     static_assert(false);
   }
 }
 template <typename T>
+  requires std::derived_from<T, toy::EnumBase> || std::same_as<T, glm::vec3> ||
+           std::same_as<T, float>
 auto deserialize(const json::Json& json) -> T {
-  if constexpr (true) {
-
+  using namespace json;
+  if constexpr (std::derived_from<T, toy::EnumBase>) {
+    auto match = -1;
+    toy::templateForEach<T::count>([&]<size_t index>() {
+      toy::debugf("json: {}, str: {}", json, T{ index }.str());
+      if (json == T{ index }.str()) {
+        toy::debugf("choose!");
+        match = index;
+      }
+    });
+    toy::throwf(match != -1, "error deserialize enum");
+    return T{ static_cast<size_t>(match) };
+  } else if constexpr (std::same_as<T, glm::vec3>) {
+    return glm::vec3{ json[0].to<Number>(), json[1].to<Number>(), json[2].to<Number>() };
+  } else if constexpr (std::same_as<T, float>) {
+    return json.to<Number>();
   } else {
+    // this can not catched by concept check because if check, the compile will stop
     static_assert(false);
   }
 }

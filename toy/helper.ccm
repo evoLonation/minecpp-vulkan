@@ -111,6 +111,8 @@ public:
   Iterator       begin() { return _id2pointer.begin(); }
   Iterator       end() { return _id2pointer.end(); }
   decltype(auto) size() { return _id2pointer.size(); }
+  // todo: when have references still can move, but need change the autoloaders pointer to container
+  // todo: can also copy, but not copy any references
   RefContainer(const RefContainer& e) noexcept : RefContainer() {
     if (!e._id2pointer.empty()) {
       toy::throwf("ref container should not move or copy when have references");
@@ -125,11 +127,13 @@ public:
     if (!e._id2pointer.empty() || !_id2pointer.empty()) {
       toy::throwf("ref container should not move or copy when have references");
     }
+    return *this;
   }
   auto operator=(RefContainer&& e) noexcept -> RefContainer& {
     if (!e._id2pointer.empty() || !_id2pointer.empty()) {
       toy::throwf("ref container should not move or copy when have references");
     }
+    return *this;
   }
 };
 
@@ -305,11 +309,20 @@ struct StringLiteral {
 };
 
 template <size_t size, typename Func>
+decltype(auto) applyIndexSequence(Func&& func) {
+  return [&]<size_t... indices>(std::index_sequence<indices...> _) {
+    return func.template operator()<indices...>();
+  }(std::make_index_sequence<size>{});
+}
+
+template <size_t size, typename Func>
   requires(size == 0) || requires(Func&& func) { func.template operator()<0>(); }
 void templateForEach(Func&& func) {
-  [&]<size_t... indices>(std::index_sequence<indices...> _) {
-    (func.template operator()<indices>(), ...);
-  }(std::make_index_sequence<size>{});
+  if constexpr (size != 0) {
+    applyIndexSequence<size>([&]<size_t... indices>() {
+      (func.template operator()<indices>(), ...);
+    });
+  }
 }
 
 namespace test_refContainer {
