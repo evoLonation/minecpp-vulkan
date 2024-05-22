@@ -147,13 +147,13 @@ public:
   virtual void draw() = 0;
 };
 
-// todo: add depth test or something, make gui front regardless of the drawing order
 /**
  * @brief must call after input processor
  *
  */
 class Context : public toy::ProactiveSingleton<Context>,
-                private rd::DrawerLoader<rd::DrawStage::GUI>,
+                private rd::DrawRecorder,
+                private toy::HookLoader<Context, rd::DrawRecorder>,
                 private rd::LoopActionLoader<rd::LoopOrder::GUI_RENDER> {
   friend class DrawerLoader;
 
@@ -171,6 +171,12 @@ private:
   ImGuiIO* _io;
 
   vk::DescriptorPool _dp_pool;
+
+private:
+  friend toy::HookLoader<Context, rd::DrawRecorder>;
+  auto getContainer() -> toy::RefContainer<rd::DrawRecorder>& {
+    return rd::Drawer::StageContainer<rd::DrawStage::GUI>::getInstance();
+  }
 
 public:
   Context() {
@@ -242,12 +248,12 @@ public:
 
     slider("scale ratio", _scale, _min_scale, _max_scale);
     _io->FontGlobalScale = _scale / (_default_font_size * 1.0f / _base_font_size);
-    for (auto& drawer : _co_drawers) {
-      drawer.next();
+    for (auto* drawer : _co_drawers) {
+      drawer->next();
     }
     ImGui::End();
-    for (auto& drawer : _drawers) {
-      drawer.draw();
+    for (auto* drawer : _drawers) {
+      drawer->draw();
     }
     ImGui::Render();
   }
@@ -260,15 +266,9 @@ public:
   operator toy::RefContainer<toy::Generator>&() { return _co_drawers; }
 };
 
-struct DrawerLoader : toy::InterfaceLoader<Drawer> {
-  DrawerLoader() : toy::InterfaceLoader<Drawer>(Context::getInstance()._drawers) {}
-};
-
-class CoDrawer : public toy::Generator, public toy::AutoLoader<CoDrawer, toy::Generator> {
-public:
-  CoDrawer(toy::Generator generator)
-    : toy::Generator(std::move(generator)),
-      toy::AutoLoader<CoDrawer, toy::Generator>(Context::getInstance()) {}
+class DrawerLoader : public Drawer, public toy::HookLoader<DrawerLoader, Drawer> {
+  friend toy::HookLoader<DrawerLoader, Drawer>;
+  auto getContainer() -> toy::RefContainer<Drawer>& { return Context::getInstance()._drawers; }
 };
 
 } // namespace gui

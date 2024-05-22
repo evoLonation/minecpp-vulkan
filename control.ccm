@@ -33,80 +33,80 @@ auto cmdExecutorMoniter() -> toy::Generator {
   }
 }
 
-class ModelInput : public action::KeyboardLoader {
-private:
-  glm::mat4* _model;
-  float      _speed;
-  bool       _self;
+// class ModelInput : public action::KeyboardLoader {
+// private:
+//   glm::mat4* _model;
+//   float      _speed;
+//   bool       _self;
 
-  // action::KeyboardAction _action;
+//   // action::KeyboardAction _action;
 
-  gui::CoDrawer _co_drawer;
+//   gui::CoDrawer _co_drawer;
 
-  void run(const action::KeyboardContext& ctx) override {
-    using action::Keyboard;
-    switch (ctx.event.key) {
-    case Keyboard::KEY_A:
-      *_model = *_model * trans::translate(glm::vec3{ +_speed, .0f, .0f });
-      break;
-    case Keyboard::KEY_D:
-      *_model = *_model * trans::translate(glm::vec3{ -_speed, .0f, .0f });
-      break;
-    case Keyboard::KEY_W:
-      *_model = *_model * trans::translate(glm::vec3{ .0f, +_speed, .0f });
-      break;
-    case Keyboard::KEY_S:
-      *_model = *_model * trans::translate(glm::vec3{ .0f, -_speed, .0f });
-    default:
-      toy::throwf("wrong keyboard event");
-    }
-  }
-  void setInput() {
-    using action::Keyboard;
-    action::KeyboardLoader::load(
-      { Keyboard::KEY_A, Keyboard::KEY_D, Keyboard::KEY_W, Keyboard::KEY_S }
-    );
-  }
-  void clearInput() { action::KeyboardLoader::unRegist(); }
+//   void run(const action::KeyboardContext& ctx) override {
+//     using action::Keyboard;
+//     switch (ctx.event.key) {
+//     case Keyboard::KEY_A:
+//       *_model = *_model * trans::translate(glm::vec3{ +_speed, .0f, .0f });
+//       break;
+//     case Keyboard::KEY_D:
+//       *_model = *_model * trans::translate(glm::vec3{ -_speed, .0f, .0f });
+//       break;
+//     case Keyboard::KEY_W:
+//       *_model = *_model * trans::translate(glm::vec3{ .0f, +_speed, .0f });
+//       break;
+//     case Keyboard::KEY_S:
+//       *_model = *_model * trans::translate(glm::vec3{ .0f, -_speed, .0f });
+//     default:
+//       toy::throwf("wrong keyboard event");
+//     }
+//   }
+//   void setInput() {
+//     using action::Keyboard;
+//     action::KeyboardLoader::load(
+//       { Keyboard::KEY_A, Keyboard::KEY_D, Keyboard::KEY_W, Keyboard::KEY_S }
+//     );
+//   }
+//   void clearInput() { action::KeyboardLoader::unRegist(); }
 
-public:
-  ModelInput(glm::mat4& model, const std::string& label = "default")
-    : _model(&model), _speed(0.1f), _self(false), _co_drawer(draw()) {}
+// public:
+//   ModelInput(glm::mat4& model, const std::string& label = "default")
+//     : _model(&model), _speed(0.1f), _self(false), _co_drawer(draw()) {}
 
-  auto draw() -> toy::Generator {
-    auto  last_input = false;
-    auto  input = false;
-    auto  gui_set = false;
-    auto  axis = glm::vec3{ 1.0f, 0.0f, 0.0f };
-    auto  degree = float{};
-    auto& model = *_model;
-    while (co_yield 0) {
-      ImGui::Checkbox("Enable input control ?", &input);
-      if (last_input != input) {
-        if (input) {
-          setInput();
-        } else {
-          clearInput();
-        }
-      }
-      last_input = input;
-      ImGui::Checkbox("Move model self ?", &_self);
-      ImGui::Checkbox("Enable Gui Set Model", &gui_set);
-      if (gui_set) {
-        // gui::slider("location", _location);
-        // gui::slider("scale", _scale);
-        gui::slider("rotate axis", axis);
-        gui::slider("rotate degree", degree, 0.0f, 360.0f);
-        model = trans::rotate(axis, degree);
-      }
-    }
-  }
-  // todo: how to move coroutine?
-  ModelInput(const ModelInput&) noexcept = delete;
-  ModelInput(ModelInput&&) noexcept = delete;
-  auto operator=(const ModelInput&) noexcept -> ModelInput& = delete;
-  auto operator=(ModelInput&&) noexcept -> ModelInput& = delete;
-};
+//   auto draw() -> toy::Generator {
+//     auto  last_input = false;
+//     auto  input = false;
+//     auto  gui_set = false;
+//     auto  axis = glm::vec3{ 1.0f, 0.0f, 0.0f };
+//     auto  degree = float{};
+//     auto& model = *_model;
+//     while (co_yield 0) {
+//       ImGui::Checkbox("Enable input control ?", &input);
+//       if (last_input != input) {
+//         if (input) {
+//           setInput();
+//         } else {
+//           clearInput();
+//         }
+//       }
+//       last_input = input;
+//       ImGui::Checkbox("Move model self ?", &_self);
+//       ImGui::Checkbox("Enable Gui Set Model", &gui_set);
+//       if (gui_set) {
+//         // gui::slider("location", _location);
+//         // gui::slider("scale", _scale);
+//         gui::slider("rotate axis", axis);
+//         gui::slider("rotate degree", degree, 0.0f, 360.0f);
+//         model = trans::rotate(axis, degree);
+//       }
+//     }
+//   }
+//   // todo: how to move coroutine?
+//   ModelInput(const ModelInput&) noexcept = delete;
+//   ModelInput(ModelInput&&) noexcept = delete;
+//   auto operator=(const ModelInput&) noexcept -> ModelInput& = delete;
+//   auto operator=(ModelInput&&) noexcept -> ModelInput& = delete;
+// };
 
 auto cameraController(glm::mat4& view, glm::vec3 location = glm::vec3{ -1.0f, 0.0f, 0.0f })
   -> toy::Generator {

@@ -14,8 +14,7 @@ import toy;
 
 export namespace rd {
 
-class DrawRecorder {
-public:
+struct DrawRecorder {
   virtual void record(VkCommandBuffer cmdbuf, int in_flight_index) = 0;
 };
 
@@ -197,8 +196,8 @@ public:
           ctx.extent,
           [&](auto cmdbuf) {
             for (auto& stage_recorders : _recorders | views::values) {
-              for (auto& recorder : stage_recorders) {
-                recorder.record(cmdbuf, _in_flight_index);
+              for (auto* recorder : stage_recorders) {
+                recorder->record(cmdbuf, _in_flight_index);
               }
             }
           },
@@ -243,7 +242,5 @@ public:
   void loopAction(uint32_t _) override { draw(); }
 };
 
-template <DrawStage stage>
-using DrawerLoader = toy::InterfaceLoader<DrawRecorder, Drawer::StageContainer<stage>>;
 
 } // namespace rd

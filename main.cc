@@ -43,7 +43,7 @@ int main() {
     );
     auto drawer = rd::Drawer{};
     auto gui_ctx = gui::Context{};
-    auto executor_moniter = gui::CoDrawer{ control::cmdExecutorMoniter() };
+    // auto executor_moniter = gui::CoDrawer{ control::cmdExecutorMoniter() };
 
     // auto pipeline = rd::Pipeline{ "hello.vert",
     //                                   "hello.frag",
@@ -54,51 +54,51 @@ int main() {
     //                                               rd::ResourceType::UNIFORM,
     //                                               rd::ResourceType::SAMPLER },
     //                                   std::nullopt };
-    auto stencil_options = vk::getOutliningStencil();
-    stencil_options.first.dynamic_reference = false;
-    stencil_options.second.dynamic_reference = true;
-    auto pipeline_outline_1 = rd::Pipeline{ "hello.vert",
-                                            "hello.frag",
-                                            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-                                            model::Vertex::getVertexInfo(),
-                                            std::array{ rd::ResourceType::UNIFORM,
-                                                        rd::ResourceType::UNIFORM,
-                                                        rd::ResourceType::UNIFORM,
-                                                        rd::ResourceType::SAMPLER },
-                                            stencil_options.first };
-    auto pipeline_outline_2 = rd::Pipeline{
-      "outline.vert",
-      "outline.frag",
-      VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-      model::Vertex::getVertexInfo(),
-      std::array{ rd::ResourceType::UNIFORM, rd::ResourceType::UNIFORM, rd::ResourceType::UNIFORM },
-      stencil_options.second
-    };
-    auto [vertex_data, vertex_indices] = model::getModelInfo("model/viking_room.obj");
-    auto vertex_buffer = rd::VertexBuffer{ std::span<const model::Vertex>{ vertex_data } };
-    auto index_buffer = rd::IndexBuffer{ vertex_indices };
-    auto sampled_texture = rd::SampledTexture{ "model/viking_room.png", true };
+    // auto stencil_options = vk::getOutliningStencil();
+    // stencil_options.first.dynamic_reference = false;
+    // stencil_options.second.dynamic_reference = true;
+    // auto pipeline_outline_1 = rd::Pipeline{ "hello.vert",
+    //                                         "hello.frag",
+    //                                         VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    //                                         model::Vertex::getVertexInfo(),
+    //                                         std::array{ rd::ResourceType::UNIFORM,
+    //                                                     rd::ResourceType::UNIFORM,
+    //                                                     rd::ResourceType::UNIFORM,
+    //                                                     rd::ResourceType::SAMPLER },
+    //                                         stencil_options.first };
+    // auto pipeline_outline_2 = rd::Pipeline{
+    //   "outline.vert",
+    //   "outline.frag",
+    //   VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    //   model::Vertex::getVertexInfo(),
+    //   std::array{ rd::ResourceType::UNIFORM, rd::ResourceType::UNIFORM, rd::ResourceType::UNIFORM },
+    //   stencil_options.second
+    // };
+    // auto [vertex_data, vertex_indices] = model::getModelInfo("model/viking_room.obj");
+    // auto vertex_buffer = rd::VertexBuffer{ std::span<const model::Vertex>{ vertex_data } };
+    // auto index_buffer = rd::IndexBuffer{ vertex_indices };
+    // auto sampled_texture = rd::SampledTexture{ "model/viking_room.png", true };
 
-    auto view = trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f });
-    auto view_control = gui::CoDrawer{ control::cameraController(view) };
-    auto proj = trans::proj::perspective({
-      .width = 1920,
-      .height = 1080,
-    });
-    auto proj_iv = trans::proj::perspectiveInverse({
-      .width = 1920,
-      .height = 1080,
-    });
+    // auto view = trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f });
+    // auto view_control = gui::CoDrawer{ control::cameraController(view) };
+    // auto proj = trans::proj::perspective({
+    //   .width = 1920,
+    //   .height = 1080,
+    // });
+    // auto proj_iv = trans::proj::perspectiveInverse({
+    //   .width = 1920,
+    //   .height = 1080,
+    // });
 
-    auto model_data = trans::model::create();
+    // auto model_data = trans::model::create();
     // auto cursor_dragger = control::CursorDragger{ proj, proj_iv, view, model_data };
-    auto outline_data = model_data * trans::scale(glm::vec3{ 1.1f });
-    auto uniforms = std::vector<rd::Uniform<glm::mat4>>{};
-    uniforms.reserve(4);
-    uniforms.emplace_back(view);
-    uniforms.emplace_back(proj);
-    uniforms.emplace_back(model_data);
-    uniforms.emplace_back(outline_data);
+    // auto outline_data = model_data * trans::scale(glm::vec3{ 1.1f });
+    // auto uniforms = std::vector<rd::Uniform<glm::mat4>>{};
+    // uniforms.reserve(4);
+    // uniforms.emplace_back(view);
+    // uniforms.emplace_back(proj);
+    // uniforms.emplace_back(model_data);
+    // uniforms.emplace_back(outline_data);
     // auto draw_unit = rd::DrawUnit{ pipeline_outline_1,
     //                                vertex_buffer,
     //                                index_buffer,
@@ -112,17 +112,17 @@ int main() {
     //                                              &uniforms[0], &uniforms[1], &uniforms[3] },
     //                                            1 };
     // auto model_control = control::ModelInput{ model_datas[0] };
-    auto pipeline_axis = rd::Pipeline{
-      "axis.vert",
-      "axis.frag",
-      VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
-      axis::Vertex::getVertexInfo(),
-      std::array{ rd::ResourceType::UNIFORM, rd::ResourceType::UNIFORM, rd::ResourceType::UNIFORM },
-      std::nullopt
-    };
-    auto axis_vertex_buffer = rd::VertexBuffer::create<axis::Vertex>(axis::axis_model);
-    auto axis_index_buffer = rd::IndexBuffer{ views::iota(uint16_t(0), axis::axis_model.size()) |
-                                              ranges::to<std::vector>() };
+    // auto pipeline_axis = rd::Pipeline{
+    //   "axis.vert",
+    //   "axis.frag",
+    //   VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
+    //   axis::Vertex::getVertexInfo(),
+    //   std::array{ rd::ResourceType::UNIFORM, rd::ResourceType::UNIFORM, rd::ResourceType::UNIFORM },
+    //   std::nullopt
+    // };
+    // auto axis_vertex_buffer = rd::VertexBuffer::create<axis::Vertex>(axis::axis_model);
+    // auto axis_index_buffer = rd::IndexBuffer{ views::iota(uint16_t(0), axis::axis_model.size()) |
+    //                                           ranges::to<std::vector>() };
     // auto axis_draw_unit =
     //   rd::DrawUnit{ pipeline_axis,
     //                 axis_vertex_buffer,

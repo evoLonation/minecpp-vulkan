@@ -93,17 +93,18 @@ private:
     _state.rotate_y = std::clamp(_state.rotate_y, -90.0f, 90.0f);
     compute_view();
   }
-  void init(const action::ActionContext& ctx, const CameraState& state) {
+
+public:
+  CameraBase(const action::ActionContext& ctx, const CameraState& state)
+    : action::KeyboardLoader({
+        action::Keyboard::KEY_S,
+        action::Keyboard::KEY_W,
+        action::Keyboard::KEY_A,
+        action::Keyboard::KEY_D,
+        action::Keyboard::KEY_Z,
+        action::Keyboard::KEY_X,
+      }) {
     _state = state;
-    using Keyboard = action::Keyboard;
-    action::KeyboardLoader::load({
-      Keyboard::KEY_S,
-      Keyboard::KEY_W,
-      Keyboard::KEY_A,
-      Keyboard::KEY_D,
-      Keyboard::KEY_Z,
-      Keyboard::KEY_X,
-    });
     compute_view();
     _trans_proj = trans::proj::perspective({
       .width = ctx.screen.width,
@@ -112,77 +113,68 @@ private:
     });
   }
 
-public:
-  CameraBase() = default;
-  CameraBase(const action::ActionContext& ctx, const CameraState& state) { init(ctx, state); }
   CameraBase(
     const action::ActionContext& ctx,
     const glm::vec3&             position,
     const glm::vec3&             target,
     float                        fovy_degree
-  ) {
-    auto state = CameraState{
-      .fovy_degree = fovy_degree,
-    };
-    auto front = target - position;
-    if (trans::eq(front.x, 0) && trans::eq(front.y, 0)) {
-      if (trans::eq(front.z, 0)) {
-        toy::throwf(
-          "the front vector = {} which can't compute _rotate_y and _rotate_z",
-          std::tuple{ front.x, front.y, front.z }
-        );
-      }
-      state.rotate_z = 0.0f;
-      state.rotate_y = front.z > 0 ? 90.0f : -90.0f;
-    } else {
-      auto axis_x = glm::vec3{ 1.0f, 0.0f, 0.0f };
-      {
-        // map front to xy plane
-        auto front_xy = glm::vec2{ front.x, front.y };
-        // compute angle between (1, 0) and front_xy
-        auto axis_xy = glm::vec2{ 1.0f, 0.0f };
-        state.rotate_z =
-          glm::degrees(glm::acos(glm::dot(axis_xy, front_xy) / glm::length(front_xy)));
-        if (trans::cross(axis_xy, front_xy) > 0) {
-          state.rotate_z = -state.rotate_z;
+  )
+    : CameraBase(ctx, [&]() {
+        auto state = CameraState{
+          .fovy_degree = fovy_degree,
+        };
+        auto front = target - position;
+        if (trans::eq(front.x, 0) && trans::eq(front.y, 0)) {
+          if (trans::eq(front.z, 0)) {
+            toy::throwf(
+              "the front vector = {} which can't compute _rotate_y and _rotate_z",
+              std::tuple{ front.x, front.y, front.z }
+            );
+          }
+          state.rotate_z = 0.0f;
+          state.rotate_y = front.z > 0 ? 90.0f : -90.0f;
+        } else {
+          auto axis_x = glm::vec3{ 1.0f, 0.0f, 0.0f };
+          {
+            // map front to xy plane
+            auto front_xy = glm::vec2{ front.x, front.y };
+            // compute angle between (1, 0) and front_xy
+            auto axis_xy = glm::vec2{ 1.0f, 0.0f };
+            state.rotate_z =
+              glm::degrees(glm::acos(glm::dot(axis_xy, front_xy) / glm::length(front_xy)));
+            if (trans::cross(axis_xy, front_xy) > 0) {
+              state.rotate_z = -state.rotate_z;
+            }
+          }
+          {
+            // map front to xy plane (leave z to 0)
+            auto front_xy = glm::vec3{ front.x, front.y, 0.0f };
+            auto cross = glm::cross(front_xy, front);
+            toy::throwf(trans::eq(cross.z, 0), "cross.z != 0 ({})", cross.z);
+            state.rotate_y = glm::degrees(
+              glm::asin(glm::length(cross) / glm::length(front_xy) / glm::length(front))
+            );
+            if (trans::cross(glm::vec2{ front_xy.x, front_xy.y }, glm::vec2{ cross.x, cross.y }) > 0) {
+              state.rotate_y = -state.rotate_y;
+            }
+          }
         }
-      }
-      {
-        // map front to xy plane (leave z to 0)
-        auto front_xy = glm::vec3{ front.x, front.y, 0.0f };
-        auto cross = glm::cross(front_xy, front);
-        toy::throwf(trans::eq(cross.z, 0), "cross.z != 0 ({})", cross.z);
-        state.rotate_y =
-          glm::degrees(glm::asin(glm::length(cross) / glm::length(front_xy) / glm::length(front)));
-        if (trans::cross(glm::vec2{ front_xy.x, front_xy.y }, glm::vec2{ cross.x, cross.y }) > 0) {
-          state.rotate_y = -state.rotate_y;
-        }
-      }
-    }
 
-    toy::debugf("_position: {}", std::tuple{ position.x, position.y, position.z });
-    toy::debugf("_rotate_z: {}", state.rotate_z);
-    toy::debugf("_rotate_y: {}", state.rotate_y);
-    state.translate = -position;
-    init(ctx, state);
-  }
-
-  CameraBase(const CameraBase&) noexcept = default;
-  CameraBase(CameraBase&&) noexcept = default;
-  auto operator=(const CameraBase&) noexcept -> CameraBase& = default;
-  auto operator=(CameraBase&&) noexcept -> CameraBase& = default;
+        toy::debugf("_position: {}", std::tuple{ position.x, position.y, position.z });
+        toy::debugf("_rotate_z: {}", state.rotate_z);
+        toy::debugf("_rotate_y: {}", state.rotate_y);
+        state.translate = -position;
+        return state;
+      }()) {}
 };
 
 class Camera : public CameraBase {
 private:
-  rd::Uniform<glm::mat4> _uniform_view;
-  rd::Uniform<glm::mat4> _uniform_proj;
+  rd::Uniform<glm::mat4> _uniform_view = _trans_view;
+  rd::Uniform<glm::mat4> _uniform_proj = _trans_proj;
 
 public:
-  Camera(CameraBase base) : CameraBase(std::move(base)) {
-    _uniform_view = { _trans_view };
-    _uniform_proj = { _trans_proj };
-  }
+  using CameraBase::CameraBase;
 
   Camera(const Camera&) noexcept = delete;
   Camera(Camera&&) noexcept = delete;
@@ -212,7 +204,7 @@ struct CameraResource {
     const glm::vec3&             target,
     float                        fovy_degree
   ) -> Camera {
-    return Camera{ { ctx, position, target, fovy_degree } };
+    return { ctx, position, target, fovy_degree };
   }
   static auto serialize(const action::ActionContext& _, const Camera& camera)
     -> std::tuple<glm::vec3, float, float, float, float, float> {
@@ -231,7 +223,7 @@ struct CameraResource {
     float                        move_speed,
     float                        rotate_speed
   ) -> Camera {
-    return CameraBase{
+    return {
       ctx,
       CameraState{
         translate,
@@ -247,34 +239,37 @@ struct CameraResource {
 
 static_assert(ResourceMetable<CameraResource>, "");
 
-class DrawUnit {
-private:
+struct DrawUnitInfo {
   rd::VertexBuffer   _vertex_buffer;
   rd::IndexBuffer    _index_buffer;
   rd::SampledTexture _sampled_texture;
   glm::mat4          _trans_model;
-
-  rd::Uniform<glm::mat4> _uniform_model;
-
-  rd::DrawUnit _draw_unit;
-
-public:
-  DrawUnit(const action::ActionContext& ctx, rd::Pipeline& pipeline, Camera& camera) {
+  DrawUnitInfo() {
     auto [vertex_data, vertex_indices] = model::getModelInfo("model/viking_room.obj");
     _vertex_buffer = rd::VertexBuffer{ std::span<const model::Vertex>{ vertex_data } };
     _index_buffer = rd::IndexBuffer{ vertex_indices };
     _sampled_texture = rd::SampledTexture{ "model/viking_room.png", true };
     _trans_model = trans::model::create();
-    _uniform_model = rd::Uniform<glm::mat4>{ _trans_model };
-    _draw_unit = rd::DrawUnit{
-      pipeline,
-      _vertex_buffer,
-      _index_buffer,
-      std::array<rd::Resource*, 4>{
-        &camera.getViewUniform(), &camera.getProjUniform(), &_uniform_model, &_sampled_texture },
-      std::nullopt,
-    };
   }
+};
+
+class DrawUnit : public DrawUnitInfo {
+private:
+  rd::Uniform<glm::mat4> _uniform_model;
+
+  rd::DrawUnit _draw_unit;
+
+public:
+  DrawUnit(const action::ActionContext& ctx, rd::Pipeline& pipeline, Camera& camera)
+    : DrawUnitInfo(), _uniform_model(_trans_model),
+      _draw_unit(
+        pipeline,
+        _vertex_buffer,
+        _index_buffer,
+        std::array<rd::Resource*, 4>{
+          &camera.getViewUniform(), &camera.getProjUniform(), &_uniform_model, &_sampled_texture },
+        std::nullopt
+      ) {}
   DrawUnit(const DrawUnit&) noexcept = delete;
   DrawUnit(DrawUnit&&) noexcept = delete;
   auto operator=(const DrawUnit&) noexcept -> DrawUnit& = delete;

@@ -86,7 +86,8 @@ struct EnumSet {
       }
     }
     using difference_type = std::ptrdiff_t;
-    auto operator*() -> EnumT { return (EnumT)_index; }
+    using value_type = EnumT;
+    auto operator*() const -> EnumT { return (EnumT)_index; }
     auto operator++() -> Iterator& {
       _index++;
       while (_index < _set->_bitset.size() && !_set->_bitset[_index]) {
@@ -130,6 +131,7 @@ namespace test_EnumSet {
 enum class A { A, B, C, MAX_ENUM_VALUE };
 
 void test() {
+  static_assert(ranges::input_range<EnumSet<A>>);
   auto set = EnumSet<A>{};
   for (A a : set) {
     toy::throwf(a != A::B && a != A::MAX_ENUM_VALUE, "enumset test wrong");

@@ -50,255 +50,120 @@ public:
   ProactiveSingleton(ProactiveSingleton&&) { _instance_ptr = &self(); }
 };
 
-template <typename Derived, typename T = Derived>
-class AutoLoader;
-
-/**
- * @brief 保证RefContainer在所有还没有unregist的AutoLoader之后析构
- *
- * @tparam T
- */
 template <typename T>
-class RefContainer {
-  template <typename, typename>
-  friend class AutoLoader;
-  template <typename, typename>
-  friend class MultiLoader;
-
-private:
-  std::map<size_t, T*>           _id2pointer;
-  std::unordered_map<T*, size_t> _pointer2id;
-
-  size_t _max_id;
-
-  void add(T* e) {
-    _id2pointer.emplace(_max_id + 1, e);
-    _pointer2id.emplace(e, _max_id + 1);
-    _max_id++;
-  }
-  void remove(T* e) {
-    auto id = _pointer2id.at(e);
-    _pointer2id.erase(e);
-    _id2pointer.erase(id);
-  }
-
-public:
-  class Iterator {
-  private:
-    ranges::iterator_t<std::map<size_t, T*>> _base;
-
-  public:
-    using difference_type = std::ptrdiff_t;
-    using value_type = T;
-    Iterator() = default;
-    Iterator(ranges::iterator_t<std::map<size_t, T*>> base) : _base(base) {}
-    auto operator*() -> value_type& { return *_base->second; }
-    auto operator*() const -> value_type& { return *_base->second; }
-    auto operator++(int) -> Iterator { return _base++; }
-    auto operator++() -> Iterator& {
-      _base++;
-      return *this;
-    }
-    auto operator--(int) -> Iterator { return _base--; }
-    auto operator--() -> Iterator& {
-      _base--;
-      return *this;
-    }
-    friend auto operator==(Iterator a, Iterator b) -> bool { return a._base == b._base; }
-  };
-
-  RefContainer() : _max_id(0) {}
-  Iterator       begin() { return _id2pointer.begin(); }
-  Iterator       end() { return _id2pointer.end(); }
-  decltype(auto) size() { return _id2pointer.size(); }
-  // todo: when have references still can move, but need change the autoloaders pointer to container
-  // todo: can also copy, but not copy any references
-  RefContainer(const RefContainer& e) noexcept : RefContainer() {
-    if (!e._id2pointer.empty()) {
-      toy::throwf("ref container should not move or copy when have references");
-    }
-  }
-  RefContainer(RefContainer&& e) noexcept : RefContainer() {
-    if (!e._id2pointer.empty()) {
-      toy::throwf("ref container should not move or copy when have references");
-    }
-  }
-  auto operator=(const RefContainer& e) noexcept -> RefContainer& {
-    if (!e._id2pointer.empty() || !_id2pointer.empty()) {
-      toy::throwf("ref container should not move or copy when have references");
-    }
-    return *this;
-  }
-  auto operator=(RefContainer&& e) noexcept -> RefContainer& {
-    if (!e._id2pointer.empty() || !_id2pointer.empty()) {
-      toy::throwf("ref container should not move or copy when have references");
-    }
-    return *this;
-  }
-};
+using RefContainer = std::unordered_set<T*>;
 
 /**
- * @brief 自动装载到RefContainer<T>中
+ * @brief 自动装载到RefContainer<Derived>中
  *
  * @tparam Derived CRTP中的子类
- * @tparam T 默认为Derived，可以设置为Derived的父类
  */
 template <typename Derived, typename T = Derived>
-class AutoLoader {
+class RefLoader {
 private:
   RefContainer<T>* _container;
 
-private:
-  template <typename _ = void>
-    requires std::derived_from<Derived, T>
-  auto self() -> T& {
-    return static_cast<T&>(static_cast<Derived&>(*this));
-  }
+  auto self() -> T& { return static_cast<T&>(static_cast<Derived&>(*this)); }
   void init(RefContainer<T>& container) {
     _container = &container;
-    if (_container != nullptr) {
-      _container->add(&self());
-    }
+    _container->emplace(&self());
   }
   void remove() {
     if (_container != nullptr) {
-      _container->remove(&self());
+      _container->erase(&self());
     }
   }
-  void setMoved() { _container = nullptr; }
 
 public:
-  AutoLoader() : _container(nullptr) {}
-  AutoLoader(RefContainer<T>& container) { init(container); }
+  RefLoader() : _container(nullptr) {}
+  RefLoader(RefContainer<Derived>& container) { init(container); }
+  ~RefLoader() { remove(); }
 
-  ~AutoLoader() { remove(); }
-
-  AutoLoader(const AutoLoader& e) : AutoLoader{ *e._container } {}
-  AutoLoader(AutoLoader&& e) : AutoLoader{ *e._container } {
-    e.remove();
-    e.setMoved();
-  }
-  auto operator=(const AutoLoader& e) -> AutoLoader& {
-    remove();
-    init(*e._container);
-    return *this;
-  }
-  auto operator=(AutoLoader&& e) -> AutoLoader& {
-    remove();
-    init(*e._container);
-    e.remove();
-    e.setMoved();
-    return *this;
-  }
-  void regist(RefContainer<T>& container) {
-    remove();
-    init(container);
-  }
-  void unRegist() {
-    remove();
-    setMoved();
-  }
+  RefLoader(const RefLoader&) noexcept = delete;
+  RefLoader(RefLoader&&) noexcept = delete;
+  auto operator=(const RefLoader&) noexcept -> RefLoader& = delete;
+  auto operator=(RefLoader&&) noexcept -> RefLoader& = delete;
 };
 
+template <typename R, typename T>
+concept RefContainers_1 =
+  ranges::range<R> && std::same_as<RefContainer<T>&, ranges::range_reference_t<R>>;
+template <typename R, typename T>
+concept RefContainers_2 =
+  ranges::range<R> && std::same_as<RefContainer<T>*, ranges::range_value_t<R>>;
+template <typename R, typename T>
+concept RefContainers_3 = std::same_as<RefContainer<T>&, R>;
+template <typename R, typename T>
+concept RefContainers_4 = std::same_as<RefContainer<T>*, R>;
+template <typename R, typename T>
+concept RefContainers =
+  RefContainers_1<R, T> || RefContainers_2<R, T> || RefContainers_3<R, T> || RefContainers_4<R, T>;
+
+/**
+ * @brief ref loader by "hook" to get container provided by derived
+ *
+ * @tparam Derived. This class must not have any members or parent class which related to function
+ * getContainer() and the construction order is after HookLoader
+ */
 template <typename Derived, typename T = Derived>
-class MultiLoader {
-  friend RefContainer<T>;
-
-private:
-  std::unordered_set<RefContainer<T>*> _containers;
-
+class HookLoader {
 private:
   template <typename _ = void>
-    requires std::derived_from<Derived, T>
-  auto self() -> T& {
-    return static_cast<T&>(static_cast<Derived&>(*this));
+    requires requires(Derived& e) {
+      { e.getContainer() } -> RefContainers<T>;
+    }
+  auto self() -> Derived& {
+    return static_cast<Derived&>(*this);
   }
-  template <typename RangeT>
-    requires std::convertible_to<ranges::range_reference_t<RangeT>, RefContainer<T>&> ||
-             std::convertible_to<ranges::range_reference_t<RangeT>, RefContainer<T>*>
-  void load(RangeT&& containers) {
-    if constexpr (std::convertible_to<ranges::range_reference_t<RangeT>, RefContainer<T>&>) {
-      for (RefContainer<T>& container : containers) {
-        toy::throwf(
-          !_containers.contains(&container), "init with container which already in _containers"
-        );
-        _containers.insert(&container);
-        container.add(&self());
+  auto target() -> T& { return static_cast<T&>(self()); }
+
+  decltype(auto) getContainer() { return self().getContainer(); }
+
+  void init() {
+    decltype(auto) containers = getContainer();
+    if constexpr (RefContainers_1<decltype(containers), T>) {
+      for (auto& container : containers) {
+        container.emplace(&target());
       }
+    } else if constexpr (RefContainers_2<decltype(containers), T>) {
+      for (auto* container : containers) {
+        container->emplace(&target());
+      }
+    } else if constexpr (RefContainers_3<decltype(containers), T>) {
+      containers.emplace(&target());
+    } else if constexpr (RefContainers_4<decltype(containers), T>) {
+      containers->emplace(&target());
     } else {
-      for (RefContainer<T>* container : containers) {
-        toy::throwf(
-          !_containers.contains(container), "init with container which already in _containers"
-        );
-        _containers.insert(container);
-        container->add(&self());
+      static_assert(false);
+    }
+  }
+  void remove() {
+    decltype(auto) containers = getContainer();
+    if constexpr (RefContainers_1<decltype(containers), T>) {
+      for (auto& container : containers) {
+        container.erase(&target());
       }
+    } else if constexpr (RefContainers_2<decltype(containers), T>) {
+      for (auto* container : containers) {
+        container->erase(&target());
+      }
+    } else if constexpr (RefContainers_3<decltype(containers), T>) {
+      containers.erase(&target());
+    } else if constexpr (RefContainers_4<decltype(containers), T>) {
+      containers->erase(&target());
+    } else {
+      static_assert(false);
     }
-  }
-  void unload() {
-    for (auto* container : _containers) {
-      container->remove(&self());
-    }
-    _containers.clear();
-  }
-  void unload(RefContainer<T>& container) {
-    toy::throwf(
-      _containers.contains(&container), "unload error: _containers does not contain container"
-    );
-    _containers.erase(&container);
-    container.remove(&self());
   }
 
 public:
-  MultiLoader() = default;
-  MultiLoader(auto&& containers) { load(std::forward<decltype(containers)>(containers)); }
-  ~MultiLoader() { unload(); }
+  HookLoader() { init(); }
+  ~HookLoader() { remove(); }
 
-  MultiLoader(const MultiLoader& e) : MultiLoader{ e._containers } {}
-  MultiLoader(MultiLoader&& e) : MultiLoader{ e._containers } { e.unload(); }
-  auto operator=(const MultiLoader& e) -> MultiLoader& {
-    unload();
-    load(e._containers);
-    return *this;
-  }
-  auto operator=(MultiLoader&& e) -> MultiLoader& {
-    unload();
-    load(e._containers);
-    e.unload();
-    return *this;
-  }
-  void regist(RefContainer<T>& container) { load(std::array<RefContainer<T>*, 1>{ &container }); }
-  void unRegist() { unload(); }
-  void unRegist(RefContainer<T>& container) { unload(container); }
-};
-
-template <typename Interface, typename Container = RefContainer<Interface>>
-class InterfaceLoader : public Interface,
-                        private toy::AutoLoader<InterfaceLoader<Interface, Container>, Interface> {
-private:
-  using AutoLoader = toy::AutoLoader<InterfaceLoader<Interface, Container>, Interface>;
-  friend AutoLoader;
-
-  template <typename _ = void>
-    requires std::convertible_to<Container, RefContainer<Interface>>
-  auto conceptCheck() {}
-
-public:
-  template <typename _ = void>
-    requires(!std::derived_from<Container, ProactiveSingleton<Container>>)
-  InterfaceLoader() {
-    conceptCheck();
-  }
-  template <typename _ = void>
-    requires std::derived_from<Container, ProactiveSingleton<Container>>
-  InterfaceLoader() : AutoLoader(Container::getInstance()) {
-    conceptCheck();
-  }
-  template <typename _ = void>
-    requires(!std::derived_from<Container, ProactiveSingleton<Container>>)
-  InterfaceLoader(Container& container) : AutoLoader(container) {
-    conceptCheck();
-  }
+  HookLoader(const HookLoader&) noexcept = delete;
+  HookLoader(HookLoader&&) noexcept = delete;
+  auto operator=(const HookLoader&) noexcept -> HookLoader& = delete;
+  auto operator=(HookLoader&&) noexcept -> HookLoader& = delete;
 };
 
 // helper for string literal as non-type template parameter
@@ -326,84 +191,44 @@ void templateForEach(Func&& func) {
 }
 
 namespace test_refContainer {
-class B : public AutoLoader<B> {
+class B : public RefLoader<B> {
 public:
   int num;
-  B(RefContainer<B>& container, int num) : AutoLoader<B>(container), num(num) {}
+  B(RefContainer<B>& container, int num) : RefLoader<B>(container), num(num) {}
 };
 class A : public RefContainer<B> {};
 
 void test_base() {
   toy::debug("start test refcontainer");
-  static_assert(ranges::sized_range<A>, "");
-  static_assert(ranges::bidirectional_range<A>, "");
-  static_assert(ranges::output_range<A, B>, "");
   auto a = A{};
   auto b1 = B{ a, 1 };
   {
     auto b2 = B{ a, 2 };
     auto b3 = B{ a, 3 };
-    toy::debug(a | views::transform([](auto e) { return e.num; }));
+    toy::debug(a | views::transform([](auto& e) { return e->num; }));
   }
-  toy::debug(a | views::transform([](auto e) { return e.num; }));
-  {
-    auto b2 = b1;
-    toy::debug(a | views::transform([](auto e) { return e.num; }));
-    auto b3 = std::move(b2);
-    toy::debug(a | views::transform([](auto e) { return e.num; }));
-  }
-  toy::debug(a | views::transform([](auto e) { return e.num; }));
+  toy::debug(a | views::transform([](auto& e) { return e->num; }));
 }
 
-class M : public MultiLoader<M> {
+class M : public HookLoader<M> {
 public:
-  using MultiLoader<M>::MultiLoader;
+  M() = default;
+  auto getContainer() -> RefContainer<M>&;
+  M(const M&) noexcept = delete;
+  M(M&&) noexcept = delete;
+  auto operator=(const M&) noexcept -> M& = delete;
+  auto operator=(M&&) noexcept -> M& = delete;
 };
-class C1 : public RefContainer<M> {};
+class C1 : public RefContainer<M>, public ProactiveSingleton<C1> {};
+auto M::getContainer() -> RefContainer<M>& { return C1::getInstance(); }
 
 void test_MultiLoader() {
-  auto containers = std::array{ C1{}, C1{}, C1{} };
+  auto c = C1{};
   {
-    auto m1 = M{ containers | views::take(2) };
-    // m1.regist(containers[0]);
-    toy::throwf(&*containers[0].begin() == &m1, "test multiloader error");
-    toy::throwf(&*containers[1].begin() == &m1, "test multiloader error");
-    toy::throwf(containers[2].begin() == containers[2].end(), "test multiloader error");
-    m1.regist(containers[2]);
-    toy::throwf(&*containers[2].begin() == &m1, "test multiloader error");
-    m1.unRegist(containers[1]);
-    toy::throwf(containers[1].begin() == containers[1].end(), "test multiloader error");
+    auto m = M{};
+    toy::throwf(c.size() == 1, "error");
   }
-  toy::throwf(containers[0].begin() == containers[0].end(), "test multiloader error");
-}
-
-class Interface {
-  virtual void foo() = 0;
-};
-class Container {
-  RefContainer<Interface> interfaces;
-
-public:
-  operator RefContainer<Interface>&() { return interfaces; }
-};
-class Impl : public InterfaceLoader<Interface, Container> {
-  void foo() override {}
-
-public:
-  Impl(Container& container) : InterfaceLoader<Interface, Container>(container) {}
-};
-class ContainerSingleton : public RefContainer<Interface>,
-                           public ProactiveSingleton<ContainerSingleton> {};
-class ImplForSingleton : public InterfaceLoader<Interface, ContainerSingleton> {
-  void foo() override {}
-};
-
-void test_interfaceLoader() {
-  auto container = Container{};
-  auto impl = Impl{ container };
-  auto singleton = ContainerSingleton{};
-  auto impl2 = ImplForSingleton{};
-  // impl2.regist(); private member
+  toy::throwf(c.size() == 0, "error");
 }
 
 } // namespace test_refContainer

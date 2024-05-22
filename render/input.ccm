@@ -437,17 +437,26 @@ private:
   inline static std::map<GLFWwindow*, InputProcessor*> _instance_map;
 
 public:
-  struct KeyboardListenerLoader : toy::InterfaceLoader<KeyboardListener> {
-    KeyboardListenerLoader()
-      : toy::InterfaceLoader<KeyboardListener>(InputProcessor::getInstance()._keyboard_listeners) {}
+  class KeyboardListenerLoader : public KeyboardListener,
+                                 public toy::HookLoader<KeyboardListenerLoader, KeyboardListener> {
+    friend toy::HookLoader<KeyboardListenerLoader, KeyboardListener>;
+    auto getContainer() -> toy::RefContainer<KeyboardListener>& {
+      return InputProcessor::getInstance()._keyboard_listeners;
+    }
   };
-  struct MouseListenerLoader : toy::InterfaceLoader<MouseListener> {
-    MouseListenerLoader()
-      : toy::InterfaceLoader<MouseListener>(InputProcessor::getInstance()._mouse_listeners) {}
+  class MouseListenerLoader : public MouseListener,
+                              public toy::HookLoader<MouseListenerLoader, MouseListener> {
+    friend toy::HookLoader<MouseListenerLoader, MouseListener>;
+    auto getContainer() -> toy::RefContainer<MouseListener>& {
+      return InputProcessor::getInstance()._mouse_listeners;
+    }
   };
-  struct CursorListenerLoader : toy::InterfaceLoader<CursorListener> {
-    CursorListenerLoader()
-      : toy::InterfaceLoader<CursorListener>(InputProcessor::getInstance()._cursor_listeners) {}
+  class CursorListenerLoader : public CursorListener,
+                               public toy::HookLoader<CursorListenerLoader, CursorListener> {
+    friend toy::HookLoader<CursorListenerLoader, CursorListener>;
+    auto getContainer() -> toy::RefContainer<CursorListener>& {
+      return InputProcessor::getInstance()._cursor_listeners;
+    }
   };
 
 private:
@@ -494,8 +503,8 @@ public:
       instance._cursor_state.y_move = (int32_t)y - (int32_t)instance._cursor_state.y;
       instance._cursor_state.x = x;
       instance._cursor_state.y = y;
-      for (auto& listener : instance._cursor_listeners) {
-        listener.listen(instance._cursor_state);
+      for (auto* listener : instance._cursor_listeners) {
+        listener->listen(instance._cursor_state);
       }
     });
     setCursorVisible(true);
@@ -505,9 +514,7 @@ public:
     if (action == GLFW_REPEAT) {
       return;
     }
-    toy::throwf(
-      action == GLFW_PRESS || action == GLFW_RELEASE, "action equal to another value"
-    );
+    toy::throwf(action == GLFW_PRESS || action == GLFW_RELEASE, "action equal to another value");
     auto press = action == GLFW_PRESS;
     toy::throwf(
       press == (!states.contains(key) || states.at(key).state == ButtonState::RELEASE),
@@ -582,17 +589,17 @@ public:
     _cursor_state.x_move = 0;
     _cursor_state.y_move = 0;
     glfwPollEvents();
-    for (auto& listener : _keyboard_listeners) {
+    for (auto* listener : _keyboard_listeners) {
       for (auto& [key, state] : _key_states) {
-        listener.listen({
+        listener->listen({
           .key = key,
           .state = state,
         });
       }
     }
-    for (auto& listener : _mouse_listeners) {
+    for (auto* listener : _mouse_listeners) {
       for (auto& [mouse, state] : _mouse_states) {
-        listener.listen({
+        listener->listen({
           .mouse = mouse,
           .state = state,
         });

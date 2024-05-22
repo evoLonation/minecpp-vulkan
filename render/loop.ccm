@@ -42,8 +42,8 @@ public:
       // toy::debug(interval_milli_);
       auto interval_milli = interval_milli_.count();
       for (auto& [order, container] : _action_map) {
-        for (auto& action : container) {
-          action.loopAction(interval_milli);
+        for (auto* action : container) {
+          action->loopAction(interval_milli);
         }
       }
     }
@@ -51,9 +51,13 @@ public:
 };
 
 template <LoopOrder order>
-class LoopActionLoader : public toy::InterfaceLoader<LoopAction> {
-public:
-  LoopActionLoader() : toy::InterfaceLoader<LoopAction>(Loop::getInstance()._action_map[order]) {}
+class LoopActionLoader : public LoopAction,
+                         public toy::HookLoader<LoopActionLoader<order>, LoopAction> {
+private:
+  friend toy::HookLoader<LoopActionLoader<order>, LoopAction>;
+  auto getContainer() -> toy::RefContainer<LoopAction>& {
+    return Loop::getInstance()._action_map[order];
+  }
 };
 
 } // namespace rd

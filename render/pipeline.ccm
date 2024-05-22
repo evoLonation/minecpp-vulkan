@@ -26,13 +26,11 @@ auto resourceType2Layout(ResourceType type) -> VkDescriptorSetLayout {
 
 class DrawUnit;
 
-class Pipeline : private DrawerLoader<DrawStage::PIPELINE> {
-  friend DrawUnit;
+class PipelineInfo : protected DrawRecorder {
+  friend class DrawUnit;
+  friend class DrawUnitInfo;
 
 private:
-  using AutoLoader = toy::AutoLoader<Pipeline, DrawRecorder>;
-  friend AutoLoader;
-
   std::vector<ResourceType>   _resource_types;
   vk::PipelineResource        _pipeline_resource;
   toy::RefContainer<DrawUnit> _draw_units;
@@ -42,8 +40,8 @@ private:
   VertexInfo _vertex_info;
 
 public:
-  Pipeline() = default;
-  Pipeline(
+  PipelineInfo() = default;
+  PipelineInfo(
     std::string_view                 vertex_shader_name,
     std::string_view                 frag_shader_name,
     VkPrimitiveTopology              topology,
@@ -73,18 +71,32 @@ public:
     _vertex_info = vertex_info;
   }
   void record(VkCommandBuffer cmdbuf, int in_flight_index) override;
-  Pipeline(const Pipeline&) noexcept = delete;
-  Pipeline(Pipeline&&) noexcept = default;
-  auto operator=(const Pipeline&) noexcept -> Pipeline& = delete;
-  auto operator=(Pipeline&&) noexcept -> Pipeline& = default;
+
+  PipelineInfo(const PipelineInfo&) noexcept = delete;
+  PipelineInfo(PipelineInfo&&) noexcept = default;
+  auto operator=(const PipelineInfo&) noexcept -> PipelineInfo& = delete;
+  auto operator=(PipelineInfo&&) noexcept -> PipelineInfo& = default;
 };
 
-class DrawUnit : private toy::AutoLoader<DrawUnit> {
-  friend Pipeline;
-
+class Pipeline : public PipelineInfo, public toy::HookLoader<Pipeline, DrawRecorder> {
 private:
-  using AutoLoader = toy::AutoLoader<DrawUnit>;
-  friend AutoLoader;
+  friend toy::HookLoader<Pipeline, DrawRecorder>;
+  auto getContainer() -> toy::RefContainer<DrawRecorder>& {
+    return Drawer::StageContainer<DrawStage::PIPELINE>::getInstance();
+  }
+
+public:
+  Pipeline(PipelineInfo pipeline) : PipelineInfo(std::move(pipeline)) {}
+  using PipelineInfo::PipelineInfo;
+  Pipeline(const Pipeline&) noexcept = delete;
+  Pipeline(Pipeline&&) noexcept = delete;
+  auto operator=(const Pipeline&) noexcept -> Pipeline& = delete;
+  auto operator=(Pipeline&&) noexcept -> Pipeline& = delete;
+};
+
+class DrawUnitInfo {
+private:
+  friend PipelineInfo;
 
   VertexBuffer* _vertex_buffer;
   IndexBuffer*  _index_buffer;
@@ -97,16 +109,14 @@ private:
   std::optional<uint32_t> _stencil_reference;
 
 public:
-  DrawUnit() = default;
-  DrawUnit(
+  DrawUnitInfo() = default;
+  DrawUnitInfo(
     Pipeline&                  pipeline,
     VertexBuffer&              vertex_buffer,
     IndexBuffer&               index_buffer,
     std::span<Resource* const> resources,
     std::optional<uint32_t>    stencil_reference
-  )
-    : AutoLoader{ pipeline._draw_units } {
-
+  ) {
     auto& ctx = Context::getInstance();
     auto& resource_types = pipeline._resource_types;
     if (resources.size() != resource_types.size()) {
@@ -202,10 +212,31 @@ public:
 
     _stencil_reference = stencil_reference;
   }
+  DrawUnitInfo(const DrawUnitInfo&) noexcept = delete;
+  DrawUnitInfo(DrawUnitInfo&&) noexcept = default;
+  auto operator=(const DrawUnitInfo&) noexcept -> DrawUnitInfo& = delete;
+  auto operator=(DrawUnitInfo&&) noexcept -> DrawUnitInfo& = default;
+};
+
+class DrawUnit : public DrawUnitInfo, private toy::RefLoader<DrawUnit> {
+public:
+  friend toy::RefLoader<DrawUnit>;
+
+  DrawUnit(Pipeline& pipeline, DrawUnitInfo info)
+    : DrawUnitInfo(std::move(info)), toy::RefLoader<DrawUnit>(pipeline._draw_units) {}
+  DrawUnit(
+    Pipeline&                  pipeline,
+    VertexBuffer&              vertex_buffer,
+    IndexBuffer&               index_buffer,
+    std::span<Resource* const> resources,
+    std::optional<uint32_t>    stencil_reference
+  )
+    : DrawUnitInfo(pipeline, vertex_buffer, index_buffer, resources, stencil_reference),
+      toy::RefLoader<DrawUnit>(pipeline._draw_units) {}
   DrawUnit(const DrawUnit&) noexcept = delete;
-  DrawUnit(DrawUnit&&) noexcept = default;
+  DrawUnit(DrawUnit&&) noexcept = delete;
   auto operator=(const DrawUnit&) noexcept -> DrawUnit& = delete;
-  auto operator=(DrawUnit&&) noexcept -> DrawUnit& = default;
+  auto operator=(DrawUnit&&) noexcept -> DrawUnit& = delete;
 };
 
 auto getStencilReferences(std::span<const uint32_t> references)
@@ -220,13 +251,13 @@ auto getStencilReferences(std::span<const uint32_t> references)
          ranges::to<std::vector>();
 }
 
-inline void Pipeline::record(VkCommandBuffer cmdbuf, int in_flight_index) {
+inline void PipelineInfo::record(VkCommandBuffer cmdbuf, int in_flight_index) {
   auto& ctx = Context::getInstance();
   // todo: the exception can not throw outside, find out why
   toy::throwf(
     ranges::all_of(
       _draw_units,
-      [&](auto& unit) { return unit._stencil_reference.has_value() == _dynamic_stencil_reference; }
+      [&](auto* unit) { return unit->_stencil_reference.has_value() == _dynamic_stencil_reference; }
     ),
     "the draw units are {} set dynamic stencil reference",
     _dynamic_stencil_reference ? "not" : ""
@@ -236,18 +267,18 @@ inline void Pipeline::record(VkCommandBuffer cmdbuf, int in_flight_index) {
     _pipeline_resource.pipeline,
     ctx.extent,
     _pipeline_resource.pipeline_layout,
-    _draw_units | views::transform([&](auto& unit) {
+    _draw_units | views::transform([&](auto* unit) {
       return vk::DrawUnit{
-        .vertex_buffer = unit._vertex_buffer->get(),
-        .index_buffer = unit._index_buffer->get(),
-        .count = (uint32_t)unit._index_buffer->getIndexNumber(),
-        .descriptor_sets = unit._worker_dsets[in_flight_index],
+        .vertex_buffer = unit->_vertex_buffer->get(),
+        .index_buffer = unit->_index_buffer->get(),
+        .count = (uint32_t)unit->_index_buffer->getIndexNumber(),
+        .descriptor_sets = unit->_worker_dsets[in_flight_index],
       };
     }),
     _dynamic_stencil_reference
       ? std::optional{ vk::StencilReferences{ getStencilReferences(
           _draw_units |
-          views::transform([&](auto& unit) { return unit._stencil_reference.value(); }) |
+          views::transform([&](auto* unit) { return unit->_stencil_reference.value(); }) |
           ranges::to<std::vector>()
         ) } }
       : std::nullopt

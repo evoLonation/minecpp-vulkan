@@ -20,57 +20,57 @@ export namespace mng {
 TOY_ENUM(PipelineType, DEFAULT, OUTLINE_1, OUTLINE_2);
 
 class Pipeline : public rd::Pipeline {
-  friend class PipelineResource;
-
 private:
   PipelineType _pipeline_type;
 
 public:
-  Pipeline(PipelineType type) {
-    _pipeline_type = type;
-    auto stencil_options = vk::getOutliningStencil();
-    stencil_options.first.dynamic_reference = false;
-    stencil_options.second.dynamic_reference = true;
-    switch (type.value()) {
-    case PipelineType::DEFAULT:
-      rd::Pipeline::operator=(rd::Pipeline{
-        "hello.vert",
-        "hello.frag",
-        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-        model::Vertex::getVertexInfo(),
-        std::array{ rd::ResourceType::UNIFORM,
-                    rd::ResourceType::UNIFORM,
-                    rd::ResourceType::UNIFORM,
-                    rd::ResourceType::SAMPLER },
-        std::nullopt,
-      });
-      break;
-    case PipelineType::OUTLINE_1:
-      rd::Pipeline::operator=(rd::Pipeline{
-        "hello.vert",
-        "hello.frag",
-        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-        model::Vertex::getVertexInfo(),
-        std::array{ rd::ResourceType::UNIFORM,
-                    rd::ResourceType::UNIFORM,
-                    rd::ResourceType::UNIFORM,
-                    rd::ResourceType::SAMPLER },
-        stencil_options.first,
-      });
-      break;
-    case PipelineType::OUTLINE_2:
-      rd::Pipeline::operator=(rd::Pipeline{
-        "outline.vert",
-        "outline.frag",
-        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-        model::Vertex::getVertexInfo(),
-        std::array{
-          rd::ResourceType::UNIFORM, rd::ResourceType::UNIFORM, rd::ResourceType::UNIFORM },
-        stencil_options.second,
-      });
-      break;
-    }
-  }
+  auto getType() const -> PipelineType { return _pipeline_type; }
+
+public:
+  Pipeline(PipelineType pipeline_type)
+    : rd::Pipeline([&]() {
+        auto stencil_options = vk::getOutliningStencil();
+        stencil_options.first.dynamic_reference = false;
+        stencil_options.second.dynamic_reference = true;
+        switch (pipeline_type.value()) {
+        case PipelineType::DEFAULT:
+          return rd::PipelineInfo{
+            "hello.vert",
+            "hello.frag",
+            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+            model::Vertex::getVertexInfo(),
+            std::array{ rd::ResourceType::UNIFORM,
+                        rd::ResourceType::UNIFORM,
+                        rd::ResourceType::UNIFORM,
+                        rd::ResourceType::SAMPLER },
+            std::nullopt,
+          };
+        case PipelineType::OUTLINE_1:
+          return rd::PipelineInfo{
+            "hello.vert",
+            "hello.frag",
+            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+            model::Vertex::getVertexInfo(),
+            std::array{ rd::ResourceType::UNIFORM,
+                        rd::ResourceType::UNIFORM,
+                        rd::ResourceType::UNIFORM,
+                        rd::ResourceType::SAMPLER },
+            stencil_options.first,
+          };
+        case PipelineType::OUTLINE_2:
+          return rd::PipelineInfo{
+            "outline.vert",
+            "outline.frag",
+            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+            model::Vertex::getVertexInfo(),
+            std::array{
+              rd::ResourceType::UNIFORM, rd::ResourceType::UNIFORM, rd::ResourceType::UNIFORM },
+            stencil_options.second,
+          };
+        }
+      }()),
+      _pipeline_type(pipeline_type) {}
+
   Pipeline(const Pipeline&) noexcept = delete;
   Pipeline(Pipeline&&) noexcept = delete;
   auto operator=(const Pipeline&) noexcept -> Pipeline& = delete;
@@ -90,7 +90,7 @@ struct PipelineResource {
   }
   static auto serialize(const action::ActionContext& _, const Pipeline& pipeline)
     -> std::tuple<PipelineType> {
-    return pipeline._pipeline_type;
+    return pipeline.getType();
   }
   static auto deserialize(const action::ActionContext& _, PipelineType type) -> Pipeline {
     return create(_, type);
