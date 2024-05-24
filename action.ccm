@@ -22,12 +22,12 @@ struct Screen {
   uint32_t height;
 };
 struct KeyboardStateChecker {
-  auto operator[](Keyboard key) -> std::optional<ButtonState> {
+  auto operator[](Keyboard key) const -> std::optional<ButtonState> {
     return rd::InputProcessor::getInstance().getState(key);
   }
 };
 struct MouseStateChecker {
-  auto operator[](Mouse mouse) -> std::optional<ButtonState> {
+  auto operator[](Mouse mouse) const -> std::optional<ButtonState> {
     return rd::InputProcessor::getInstance().getState(mouse);
   }
 };

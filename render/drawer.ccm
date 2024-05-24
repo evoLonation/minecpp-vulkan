@@ -44,8 +44,7 @@ private:
 
   std::map<DrawStage, toy::RefContainer<DrawRecorder>> _recorders;
 
-  // 0 is not use
-  std::vector<int> _image_useds;
+  std::vector<bool> _image_useds;
 
 public:
   template <DrawStage stage>
@@ -73,8 +72,8 @@ public:
     _in_flight_index = 0;
     _last_present_failed = false;
     _image_useds.resize(ctx.images.size());
-    for (auto& usage : _image_useds) {
-      usage = 0;
+    for (auto usage : _image_useds) {
+      usage = false;
     }
   }
   void waitDone() {
@@ -108,9 +107,8 @@ public:
         result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || _last_present_failed) {
       if (ctx.tryRecreate()) {
         _last_present_failed = false;
-        _image_useds.resize(ctx.images.size());
-        for (auto& usage : _image_useds) {
-          usage = 0;
+        for (auto usage : _image_useds) {
+          usage = false;
         }
         draw();
         return;
@@ -122,9 +120,9 @@ public:
       vk::checkVkResult(result, "acquire next image");
     }
 
-    auto image_used = _image_useds[image_index];
+    auto image_used = static_cast<bool>(_image_useds[image_index]);
     if (!image_used) {
-      _image_useds[image_index] = 1;
+      _image_useds[image_index] = true;
     }
 
     auto present_executor = executor[CommandExecutor::Family::PRESENT];
@@ -241,6 +239,5 @@ public:
   }
   void loopAction(uint32_t _) override { draw(); }
 };
-
 
 } // namespace rd

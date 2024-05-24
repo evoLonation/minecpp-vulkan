@@ -178,12 +178,12 @@ auto checkSurfaceSupport(const SurfaceCheckContext& ctx) -> std::optional<Select
    * VK_PRESENT_MODE_IMMEDIATE_KHR: 图像提交后直接渲染到屏幕上
    * VK_PRESENT_MODE_FIFO_KHR:
    * 有一个队列，队列以刷新率的速度消耗图像显示在屏幕上，图像提交后入队，队列满时等待（也即只能在
-   * "vertical blank" 时刻提交图像） VK_PRESENT_MODE_FIFO_RELAXED_KHR:
-   * 当图像提交时，若队列为空，就直接渲染到屏幕上，否则同上
-   * VK_PRESENT_MODE_MAILBOX_KHR:
-   * 当队列满时，不阻塞而是直接将队中图像替换为已提交的图像
+   * "vertical blank" 时刻提交图像）
+   * VK_PRESENT_MODE_FIFO_RELAXED_KHR: 当图像提交时，若队列为空，就直接渲染到屏幕上，否则同上
+   * VK_PRESENT_MODE_MAILBOX_KHR: 有一个 single-entry queue, 当队列满时,
+   * 不阻塞而是直接将队中图像替换为提交的图像
    */
-  auto p_present_mode = ranges::find(ctx.present_modes, VK_PRESENT_MODE_FIFO_KHR);
+  auto p_present_mode = ranges::find(ctx.present_modes, VK_PRESENT_MODE_MAILBOX_KHR);
   if (p_present_mode == ctx.present_modes.end()) {
     toy::debugf("no suitable present mode");
     return std::nullopt;
