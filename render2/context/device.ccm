@@ -1,0 +1,92 @@
+export module render.vk.device;
+
+import std;
+import toy;
+
+import "vulkan_config.h";
+import render.vk.resource;
+import render.vk.format;
+
+export namespace rd::vk {
+
+struct PdeviceContext {
+  VkPhysicalDevice           device;
+  VkPhysicalDeviceProperties properties;
+  VkPhysicalDeviceFeatures   features;
+
+  auto checkFormatSupport(
+    FormatTarget type, VkFormatFeatureFlags features, std::span<const VkFormat> format_set
+  ) const -> bool {
+    return rd::vk::checkFormatSupport(device, type, features, format_set);
+  }
+};
+
+template <typename Derived>
+class DeviceChecker {
+public:
+  DeviceChecker() {
+    toy::throwf(checked, "please add the checker to physical device check list first");
+  }
+
+private:
+  static inline auto checked = false;
+
+  friend class Device;
+  template <typename _ = void>
+    requires std::derived_from<Derived, DeviceChecker> && requires(const PdeviceContext ctx) {
+      { Derived::checkPdevice(ctx) } -> std::same_as<bool>;
+    }
+  static auto check(const PdeviceContext& ctx) -> bool {
+    checked = true;
+    return Derived::checkPdevice(ctx);
+  }
+};
+
+template <typename Derived>
+class DeviceExtensionRequestor {
+public:
+  DeviceExtensionRequestor() {
+    toy::throwf(requested, "please add the requestor to physical device extension list first");
+  }
+
+private:
+  static inline auto requested = false;
+
+  friend class Device;
+  template <typename _ = void>
+    requires std::derived_from<Derived, DeviceExtensionRequestor> &&
+             toy::RangeOf<decltype(Derived::pdevice_extensions), const char*> &&
+             ranges::input_range<decltype(Derived::pdevice_extensions)>
+  static auto getExtentsions() {
+    requested = true;
+    return Derived::pdevice_extensions;
+  }
+};
+
+class Device : public rs::Device, public toy::ProactiveSingleton<Device> {
+public:
+  Device();
+
+  auto pdevice() const { return _pdevice; }
+  auto properties() const { return _properties; }
+  auto features() const { return _features; }
+
+private:
+  auto registerExtensions() -> std::vector<const char*>;
+  auto registerCheckers() -> std::vector<bool (*)(const PdeviceContext&)>;
+  template <typename Derived>
+  auto registerExtension(std::vector<const char*>& extensions) {
+    extensions.append_range(DeviceExtensionRequestor<Derived>::getExtentsions());
+  }
+  template <typename Derived>
+  void registerChecker(std::vector<bool (*)(const PdeviceContext&)>& checkers) {
+    checkers.push_back(&DeviceChecker<Derived>::check);
+  }
+
+  VkPhysicalDevice _pdevice;
+
+  VkPhysicalDeviceProperties _properties;
+  VkPhysicalDeviceFeatures   _features;
+};
+
+} // namespace rd::vk

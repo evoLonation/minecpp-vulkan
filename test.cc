@@ -1,14 +1,18 @@
-import std;
-import toy;
+#include <iostream>
+#include <vector>
 
-struct A {
-  A(int a) {}
-  A(const A&) noexcept = delete;
-  A(A&&) noexcept = delete;
-  auto operator=(const A&) noexcept -> A& = delete;
-  auto operator=(A&&) noexcept -> A& = delete;
+struct Test {
+  enum Enum {
+    A,
+  };
+  static auto a(Enum e) {}
 };
 
-A func() { return { 1 }; }
-
-int main() { auto a = new A{ func() }; }
+int main() {
+  auto a = std::vector<int>{};
+  try {
+    std::cout << a.front();
+  } catch (std::exception) {
+    std::cout << "error";
+  }
+}

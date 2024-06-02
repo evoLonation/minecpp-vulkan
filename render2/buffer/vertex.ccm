@@ -1,0 +1,187 @@
+export module render.vertex;
+
+import "vulkan_config.h";
+import render.vk.resource;
+import render.vk.command;
+import render.vk.device;
+import render.vk.buffer;
+import render.vk.sync;
+import render.vk.executor;
+
+import std;
+import glm;
+import toy;
+
+export namespace rd {
+
+template <typename Type>
+consteval auto formatMapper() -> VkFormat {
+  if constexpr (std::same_as<Type, glm::vec2>) {
+    return VK_FORMAT_R32G32_SFLOAT;
+  } else if constexpr (std::same_as<Type, glm::vec3>) {
+    return VK_FORMAT_R32G32B32_SFLOAT;
+  } else if constexpr (std::same_as<Type, glm::vec4>) {
+    return VK_FORMAT_R32G32B32A32_SFLOAT;
+  } else if constexpr (std::same_as<Type, float>) {
+    return VK_FORMAT_R32_SFLOAT;
+  }
+}
+
+struct VertexInfo {
+  const VkVertexInputBindingDescription*             binding_description;
+  std::span<const VkVertexInputAttributeDescription> attribute_descriptions;
+  friend auto operator==(const VertexInfo& a, const VertexInfo& b) -> bool {
+    return a.binding_description == b.binding_description &&
+           a.attribute_descriptions.begin() == b.attribute_descriptions.begin() &&
+           a.attribute_descriptions.end() == b.attribute_descriptions.end();
+  }
+};
+
+template <typename... DataTypes>
+  requires(std::is_trivially_copyable_v<DataTypes> && ...)
+struct Vertex : public std::array<char, (sizeof(DataTypes) + ...)> {
+  using Base = std::array<char, (sizeof(DataTypes) + ...)>;
+  Vertex(DataTypes&&... data) {
+    int offset = 0;
+    ((*reinterpret_cast<DataTypes*>(Base::data() + offset) = data, offset += sizeof(DataTypes)),
+     ...);
+  }
+  static auto getVertexInfo() -> VertexInfo {
+    return { &binding_description<>, attribute_descriptions<> };
+  }
+
+  // must make the static member as template variable, otherwise the Vertex is incomplete type when
+  // construct the variable
+  template <typename = void>
+  static constexpr auto binding_description = VkVertexInputBindingDescription{
+    .binding = 0,
+    .stride = sizeof(Vertex),
+    // VK_VERTEX_INPUT_RATE_{VERTEX|INSTANCE}:
+    // 是在每个vertex或者instance后移动到下一个data entry
+    .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+  };
+  template <typename = void>
+  static constexpr auto attribute_descriptions = []() {
+    auto attribute_descriptions =
+      std::array<VkVertexInputAttributeDescription, sizeof...(DataTypes)>{};
+
+    uint32_t i = 0;
+    uint32_t offset = 0;
+    ((attribute_descriptions[i] =
+        VkVertexInputAttributeDescription{
+          .location = i,
+          .binding = 0,
+          .format = formatMapper<DataTypes>(),
+          .offset = offset,
+        },
+      i++,
+      offset += sizeof(DataTypes)),
+     ...);
+    return attribute_descriptions;
+  }();
+};
+
+template class Vertex<glm::vec3>;
+
+class DeviceLocalBuffer : public vk::Buffer {
+private:
+  vk::StagingBuffer _staging_buffer;
+
+public:
+  DeviceLocalBuffer() = default;
+
+  DeviceLocalBuffer(
+    VkBufferUsageFlags usage, vk::Scope dst_scope, std::span<const std::byte> buffer_data
+  ) {
+    auto& ctx = vk::Device::getInstance();
+
+    auto buffer_size = (uint32_t)buffer_data.size();
+    _staging_buffer = { buffer_data };
+
+    vk::Buffer::operator=({
+      buffer_size,
+      usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+    });
+
+    auto& executor = vk::CommandExecutor::getInstance();
+    auto  copy_executor = executor[vk::QueueFamily::TRANSFER];
+    auto  graphics_executor = executor[vk::QueueFamily::GRAPHICS][0];
+
+    auto family_transfer =
+      vk::FamilyTransferInfo{ copy_executor.getFamily(), graphics_executor.getFamily() };
+    auto copy_recorder = [&](VkCommandBuffer cmdbuf) {
+      vk::recordCopyBuffer(cmdbuf, _staging_buffer, *this, buffer_size);
+      vk::recordBufferBarrier(
+        cmdbuf,
+        get(),
+        vk::BarrierScope::release(vk::Scope{
+          .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+          .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        }),
+        family_transfer
+      );
+    };
+    auto acquire_recorder = [&](VkCommandBuffer cmdbuf) {
+      vk::recordBufferBarrier(cmdbuf, get(), vk::BarrierScope::acquire(dst_scope), family_transfer);
+    };
+    auto waitable = copy_executor.submit(copy_recorder, {}, 1).second;
+    auto fence = graphics_executor
+                   .submit(
+                     acquire_recorder,
+                     std::array{ vk::WaitInfo{ waitable, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
+                     0
+                   )
+                   .first;
+    // todo: no need to wait, sync with sema
+    fence.get().wait();
+  }
+};
+
+class VertexBuffer : public DeviceLocalBuffer {
+private:
+  VertexInfo _vertex_info;
+
+public:
+  VertexBuffer() = default;
+  template <toy::InstantiationOf<Vertex> VertexT>
+  // using VertexT = Vertex<glm::vec3>;
+  VertexBuffer(std::span<const VertexT> vertex_data)
+    : DeviceLocalBuffer(
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        vk::Scope{
+          .stage_mask = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+          .access_mask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+        },
+        std::as_bytes(vertex_data)
+      ),
+      _vertex_info(VertexT::getVertexInfo()) {}
+
+  template <typename VertexT>
+  static auto create(std::span<const VertexT> vertex_data) -> VertexBuffer {
+    return VertexBuffer{ vertex_data };
+  }
+
+  auto getVertexInfo() const -> VertexInfo { return _vertex_info; }
+};
+
+class IndexBuffer : public DeviceLocalBuffer {
+  int _index_number;
+
+public:
+  IndexBuffer() = default;
+  IndexBuffer(std::span<const uint16_t> indices)
+    : DeviceLocalBuffer(
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        vk::Scope{
+          .stage_mask = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+          .access_mask = VK_ACCESS_INDEX_READ_BIT,
+        },
+        std::as_bytes(indices)
+      ),
+      _index_number(indices.size()) {}
+
+  auto getIndexNumber() -> uint32_t { return _index_number; }
+};
+
+} // namespace rd

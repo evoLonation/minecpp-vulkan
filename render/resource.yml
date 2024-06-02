@@ -9,6 +9,5 @@ source:
 - vertex.ccm
 - drawer.ccm
 - render.ccm
-- input.ccm
 - command.ccm
 - loop.ccm

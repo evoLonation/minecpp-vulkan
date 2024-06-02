@@ -1,0 +1,74 @@
+export module render.vk.buffer;
+
+import std;
+import toy;
+
+import "vulkan_config.h";
+import render.vk.tool;
+import render.vk.resource;
+import render.vk.device;
+import render.vk.memory;
+
+export namespace rd::vk {
+
+auto createBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage) -> rs::Buffer {
+  auto buffer_info = VkBufferCreateInfo{
+    .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+    .size = buffer_size,
+    .usage = usage,
+    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+  };
+  return { Device::getInstance(), buffer_info };
+}
+
+void bindBufferMemory(VkBuffer buffer, VkDeviceMemory memory) {
+  vkBindBufferMemory(Device::getInstance(), buffer, memory, 0);
+}
+
+class Buffer : public rs::Buffer {
+public:
+  Buffer() = default;
+  Buffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage, VkMemoryPropertyFlags property_flags) {
+    rs::Buffer ::operator=(createBuffer(buffer_size, usage));
+    _memory = { get(), property_flags };
+    bindBufferMemory(get(), _memory);
+  }
+
+private:
+  Memory _memory;
+};
+
+class StagingBuffer : public rs::Buffer {
+public:
+  StagingBuffer() = default;
+  StagingBuffer(VkDeviceSize buffer_size) {
+    rs::Buffer ::operator=(createBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT));
+    _memory = { get() };
+    bindBufferMemory(get(), _memory);
+  }
+  StagingBuffer(std::span<const std::byte> buffer_data) : StagingBuffer(buffer_data.size()) {
+    fill(buffer_data);
+  }
+  void fill(std::span<const std::byte> buffer_data) { _memory.fill(buffer_data); }
+  auto memory() -> HostVisibleMemory& { return _memory; }
+
+private:
+  HostVisibleMemory _memory;
+};
+
+void recordCopyBuffer(
+  VkCommandBuffer transfer_cmdbuf,
+  VkBuffer        src_buffer,
+  VkBuffer        dst_buffer,
+  VkDeviceSize    buffer_size
+) {
+  auto copy_info = VkBufferCopy{
+    // this offset is about buffer, not about memory
+    .srcOffset = 0,
+    .dstOffset = 0,
+    .size = buffer_size,
+  };
+  vkCmdCopyBuffer(transfer_cmdbuf, src_buffer, dst_buffer, 1, &copy_info);
+}
+
+} // namespace rd::vk

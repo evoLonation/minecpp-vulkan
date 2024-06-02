@@ -1,0 +1,19 @@
+export module render.presentation;
+
+import "vulkan_config.h";
+
+import std;
+import toy;
+
+export namespace rd {
+
+class Presentation : public toy::ProactiveSingleton<Presentation> {
+public:
+  auto getCurrentImage() -> VkImage;
+  void switchFrame(VkSemaphore wait_sema, VkSemaphore available_sema);
+
+private:
+  uint32_t _current_index;
+};
+
+} // namespace rd

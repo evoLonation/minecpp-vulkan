@@ -1,0 +1,46 @@
+export module application;
+
+import std;
+import toy;
+
+export namespace app {
+
+struct LifetimeManager {
+  virtual ~LifetimeManager() = default;
+};
+template <typename T>
+class LifetimeManagerFor : public LifetimeManager {
+private:
+  T _object;
+
+public:
+  LifetimeManagerFor(T object) : _object(std::move(object)) {}
+  template <typename... Args>
+  LifetimeManagerFor(Args&&... args) : _object(std::forward<Args>(args)...) {}
+  ~LifetimeManagerFor() override = default;
+};
+
+class Application : public toy::ProactiveSingleton<Application> {
+private:
+  std::vector<LifetimeManager*> _init_objects;
+
+  chrono::time_point<chrono::high_resolution_clock> _last_time;
+
+  float _interval;
+
+public:
+  Application() { initObjects(); }
+  void initObjects();
+  template <typename T>
+  void initObject(T object) {
+    _init_objects.push_back(new LifetimeManagerFor<T>(std::move(object)));
+  }
+  template <typename T, typename... Args>
+  void initObject(Args&&... args) {
+    _init_objects.push_back(new LifetimeManagerFor<T>(std::forward<Args>(args)...));
+  }
+  void runLoop();
+  void updateInterval();
+};
+
+} // namespace app

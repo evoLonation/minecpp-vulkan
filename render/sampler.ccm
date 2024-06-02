@@ -18,7 +18,7 @@ private:
   vk::Buffer _staging_buffer;
   vk::Memory _staging_memory;
 
-  vk::ImageResource _image_resource;
+  vk::ImageResource _image;
   vk::Sampler       _sampler;
 
   static constexpr auto _image_type = vk::ImageType::SAMPLED_IMAGE;

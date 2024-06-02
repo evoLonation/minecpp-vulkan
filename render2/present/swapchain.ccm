@@ -1,0 +1,46 @@
+export module render.vk.swapchain;
+
+import "vulkan_config.h";
+import render.vk.resource;
+import render.vk.tool;
+import render.vk.device;
+
+import std;
+import toy;
+
+export namespace rd::vk {
+
+class Swapchain : public toy::ProactiveSingleton<Swapchain>,
+                  public DeviceChecker<Swapchain>,
+                  public DeviceExtensionRequestor<Swapchain> {
+public:
+  Swapchain(uint32_t min_image_count = 0);
+  auto needRecreate() -> bool;
+  void recreate();
+  auto valid() -> bool { return _swapchain.get() != VK_NULL_HANDLE; }
+  auto images() const -> std::span<const VkImage> { return _images; }
+
+private:
+  void create();
+
+  friend DeviceExtensionRequestor<Swapchain>;
+  static inline auto pdevice_extensions = std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+
+  static constexpr auto _format = VK_FORMAT_B8G8R8A8_SRGB;
+  static constexpr auto _present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
+  static constexpr auto _color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+
+  friend DeviceChecker<Swapchain>;
+  static auto checkPdevice(const PdeviceContext& ctx) -> bool;
+
+  void updateCapabilities();
+
+private:
+  uint32_t                 _min_image_count;
+  VkSurfaceCapabilitiesKHR _capabilities;
+  rs::Swapchain            _swapchain;
+  VkExtent2D               _swapchain_extent;
+  std::vector<VkImage>     _images;
+};
+
+} // namespace rd::vk

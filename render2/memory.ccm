@@ -1,0 +1,47 @@
+export module render.vk.memory;
+
+import std;
+import toy;
+
+import "vulkan_config.h";
+import render.vk.resource;
+
+export namespace rd::vk {
+
+class Memory : public rs::Memory {
+public:
+  Memory() = default;
+  Memory(VkBuffer buffer, VkMemoryPropertyFlags property_flags);
+  Memory(VkImage image, VkMemoryPropertyFlags property_flags);
+  Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property_flags);
+
+private:
+  static inline auto _memory_properties = std::unique_ptr<VkPhysicalDeviceMemoryProperties>{};
+};
+
+class HostVisibleMemory : public Memory {
+public:
+  HostVisibleMemory() = default;
+  HostVisibleMemory(VkMemoryRequirements requirements) : Memory(requirements, propreties) {}
+  HostVisibleMemory(VkImage image) : Memory(image, propreties) {}
+  HostVisibleMemory(VkBuffer buffer) : Memory(buffer, propreties) {}
+  HostVisibleMemory(const HostVisibleMemory&) noexcept = delete;
+  HostVisibleMemory(HostVisibleMemory&& e) noexcept;
+  auto operator=(const HostVisibleMemory&) noexcept -> HostVisibleMemory& = delete;
+  auto operator=(HostVisibleMemory&& e) noexcept -> HostVisibleMemory&;
+
+  auto data() -> void*;
+  void fill(std::span<const std::byte> buffer_data);
+  ~HostVisibleMemory() { unmap(); }
+
+private:
+  void unmap();
+
+private:
+  static constexpr auto propreties =
+    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+  void* _data = nullptr;
+};
+
+} // namespace rd::vk

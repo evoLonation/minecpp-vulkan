@@ -1,0 +1,407 @@
+export module render.vk.image;
+
+import std;
+import toy;
+
+import "vulkan_config.h";
+import render.vk.tool;
+import render.vk.resource;
+import render.vk.device;
+import render.vk.format;
+import render.vk.memory;
+
+export namespace rd::vk {
+
+enum class ImageType {
+  SAMPLED_IMAGE,
+  DEPTH_STENCIL,
+  COLOR_ATTACHMENT,
+};
+
+enum class ImageUse {
+  UNDEFINED,
+  COPY_DST,
+  COPY_SRC,
+  MIPMAP_DST,
+  MIPMAP_SRC,
+  FRAGMENT_SAMPLER,
+  COLOR_ATTACHMENT,
+  DEPTH_STENCIL_ATTACHMENT,
+  PRESENT, // only can convert to layout, no scope
+
+  MAX_VALUE,
+};
+
+auto getLayout(ImageUse use) -> VkImageLayout {
+  switch (use) {
+  case ImageUse::UNDEFINED:
+    return VK_IMAGE_LAYOUT_UNDEFINED;
+  case ImageUse::COPY_DST:
+    return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+  case ImageUse::COPY_SRC:
+    return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+  case ImageUse::FRAGMENT_SAMPLER:
+    return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  case ImageUse::COLOR_ATTACHMENT:
+    return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  case ImageUse::DEPTH_STENCIL_ATTACHMENT:
+    return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+  case ImageUse::PRESENT:
+    return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+  default:
+    toy::throwf("the image use {} can not convert to image layout", (int)use);
+  }
+}
+
+auto getStage(ImageUse use) -> VkPipelineStageFlags {
+  switch (use) {
+  case ImageUse::COPY_DST:
+    return VK_PIPELINE_STAGE_TRANSFER_BIT;
+  case ImageUse::COPY_SRC:
+    return VK_PIPELINE_STAGE_TRANSFER_BIT;
+  case ImageUse::FRAGMENT_SAMPLER:
+    return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+  case ImageUse::COLOR_ATTACHMENT:
+    return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+  case ImageUse::DEPTH_STENCIL_ATTACHMENT:
+    return VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+  default:
+    toy::throwf("the image use {} can not convert to ScopeInfo", (int)use);
+  }
+}
+
+auto getReadAccess(ImageUse use) -> VkAccessFlags {
+  switch (use) {
+  case ImageUse::COPY_DST:
+    return 0;
+  case ImageUse::COPY_SRC:
+    return VK_ACCESS_TRANSFER_READ_BIT;
+  case ImageUse::FRAGMENT_SAMPLER:
+    return VK_ACCESS_SHADER_READ_BIT;
+  case ImageUse::COLOR_ATTACHMENT:
+    return VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+  case ImageUse::DEPTH_STENCIL_ATTACHMENT:
+    return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+  default:
+    toy::throwf("the image use {} can not convert to read access", (int)use);
+  }
+}
+
+auto getWriteAccess(ImageUse use) -> VkAccessFlags {
+  switch (use) {
+  case ImageUse::FRAGMENT_SAMPLER:
+  case ImageUse::COPY_SRC:
+    return 0;
+  case ImageUse::COPY_DST:
+    return VK_ACCESS_TRANSFER_WRITE_BIT;
+  case ImageUse::COLOR_ATTACHMENT:
+    return VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+  case ImageUse::DEPTH_STENCIL_ATTACHMENT:
+    return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+  default:
+    toy::throwf("the image use {} can not convert to write access", (int)use);
+  }
+}
+
+enum class TransferOption {
+  NONE = 0b00,
+  DST = 0b01,
+  SRC = 0b10,
+  ALL = 0b11,
+};
+
+auto getUsage(ImageType type, TransferOption transfer) -> VkImageUsageFlags {
+  auto usage = (VkImageUsageFlags)0;
+  switch (type) {
+  case ImageType::SAMPLED_IMAGE:
+    usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    break;
+  case ImageType::COLOR_ATTACHMENT:
+    usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    break;
+  case ImageType::DEPTH_STENCIL:
+    usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    break;
+  }
+  if ((int)transfer & (int)TransferOption::DST) {
+    usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+  }
+  if ((int)transfer & (int)TransferOption::SRC) {
+    usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+  }
+  return usage;
+}
+
+auto getAspect(ImageType type) -> VkImageAspectFlagBits {
+  switch (type) {
+  case ImageType::COLOR_ATTACHMENT:
+  case ImageType::SAMPLED_IMAGE:
+    return VK_IMAGE_ASPECT_COLOR_BIT;
+  case ImageType::DEPTH_STENCIL:
+    return VK_IMAGE_ASPECT_DEPTH_BIT;
+  default:
+    toy::throwf("the type {} can not convert to aspect", (int)type);
+  }
+};
+
+struct MipRange {
+  uint32_t base_level;
+  uint32_t count;
+};
+
+auto getSubresourceRange(VkImageAspectFlags aspect, MipRange mip_range) -> VkImageSubresourceRange {
+  return {
+    .aspectMask = aspect,
+    .baseMipLevel = mip_range.base_level,
+    .levelCount = mip_range.count,
+    .baseArrayLayer = 0,
+    .layerCount = 1,
+  };
+}
+
+auto getSubresourceLayers(VkImageAspectFlags aspect, uint32_t mip_level)
+  -> VkImageSubresourceLayers {
+  return {
+    .aspectMask = aspect,
+    .mipLevel = mip_level,
+    .baseArrayLayer = 0,
+    .layerCount = 1,
+  };
+}
+
+auto createImage(
+  VkFormat              format,
+  uint32_t              width,
+  uint32_t              height,
+  VkImageUsageFlags     usage,
+  uint32_t              mip_levels,
+  VkSampleCountFlagBits sample_count
+) -> rs::Image {
+  // if use for staging image, combine use:
+  // VK_IMAGE_TILING_LINEAR, VK_IMAGE_LAYOUT_PREINITIALIZED,
+  // VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+  auto image_info = VkImageCreateInfo{
+    .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .imageType = VK_IMAGE_TYPE_2D,
+    .format = format,
+    .extent =
+      VkExtent3D{
+        .width = width,
+        .height = height,
+        .depth = 1,
+      },
+    .mipLevels = mip_levels,
+    .arrayLayers = 1,
+    .samples = sample_count,
+    // VK_IMAGE_TILING_LINEAR: Texels are laid out in row-major
+    // order like our pixels array (almost no place to use it)
+    // 想要直接访问 image 中的像素的话就用 VK_IMAGE_TILING_LINEAR
+    // VK_IMAGE_TILING_OPTIMAL: Texels are laid out in an implementation
+    // defined order for optimal access
+    .tiling = VK_IMAGE_TILING_OPTIMAL,
+    .usage = usage,
+    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    // 仅当VK_SHARING_MODE_CONCURRENT时设置
+    .queueFamilyIndexCount = 0,
+    .pQueueFamilyIndices = nullptr,
+    // VK_IMAGE_LAYOUT_UNDEFINED: the contents of the data are considered to be undefined, and the
+    // transition away from this layout is not guaranteed to preserve that data.
+    // VK_IMAGE_LAYOUT_PREINITIALIZED: the image data can be preinitialized by the host while using
+    // this layout, and the transition away from this layout will preserve that data.
+    // For either of these initial layouts, any image subresources must be transitioned to another
+    // layout before they are accessed by the device.
+    .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+  };
+  return { Device::getInstance(), image_info };
+}
+
+auto createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect, uint32_t mip_levels)
+  -> rs::ImageView {
+  auto create_info = VkImageViewCreateInfo{
+    .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .image = image,
+    .viewType = VK_IMAGE_VIEW_TYPE_2D,
+    .format = format,
+    // 颜色通道映射
+    .components = {
+      .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+      .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+      .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+      .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+    },
+    // view 访问 image 资源的范围
+    .subresourceRange = getSubresourceRange(aspect, {0, mip_levels}),
+  };
+  return { Device::getInstance(), create_info };
+}
+
+struct Image : public rs::Image {
+public:
+  Image() = default;
+  Image(
+    VkFormat              format,
+    uint32_t              width,
+    uint32_t              height,
+    VkImageUsageFlags     usage,
+    VkImageAspectFlags    aspect,
+    uint32_t              mip_levels,
+    VkSampleCountFlagBits sample_count
+  )
+    : rs::Image(createImage(format, width, height, usage, mip_levels, sample_count)),
+      _memory(get(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+      _image_view(createImageView(get(), format, aspect, mip_levels)) {
+    vkBindImageMemory(Device::getInstance(), get(), _memory, 0);
+  }
+  auto image_view() const -> VkImageView { return _image_view; }
+
+private:
+  Memory        _memory;
+  rs::ImageView _image_view;
+};
+
+void copyBufferToImage(
+  VkCommandBuffer       cmdbuf,
+  VkBuffer              buffer,
+  VkImage               image,
+  VkImageAspectFlagBits aspect,
+  uint32_t              width,
+  uint32_t              height,
+  uint32_t              mip_level
+) {
+  auto image_copy = VkBufferImageCopy{
+    .bufferOffset = 0,
+    // bufferRowLength and bufferImageHeight
+    // 用于更详细的定义buffer的内存如何映射到image
+    .bufferRowLength = 0,
+    .bufferImageHeight = 0,
+    .imageSubresource = getSubresourceLayers(aspect, mip_level),
+    .imageOffset =
+      VkOffset3D{
+        .x = 0,
+        .y = 0,
+        .z = 0,
+      },
+    .imageExtent =
+      VkExtent3D{
+        .width = (uint32_t)width,
+        .height = (uint32_t)height,
+        .depth = 1,
+      },
+  };
+  vkCmdCopyBufferToImage(
+    cmdbuf, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_copy
+  );
+}
+
+struct ImageBlit {
+  VkImage               image;
+  VkImageAspectFlagBits aspect;
+  VkImageLayout         layout;
+  uint32_t              mip_level;
+  VkExtent2D            extent;
+};
+
+void blitImage(VkCommandBuffer cmdbuf, ImageBlit src, ImageBlit dst) {
+  auto blit = VkImageBlit{
+    .srcSubresource = getSubresourceLayers(src.aspect, src.mip_level),
+    .srcOffsets = { VkOffset3D{ 0, 0, 0 },
+                    VkOffset3D{ (int32_t)src.extent.width, (int32_t)src.extent.height, 1 } },
+    .dstSubresource = getSubresourceLayers(dst.aspect, dst.mip_level),
+    .dstOffsets = { VkOffset3D{ 0, 0, 0 },
+                    VkOffset3D{ (int32_t)dst.extent.width, (int32_t)dst.extent.height, 1 } },
+  };
+  vkCmdBlitImage(cmdbuf, src.image, src.layout, dst.image, dst.layout, 1, &blit, VK_FILTER_LINEAR);
+}
+
+auto computeMipExtents(VkExtent2D extent) -> std::vector<VkExtent2D> {
+  auto mip_levels = uint32_t(std::floor(std::log2(std::max(extent.width, extent.height)))) + 1;
+  auto mip_extents = std::vector<VkExtent2D>{};
+  auto now_extent = extent;
+  for (auto i : views::iota(0u, mip_levels)) {
+    mip_extents.emplace_back(now_extent);
+    now_extent = VkExtent2D{
+      std::max(now_extent.width / 2, 1u),
+      std::max(now_extent.height / 2, 1u),
+    };
+  }
+  return mip_extents;
+}
+
+auto createSampler(float max_anisotropy) -> rs::Sampler {
+  toy::debugf("max_anisotropy: {}", max_anisotropy);
+  // lod 是 lod 等级，用于选择纹理过滤模式等等
+  // level 是在 lod 基础上计算得到的 mip 等级
+  // lod = clamp(lod_base + mipLodBias, minLod, maxLod)
+  // level = (baseMipLevel + clamp(lod, 0, levelCount - 1))
+  auto sampler_info = VkSamplerCreateInfo{
+    .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    // VK_FILTER_NEAREST and VK_FILTER_LINEAR, 插值模式
+    // 分别是 lod <= 0 和 lod > 0 时采用的纹理过滤模式
+    .magFilter = VK_FILTER_LINEAR,
+    .minFilter = VK_FILTER_LINEAR,
+    // VK_SAMPLER_MIPMAP_MODE_NEAREST: 将 level 四舍五入后选择对应的mip等级
+    // VK_SAMPLER_MIPMAP_MODE_LINEAR: 根据 level 在两个mip等级之间线性插值
+    .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+    // VK_SAMPLER_ADDRESS_MODE_REPEAT：超出图像尺寸时重复纹理。
+    // VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT：同上，但是镜像图像。
+    // VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE：使最接近坐标的边缘的颜色超出图像尺寸。
+    // VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE：同上，但使用对面的边
+    // VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER：采样超出尺寸时返回纯色
+    .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+    .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+    .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+    .mipLodBias = 0.0f,
+    // 各向异性过滤
+    .anisotropyEnable = VK_TRUE,
+    .maxAnisotropy = max_anisotropy,
+    .compareEnable = VK_FALSE,
+    .compareOp = VK_COMPARE_OP_ALWAYS,
+    .minLod = 0.0f,
+    // VK_LOD_CLAMP_NONE is a special value for maxLod to indicate that not to clamp maxLod
+    .maxLod = VK_LOD_CLAMP_NONE,
+    .borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
+    // VK_FALSE: (0, 1)寻址， 反之 (0, width), (0, height)寻址
+    .unnormalizedCoordinates = VK_FALSE,
+  };
+  return { Device::getInstance(), sampler_info };
+}
+
+// auto findDepthFormat() -> VkFormat {
+//   auto candidates = std::array{
+//     // todo: better format feature manage, even better vulkan feature manage not just format
+//     // VK_FORMAT_D32_SFLOAT, this format can not use to stencil test
+//     VK_FORMAT_D32_SFLOAT_S8_UINT,
+//     VK_FORMAT_D24_UNORM_S8_UINT,
+//   };
+//   if (auto res = findSupportFormat(
+//         FormatTarget::OPTIMAL_TILING, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT, candidates
+//       );
+//       res.has_value()) {
+//     return res.value();
+//   } else {
+//     toy::throwf("can not found support depth format");
+//   }
+// }
+
+auto getMaxSampleCount(VkPhysicalDeviceProperties properties) -> VkSampleCountFlagBits {
+  auto counts =
+    properties.limits.framebufferColorSampleCounts & properties.limits.framebufferDepthSampleCounts;
+  auto sample_counts = std::array{
+    VK_SAMPLE_COUNT_64_BIT, VK_SAMPLE_COUNT_32_BIT, VK_SAMPLE_COUNT_16_BIT, VK_SAMPLE_COUNT_8_BIT,
+    VK_SAMPLE_COUNT_4_BIT,  VK_SAMPLE_COUNT_2_BIT,  VK_SAMPLE_COUNT_1_BIT,
+  };
+  for (auto sample_count : sample_counts) {
+    if (counts & sample_count) {
+      return sample_count;
+    }
+  }
+  toy::throwf("unreachable");
+}
+
+} // namespace rd::vk

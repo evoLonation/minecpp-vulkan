@@ -1,21 +1,25 @@
 sub_dir:
 - include
 - third_party
-- vulkan
-- render
+# - vulkan
+# - render
 - toy
-- shader
-- components
+- render2
+# - shader
+# - components
 source:
 - main.cc
 - header_impl.cc
 - glfw.ccm
-- model.ccm
-- gui.ccm
-- transform.ccm
-- control.ccm
-- axis.ccm
-- action.ccm
+# - model.ccm
+# - gui.ccm
+# - transform.ccm
+# - control.ccm
+# - axis.ccm
+# - action.ccm
+# - application.ccm
+# - application.cc
+# - input.ccm
 include_dir:
 - include
 

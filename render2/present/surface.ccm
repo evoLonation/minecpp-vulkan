@@ -1,0 +1,27 @@
+export module render.vk.surface;
+
+import "vulkan_config.h";
+import render.vk.resource;
+import render.vk.tool;
+import render.vk.instance;
+
+import std;
+import toy;
+
+namespace rd::vk {
+
+export class Surface : public rs::Surface,
+                       public toy::ProactiveSingleton<Surface>,
+                       public InstanceExtensionRequestor<Surface> {
+public:
+  Surface();
+
+private:
+  VkSurfaceCapabilitiesKHR _capabilities;
+
+private:
+  friend InstanceExtensionRequestor<Surface>;
+  static inline auto instance_extensions = std::array{ "VK_KHR_surface", "VK_KHR_win32_surface" };
+};
+
+} // namespace rd::vk

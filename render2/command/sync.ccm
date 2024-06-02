@@ -1,0 +1,150 @@
+export module render.vk.sync;
+
+import "vulkan_config.h";
+import render.vk.resource;
+
+import std;
+import toy;
+
+export namespace rd::vk {
+
+class Semaphore : public rs::Semaphore {
+public:
+  Semaphore();
+};
+
+class Fence : public rs::Fence {
+public:
+  Fence(bool signaled);
+  void wait();
+  void reset();
+  auto isSignaled() -> bool;
+};
+
+void recordPipelineBarrier(
+  VkCommandBuffer                                       cmdbuf,
+  std::pair<VkPipelineStageFlags, VkPipelineStageFlags> stage_mask,
+  std::span<const VkMemoryBarrier>                      memory_barriers,
+  std::span<const VkBufferMemoryBarrier>                buffer_barriers,
+  std::span<const VkImageMemoryBarrier>                 image_barriers
+) {
+  vkCmdPipelineBarrier(
+    cmdbuf,
+    stage_mask.first,
+    stage_mask.second,
+    //  VK_DEPENDENCY_BY_REGION_BIT:
+    //  实现可以分区域进行同步(前面写一部分，后面就可以先读一部分)
+    VK_DEPENDENCY_BY_REGION_BIT,
+    memory_barriers.size(),
+    memory_barriers.data(),
+    buffer_barriers.size(),
+    buffer_barriers.data(),
+    image_barriers.size(),
+    image_barriers.data()
+  );
+};
+
+struct Scope {
+  VkPipelineStageFlags stage_mask;
+  VkAccessFlags        access_mask;
+};
+
+/**
+ * @brief In case of ownership transfer that with src_use_stage/access and dst_use_stage/access
+ * barrier in src family:
+ * - src_stage/access: src_use_stage, src_use_access
+ * - dst_stage/access: BOTTOM, 0 (by spec: dst_stage/access are ignored)
+ * barrier in dst family:
+ * - must wait semaphore, wait stage: TOP
+ * - src_stage/access: TOP, 0 (by spec: src_stage/access are ignored)
+ * - dst_stage/access: dst_use_stage, dst_use_access
+ * dependency chain:
+ * src_use -> release op -> src_command done -> dst_command's wait stage start execute -> acquire op
+ * -> dst_use
+ */
+struct BarrierScope {
+  Scope src_scope;
+  Scope dst_scope;
+
+  /**
+   * @brief generate the barrier scope used to record release operation
+   * @param src_scope the scope happen before release op
+   */
+  static auto release(Scope src_scope) -> BarrierScope {
+    return {
+      src_scope,
+      Scope{ VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0 },
+    };
+  }
+  /**
+   * @brief generate the barrier scope used to record acquire operation
+   * @param dst_scope the scope happen after acquire op
+   */
+  static auto acquire(Scope dst_scope) -> BarrierScope {
+    return {
+      Scope{ VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0 },
+      dst_scope,
+    };
+  }
+};
+
+struct FamilyTransferInfo {
+  uint32_t src_family = VK_QUEUE_FAMILY_IGNORED;
+  uint32_t dst_family = VK_QUEUE_FAMILY_IGNORED;
+};
+
+void recordBufferBarrier(
+  VkCommandBuffer    cmdbuf,
+  VkBuffer           buffer,
+  BarrierScope       barrier_scope,
+  FamilyTransferInfo family_info
+) {
+  auto [src_scope, dst_scope] = barrier_scope;
+  auto buffer_barrier = VkBufferMemoryBarrier{
+    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+    .pNext = nullptr,
+    .srcAccessMask = src_scope.access_mask,
+    .dstAccessMask = dst_scope.access_mask,
+    .srcQueueFamilyIndex = family_info.src_family,
+    .dstQueueFamilyIndex = family_info.dst_family,
+    .buffer = buffer,
+    .offset = 0,
+    .size = VK_WHOLE_SIZE,
+  };
+  recordPipelineBarrier(
+    cmdbuf, { src_scope.stage_mask, dst_scope.stage_mask }, {}, { &buffer_barrier, 1 }, {}
+  );
+}
+
+struct LayoutTransitionInfo {
+  VkImageLayout src_layout;
+  VkImageLayout dst_layout;
+};
+
+void recordImageBarrier(
+  VkCommandBuffer         cmdbuf,
+  VkImage                 image,
+  VkImageSubresourceRange subresource_range,
+  LayoutTransitionInfo    layout_info,
+  BarrierScope            barrier_scope,
+  FamilyTransferInfo      family_info
+) {
+  auto [src_scope, dst_scope] = barrier_scope;
+  auto image_barrier = VkImageMemoryBarrier{
+    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+    .pNext = nullptr,
+    .srcAccessMask = src_scope.access_mask,
+    .dstAccessMask = dst_scope.access_mask,
+    .oldLayout = layout_info.src_layout,
+    .newLayout = layout_info.dst_layout,
+    .srcQueueFamilyIndex = family_info.src_family,
+    .dstQueueFamilyIndex = family_info.dst_family,
+    .image = image,
+    .subresourceRange = subresource_range,
+  };
+  recordPipelineBarrier(
+    cmdbuf, { src_scope.stage_mask, dst_scope.stage_mask }, {}, {}, { &image_barrier, 1 }
+  );
+}
+
+} // namespace rd::vk

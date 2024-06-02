@@ -1,0 +1,23 @@
+export module render.vk.format;
+
+import std;
+import toy;
+
+import "vulkan_config.h";
+
+export namespace rd::vk {
+
+enum class FormatTarget {
+  BUFFER,
+  OPTIMAL_TILING,
+  LINEAR_TILING,
+};
+
+auto checkFormatSupport(
+  VkPhysicalDevice          pdevice,
+  FormatTarget              type,
+  VkFormatFeatureFlags      features,
+  std::span<const VkFormat> format_set
+) -> bool;
+
+} // namespace rd::vk

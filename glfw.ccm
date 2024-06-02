@@ -4,11 +4,13 @@ import "glfw_config.h";
 import toy;
 import std;
 
-export namespace glfw {
+import render.vk.instance;
+
+namespace glfw {
 
 void checkGlfwError();
 
-class Window {
+export class Window : public toy::ProactiveSingleton<Window> {
 private:
   void        destroyResource();
   GLFWwindow* window_;
@@ -68,4 +70,4 @@ void checkGlfwError() {
   }
 }
 
-} // namespace vk
+} // namespace glfw

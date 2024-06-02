@@ -1,0 +1,136 @@
+export module render.render_pass;
+
+import "vulkan_config.h";
+import render.vk.resource;
+import render.vk.sync;
+import render.vertex;
+
+import std;
+import toy;
+
+export namespace rd {
+
+auto createRenderPass(
+  std::span<const VkFormat>            color_formats,
+  VkFormat                             depth_stencil_format,
+  std::optional<VkSampleCountFlagBits> sample_count
+) -> vk::rs::RenderPass;
+
+auto createFramebuffer(
+  VkRenderPass               render_pass,
+  VkExtent2D                 extent,
+  VkImageView                color_image,
+  VkImageView                depth_image,
+  std::optional<VkImageView> multi_sample_image
+) -> vk::rs::Framebuffer;
+
+void recordRenderPass(
+  VkCommandBuffer                      cmdbuf,
+  VkRenderPass                         render_pass,
+  VkFramebuffer                        framebuffer,
+  VkExtent2D                           extent,
+  std::function<void(VkCommandBuffer)> recorder,
+  bool                                 multi_sample
+);
+
+struct PipelineResource {
+  vk::rs::ShaderModule   vertex_shader;
+  vk::rs::ShaderModule   frag_shader;
+  vk::rs::PipelineLayout pipeline_layout;
+  vk::rs::Pipeline       pipeline;
+};
+
+struct StencilOption {
+  VkStencilOpState front;
+  VkStencilOpState back;
+
+  bool dynamic_reference;
+};
+
+auto createGraphicsPipeline(
+  VkPhysicalDevice                                   pdevice,
+  VkDevice                                           device,
+  VkRenderPass                                       render_pass,
+  VkPrimitiveTopology                                topology,
+  std::string_view                                   vertex_shader_name,
+  std::string_view                                   frag_shader_name,
+  std::span<const VkVertexInputBindingDescription>   vertex_binding_descriptions,
+  std::span<const VkVertexInputAttributeDescription> vertex_attribute_descriptions,
+  std::span<const VkDescriptorSetLayout>             descriptor_set_layouts,
+  VkSampleCountFlagBits                              sample_count,
+  std::optional<StencilOption>                       stencil_option
+) -> PipelineResource;
+
+enum class ColorFormat {
+
+};
+
+enum class DepthStencilFormat {
+
+};
+
+struct ColorFramebuf {
+  virtual auto isPresentable() -> bool = 0;
+  virtual auto getFormat() -> VkFormat = 0;
+  virtual auto getSampleCount() -> VkSampleCountFlagBits = 0;
+};
+
+struct DepthStencilFramebuf {
+  virtual auto getFormat() -> VkFormat = 0;
+};
+
+struct ColorOutput {
+  ColorFormat           format;
+  VkSampleCountFlagBits sample_count;
+};
+
+struct ColorInput {
+  uint32_t subpass_i;
+  uint32_t color_i;
+};
+
+struct DepthStencilInput {
+  uint32_t subpass_i;
+};
+
+struct Extent {
+  uint32_t width;
+  uint32_t height;
+};
+
+enum class ResourceType { UNIFORM, SAMPLER };
+
+struct PipelineInfo {
+  std::string                   vertex_shader_name;
+  std::string                   frag_shader_name;
+  VkPrimitiveTopology           topology;
+  VertexInfo                    vertex_info;
+  std::span<const ResourceType> resource_types;
+  std::optional<StencilOption>  stencil_option;
+};
+
+struct ColorInfo {
+  ColorFramebuf*        color_framebuf;
+  VkSampleCountFlagBits sample_count = VK_SAMPLE_COUNT_1_BIT;
+};
+
+struct SubpassInfo {
+  using InputRef = std::variant<ColorFramebuf*, DepthStencilFramebuf*>;
+  std::vector<ColorFramebuf*>          colors;
+  std::optional<DepthStencilFramebuf*> depth_stencil;
+  std::vector<InputRef>                inputs;
+  PipelineInfo                         pipeline;
+};
+
+class RenderPass {
+public:
+  RenderPass() = default;
+  RenderPass(std::span<const SubpassInfo> subpasses, Extent extent);
+
+private:
+  vk::rs::RenderPass            _render_pass;
+  vk::rs::Framebuffer           _framebuffer;
+  std::vector<vk::rs::Pipeline> _pipelines;
+};
+
+} // namespace rd

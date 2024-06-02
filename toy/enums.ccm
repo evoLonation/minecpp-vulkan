@@ -58,9 +58,10 @@ consteval auto __splitString(const char (&buf)[N])
   return { writable, indices };
 }
 
-template <typename EnumT>
+template <typename EnumT, EnumT max_enum_value = EnumT::MAX_ENUM_VALUE>
+  requires((size_t)max_enum_value < 0xff)
 struct EnumSet {
-  std::bitset<(size_t)EnumT::MAX_ENUM_VALUE> _bitset;
+  std::bitset<(size_t)max_enum_value> _bitset;
   EnumSet(std::initializer_list<EnumT> values) {
     for (auto value : values) {
       _bitset.set((size_t)value);

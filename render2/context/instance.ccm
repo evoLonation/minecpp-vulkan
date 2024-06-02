@@ -1,0 +1,81 @@
+/*
+ * instance, extension, layer相关
+ * instance: vulkan最底层的对象，一切皆源于instance，存储几乎所有状态
+ */
+export module render.vk.instance;
+
+import "vulkan_config.h";
+import render.vk.resource;
+import toy;
+import std;
+
+export namespace rd::vk {
+
+struct DebugMessengerConfig {
+  VkDebugUtilsMessageSeverityFlagBitsEXT message_severity_level;
+  VkDebugUtilsMessageTypeFlagsEXT        message_type_flags;
+};
+
+template <bool enable_debug_messenger>
+class InstanceTemp;
+
+template <>
+class InstanceTemp<true> {
+public:
+  InstanceTemp() = default;
+  InstanceTemp(const std::string& app_name, std::span<const char* const> required_extensions);
+  auto instance() const { return _instance.get(); }
+
+private:
+  DebugMessengerConfig _debug_config;
+  rs::Instance         _instance;
+  rs::DebugMessenger   _debug_messenger;
+};
+
+template <>
+class InstanceTemp<false> {
+public:
+  InstanceTemp() = default;
+  InstanceTemp(const std::string& app_name, std::span<const char* const> required_extensions);
+  auto instance() const { return _instance.get(); }
+
+private:
+  rs::Instance _instance;
+};
+
+template <typename Derived>
+class InstanceExtensionRequestor {
+public:
+  InstanceExtensionRequestor() {
+    toy::throwf(requested, "please add the requestor to instance extension list first");
+  }
+
+private:
+  static inline auto requested = false;
+
+  friend class Instance;
+  template <typename _ = void>
+    requires std::derived_from<Derived, InstanceExtensionRequestor> &&
+             toy::RangeOf<decltype(Derived::instance_extensions), const char*> &&
+             ranges::input_range<decltype(Derived::instance_extensions)>
+  static auto getExtentsions() {
+    requested = true;
+    return Derived::instance_extensions;
+  }
+};
+
+class Instance : public InstanceTemp<toy::enable_debug>, public toy::ProactiveSingleton<Instance> {
+public:
+  Instance(const std::string& app_name) {
+    InstanceTemp<toy::enable_debug>::operator=({ app_name, registerExtensions() });
+  };
+
+private:
+  auto registerExtensions() -> std::vector<const char*>;
+  template <typename Derived>
+  auto registerExtension(std::vector<const char*>& extensions) {
+    extensions.append_range(InstanceExtensionRequestor<Derived>::getExtentsions());
+  }
+};
+
+} // namespace rd::vk

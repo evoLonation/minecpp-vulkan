@@ -1,0 +1,4 @@
+source:
+- tool.ccm
+- loader.cc
+- resource.ccm
