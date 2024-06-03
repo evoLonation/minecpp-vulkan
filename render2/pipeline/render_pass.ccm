@@ -3,18 +3,24 @@ export module render.render_pass;
 import "vulkan_config.h";
 import render.vk.resource;
 import render.vk.sync;
+import render.vk.device;
 import render.vertex;
 
 import std;
 import toy;
 
-export namespace rd {
+export namespace rd::vk {
+
+class FlightContext {
+public:
+  static constexpr auto flight_n = 2;
+};
 
 auto createRenderPass(
   std::span<const VkFormat>            color_formats,
   VkFormat                             depth_stencil_format,
   std::optional<VkSampleCountFlagBits> sample_count
-) -> vk::rs::RenderPass;
+) -> rs::RenderPass;
 
 auto createFramebuffer(
   VkRenderPass               render_pass,
@@ -22,7 +28,7 @@ auto createFramebuffer(
   VkImageView                color_image,
   VkImageView                depth_image,
   std::optional<VkImageView> multi_sample_image
-) -> vk::rs::Framebuffer;
+) -> rs::Framebuffer;
 
 void recordRenderPass(
   VkCommandBuffer                      cmdbuf,
@@ -34,32 +40,25 @@ void recordRenderPass(
 );
 
 struct PipelineResource {
-  vk::rs::ShaderModule   vertex_shader;
-  vk::rs::ShaderModule   frag_shader;
-  vk::rs::PipelineLayout pipeline_layout;
-  vk::rs::Pipeline       pipeline;
+  rs::ShaderModule   vertex_shader;
+  rs::ShaderModule   frag_shader;
+  rs::PipelineLayout pipeline_layout;
+  rs::Pipeline       pipeline;
 };
 
-struct StencilOption {
-  VkStencilOpState front;
-  VkStencilOpState back;
-
-  bool dynamic_reference;
-};
-
-auto createGraphicsPipeline(
-  VkPhysicalDevice                                   pdevice,
-  VkDevice                                           device,
-  VkRenderPass                                       render_pass,
-  VkPrimitiveTopology                                topology,
-  std::string_view                                   vertex_shader_name,
-  std::string_view                                   frag_shader_name,
-  std::span<const VkVertexInputBindingDescription>   vertex_binding_descriptions,
-  std::span<const VkVertexInputAttributeDescription> vertex_attribute_descriptions,
-  std::span<const VkDescriptorSetLayout>             descriptor_set_layouts,
-  VkSampleCountFlagBits                              sample_count,
-  std::optional<StencilOption>                       stencil_option
-) -> PipelineResource;
+// auto createGraphicsPipeline(
+//   VkPhysicalDevice                                   pdevice,
+//   VkDevice                                           device,
+//   VkRenderPass                                       render_pass,
+//   VkPrimitiveTopology                                topology,
+//   std::string_view                                   vertex_shader_name,
+//   std::string_view                                   frag_shader_name,
+//   std::span<const VkVertexInputBindingDescription>   vertex_binding_descriptions,
+//   std::span<const VkVertexInputAttributeDescription> vertex_attribute_descriptions,
+//   std::span<const VkDescriptorSetLayout>             descriptor_set_layouts,
+//   VkSampleCountFlagBits                              sample_count,
+//   std::optional<StencilOption>                       stencil_option
+// ) -> PipelineResource;
 
 enum class ColorFormat {
 
@@ -73,24 +72,37 @@ struct ColorFramebuf {
   virtual auto isPresentable() -> bool = 0;
   virtual auto getFormat() -> VkFormat = 0;
   virtual auto getSampleCount() -> VkSampleCountFlagBits = 0;
+  virtual auto getImageView(uint32_t in_flight_index) -> VkImageView = 0;
+  virtual auto getMultiSampleImageView(uint32_t in_flight_index) -> VkImageView = 0;
 };
 
 struct DepthStencilFramebuf {
   virtual auto getFormat() -> VkFormat = 0;
+  virtual auto getImageView(uint32_t in_flight_index) -> VkImageView = 0;
 };
 
-struct ColorOutput {
-  ColorFormat           format;
-  VkSampleCountFlagBits sample_count;
+struct ColorFramebufInfo {
+  bool     presentable;
+  VkFormat format;
 };
 
-struct ColorInput {
-  uint32_t subpass_i;
-  uint32_t color_i;
+struct StencilOption {
+  VkStencilOpState front;
+  VkStencilOpState back;
+
+  bool dynamic_reference;
 };
 
-struct DepthStencilInput {
-  uint32_t subpass_i;
+struct DepthOption {
+  VkCompareOp compare_op;
+  bool        enable_write;
+};
+
+struct DepthStencilInfo {
+  VkFormat format;
+  // only useful when format is depth_stencil format
+  std::optional<StencilOption> stencil_option;
+  std::optional<DepthOption>   depth_option;
 };
 
 struct Extent {
@@ -114,23 +126,61 @@ struct ColorInfo {
   VkSampleCountFlagBits sample_count = VK_SAMPLE_COUNT_1_BIT;
 };
 
+enum class AttachmentType {
+  COLOR,
+  DEPTH_STENCIL,
+};
+
+struct Attachment {
+  AttachmentType     type;
+  VkFormat           format;
+  VkSampleCountFlags sample_count;
+  struct ExternalDependency {
+    Scope         scope;
+    VkImageLayout layout;
+  };
+  ExternalDependency enter_dep;
+  ExternalDependency exit_dep;
+};
+
 struct SubpassInfo {
   using InputRef = std::variant<ColorFramebuf*, DepthStencilFramebuf*>;
-  std::vector<ColorFramebuf*>          colors;
-  std::optional<DepthStencilFramebuf*> depth_stencil;
-  std::vector<InputRef>                inputs;
-  PipelineInfo                         pipeline;
+  std::vector<ColorFramebufInfo>          colors;
+  std::optional<DepthStencilFramebufInfo> depth_stencil;
+  std::vector<InputRef>                   inputs;
+  PipelineInfo                            pipeline;
 };
 
 class RenderPass {
 public:
   RenderPass() = default;
   RenderPass(std::span<const SubpassInfo> subpasses, Extent extent);
+  using AttachmentBuffers = std::vector<VkImageView>;
 
 private:
-  vk::rs::RenderPass            _render_pass;
-  vk::rs::Framebuffer           _framebuffer;
-  std::vector<vk::rs::Pipeline> _pipelines;
+  auto createRenderPass(std::span<const SubpassInfo> subpasses) -> std::vector<AttachmentBuffers>;
+  void createPipeline();
+  void createFramebuffers(
+    std::span<const AttachmentBuffers> attachment_buffers_flights, Extent extent
+  ) {
+    _framebuffers = attachment_buffers_flights | views::transform([&](auto& attachment_buffers) {
+                      auto create_info = VkFramebufferCreateInfo{
+                        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+                        .renderPass = _render_pass,
+                        .attachmentCount = static_cast<uint32_t>(attachment_buffers.size()),
+                        .pAttachments = attachment_buffers.data(),
+                        .width = extent.width,
+                        .height = extent.height,
+                        .layers = 1,
+                      };
+                      return rs::Framebuffer{ Device::getInstance(), create_info };
+                    }) |
+                    ranges::to<std::vector>();
+  }
+
+  rs::RenderPass               _render_pass;
+  std::vector<rs::Framebuffer> _framebuffers;
+  std::vector<rs::Pipeline>    _pipelines;
 };
 
-} // namespace rd
+} // namespace rd::vk

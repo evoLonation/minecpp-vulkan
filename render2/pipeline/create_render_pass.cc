@@ -2,6 +2,7 @@ module render.render_pass;
 
 import "vulkan_config.h";
 import render.vk.resource;
+import render.vk.device;
 import render.vk.sync;
 import render.vertex;
 
@@ -10,13 +11,16 @@ import toy;
 
 namespace rd {
 
-RenderPass::RenderPass(std::span<const SubpassInfo> subpasses, Extent extent) {
+auto RenderPass::createRenderPass(std::span<const SubpassInfo> subpasses)
+  -> std::vector<AttachmentBuffers> {
   enum ExternalUsage {
     PRESENTABLE,
     MULTI_SAMPLE,
     HOST_READABLE,
   };
   auto attachments = std::vector<VkAttachmentDescription>{};
+  auto attachment_buffers_flights = std::vector<AttachmentBuffers>{};
+  attachment_buffers_flights.resize(FlightContext::flight_n);
   auto color_attachment_index = std::map<ColorFramebuf*, uint32_t>{};
   auto depst_attachment_index = std::map<DepthStencilFramebuf*, uint32_t>{};
   for (const auto& subpass : subpasses) {
@@ -120,10 +124,16 @@ RenderPass::RenderPass(std::span<const SubpassInfo> subpasses, Extent extent) {
         VK_SAMPLE_COUNT_1_BIT,
         color->isPresentable() ? PRESENTABLE : HOST_READABLE
       ));
+      for (auto i = 0; i < FlightContext::flight_n; i++) {
+        attachment_buffers_flights[i].push_back(color->getImageView(i));
+      }
       if (color->getSampleCount() != VK_SAMPLE_COUNT_1_BIT) {
         attachments.push_back(
           get_attachment(color->getFormat(), color->getSampleCount(), MULTI_SAMPLE)
         );
+        for (auto i = 0; i < FlightContext::flight_n; i++) {
+          attachment_buffers_flights[i].push_back(color->getMultiSampleImageView(i));
+        }
       }
     }
     if (subpass.depth_stencil.has_value()) {
@@ -133,6 +143,9 @@ RenderPass::RenderPass(std::span<const SubpassInfo> subpasses, Extent extent) {
         attachments.push_back(
           get_attachment(depst->getFormat(), VK_SAMPLE_COUNT_1_BIT, HOST_READABLE)
         );
+        for (auto i = 0; i < FlightContext::flight_n; i++) {
+          attachment_buffers_flights[i].push_back(depst->getImageView(i));
+        }
       }
     }
   }
@@ -400,6 +413,7 @@ RenderPass::RenderPass(std::span<const SubpassInfo> subpasses, Extent extent) {
     .dependencyCount = static_cast<uint32_t>(merged_dependencies.size()),
     .pDependencies = merged_dependencies.data(),
   };
+  _render_pass = { vk::Device::getInstance(), render_pass_create_info };
 }
 
 } // namespace rd

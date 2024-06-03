@@ -1,0 +1,9 @@
+export module render.vk.shader_code;
+
+import std;
+
+namespace rd::vk {
+
+export auto get_shader_code(std::string_view shader) -> std::span<const std::byte>;
+
+} // namespace rd::vk
