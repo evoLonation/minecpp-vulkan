@@ -36,6 +36,7 @@ struct VertexInfo : public vk::DeviceChecker<VertexInfo> {
            a.attribute_descriptions.begin() == b.attribute_descriptions.begin() &&
            a.attribute_descriptions.end() == b.attribute_descriptions.end();
   }
+  VertexInfo() = default;
   VertexInfo(
     const VkVertexInputBindingDescription*             binding_description,
     std::span<const VkVertexInputAttributeDescription> attribute_descriptions

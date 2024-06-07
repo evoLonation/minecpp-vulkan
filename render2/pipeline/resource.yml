@@ -3,3 +3,4 @@ source:
 - create_render_pass.cc
 - create_pipeline.cc
 - shader_code.ccm
+- descriptor.ccm

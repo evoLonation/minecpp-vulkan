@@ -1,9 +1,10 @@
-export module render.render_pass;
+export module render.vk.render_pass;
 
 import "vulkan_config.h";
 import render.vk.resource;
 import render.vk.sync;
 import render.vk.device;
+import render.vk.buffer;
 import render.vertex;
 
 import std;
@@ -16,74 +17,11 @@ public:
   static constexpr auto flight_n = 2;
 };
 
-auto createRenderPass(
-  std::span<const VkFormat>            color_formats,
-  VkFormat                             depth_stencil_format,
-  std::optional<VkSampleCountFlagBits> sample_count
-) -> rs::RenderPass;
-
-auto createFramebuffer(
-  VkRenderPass               render_pass,
-  VkExtent2D                 extent,
-  VkImageView                color_image,
-  VkImageView                depth_image,
-  std::optional<VkImageView> multi_sample_image
-) -> rs::Framebuffer;
-
-void recordRenderPass(
-  VkCommandBuffer                      cmdbuf,
-  VkRenderPass                         render_pass,
-  VkFramebuffer                        framebuffer,
-  VkExtent2D                           extent,
-  std::function<void(VkCommandBuffer)> recorder,
-  bool                                 multi_sample
-);
-
 struct PipelineResource {
   rs::ShaderModule   vertex_shader;
   rs::ShaderModule   frag_shader;
   rs::PipelineLayout pipeline_layout;
   rs::Pipeline       pipeline;
-};
-
-// auto createGraphicsPipeline(
-//   VkPhysicalDevice                                   pdevice,
-//   VkDevice                                           device,
-//   VkRenderPass                                       render_pass,
-//   VkPrimitiveTopology                                topology,
-//   std::string_view                                   vertex_shader_name,
-//   std::string_view                                   frag_shader_name,
-//   std::span<const VkVertexInputBindingDescription>   vertex_binding_descriptions,
-//   std::span<const VkVertexInputAttributeDescription> vertex_attribute_descriptions,
-//   std::span<const VkDescriptorSetLayout>             descriptor_set_layouts,
-//   VkSampleCountFlagBits                              sample_count,
-//   std::optional<StencilOption>                       stencil_option
-// ) -> PipelineResource;
-
-enum class ColorFormat {
-
-};
-
-enum class DepthStencilFormat {
-
-};
-
-struct ColorFramebuf {
-  virtual auto isPresentable() -> bool = 0;
-  virtual auto getFormat() -> VkFormat = 0;
-  virtual auto getSampleCount() -> VkSampleCountFlagBits = 0;
-  virtual auto getImageView(uint32_t in_flight_index) -> VkImageView = 0;
-  virtual auto getMultiSampleImageView(uint32_t in_flight_index) -> VkImageView = 0;
-};
-
-struct DepthStencilFramebuf {
-  virtual auto getFormat() -> VkFormat = 0;
-  virtual auto getImageView(uint32_t in_flight_index) -> VkImageView = 0;
-};
-
-struct ColorFramebufInfo {
-  bool     presentable;
-  VkFormat format;
 };
 
 struct StencilOption {
@@ -98,89 +36,161 @@ struct DepthOption {
   bool        enable_write;
 };
 
-struct DepthStencilInfo {
-  VkFormat format;
-  // only useful when format is depth_stencil format
-  std::optional<StencilOption> stencil_option;
-  std::optional<DepthOption>   depth_option;
-};
-
-struct Extent {
-  uint32_t width;
-  uint32_t height;
-};
-
-enum class ResourceType { UNIFORM, SAMPLER };
-
-struct PipelineInfo {
-  std::string                   vertex_shader_name;
-  std::string                   frag_shader_name;
-  VkPrimitiveTopology           topology;
-  VertexInfo                    vertex_info;
-  std::span<const ResourceType> resource_types;
-  std::optional<StencilOption>  stencil_option;
-};
-
-struct ColorInfo {
-  ColorFramebuf*        color_framebuf;
-  VkSampleCountFlagBits sample_count = VK_SAMPLE_COUNT_1_BIT;
-};
-
-enum class AttachmentType {
-  COLOR,
-  DEPTH_STENCIL,
-};
-
-struct Attachment {
-  AttachmentType     type;
-  VkFormat           format;
-  VkSampleCountFlags sample_count;
+struct AttachmentInfo {
+  VkFormat              format;
+  VkSampleCountFlagBits sample_count;
   struct ExternalDependency {
     Scope         scope;
     VkImageLayout layout;
+    bool          keep_content = true;
   };
-  ExternalDependency enter_dep;
-  ExternalDependency exit_dep;
+  ExternalDependency enter_dep = {
+    .scope = {
+      .stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+      .access_mask = 0,
+    },
+    .layout = VK_IMAGE_LAYOUT_UNDEFINED,
+    .keep_content = false,
+  };
+  ExternalDependency exit_dep = {
+    .scope = {
+      .stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+      .access_mask = 0,
+    },
+    .layout = VK_IMAGE_LAYOUT_UNDEFINED,
+    .keep_content = false,
+  };
+};
+
+struct DescriptorInfo {
+  VkDescriptorType   type;
+  VkShaderStageFlags stage;
+  uint32_t           count;
+};
+
+struct DescriptorSetInfo {
+  std::vector<DescriptorInfo> descriptors;
 };
 
 struct SubpassInfo {
-  using InputRef = std::variant<ColorFramebuf*, DepthStencilFramebuf*>;
-  std::vector<ColorFramebufInfo>          colors;
-  std::optional<DepthStencilFramebufInfo> depth_stencil;
-  std::vector<InputRef>                   inputs;
-  PipelineInfo                            pipeline;
+  // if multi_sample has value, every color attachment in colors must has the same sample_count
+  std::vector<uint32_t> colors;
+  // if inputs is
+  std::vector<uint32_t> inputs;
+  struct MultiSample {
+    // size must equal to colors
+    std::vector<std::optional<uint32_t>> resolves;
+    // must not sample_1
+    VkSampleCountFlagBits sample_count;
+  };
+  std::optional<MultiSample> multi_sample;
+  struct DepthStencil {
+    uint32_t      attachment;
+    DepthOption   depth_option;
+    StencilOption stencil_option;
+  };
+
+  // if has value, depth_option and stencil_option has value depend on attachment format
+  std::optional<uint32_t>      depst_attachment;
+  std::optional<DepthOption>   depth_option;
+  std::optional<StencilOption> stencil_option;
+
+  std::string                    vertex_shader_name;
+  std::string                    frag_shader_name;
+  VkPrimitiveTopology            topology;
+  VertexInfo                     vertex_info;
+  std::vector<DescriptorSetInfo> descriptor_sets;
 };
 
+struct RenderPassInfo {
+  VkExtent2D                  extent;
+  std::vector<AttachmentInfo> attachments;
+  std::vector<SubpassInfo>    subpasses;
+};
+
+class Pipeline {
+public:
+  class Recorder {
+  public:
+    void setDescriptorSet(uint32_t index, std::span<class DescriptorSet* const> descriptor_set);
+    void setIndexBuffer();
+    void setVertexBuffer();
+    void draw();
+  };
+  void setRecorder(std::function<void(Recorder)> recorder);
+  auto pipeline() const -> VkPipeline { return _pipeline.pipeline; }
+  auto descriptor_set_layouts() const -> std::span<const rs::DescriptorSetLayout> {
+    return _dset_layouts;
+  }
+  Pipeline(PipelineResource pipeline_resource, std::vector<rs::DescriptorSetLayout> dset_layouts)
+    : _pipeline(std::move(pipeline_resource)), _dset_layouts(std::move(dset_layouts)) {}
+
+private:
+  PipelineResource                     _pipeline;
+  std::vector<rs::DescriptorSetLayout> _dset_layouts;
+};
 class RenderPass {
 public:
   RenderPass() = default;
-  RenderPass(std::span<const SubpassInfo> subpasses, Extent extent);
-  using AttachmentBuffers = std::vector<VkImageView>;
-
-private:
-  auto createRenderPass(std::span<const SubpassInfo> subpasses) -> std::vector<AttachmentBuffers>;
-  void createPipeline();
-  void createFramebuffers(
-    std::span<const AttachmentBuffers> attachment_buffers_flights, Extent extent
-  ) {
-    _framebuffers = attachment_buffers_flights | views::transform([&](auto& attachment_buffers) {
-                      auto create_info = VkFramebufferCreateInfo{
-                        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-                        .renderPass = _render_pass,
-                        .attachmentCount = static_cast<uint32_t>(attachment_buffers.size()),
-                        .pAttachments = attachment_buffers.data(),
-                        .width = extent.width,
-                        .height = extent.height,
-                        .layers = 1,
-                      };
-                      return rs::Framebuffer{ Device::getInstance(), create_info };
-                    }) |
-                    ranges::to<std::vector>();
+  RenderPass(RenderPassInfo info) {
+    _render_pass = createRenderPass(info.attachments, info.subpasses);
+    _pipelines = createPipeline(_render_pass, info.extent, info.subpasses);
   }
 
-  rs::RenderPass               _render_pass;
-  std::vector<rs::Framebuffer> _framebuffers;
-  std::vector<rs::Pipeline>    _pipelines;
+  auto operator[](uint32_t index) -> Pipeline;
+
+private:
+  static auto createRenderPass(
+    std::span<const AttachmentInfo> attachments, std::span<const SubpassInfo> subpasses
+  ) -> rs::RenderPass;
+  static auto createPipeline(
+    VkRenderPass render_pass, VkExtent2D extent, std::span<const SubpassInfo> subpasses
+  ) -> std::vector<Pipeline>;
+  static constexpr auto _color_formats = std::array{
+    VK_FORMAT_R8G8B8A8_SRGB,
+  };
+  static constexpr auto _depth_formats = std::array{
+    VK_FORMAT_D16_UNORM,
+    VK_FORMAT_D32_SFLOAT,
+  };
+  static constexpr auto _stencil_formats = std::array{
+    VK_FORMAT_S8_UINT,
+  };
+  static constexpr auto _depth_stencil_formats = std::array{
+    VK_FORMAT_D24_UNORM_S8_UINT,
+  };
+
+  rs::RenderPass        _render_pass;
+  std::vector<Pipeline> _pipelines;
+};
+
+class DescritporPool : public rs::DescriptorPool {
+public:
+  DescritporPool(uint32_t set_count, std::span<const VkDescriptorPoolSize> type_counts) {
+    auto pool_create_info = VkDescriptorPoolCreateInfo{
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+      // VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT: 允许freeDescriptorSets
+      .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+      // 会分配描述符集的最大数量
+      .maxSets = set_count,
+      .poolSizeCount = static_cast<uint32_t>(type_counts.size()),
+      .pPoolSizes = type_counts.data(),
+    };
+    rs::DescriptorPool::operator=({ Device::getInstance(), pool_create_info });
+  }
+};
+
+class Descriptor {
+  auto operator=(std::initializer_list<std::reference_wrapper<const Buffer>> resources)
+    -> Descriptor&;
+  auto operator=(const Buffer& resources) -> Descriptor&;
+};
+
+class DescriptorSet {
+public:
+  DescriptorSet(Pipeline subpass, uint32_t set_id) {}
+
+  auto operator[](uint32_t binding) -> Descriptor;
 };
 
 } // namespace rd::vk

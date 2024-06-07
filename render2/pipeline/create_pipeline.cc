@@ -1,4 +1,4 @@
-module render.render_pass;
+module render.vk.render_pass;
 
 import "vulkan_config.h";
 import render.vk.resource;
@@ -10,16 +10,16 @@ import render.vertex;
 import std;
 import toy;
 
-namespace rd {
+namespace rd::vk {
 
-auto createShaderModule(std::string_view filename, VkDevice device) -> vk::rs::ShaderModule {
-  auto content = vk::get_shader_code(filename);
+auto createShaderModule(std::string_view filename, VkDevice device) -> rs::ShaderModule {
+  auto content = get_shader_code(filename);
   auto create_info = VkShaderModuleCreateInfo{
     .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
     .codeSize = content.size(),
     .pCode = reinterpret_cast<const uint32_t*>(content.data()),
   };
-  return vk::rs::ShaderModule{ device, create_info };
+  return rs::ShaderModule{ device, create_info };
 }
 
 auto createGraphicsPipeline(
@@ -34,9 +34,10 @@ auto createGraphicsPipeline(
   std::optional<StencilOption>                       stencil_option
 ) -> PipelineResource {
   constexpr bool enable_blending_color = false;
-  auto&          device = vk::Device::getInstance();
-  auto           vertex_shader = createShaderModule(vertex_shader_name, device);
-  auto           frag_shader = createShaderModule(frag_shader_name, device);
+
+  auto& device = Device::getInstance();
+  auto  vertex_shader = createShaderModule(vertex_shader_name, device);
+  auto  frag_shader = createShaderModule(frag_shader_name, device);
   // pSpecializationInfo 可以为 管道 配置着色器的常量，利于编译器优化
   // 类似 constexpr
   auto shader_stage_infos = std::array{
@@ -186,7 +187,7 @@ auto createGraphicsPipeline(
     .setLayoutCount = (uint32_t)descriptor_set_layouts.size(),
     .pSetLayouts = descriptor_set_layouts.data(),
   };
-  auto pipeline_layout = vk::rs::PipelineLayout{ device, pipeline_layout_info };
+  auto pipeline_layout = rs::PipelineLayout{ device, pipeline_layout_info };
 
   auto pipeline_create_info = VkGraphicsPipelineCreateInfo{
     .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -208,7 +209,7 @@ auto createGraphicsPipeline(
     .basePipelineHandle = VK_NULL_HANDLE,
   };
 
-  auto pipeline = std::move(vk::rs::GraphicsPipelineFactory::create(
+  auto pipeline = std::move(rs::GraphicsPipelineFactory::create(
     device, VK_NULL_HANDLE, std::span{ &pipeline_create_info, 1 }
   )[0]);
   return { std::move(vertex_shader),
@@ -217,21 +218,49 @@ auto createGraphicsPipeline(
            std::move(pipeline) };
 }
 
-// auto RenderPass::createPipeline(
-//   vk::rs::RenderPass render_pass, std::span<const SubpassInfo> subpasses
-// ) -> std::vector<PipelineResource> {
-//   return subpasses | views::transform([&](const SubpassInfo& subpass) {
-//            auto pipeline_info = subpass.pipeline;
-//            return createGraphicsPipeline(
-//              render_pass,
-//              pipeline_info.topology,
-//              pipeline_info.vertex_shader_name,
-//              pipeline_info.frag_shader_name,
-//              { pipeline_info.vertex_info.binding_description, 1 },
-//              pipeline_info.vertex_info.attribute_descriptions, {}, subpass.
-//            );
-//          }) |
-//          ranges::to<std::vector>();
-// }
+auto RenderPass::createPipeline(
+  VkRenderPass render_pass, VkExtent2D extent, std::span<const SubpassInfo> subpasses
+) -> std::vector<Pipeline> {
+  auto pipelines = std::vector<Pipeline>{};
+  for (auto const& subpass : subpasses) {
+    auto dset_layouts = std::vector<rs::DescriptorSetLayout>{};
+    auto dset_layout_handles = std::vector<VkDescriptorSetLayout>{};
+    for (auto const& dset_info : subpass.descriptor_sets) {
+      auto dset_layout = dset_info.descriptors | toy::enumerate | views::transform([](auto pair) {
+                           auto const& [index, info] = pair;
+                           return VkDescriptorSetLayoutBinding{
+                             .binding = index,
+                             .descriptorType = info.type,
+                             .descriptorCount = info.count,
+                             .stageFlags = info.stage,
+                             .pImmutableSamplers = nullptr,
+                           };
+                         }) |
+                         ranges::to<std::vector>();
+      auto dset_create_info = VkDescriptorSetLayoutCreateInfo{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = static_cast<uint32_t>(dset_layout.size()),
+        .pBindings = dset_layout.data(),
+      };
+      dset_layouts.emplace_back(Device::getInstance(), dset_create_info);
+      dset_layout_handles.push_back(dset_layouts.back());
+    }
+    pipelines.emplace_back(
+      createGraphicsPipeline(
+        render_pass,
+        subpass.topology,
+        subpass.vertex_shader_name,
+        subpass.frag_shader_name,
+        { subpass.vertex_info.binding_description, 1 },
+        subpass.vertex_info.attribute_descriptions,
+        dset_layout_handles,
+        subpass.multi_sample->sample_count,
+        subpass.stencil_option
+      ),
+      std::move(dset_layouts)
+    );
+  }
+  return pipelines;
+}
 
-} // namespace rd
+} // namespace rd::vk
