@@ -21,39 +21,68 @@ auto createBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage) -> rs::Buf
   return { Device::getInstance(), buffer_info };
 }
 
-void bindBufferMemory(VkBuffer buffer, VkDeviceMemory memory) {
-  vkBindBufferMemory(Device::getInstance(), buffer, memory, 0);
-}
-
 class Buffer : public rs::Buffer {
 public:
   Buffer() = default;
   Buffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage, VkMemoryPropertyFlags property_flags) {
-    rs::Buffer ::operator=(createBuffer(buffer_size, usage));
+    rs::Buffer::operator=(createBuffer(buffer_size, usage));
     _memory = { get(), property_flags };
-    bindBufferMemory(get(), _memory);
   }
+  auto memory() const -> VkDeviceMemory { return _memory; }
 
 private:
   Memory _memory;
 };
 
-class StagingBuffer : public rs::Buffer {
+class HostVisibleBuffer : public Buffer {
 public:
-  StagingBuffer() = default;
-  StagingBuffer(VkDeviceSize buffer_size) {
-    rs::Buffer ::operator=(createBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT));
-    _memory = { get() };
-    bindBufferMemory(get(), _memory);
+  HostVisibleBuffer() = default;
+  HostVisibleBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage)
+    : Buffer(buffer_size, usage, HostVisibleMemory::propreties), _memory(Buffer::memory()) {}
+  HostVisibleBuffer(std::span<const std::byte> buffer_data, VkBufferUsageFlags usage)
+    : HostVisibleBuffer(buffer_data.size(), usage) {
+    memory().fill(buffer_data);
   }
-  StagingBuffer(std::span<const std::byte> buffer_data) : StagingBuffer(buffer_data.size()) {
-    fill(buffer_data);
-  }
-  void fill(std::span<const std::byte> buffer_data) { _memory.fill(buffer_data); }
   auto memory() -> HostVisibleMemory& { return _memory; }
+  auto operator->() -> HostVisibleMemory& { return _memory; }
 
 private:
   HostVisibleMemory _memory;
+};
+
+class StagingBuffer : public HostVisibleBuffer {
+public:
+  StagingBuffer() = default;
+  StagingBuffer(VkDeviceSize buffer_size)
+    : HostVisibleBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT) {}
+  StagingBuffer(std::span<const std::byte> buffer_data)
+    : HostVisibleBuffer(buffer_data, VK_BUFFER_USAGE_TRANSFER_SRC_BIT) {}
+};
+
+template <typename DataType>
+  requires std::is_trivially_copyable_v<DataType>
+// using DataType = float;
+class UniformBuffer : public HostVisibleBuffer {
+public:
+  UniformBuffer() = default;
+  UniformBuffer(DataType& data)
+    : HostVisibleBuffer(
+        std::as_bytes(std::span<DataType>{ &data, 1 }), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
+      ),
+      _cache_data(data), _p_data(&data) {}
+
+  void update() {
+    auto now_bytes = std::as_bytes(std::span<DataType>{ _p_data, 1 });
+    auto cached_bytes = std::as_writable_bytes(std::span<DataType>{ &_cache_data, 1 });
+    if (ranges::mismatch(now_bytes, cached_bytes).in1 != now_bytes.end()) {
+      std::copy(now_bytes.begin(), now_bytes.end(), cached_bytes.begin());
+      memory().fill(cached_bytes);
+    }
+  }
+
+private:
+  DataType  _cache_data;
+  DataType* _p_data;
 };
 
 void recordCopyBuffer(

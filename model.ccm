@@ -1,9 +1,9 @@
 export module model;
 
-import <tinyobj_loader_c.h>;
+import "tinyobj_loader_c.h";
 import std;
 import toy;
-import render;
+import render.vertex;
 import glm;
 
 namespace fs = std::filesystem;

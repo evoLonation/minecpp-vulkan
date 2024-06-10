@@ -6,6 +6,7 @@ import render.vk.sync;
 import render.vk.device;
 import render.vk.buffer;
 import render.vertex;
+import render.sampler;
 
 import std;
 import toy;
@@ -33,7 +34,7 @@ struct StencilOption {
 
 struct DepthOption {
   VkCompareOp compare_op;
-  bool        enable_write;
+  bool        overwrite;
 };
 
 struct AttachmentInfo {
@@ -137,7 +138,7 @@ public:
     _pipelines = createPipeline(_render_pass, info.extent, info.subpasses);
   }
 
-  auto operator[](uint32_t index) -> Pipeline;
+  auto operator[](uint32_t index) -> Pipeline& { return _pipelines[index]; }
 
 private:
   static auto createRenderPass(
@@ -180,17 +181,81 @@ public:
   }
 };
 
-class Descriptor {
-  auto operator=(std::initializer_list<std::reference_wrapper<const Buffer>> resources)
-    -> Descriptor&;
-  auto operator=(const Buffer& resources) -> Descriptor&;
-};
-
 class DescriptorSet {
 public:
-  DescriptorSet(Pipeline subpass, uint32_t set_id) {}
+  DescriptorSet(const DescritporPool& pool, const Pipeline& pipeline, uint32_t set_id) {
+    auto dset_layout = pipeline.descriptor_set_layouts()[set_id].get();
+    auto allocate_info = VkDescriptorSetAllocateInfo{
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+      .descriptorPool = pool,
+      .descriptorSetCount = 1,
+      .pSetLayouts = &dset_layout,
+    };
+    _dsets = { Device::getInstance(), allocate_info };
+  }
+  auto operator[](uint32_t binding) -> class Descriptor;
+  auto get() const -> VkDescriptorSet { return _dsets.get()[0]; }
 
-  auto operator[](uint32_t binding) -> Descriptor;
+private:
+  rs::DescriptorSets _dsets;
 };
+
+class Descriptor {
+public:
+  auto operator=(std::initializer_list<std::reference_wrapper<Buffer const>> resources
+  ) -> Descriptor& {
+    auto buffer_infos = resources | views::transform([&](Buffer const& buffer) {
+                          return VkDescriptorBufferInfo{
+                            .buffer = buffer,
+                            .offset = 0,
+                            .range = VK_WHOLE_SIZE,
+                          };
+                        }) |
+                        ranges::to<std::vector>();
+    auto write_info = VkWriteDescriptorSet{
+      .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+      .dstSet = _dset->get(),
+      .dstBinding = _binding,
+      // 数组起始索引
+      .dstArrayElement = 0,
+      .descriptorCount = static_cast<uint32_t>(resources.size()),
+      .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+      .pBufferInfo = buffer_infos.data(),
+    };
+    vkUpdateDescriptorSets(Device::getInstance(), 1, &write_info, 0, nullptr);
+    return *this;
+  }
+  auto operator=(std::initializer_list<std::reference_wrapper<SampledTexture const>> resources
+  ) -> Descriptor& {
+    auto image_infos = resources | views::transform([&](SampledTexture const& texture) {
+                         return VkDescriptorImageInfo{
+                           .sampler = texture.sampler(),
+                           .imageView = texture.image_view(),
+                           .imageLayout = texture.getLayout(),
+                         };
+                       }) |
+                       ranges::to<std::vector>();
+    auto write_info = VkWriteDescriptorSet{
+      .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+      .dstSet = _dset->get(),
+      .dstBinding = _binding,
+      // 数组起始索引
+      .dstArrayElement = 0,
+      .descriptorCount = static_cast<uint32_t>(resources.size()),
+      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+      .pImageInfo = image_infos.data(),
+    };
+    vkUpdateDescriptorSets(Device::getInstance(), 1, &write_info, 0, nullptr);
+    return *this;
+  }
+  auto operator=(auto const& resource) -> Descriptor& { return *this = { std::cref(resource) }; }
+  Descriptor(DescriptorSet* dset, uint32_t binding) : _dset(dset), _binding(binding) {}
+
+private:
+  DescriptorSet* _dset;
+  uint32_t       _binding;
+};
+
+auto DescriptorSet::operator[](uint32_t binding) -> Descriptor { return { this, binding }; }
 
 } // namespace rd::vk

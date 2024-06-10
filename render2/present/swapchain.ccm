@@ -19,6 +19,9 @@ public:
   void recreate();
   auto valid() -> bool { return _swapchain.get() != VK_NULL_HANDLE; }
   auto images() const -> std::span<const VkImage> { return _images; }
+  auto extent() const -> VkExtent2D { return _swapchain_extent; }
+
+  static auto format() -> VkFormat { return _format; }
 
 private:
   void create();
@@ -26,7 +29,7 @@ private:
   friend DeviceExtensionRequestor<Swapchain>;
   static inline auto pdevice_extensions = std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
-  static constexpr auto _format = VK_FORMAT_B8G8R8A8_SRGB;
+  static constexpr auto _format = VK_FORMAT_R8G8B8A8_SRGB;
   static constexpr auto _present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
   static constexpr auto _color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 

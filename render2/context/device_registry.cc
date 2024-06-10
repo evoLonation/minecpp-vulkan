@@ -2,6 +2,7 @@ module render.vk.device;
 
 import render.vk.swapchain;
 import render.vk.executor;
+import render.vertex;
 import render.sampler;
 import std;
 
@@ -20,6 +21,7 @@ auto Device::registerCheckers() -> std::vector<bool (*)(const PdeviceContext&)> 
   registerChecker<Swapchain>(checkers);
   registerChecker<CommandExecutor>(checkers);
   registerChecker<SampledTexture>(checkers);
+  registerChecker<VertexInfo>(checkers);
 
   return checkers;
 }

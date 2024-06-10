@@ -1,4 +1,4 @@
-module render.render_pass;
+module render.vk.render_pass;
 
 import "vulkan_config.h";
 import render.vk.resource;

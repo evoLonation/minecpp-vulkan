@@ -68,8 +68,8 @@ public:
   Device();
 
   auto pdevice() const { return _pdevice; }
-  auto properties() const { return _properties; }
-  auto features() const { return _features; }
+  auto properties() const -> const auto& { return _properties; }
+  auto features() const -> const auto& { return _features; }
 
 private:
   auto registerExtensions() -> std::vector<const char*>;

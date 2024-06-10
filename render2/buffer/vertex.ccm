@@ -173,6 +173,8 @@ private:
 
 public:
   VertexBuffer() = default;
+  template <ranges::contiguous_range R>
+  VertexBuffer(R&& range) : VertexBuffer{ std::span<const ranges::range_value_t<R>>{ range } } {}
   template <toy::InstantiationOf<Vertex> VertexT>
   // using VertexT = Vertex<glm::vec3>;
   VertexBuffer(std::span<const VertexT> vertex_data)

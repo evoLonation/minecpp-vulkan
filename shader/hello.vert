@@ -7,9 +7,9 @@ layout(location = 2) in vec2 in_tex_coord;
 layout(location = 0) out vec3 frag_color;
 layout(location = 1) out vec2 frag_tex_coord;
 
-layout(set = 0, binding = 0) uniform ViewBlock{mat4 data;} view;
-layout(set = 1, binding = 0) uniform ProjBlock{mat4 data;} proj;
-layout(set = 2, binding = 0) uniform ModelBlock{mat4 data;} model;
+layout(set = 0, binding = 0) uniform ModelBlock{mat4 data;} model;
+layout(set = 1, binding = 0) uniform ViewBlock{mat4 data;} view;
+layout(set = 1, binding = 1) uniform ProjBlock{mat4 data;} proj;
 
 void main() {
   gl_Position = proj.data * view.data * model.data * vec4(in_position, 1.0);

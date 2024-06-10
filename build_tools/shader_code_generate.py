@@ -17,10 +17,10 @@ if args.task == 'total':
   for shader_file in args.input:
     import_decl += f'import shader_code.{get_shader_identify(shader_file)};\n'
     pair_decl += f'{{"{ospath.basename(shader_file)}", std::as_bytes(std::span{{shader_code::{get_shader_identify(shader_file)}::shader_code_data}})}},\n'
-  code = f'''module vulkan.shader_code;
+  code = f'''module render.vk.shader_code;
           import std;
           {import_decl}
-          namespace vk{{
+          namespace rd::vk{{
           auto get_shader_code(std::string_view shader) -> std::span<const std::byte> {{
             auto shader_code_map = std::map<std::string_view, std::span<const std::byte>> {{
               {pair_decl}

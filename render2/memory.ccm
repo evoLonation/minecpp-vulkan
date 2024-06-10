@@ -11,7 +11,13 @@ export namespace rd::vk {
 class Memory : public rs::Memory {
 public:
   Memory() = default;
+  /**
+   * @brief Construct a new Memory object and bind buffer to memory
+   */
   Memory(VkBuffer buffer, VkMemoryPropertyFlags property_flags);
+  /**
+   * @brief Construct a new Memory object and bind image to memory
+   */
   Memory(VkImage image, VkMemoryPropertyFlags property_flags);
   Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property_flags);
 
@@ -19,27 +25,27 @@ private:
   static inline auto _memory_properties = std::unique_ptr<VkPhysicalDeviceMemoryProperties>{};
 };
 
-class HostVisibleMemory : public Memory {
+class HostVisibleMemory {
 public:
   HostVisibleMemory() = default;
-  HostVisibleMemory(VkMemoryRequirements requirements) : Memory(requirements, propreties) {}
-  HostVisibleMemory(VkImage image) : Memory(image, propreties) {}
-  HostVisibleMemory(VkBuffer buffer) : Memory(buffer, propreties) {}
+  HostVisibleMemory(VkDeviceMemory memory) : _memory(memory) {}
   HostVisibleMemory(const HostVisibleMemory&) noexcept = delete;
-  HostVisibleMemory(HostVisibleMemory&& e) noexcept;
+  HostVisibleMemory(HostVisibleMemory&&) noexcept;
   auto operator=(const HostVisibleMemory&) noexcept -> HostVisibleMemory& = delete;
-  auto operator=(HostVisibleMemory&& e) noexcept -> HostVisibleMemory&;
+  auto operator=(HostVisibleMemory&&) noexcept -> HostVisibleMemory&;
 
   auto data() -> void*;
   void fill(std::span<const std::byte> buffer_data);
   ~HostVisibleMemory() { unmap(); }
 
+  static constexpr auto propreties =
+    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
 private:
   void unmap();
 
 private:
-  static constexpr auto propreties =
-    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+  VkDeviceMemory _memory = nullptr;
 
   void* _data = nullptr;
 };

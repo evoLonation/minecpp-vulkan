@@ -24,7 +24,9 @@ Memory::Memory(VkBuffer buffer, VkMemoryPropertyFlags property_flags)
         return memory_requirements;
       }(),
       property_flags
-    ) {}
+    ) {
+  vkBindBufferMemory(Device::getInstance(), buffer, get(), 0);
+}
 Memory::Memory(VkImage image, VkMemoryPropertyFlags property_flags)
   : Memory(
       [image]() {
@@ -33,7 +35,9 @@ Memory::Memory(VkImage image, VkMemoryPropertyFlags property_flags)
         return memory_requirements;
       }(),
       property_flags
-    ) {}
+    ) {
+  vkBindImageMemory(Device::getInstance(), image, get(), 0);
+}
 Memory::Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property_flags) {
   auto& device = Device::getInstance();
 
@@ -64,15 +68,16 @@ Memory::Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property
   rs::Memory::operator=({ device, allocate_info });
 }
 
-HostVisibleMemory::HostVisibleMemory(HostVisibleMemory&& e) noexcept : Memory(std::move(e)) {
+HostVisibleMemory::HostVisibleMemory(HostVisibleMemory&& e) noexcept {
   _data = e._data;
+  _memory = e._memory;
   e._data = nullptr;
 }
 
 auto HostVisibleMemory::operator=(HostVisibleMemory&& e) noexcept -> HostVisibleMemory& {
   unmap();
-  Memory::operator=(std::move(e));
   _data = e._data;
+  _memory = e._memory;
   e._data = nullptr;
   return *this;
 }
@@ -80,7 +85,7 @@ auto HostVisibleMemory::operator=(HostVisibleMemory&& e) noexcept -> HostVisible
 auto HostVisibleMemory::data() -> void* {
   if (_data == nullptr) {
     checkVkResult(
-      vkMapMemory(Device::getInstance(), get(), 0, VK_WHOLE_SIZE, 0, &_data), "map memory"
+      vkMapMemory(Device::getInstance(), _memory, 0, VK_WHOLE_SIZE, 0, &_data), "map memory"
     );
   }
   return _data;
@@ -92,7 +97,7 @@ void HostVisibleMemory::fill(std::span<const std::byte> buffer_data) {
 
 void HostVisibleMemory::unmap() {
   if (_data != nullptr) {
-    vkUnmapMemory(Device::getInstance(), get());
+    vkUnmapMemory(Device::getInstance(), _memory);
   }
 }
 

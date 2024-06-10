@@ -12,138 +12,6 @@ import render.vk.memory;
 
 export namespace rd::vk {
 
-enum class ImageType {
-  SAMPLED_IMAGE,
-  DEPTH_STENCIL,
-  COLOR_ATTACHMENT,
-};
-
-enum class ImageUse {
-  UNDEFINED,
-  COPY_DST,
-  COPY_SRC,
-  MIPMAP_DST,
-  MIPMAP_SRC,
-  FRAGMENT_SAMPLER,
-  COLOR_ATTACHMENT,
-  DEPTH_STENCIL_ATTACHMENT,
-  PRESENT, // only can convert to layout, no scope
-
-  MAX_VALUE,
-};
-
-auto getLayout(ImageUse use) -> VkImageLayout {
-  switch (use) {
-  case ImageUse::UNDEFINED:
-    return VK_IMAGE_LAYOUT_UNDEFINED;
-  case ImageUse::COPY_DST:
-    return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-  case ImageUse::COPY_SRC:
-    return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-  case ImageUse::FRAGMENT_SAMPLER:
-    return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-  case ImageUse::COLOR_ATTACHMENT:
-    return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-  case ImageUse::DEPTH_STENCIL_ATTACHMENT:
-    return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-  case ImageUse::PRESENT:
-    return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-  default:
-    toy::throwf("the image use {} can not convert to image layout", (int)use);
-  }
-}
-
-auto getStage(ImageUse use) -> VkPipelineStageFlags {
-  switch (use) {
-  case ImageUse::COPY_DST:
-    return VK_PIPELINE_STAGE_TRANSFER_BIT;
-  case ImageUse::COPY_SRC:
-    return VK_PIPELINE_STAGE_TRANSFER_BIT;
-  case ImageUse::FRAGMENT_SAMPLER:
-    return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-  case ImageUse::COLOR_ATTACHMENT:
-    return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-  case ImageUse::DEPTH_STENCIL_ATTACHMENT:
-    return VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-  default:
-    toy::throwf("the image use {} can not convert to ScopeInfo", (int)use);
-  }
-}
-
-auto getReadAccess(ImageUse use) -> VkAccessFlags {
-  switch (use) {
-  case ImageUse::COPY_DST:
-    return 0;
-  case ImageUse::COPY_SRC:
-    return VK_ACCESS_TRANSFER_READ_BIT;
-  case ImageUse::FRAGMENT_SAMPLER:
-    return VK_ACCESS_SHADER_READ_BIT;
-  case ImageUse::COLOR_ATTACHMENT:
-    return VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
-  case ImageUse::DEPTH_STENCIL_ATTACHMENT:
-    return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-  default:
-    toy::throwf("the image use {} can not convert to read access", (int)use);
-  }
-}
-
-auto getWriteAccess(ImageUse use) -> VkAccessFlags {
-  switch (use) {
-  case ImageUse::FRAGMENT_SAMPLER:
-  case ImageUse::COPY_SRC:
-    return 0;
-  case ImageUse::COPY_DST:
-    return VK_ACCESS_TRANSFER_WRITE_BIT;
-  case ImageUse::COLOR_ATTACHMENT:
-    return VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-  case ImageUse::DEPTH_STENCIL_ATTACHMENT:
-    return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-  default:
-    toy::throwf("the image use {} can not convert to write access", (int)use);
-  }
-}
-
-enum class TransferOption {
-  NONE = 0b00,
-  DST = 0b01,
-  SRC = 0b10,
-  ALL = 0b11,
-};
-
-auto getUsage(ImageType type, TransferOption transfer) -> VkImageUsageFlags {
-  auto usage = (VkImageUsageFlags)0;
-  switch (type) {
-  case ImageType::SAMPLED_IMAGE:
-    usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
-    break;
-  case ImageType::COLOR_ATTACHMENT:
-    usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    break;
-  case ImageType::DEPTH_STENCIL:
-    usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    break;
-  }
-  if ((int)transfer & (int)TransferOption::DST) {
-    usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-  }
-  if ((int)transfer & (int)TransferOption::SRC) {
-    usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-  }
-  return usage;
-}
-
-auto getAspect(ImageType type) -> VkImageAspectFlagBits {
-  switch (type) {
-  case ImageType::COLOR_ATTACHMENT:
-  case ImageType::SAMPLED_IMAGE:
-    return VK_IMAGE_ASPECT_COLOR_BIT;
-  case ImageType::DEPTH_STENCIL:
-    return VK_IMAGE_ASPECT_DEPTH_BIT;
-  default:
-    toy::throwf("the type {} can not convert to aspect", (int)type);
-  }
-};
-
 struct MipRange {
   uint32_t base_level;
   uint32_t count;
@@ -251,16 +119,46 @@ public:
     uint32_t              mip_levels,
     VkSampleCountFlagBits sample_count
   )
-    : rs::Image(createImage(format, width, height, usage, mip_levels, sample_count)),
+    : rs::Image(createImage(
+        format,
+        width,
+        height,
+        usage,
+        mip_levels,
+        [&]() {
+          toy::throwf(
+            (getAvailableSampleCounts() | sample_count) > 0,
+            "the sample count {} is not supported",
+            uint32_t(sample_count)
+          );
+          return sample_count;
+        }()
+      )),
       _memory(get(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
-      _image_view(createImageView(get(), format, aspect, mip_levels)) {
-    vkBindImageMemory(Device::getInstance(), get(), _memory, 0);
+      _image_view(createImageView(get(), format, aspect, mip_levels)) {}
+  auto        image_view() const -> VkImageView { return _image_view; }
+  static auto getAvailableSampleCounts() -> VkSampleCountFlags {
+    if (_sample_counts == 0) {
+      auto& properties = Device::getInstance().properties();
+      _sample_counts = properties.limits.framebufferColorSampleCounts &
+                       properties.limits.framebufferDepthSampleCounts &
+                       properties.limits.framebufferStencilSampleCounts &
+                       properties.limits.framebufferNoAttachmentsSampleCounts &
+                       properties.limits.sampledImageColorSampleCounts &
+                       properties.limits.sampledImageIntegerSampleCounts &
+                       properties.limits.sampledImageDepthSampleCounts &
+                       properties.limits.sampledImageStencilSampleCounts &
+                       properties.limits.storageImageSampleCounts;
+    }
+    return _sample_counts;
   }
-  auto image_view() const -> VkImageView { return _image_view; }
 
 private:
   Memory        _memory;
   rs::ImageView _image_view;
+
+private:
+  static inline auto _sample_counts = VkSampleCountFlags{};
 };
 
 void copyBufferToImage(
@@ -370,38 +268,6 @@ auto createSampler(float max_anisotropy) -> rs::Sampler {
     .unnormalizedCoordinates = VK_FALSE,
   };
   return { Device::getInstance(), sampler_info };
-}
-
-// auto findDepthFormat() -> VkFormat {
-//   auto candidates = std::array{
-//     // todo: better format feature manage, even better vulkan feature manage not just format
-//     // VK_FORMAT_D32_SFLOAT, this format can not use to stencil test
-//     VK_FORMAT_D32_SFLOAT_S8_UINT,
-//     VK_FORMAT_D24_UNORM_S8_UINT,
-//   };
-//   if (auto res = findSupportFormat(
-//         FormatTarget::OPTIMAL_TILING, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT, candidates
-//       );
-//       res.has_value()) {
-//     return res.value();
-//   } else {
-//     toy::throwf("can not found support depth format");
-//   }
-// }
-
-auto getMaxSampleCount(VkPhysicalDeviceProperties properties) -> VkSampleCountFlagBits {
-  auto counts =
-    properties.limits.framebufferColorSampleCounts & properties.limits.framebufferDepthSampleCounts;
-  auto sample_counts = std::array{
-    VK_SAMPLE_COUNT_64_BIT, VK_SAMPLE_COUNT_32_BIT, VK_SAMPLE_COUNT_16_BIT, VK_SAMPLE_COUNT_8_BIT,
-    VK_SAMPLE_COUNT_4_BIT,  VK_SAMPLE_COUNT_2_BIT,  VK_SAMPLE_COUNT_1_BIT,
-  };
-  for (auto sample_count : sample_counts) {
-    if (counts & sample_count) {
-      return sample_count;
-    }
-  }
-  toy::throwf("unreachable");
 }
 
 } // namespace rd::vk

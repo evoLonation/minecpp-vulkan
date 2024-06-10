@@ -18,6 +18,12 @@ import toy;
 export namespace rd {
 
 class SampledTexture : public vk::DeviceChecker<SampledTexture> {
+public:
+  auto image() const -> VkImage { return _image; }
+  auto image_view() const -> VkImageView { return _image.image_view(); }
+  auto sampler() const -> VkSampler { return _sampler; }
+  auto getLayout() const -> VkImageLayout { return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; }
+
 private:
   vk::StagingBuffer _staging_buffer;
 
