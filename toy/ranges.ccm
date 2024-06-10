@@ -187,9 +187,9 @@ void test_SortedRange() {
 
 void test_ChunkBy() {
   static_assert(ranges::forward_range<
-                ChunkByView<views::all_t<std::vector<int>>, std::ranges::not_equal_to>>);
+                ChunkByView<views::all_t<std::vector<int>>, ranges::not_equal_to>>);
   static_assert(ranges::bidirectional_range<
-                ChunkByView<views::all_t<std::vector<int>>, std::ranges::not_equal_to>>);
+                ChunkByView<views::all_t<std::vector<int>>, ranges::not_equal_to>>);
   // todo
   // static_assert(ranges::common_range<ChunkByView<views::all_t<std::vector<int>>,
   // std::ranges::not_equal_to>>);

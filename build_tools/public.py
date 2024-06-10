@@ -67,7 +67,7 @@ class Flags:
     self.clang_executable_path = 'clang'
     self.system_include_dirs = [
       'C:/Users/ZhengyangZhao/msys64/mingw64/include/c++/v1',
-      'C:/Users/ZhengyangZhao/msys64/mingw64/lib/clang/17/include',
+      'C:/Users/ZhengyangZhao/msys64/mingw64/lib/clang/18/include',
     ]
     self.system_link_dirs = [
       'C:/Users/18389/msys2/mingw64/lib',
@@ -86,7 +86,10 @@ class Flags:
       '-fexperimental-library', 
       '-nostdinc++', 
       '-nostdlib++', 
-      '-Wno-unused-command-line-argument', 
+      '-Wno-unused-command-line-argument',
+      # for a deprecation bug occured in clang18 with std module: 
+      # https://github.com/llvm/llvm-project/issues/75057
+      '-Wno-deprecated-declarations', 
       '-g']
   
   def get_current_flag(self):

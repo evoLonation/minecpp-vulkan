@@ -35,8 +35,10 @@ export namespace std {
   using std::atoi;
   using std::atol;
   using std::atoll;
-  using std::strtod;
-  using std::strtof;
+  // by zzy
+  // using std::strtod;
+  // by zzy
+  // using std::strtof;
   using std::strtol;
   using std::strtold;
   using std::strtoll;

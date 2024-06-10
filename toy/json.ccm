@@ -194,12 +194,14 @@ public:
   Parser(const std::string& str) {
     _iter = str.begin();
     _end = str.end();
+    _str = &str;
   }
   auto parse() -> Json { return parseJson(); }
 
 private:
   decltype(std::declval<const std::string>().end())   _end;
   decltype(std::declval<const std::string>().begin()) _iter;
+  std::string const*                                  _str;
 
   auto skipSpace() -> char {
     while (std::isspace(*_iter)) {
@@ -317,11 +319,14 @@ private:
 
   auto parseFloat() -> std::optional<Number> {
     auto end = (char*)nullptr;
-    auto result = std::strtod(_iter.base(), &end);
-    if (end == _iter.base()) {
+    auto ss = std::stringstream{ *_str };
+    ss.seekg(_iter - _str->begin());
+    float result;
+    ss >> result;
+    if (ss.fail()) {
       return std::nullopt;
     } else {
-      _iter += end - _iter.base();
+      _iter = _str->begin() + ss.tellg();
       return result;
     }
   }

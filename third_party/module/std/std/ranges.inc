@@ -313,10 +313,10 @@ export namespace std {
 
 #if _LIBCPP_STD_VER >= 23
     // [range.chunk.by], chunk by view
-    // using std::ranges::chunk_by_view;
+    using std::ranges::chunk_by_view;
 
     namespace views {
-      // using std::ranges::views::chunk_by;
+      using std::ranges::views::chunk_by;
     }
 #endif // _LIBCPP_STD_VER >= 23
 

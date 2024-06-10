@@ -41,10 +41,8 @@ cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=cl
 - 模块接口文件： glm.cppm
 
 ## std_module
-- 来自clang18版本的libc++
-- 直接在libc++目录中用cmake构建得到std的模块接口文件
-- 放到third_party中试探性构建，并注释掉会报错的#include和using
-- todo：详细步骤
+- 获取地址： C:\Users\ZhengyangZhao\msys64\mingw64\share\libc++\v1
+- 放到third_party中试探性构建，并注释掉会报错的#include和using (修改处标注by zzy)
 
 ## stb_image
 - 直接github搜，把stb_image.h放third_party即可

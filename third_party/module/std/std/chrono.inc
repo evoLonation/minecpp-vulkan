@@ -195,18 +195,18 @@ export namespace std {
 
 #  ifdef _LIBCPP_ENABLE_EXPERIMENTAL
     // [time.zone.db], time zone database
-    // using std::chrono::tzdb;
-    // using std::chrono::tzdb_list;
+    using std::chrono::tzdb;
+    using std::chrono::tzdb_list;
 
     // [time.zone.db.access], time zone database access
     // using std::chrono::current_zone;
-    // using std::chrono::get_tzdb;
-    // using std::chrono::get_tzdb_list;
+    using std::chrono::get_tzdb;
+    using std::chrono::get_tzdb_list;
     // using std::chrono::locate_zone;
 
     // [time.zone.db.remote], remote time zone database support
-    // using std::chrono::reload_tzdb;
-    // using std::chrono::remote_version;
+    using std::chrono::reload_tzdb;
+    using std::chrono::remote_version;
 
 #  endif //  !defined(_LIBCPP_HAS_NO_TIME_ZONE_DATABASE) && !defined(_LIBCPP_HAS_NO_FILESYSTEM) &&
          //    !defined(_LIBCPP_HAS_NO_LOCALIZATION)

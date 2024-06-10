@@ -17,7 +17,7 @@ export namespace std {
     using std::ranges::in_out_out_result;
     using std::ranges::in_out_result;
 #if _LIBCPP_STD_VER >= 23
-    // using std::ranges::in_value_result;
+    using std::ranges::in_value_result;
 #endif
     using std::ranges::min_max_result;
     // using std::ranges::out_value_result;
@@ -45,7 +45,7 @@ export namespace std {
 #if _LIBCPP_STD_VER >= 23
   // [alg.contains], contains
   namespace ranges {
-    // using std::ranges::contains;
+    using std::ranges::contains;
 #if 0
     using std::ranges::contains_subrange;
 #endif
@@ -159,12 +159,12 @@ export namespace std {
     using std::ranges::starts_with;
 
     // [alg.ends.with], ends with
-    // using std::ranges::ends_with;
+    using std::ranges::ends_with;
 
     // [alg.fold], fold
-    // using std::ranges::fold_left;
-    // using std::ranges::fold_left_with_iter;
-    // using std::ranges::fold_left_with_iter_result;
+    using std::ranges::fold_left;
+    using std::ranges::fold_left_with_iter;
+    using std::ranges::fold_left_with_iter_result;
 #  if 0
     using std::ranges::fold_left_first;
     using std::ranges::fold_right;
