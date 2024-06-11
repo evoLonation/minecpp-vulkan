@@ -42,6 +42,11 @@ int main() {
     auto device = rd::vk::Device{};
 
     auto swapchain = rd::vk::Swapchain{};
+    auto swapchain_image_views =
+      swapchain.images() | views::transform([&](VkImage image) {
+        return rd::vk::createImageView(image, swapchain.format(), VK_IMAGE_ASPECT_COLOR_BIT, 1);
+      }) |
+      ranges::to<std::vector>();
 
     auto executor = rd::vk::CommandExecutor{};
 
@@ -153,25 +158,69 @@ int main() {
     auto vertex_buffer = rd::VertexBuffer{ vertexes };
     auto index_buffer = rd::IndexBuffer{ indices };
 
-
+    auto sample_image = rd::vk::Image{
+      swapchain.format(),
+      render_pass.extent().width,
+      render_pass.extent().height,
+      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+      VK_IMAGE_ASPECT_COLOR_BIT,
+      1,
+      sample_count,
+    };
     auto deep_image = rd::vk::Image{
-      VK_FORMAT_D32_SFLOAT,
-      swapchain.extent().width,
-      swapchain.extent().height,
+      depth_format,
+      render_pass.extent().width,
+      render_pass.extent().height,
       VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
       VK_IMAGE_ASPECT_DEPTH_BIT,
       1,
       sample_count,
+    };
+    auto framebuffers =
+      swapchain_image_views | views::transform([&](VkImageView image_view) {
+        return rd::vk::Framebuffer{
+          render_pass, std::array{ sample_image.image_view(), image_view, deep_image.image_view() }
+        };
+      }) |
+      ranges::to<std::vector>();
+
+    auto clear_values = std::array{
+      VkClearValue{ .color = { .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } },
+      VkClearValue{ .color = { .float32 = { 0.0f, 0.0f, 0.0f, 1.0f } } },
+      VkClearValue{ .depthStencil = { .depth = 1.0f, } },
     };
 
     // auto app = app::Application{};
     // app.runLoop();
     while (!glfwWindowShouldClose(glfw::Window::getInstance())) {
       input_processor.processInput(16.6);
+
+      if (!swapchain.valid()) {
+        swapchain.updateCapabilities();
+        if (swapchain.needRecreate()) {
+          swapchain.recreate();
+        }
+      }
+
+      if (swapchain.valid()) {
+        // ...
+        // must consume it util present()
+        auto image_available_sema = swapchain.getImageAvailableSema();
+        auto image_index = swapchain.getCurrentImageIndex();
+
+        if (!swapchain.present()) {
+          swapchain.updateCapabilities();
+          swapchain.recreate();
+        }
+      }
+
       if (swapchain.needRecreate()) {
         swapchain.recreate();
       }
       if (swapchain.valid()) {
+        render_pass[0].recorder = [&](rd::vk::Pipeline::Recorder& recorder) {
+
+        };
       }
     }
   } catch (const std::exception& e) {

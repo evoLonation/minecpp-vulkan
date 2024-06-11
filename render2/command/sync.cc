@@ -10,7 +10,7 @@ import toy;
 
 namespace rd::vk {
 
-Semaphore::Semaphore() {
+Semaphore::Semaphore(bool init) {
   VkSemaphoreCreateInfo create_info{
     .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
   };

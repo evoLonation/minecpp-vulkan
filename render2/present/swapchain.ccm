@@ -4,28 +4,54 @@ import "vulkan_config.h";
 import render.vk.resource;
 import render.vk.tool;
 import render.vk.device;
+import render.vk.sync;
 
 import std;
 import toy;
 
 export namespace rd::vk {
 
-class Swapchain : public toy::ProactiveSingleton<Swapchain>,
+class Swapchain : public rs::Swapchain,
+                  public toy::ProactiveSingleton<Swapchain>,
                   public DeviceChecker<Swapchain>,
                   public DeviceExtensionRequestor<Swapchain> {
 public:
-  Swapchain(uint32_t min_image_count = 0);
+  /**
+   * @brief maybe empty
+   * @param concurrent_image_count the max image count user can acquire at same time, must >= 1
+   */
+  Swapchain(uint32_t concurrent_image_count = 1);
+  /**
+   * @brief call this method when need newest _capabilities such as needRecreate(), recreate()
+   */
+  void updateCapabilities();
+  /**
+   * @brief check if need recreate resources by compare _swapchain_extent with
+   * _capabilities.currentExtent
+   */
   auto needRecreate() -> bool;
+  /**
+   * @brief recreate resources by current _capabilities (maybe empty)
+   */
   void recreate();
-  auto valid() -> bool { return _swapchain.get() != VK_NULL_HANDLE; }
+  /**
+   * @brief the wait_sema always be waited by present() except throws
+   * @return false: the _image_available_sema will be unaffected,
+   * and need recreate() before next present()
+   */
+  auto present(VkSemaphore wait_sema, VkQueue present_queue) -> bool;
+  auto valid() -> bool { return get() != VK_NULL_HANDLE; }
   auto images() const -> std::span<const VkImage> { return _images; }
+  auto getCurrentImageIndex() const -> uint32_t { return _image_index; }
   auto extent() const -> VkExtent2D { return _swapchain_extent; }
+  /**
+   * @brief must wait it after successfully present() or create() (check by valid())
+   */
+  auto getImageAvailableSema() const -> VkSemaphore { return _image_available_sema; }
 
   static auto format() -> VkFormat { return _format; }
 
 private:
-  void create();
-
   friend DeviceExtensionRequestor<Swapchain>;
   static inline auto pdevice_extensions = std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
@@ -36,14 +62,23 @@ private:
   friend DeviceChecker<Swapchain>;
   static auto checkPdevice(const PdeviceContext& ctx) -> bool;
 
-  void updateCapabilities();
-
 private:
   uint32_t                 _min_image_count;
   VkSurfaceCapabilitiesKHR _capabilities;
-  rs::Swapchain            _swapchain;
   VkExtent2D               _swapchain_extent;
-  std::vector<VkImage>     _images;
+  Semaphore                _image_available_sema;
+
+  auto acquireNextImage() -> bool;
+
+  /**
+   * @brief create swapchain and images determined by _swapchain_extent, if _swapchain_extent is
+   * zero then create empty resources
+   */
+  void create();
+  // create by create() (also contains rs::Swapchain base class)
+  std::vector<VkImage> _images;
+  bool                 _last_present_failed;
+  uint32_t             _image_index;
 };
 
 } // namespace rd::vk

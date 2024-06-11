@@ -10,12 +10,16 @@ export namespace rd::vk {
 
 class Semaphore : public rs::Semaphore {
 public:
-  Semaphore();
+  Semaphore() = default;
+  Semaphore(bool init);
 };
 
 class Fence : public rs::Fence {
 public:
   Fence(bool signaled);
+  /**
+   * @brief wait to signaled state
+   */
   void wait();
   void reset();
   auto isSignaled() -> bool;

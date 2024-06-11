@@ -3,32 +3,48 @@ module render.vk.swapchain;
 import "vulkan_config.h";
 import render.vk.surface;
 import render.vk.format;
+import render.vk.sync;
 
 import std;
 import toy;
 
 namespace rd::vk {
 
-Swapchain::Swapchain(uint32_t min_image_count) {
+Swapchain::Swapchain(uint32_t concurrent_image_count) {
   updateCapabilities();
   _swapchain_extent = _capabilities.currentExtent;
-  if (min_image_count == 0) {
-    if (_capabilities.maxImageCount == _capabilities.minImageCount) {
-      _min_image_count = _capabilities.minImageCount;
-    } else {
-      _min_image_count = _capabilities.minImageCount + 1;
-    }
-  } else if (_capabilities.maxImageCount != 0) {
-    // maxImageCount == 0意味着没有最大值
-    _min_image_count = std::min(min_image_count, _capabilities.maxImageCount);
-  }
+  // the driver will use _capabilities.minImageCount - 1 images
+  _min_image_count = _capabilities.minImageCount - 1 + concurrent_image_count;
+  toy::throwf(
+    _min_image_count <= _capabilities.maxImageCount,
+    "the min_image_count which passed to create swapchain > maxImageCount"
+  );
+  _image_available_sema = Semaphore{ true };
   create();
+}
+
+auto Swapchain::acquireNextImage() -> bool {
+  if (auto result = vkAcquireNextImageKHR(
+        Device::getInstance(),
+        get(),
+        std::numeric_limits<uint64_t>::max(),
+        _image_available_sema,
+        VK_NULL_HANDLE,
+        &_image_index
+      );
+      result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+    // if failed, the semaphore is unaffected
+    return false;
+  } else {
+    vk::checkVkResult(result, "acquire next image");
+  }
+  return true;
 }
 
 void Swapchain::create() {
 
   if (_swapchain_extent.height == 0 || _swapchain_extent.width == 0) {
-    _swapchain = {};
+    rs::Swapchain::operator=({});
     _images = {};
   }
 
@@ -66,7 +82,7 @@ void Swapchain::create() {
     // 不关心被遮挡的像素的颜色
     .clipped = VK_TRUE,
     // 尚且有效的swapchain，利于进行资源复用
-    .oldSwapchain = _swapchain.get(),
+    .oldSwapchain = get(),
   };
 
   toy::debugf("the info of created swap chain:");
@@ -75,12 +91,46 @@ void Swapchain::create() {
 
   auto& device = Device::getInstance();
 
-  _swapchain = rs::Swapchain{ device, create_info };
-  _images = getVkResources(vkGetSwapchainImagesKHR, device, _swapchain);
+  rs::Swapchain::operator=({ device, create_info });
+  _images = getVkResources(vkGetSwapchainImagesKHR, device, get());
+  toy::throwf(acquireNextImage(), "acquire error");
+  _last_present_failed = false;
+}
+
+auto Swapchain::present(VkSemaphore wait_sema, VkQueue present_queue) -> bool {
+  if (_last_present_failed) {
+    toy::throwf("call present after a failed present without recreate");
+  }
+  auto present_info = VkPresentInfoKHR{
+    .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+    .waitSemaphoreCount = 1,
+    .pWaitSemaphores = &wait_sema,
+    .swapchainCount = 1,
+    .pSwapchains = &get(),
+    .pImageIndices = &_image_index,
+    // .pResults: 当有多个 swapchain 时检查每个的result
+  };
+  if (auto result = vkQueuePresentKHR(present_queue, &present_info);
+      result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+    // even if presentation is failed with OUT_OF_DATE or SUBOPTIMAL, the sema wait operation also
+    // will be executed
+    toy::debugf(
+      "the queue present return {}",
+      result == VK_ERROR_OUT_OF_DATE_KHR ? "out of date error" : "sub optimal"
+    );
+    _last_present_failed = true;
+    return false;
+  } else {
+    vk::checkVkResult(result, "present");
+  }
+  if (!acquireNextImage()) {
+    _last_present_failed = true;
+    return false;
+  }
+  return true;
 }
 
 auto Swapchain::needRecreate() -> bool {
-  updateCapabilities();
   auto extent = _capabilities.currentExtent;
   return !(extent.height == _swapchain_extent.height && extent.width == _swapchain_extent.width);
 }

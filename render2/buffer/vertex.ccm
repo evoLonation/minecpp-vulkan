@@ -197,6 +197,10 @@ public:
 };
 
 class IndexBuffer : public DeviceLocalBuffer {
+public:
+  auto getIndexType() -> VkIndexType { return VK_INDEX_TYPE_UINT16; }
+
+private:
   int _index_number;
 
 public:
