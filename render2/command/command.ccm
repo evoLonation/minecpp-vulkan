@@ -30,21 +30,12 @@ struct WaitSemaphore {
 };
 
 void recordAndSubmit(
-  VkCommandBuffer              cmdbuf,
-  VkQueue                      queue,
-  Recorder auto&&              recorder,
-  toy::AnyView<WaitSemaphore>  wait_infos,
-  std::span<const VkSemaphore> signal_semas,
-  VkFence                      signal_fence
-);
-
-void recordAndSubmit(
-  VkCommandBuffer              cmdbuf,
-  VkQueue                      queue,
-  Recorder auto&&              recorder,
-  toy::AnyView<WaitSemaphore>  wait_infos,
-  std::span<const VkSemaphore> signal_semas,
-  VkFence                      signal_fence
+  VkCommandBuffer                cmdbuf,
+  VkQueue                        queue,
+  Recorder auto&&                recorder,
+  std::span<const WaitSemaphore> wait_infos,
+  std::span<const VkSemaphore>   signal_semas,
+  VkFence                        signal_fence
 ) {
   // vkBeginCommandBuffer 会隐式执行vkResetCommandBuffer
   // vkResetCommandBuffer(worker.command_buffer, 0);

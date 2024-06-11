@@ -22,8 +22,11 @@ public:
   Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property_flags);
 
 private:
-  static inline auto _memory_properties = std::unique_ptr<VkPhysicalDeviceMemoryProperties>{};
+  // directly inline will occur frontend crash
+  static std::unique_ptr<VkPhysicalDeviceMemoryProperties> _memory_properties;
 };
+
+decltype(Memory::_memory_properties) Memory::_memory_properties = {};
 
 class HostVisibleMemory {
 public:

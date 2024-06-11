@@ -52,7 +52,7 @@ private:
 class SemaphorePool : public CommonPool<Semaphore, SemaphorePool> {
 private:
   friend CommonPool<Semaphore, SemaphorePool>;
-  static constexpr auto _creator = []() { return Semaphore{}; };
+  static constexpr auto _creator = []() { return Semaphore{ true }; };
 };
 
 class CmdbufPool {
@@ -93,12 +93,6 @@ public:
 template <typename PoolT>
 using PoolResource = toy::FuncRet<decltype(&PoolT::allocate)>;
 
-template <typename T, typename R>
-concept ResourcePool = requires(T t, R resource) { resource = t.allocate().get(); };
-static_assert(ResourcePool<CmdbufPool, VkCommandBuffer>, "");
-static_assert(ResourcePool<FencePool, Fence*>, "");
-static_assert(ResourcePool<SemaphorePool, Semaphore*>, "");
-
 template <typename ResourceT>
 class ResourceRef {
 private:
@@ -129,14 +123,7 @@ private:
 public:
   Waitable() = default;
   Waitable(std::vector<SemaphoreRef> semas) : _semas(std::move(semas)) {}
-  auto consume() -> SemaphoreRef {
-    if (_semas.empty()) {
-      toy::throwf("The waitable has no semaphore!");
-    }
-    auto sema = std::move(_semas.back());
-    _semas.pop_back();
-    return sema;
-  }
+  auto consume() -> SemaphoreRef;
 };
 
 struct WaitInfo {
@@ -146,6 +133,91 @@ struct WaitInfo {
 
 class CommandExecutor : public toy::ProactiveSingleton<CommandExecutor>,
                         public DeviceChecker<CommandExecutor> {
+public:
+  auto submit(
+    QueueFamily               family,
+    uint32_t                  queue_index,
+    Recorder auto&&           recorder,
+    std::span<WaitInfo const> wait_infos,
+    uint32_t                  signal_n
+  ) -> std::pair<FenceRef, Waitable>;
+
+  auto submit(
+    QueueFamily                  family,
+    uint32_t                     queue_index,
+    Recorder auto&&              recorder,
+    std::span<const WaitInfo>    wait_infos,
+    std::span<const VkSemaphore> signal_semas
+  ) -> FenceRef;
+
+  class QueueExecutor {
+  private:
+    QueueFamily _family;
+    uint32_t    _queue_index;
+
+  public:
+    QueueExecutor(QueueFamily family, uint32_t queue_index)
+      : _family(family), _queue_index(queue_index) {}
+    auto submit(
+      Recorder auto&&              recorder,
+      std::span<const WaitInfo>    wait_infos,
+      std::span<const VkSemaphore> signal_semas
+    ) -> FenceRef {
+      return getInstance().submit(
+        _family, _queue_index, std::forward<decltype(recorder)>(recorder), wait_infos, signal_semas
+      );
+    }
+    auto submit(Recorder auto&& recorder, std::span<WaitInfo const> wait_infos, uint32_t signal_n)
+      -> std::pair<FenceRef, Waitable> {
+      return getInstance().submit(
+        _family, _queue_index, std::forward<decltype(recorder)>(recorder), wait_infos, signal_n
+      );
+    }
+
+    auto getFamily() -> uint32_t { return getInstance()._cmd_contexts.at(_family).family_index; }
+    auto getQueue() -> VkQueue {
+      return getInstance()._cmd_contexts.at(_family).queues[_queue_index];
+    }
+
+    auto operator[](uint32_t queue_index) -> QueueExecutor {
+      return QueueExecutor{ _family, queue_index };
+    }
+  };
+  auto operator[](QueueFamily family) -> QueueExecutor { return QueueExecutor{ family, 0 }; }
+
+  struct State {
+    std::map<QueueFamily, PoolState> cmdbuf_states;
+    PoolState                        fence_state;
+    PoolState                        sema_state;
+  };
+  auto getState() -> State {
+    auto guard = std::lock_guard<std::mutex>{ _mutex };
+    return {
+      _cmd_contexts | views::transform([](auto& ctx) {
+        return std::pair{ ctx.first, ctx.second.cmdbuf_pool.getState() };
+      }) |
+        ranges::to<std::map>(),
+      _fence_pool.getState(),
+      _sema_pool.getState(),
+    };
+  }
+
+  CommandExecutor();
+  ~CommandExecutor();
+
+  struct QueueInfo {
+    std::vector<std::vector<float>>      queue_priorities;
+    std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
+  };
+  static auto getQueueInfo() -> QueueInfo;
+
+private:
+  using QueueMeta = std::vector<std::pair<uint32_t, uint32_t>>;
+  static constexpr auto worker_count = 2;
+  static QueueMeta      _queue_meta;
+  friend DeviceChecker<CommandExecutor>;
+  static auto checkPdevice(const PdeviceContext& ctx) -> bool;
+
 private:
   struct WorkingCmdbuf {
     PoolResource<CmdbufPool> cmdbuf;
@@ -182,37 +254,15 @@ private:
   using WorkingFences = std::map<VkFence, WorkingFence>;
   using WorkingSemaphores = std::map<VkSemaphore, WorkingSemaphore>;
 
-  auto addWorkingFence() -> FenceRef {
-    auto  working_ = WorkingFence{ _fence_pool };
-    auto& working =
-      _working_fences.emplace(working_.fence->get(), std::move(working_)).first->second;
-    return { working.fence.get(), working.borrowed };
-  }
-
-  auto addWorkingSemas(int sema_n) -> std::vector<SemaphoreRef> {
-    auto borrowed_semas = std::vector<SemaphoreRef>{};
-    while (sema_n--) {
-      auto  working_ = WorkingSemaphore{ _sema_pool };
-      auto& working =
-        _working_semas.emplace(working_.sema->get(), std::move(working_)).first->second;
-      borrowed_semas.emplace_back(working.sema.get(), working.borrowed);
-    }
-    return borrowed_semas;
-  }
-
+  auto addWorkingFence() -> FenceRef;
+  auto addWorkingSemas(uint32_t sema_n) -> std::vector<SemaphoreRef>;
   auto addWorkingCmdbuf(
     CmdbufPool&              cmdbuf_pool,
     WorkingCmdbufs&          working_cmdbufs,
     Fence*                   fence,
     std::vector<VkSemaphore> wait_semas,
     std::vector<VkSemaphore> signal_semas
-  ) -> VkCommandBuffer {
-    auto cmd_working =
-      WorkingCmdbuf{ cmdbuf_pool, fence, std::move(wait_semas), std::move(signal_semas) };
-    auto cmdbuf = cmd_working.cmdbuf.get();
-    working_cmdbufs.emplace(cmd_working.cmdbuf.get(), std::move(cmd_working));
-    return cmdbuf;
-  }
+  ) -> VkCommandBuffer;
 
   struct CommandContext {
     uint32_t             family_index;
@@ -222,24 +272,6 @@ private:
   };
 
   std::map<QueueFamily, CommandContext> _cmd_contexts;
-
-public:
-  auto submit(
-    QueueFamily               family,
-    int                       queue_index,
-    Recorder auto&&           recorder,
-    std::span<WaitInfo const> wait_infos,
-    int                       signal_n
-  ) -> std::pair<FenceRef, Waitable>;
-
-public:
-  auto submit(
-    QueueFamily                  family,
-    int                          queue_index,
-    Recorder auto&&              recorder,
-    std::span<const WaitInfo>    wait_infos,
-    std::span<const VkSemaphore> signal_semas
-  ) -> FenceRef;
 
 private:
   void collect();
@@ -256,121 +288,38 @@ private:
 
   void task();
 
-public:
-  struct State {
-    std::map<QueueFamily, PoolState> cmdbuf_states;
-    PoolState                        fence_state;
-    PoolState                        sema_state;
+  struct SubmitImplResult {
+    VkQueue                    queue;
+    FenceRef                   borrowed_fence;
+    std::vector<SemaphoreRef>  borrowed_semas;
+    VkCommandBuffer            cmdbuf;
+    std::vector<VkSemaphore>   signal_semas;
+    std::vector<WaitSemaphore> wait_infos;
   };
-  auto getState() -> State {
-    auto guard = std::lock_guard<std::mutex>{ _mutex };
-    return {
-      _cmd_contexts | views::transform([](auto& ctx) {
-        return std::pair{ ctx.first, ctx.second.cmdbuf_pool.getState() };
-      }) |
-        ranges::to<std::map>(),
-      _fence_pool.getState(),
-      _sema_pool.getState(),
-    };
-  }
-
-public:
-  using QueueMeta = std::vector<std::pair<uint32_t, uint32_t>>;
-  CommandExecutor();
-  ~CommandExecutor();
-
-  static constexpr auto worker_count = 2;
-
-  static inline auto _queue_meta = QueueMeta{};
-
-  static auto checkPdevice(const PdeviceContext& ctx) -> bool;
-  struct QueueInfo {
-    std::vector<std::vector<float>>      queue_priorities;
-    std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
-  };
-  static auto getQueueInfo() -> QueueInfo;
-
-  class QueueExecutor {
-  private:
-    QueueFamily _family;
-    int         _queue_index;
-
-  public:
-    QueueExecutor(QueueFamily family, int queue_index)
-      : _family(family), _queue_index(queue_index) {}
-    auto submit(
-      Recorder auto&&              recorder,
-      std::span<const WaitInfo>    wait_infos,
-      std::span<const VkSemaphore> signal_semas
-    ) -> FenceRef {
-      return getInstance().submit(
-        _family, _queue_index, std::forward<decltype(recorder)>(recorder), wait_infos, signal_semas
-      );
-    }
-    auto submit(Recorder auto&& recorder, std::span<WaitInfo const> wait_infos, int signal_n)
-      -> std::pair<FenceRef, Waitable> {
-      return getInstance().submit(
-        _family, _queue_index, std::forward<decltype(recorder)>(recorder), wait_infos, signal_n
-      );
-    }
-
-    auto getFamily() -> uint32_t { return getInstance()._cmd_contexts.at(_family).family_index; }
-    auto getQueue() -> VkQueue {
-      return getInstance()._cmd_contexts.at(_family).queues[_queue_index];
-    }
-
-    auto operator[](int queue_index) -> QueueExecutor {
-      return QueueExecutor{ _family, queue_index };
-    }
-  };
-  auto operator[](QueueFamily family) -> QueueExecutor { return QueueExecutor{ family, 0 }; }
+  auto submitImpl(
+    QueueFamily               family,
+    uint32_t                  queue_index,
+    std::span<WaitInfo const> wait_infos,
+    uint32_t                  signal_n
+  ) -> SubmitImplResult;
 };
 
 auto CommandExecutor::submit(
   QueueFamily               family,
-  int                       queue_index,
+  uint32_t                  queue_index,
   Recorder auto&&           recorder,
-  std::span<WaitInfo const> wait_infos,
-  int                       signal_n
+  std::span<WaitInfo const> wait_infos_,
+  uint32_t                  signal_n
 ) -> std::pair<FenceRef, Waitable> {
-  auto guard = std::lock_guard<std::mutex>{ _mutex };
-  auto& [_, queues, cmdbuf_pool, working_cmdbufs] = _cmd_contexts.at(family);
-  auto queue = queues[queue_index];
-  auto borrowed_fence = addWorkingFence();
-  auto borrowed_semas = addWorkingSemas(signal_n);
-
-  auto wait_semas_ =
-    wait_infos | views::transform([](auto& info) { return info.waitable.consume().get().get(); }) |
-    ranges::to<std::vector>();
-  auto signal_semas_ = borrowed_semas |
-                       views::transform([](auto& borrowed) { return borrowed.get().get(); }) |
-                       ranges::to<std::vector>();
-  auto cmdbuf = addWorkingCmdbuf(
-    cmdbuf_pool,
-    working_cmdbufs,
-    &borrowed_fence.get(),
-    std::move(wait_semas_),
-    std::move(signal_semas_)
-  );
-  // retrieve back moved resource from working_info
-  auto& working = working_cmdbufs.at(cmdbuf);
-  auto& wait_semas = working.wait_semas;
-  auto& signal_semas = working.signal_semas;
-
-  for (auto sema : wait_semas) {
-    _working_semas.at(sema).wait_cmd_done = false;
-  }
-  auto wait_stages = wait_infos | views::transform([](auto info) { return info.stage_mask; });
-  auto wait_vk_infos = views::zip(wait_semas, wait_stages) | views::transform([](auto pair) {
-                         return WaitSemaphore{ pair.first, pair.second };
-                       });
-  recordAndSubmit(cmdbuf, queue, recorder, wait_vk_infos, signal_semas, borrowed_fence.get());
+  auto [queue, borrowed_fence, borrowed_semas, cmdbuf, signal_semas, wait_infos] =
+    submitImpl(family, queue_index, wait_infos_, signal_n);
+  recordAndSubmit(cmdbuf, queue, recorder, wait_infos, signal_semas, borrowed_fence.get());
   return std::pair{ std::move(borrowed_fence), std::move(borrowed_semas) };
 }
 
 auto CommandExecutor::submit(
   QueueFamily                  family,
-  int                          queue_index,
+  uint32_t                     queue_index,
   Recorder auto&&              recorder,
   std::span<const WaitInfo>    wait_infos,
   std::span<const VkSemaphore> signal_semas
@@ -383,5 +332,7 @@ auto CommandExecutor::submit(
   recordAndSubmit(cmdbuf, queue, recorder, wait_infos, signal_semas, borrowed_fence.get());
   return borrowed_fence;
 }
+
+decltype(CommandExecutor::_queue_meta) CommandExecutor::_queue_meta = QueueMeta{};
 
 } // namespace rd::vk

@@ -81,7 +81,9 @@ auto getQueueFamilyIndices(const PdeviceContext& ctx, std::span<const QueueReque
     toy::debugf("check queue family {}, which has {} queues", family_i, queue_count);
     for (auto [request_i, queue_request] : queue_requests | toy::enumerate) {
       auto& [queue_number, queue_checker] = queue_request;
-      if (properties.queueCount >= queue_number && queue_checker(QueueFamilyCheckContext{ ctx.device, Surface::getInstance(), family_i, properties })) {
+      if (properties.queueCount >= queue_number &&
+          queue_checker(QueueFamilyCheckContext{
+            ctx.device, Surface::getInstance(), family_i, properties })) {
         graph[request_i].push_back(family_i);
         toy::debugf("queue request {} success", request_i);
       } else {
@@ -118,116 +120,12 @@ auto CommandExecutor::checkPdevice(const PdeviceContext& ctx) -> bool {
   };
   if (auto res = getQueueFamilyIndices(ctx, queue_requests); res.has_value()) {
     _queue_meta.append_range(
-      views::zip(queue_requests, res.value()) | views::transform([](auto pair) {
-        return std::pair{ pair.second, pair.first.first };
-      })
+      views::zip(queue_requests, res.value()) |
+      views::transform([](auto pair) { return std::pair{ pair.second, pair.first.first }; })
     );
     return true;
   } else {
     return false;
-  }
-}
-
-auto CommandExecutor::getQueueInfo() -> QueueInfo {
-  auto info_queue_priorities =
-    _queue_meta | views::transform([](auto pair) {
-      return views::repeat(1.0f) | views::take(pair.second) | ranges::to<std::vector>();
-    }) |
-    ranges::to<std::vector>();
-  auto queue_create_infos = views::zip(_queue_meta, info_queue_priorities) |
-                            views::transform([](auto pair) {
-                              return VkDeviceQueueCreateInfo{
-                                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                                .queueFamilyIndex = pair.first.first,
-                                .queueCount = (uint32_t)pair.first.second,
-                                .pQueuePriorities = pair.second.data(),
-                              };
-                            }) |
-                            ranges::to<std::vector>();
-
-  return QueueInfo{ std::move(info_queue_priorities), std::move(queue_create_infos) };
-}
-
-CommandExecutor::CommandExecutor() {
-  auto queues = _queue_meta | views::transform([device = Device::getInstance().get()](auto pair) {
-                  auto [family_index, queue_n] = pair;
-                  return views::iota(0u, queue_n) | views::transform([&](auto queue_index) {
-                           VkQueue queue;
-                           vkGetDeviceQueue(device, family_index, queue_index, &queue);
-                           return queue;
-                         }) |
-                         ranges::to<std::vector>();
-                }) |
-                ranges::to<std::vector>();
-  _cmd_contexts.emplace(
-    QueueFamily::GRAPHICS, CommandContext{ _queue_meta[0].first, queues[0], _queue_meta[0].first }
-  );
-  _cmd_contexts.emplace(
-    QueueFamily::PRESENT, CommandContext{ _queue_meta[1].first, queues[1], _queue_meta[1].first }
-  );
-  _cmd_contexts.emplace(
-    QueueFamily::TRANSFER, CommandContext{ _queue_meta[2].first, queues[2], _queue_meta[2].first }
-  );
-  _thread = std::thread{ &CommandExecutor::task, this };
-  _task_done = false;
-}
-
-CommandExecutor::~CommandExecutor() {
-  _task_done = true;
-  _thread.join();
-}
-
-void CommandExecutor::task() {
-  while (
-    !(_task_done && _working_fences.empty() && _working_semas.empty() &&
-      ranges::all_of(
-        _cmd_contexts | views::values, [](auto& ctx) { return ctx.working_cmdbufs.empty(); }
-      ))
-  ) {
-    using namespace std::chrono_literals;
-    std::this_thread::sleep_for(20ms);
-    collect();
-  }
-}
-
-void CommandExecutor::collect() {
-  auto guard = std::lock_guard<std::mutex>{ _mutex };
-  // DO NOT erase element in range for iteration, if need erase, do like this
-  for (auto& ctx : _cmd_contexts | views::values) {
-    auto& working_cmdbufs = ctx.working_cmdbufs;
-    auto& cmdbuf_pool = ctx.cmdbuf_pool;
-    for (auto iter = working_cmdbufs.begin(); iter != working_cmdbufs.end();) {
-      auto& info = iter->second;
-      if (info.fence->isSignaled()) {
-        _working_fences.at(info.fence->get()).cmd_done = true;
-        for (auto sema : info.signal_semas) {
-          _working_semas.at(sema).signal_cmd_done = true;
-        }
-        for (auto sema : info.wait_semas) {
-          _working_semas.at(sema).wait_cmd_done = true;
-        }
-        working_cmdbufs.erase(iter++);
-      } else {
-        iter++;
-      }
-    }
-  }
-  for (auto iter = _working_fences.begin(); iter != _working_fences.end();) {
-    auto& info = iter->second;
-    if (!info.borrowed && info.cmd_done) {
-      info.fence->reset();
-      _working_fences.erase(iter++);
-    } else {
-      iter++;
-    }
-  }
-  for (auto iter = _working_semas.begin(); iter != _working_semas.end();) {
-    auto& info = iter->second;
-    if (!info.borrowed && info.signal_cmd_done && info.wait_cmd_done) {
-      _working_semas.erase(iter++);
-    } else {
-      iter++;
-    }
   }
 }
 

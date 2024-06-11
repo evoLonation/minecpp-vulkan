@@ -540,15 +540,15 @@ public:
       return {};
     }
   }
-  auto getKeyboardEvents() -> toy::AnyView<KeyboardEvent> {
-    return _key_states | views::transform([](auto& pair) {
-             return KeyboardEvent{ pair.first, pair.second };
-           });
+  auto getKeyboardEvents() -> std::vector<KeyboardEvent> {
+    return _key_states |
+           views::transform([](auto& pair) { return KeyboardEvent{ pair.first, pair.second }; }) |
+           ranges::to<std::vector>();
   }
-  auto getMouseEvents() -> toy::AnyView<MouseEvent> {
-    return _mouse_states | views::transform([](auto& pair) {
-             return MouseEvent{ pair.first, pair.second };
-           });
+  auto getMouseEvents() -> std::vector<MouseEvent> {
+    return _mouse_states |
+           views::transform([](auto& pair) { return MouseEvent{ pair.first, pair.second }; }) |
+           ranges::to<std::vector>();
   }
 
   void setCursorVisible(bool visible) {
