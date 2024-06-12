@@ -43,7 +43,7 @@ struct AttachmentInfo {
   struct ExternalDependency {
     Scope         scope;
     VkImageLayout layout;
-    bool          keep_content = true;
+    bool          keep_content = false;
   };
   ExternalDependency enter_dep = {
     .scope = {
@@ -51,7 +51,6 @@ struct AttachmentInfo {
       .access_mask = 0,
     },
     .layout = VK_IMAGE_LAYOUT_UNDEFINED,
-    .keep_content = false,
   };
   ExternalDependency exit_dep = {
     .scope = {
@@ -59,7 +58,6 @@ struct AttachmentInfo {
       .access_mask = 0,
     },
     .layout = VK_IMAGE_LAYOUT_UNDEFINED,
-    .keep_content = false,
   };
 };
 
@@ -143,7 +141,7 @@ public:
   auto operator[](uint32_t index) -> Pipeline& { return _pipelines[index]; }
 
   void recordDraw(
-    VkCommandBuffer cmdbuf, Framebuffer framebuffer, std::span<const VkClearValue> clear_values
+    VkCommandBuffer cmdbuf, Framebuffer& framebuffer, std::span<const VkClearValue> clear_values
   );
 
 private:
@@ -284,9 +282,30 @@ public:
 
 class Pipeline::Recorder {
 public:
-  Recorder(VkCommandBuffer cmdbuf, VkPipelineLayout pipeline_layout)
+  Recorder(
+    VkCommandBuffer cmdbuf, VkPipeline pipeline, VkPipelineLayout pipeline_layout, VkExtent2D extent
+  )
     : descriptor_set(cmdbuf, pipeline_layout), vertex_buffer(cmdbuf), index_buffer(cmdbuf, this),
-      _cmdbuf(cmdbuf), _index_count(0) {}
+      _cmdbuf(cmdbuf), _pipeline(pipeline), _extent(extent), _index_count(0) {}
+  void init() {
+    vkCmdBindPipeline(_cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipeline);
+    // 定义了 viewport 到缓冲区的变换
+    VkViewport viewport{
+      .x = 0,
+      .y = 0,
+      .width = static_cast<float>(_extent.width),
+      .height = static_cast<float>(_extent.height),
+      .minDepth = 0.0f,
+      .maxDepth = 1.0f,
+    };
+    vkCmdSetViewport(_cmdbuf, 0, 1, &viewport);
+    // 定义了缓冲区实际存储像素的区域
+    VkRect2D scissor{
+      .offset = { .x = 0, .y = 0 },
+      .extent = _extent,
+    };
+    vkCmdSetScissor(_cmdbuf, 0, 1, &scissor);
+  }
   void draw() { vkCmdDrawIndexed(_cmdbuf, _index_count, 1, 0, 0, 0); }
   Recorder(const Recorder&) noexcept = delete;
   Recorder(Recorder&&) noexcept = delete;
@@ -355,11 +374,13 @@ public:
 
 private:
   VkCommandBuffer _cmdbuf;
+  VkPipeline      _pipeline;
+  VkExtent2D      _extent;
   uint32_t        _index_count;
 };
 
 void RenderPass::recordDraw(
-  VkCommandBuffer cmdbuf, Framebuffer framebuffer, std::span<const VkClearValue> clear_values
+  VkCommandBuffer cmdbuf, Framebuffer& framebuffer, std::span<const VkClearValue> clear_values
 ) {
   VkRenderPassBeginInfo render_pass_begin_info {
     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -377,7 +398,8 @@ void RenderPass::recordDraw(
   // 将会从次缓冲区执行
   vkCmdBeginRenderPass(cmdbuf, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
   for (auto& pipeline : _pipelines) {
-    auto recorder = Pipeline::Recorder{ cmdbuf, pipeline.pipeline_layout() };
+    auto recorder =
+      Pipeline::Recorder{ cmdbuf, pipeline.pipeline(), pipeline.pipeline_layout(), _extent };
     pipeline.recorder(recorder);
   }
   vkCmdEndRenderPass(cmdbuf);

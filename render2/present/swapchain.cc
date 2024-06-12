@@ -20,6 +20,7 @@ Swapchain::Swapchain(uint32_t concurrent_image_count) {
     "the min_image_count which passed to create swapchain > maxImageCount"
   );
   _image_available_sema = Semaphore{ true };
+  _image_available_fence = Fence{ false };
   create();
 }
 
@@ -29,7 +30,7 @@ auto Swapchain::acquireNextImage() -> bool {
         get(),
         std::numeric_limits<uint64_t>::max(),
         _image_available_sema,
-        VK_NULL_HANDLE,
+        _image_available_fence,
         &_image_index
       );
       result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
@@ -123,6 +124,7 @@ auto Swapchain::present(VkSemaphore wait_sema, VkQueue present_queue) -> bool {
   } else {
     vk::checkVkResult(result, "present");
   }
+  _image_available_fence.wait(true);
   if (!acquireNextImage()) {
     _last_present_failed = true;
     return false;

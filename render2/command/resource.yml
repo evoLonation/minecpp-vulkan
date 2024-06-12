@@ -6,3 +6,5 @@ source:
 - executor.ccm
 - executor.cc
 - executor_2.cc
+- executor_registry.ccm
+- executor_registry.cc

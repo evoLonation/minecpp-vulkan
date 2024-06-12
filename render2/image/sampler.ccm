@@ -90,11 +90,10 @@ public:
 
     _sampler = vk::createSampler(_max_anisotropy);
 
-    auto& executor = vk::CommandExecutor::getInstance();
-    auto  copy_executor = executor[vk::QueueFamily::TRANSFER];
-    auto  graphics_executor = executor[vk::QueueFamily::GRAPHICS][0];
-    auto  family_transfer =
-      vk::FamilyTransferInfo{ copy_executor.getFamily(), graphics_executor.getFamily() };
+    auto copy_executor = vk::executors::copy;
+    auto tool_executor = vk::executors::tool;
+    auto family_transfer =
+      vk::FamilyTransferInfo{ copy_executor.getFamily(), tool_executor.getFamily() };
 
     auto recorder_copy = [&](VkCommandBuffer cmdbuf) {
       vk::recordImageBarrier(
@@ -222,7 +221,7 @@ public:
     };
 
     auto waitable = copy_executor.submit(recorder_copy, {}, 1).second;
-    auto fence = graphics_executor
+    auto fence = tool_executor
                    .submit(
                      recorder_blit,
                      std::array{ vk::WaitInfo{ waitable, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
@@ -230,7 +229,7 @@ public:
                    )
                    .first;
     // todo: no need to wait, sync with sema
-    fence.get().wait();
+    fence.get().wait(false);
   }
 };
 

@@ -133,12 +133,11 @@ public:
       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
     });
 
-    auto& executor = vk::CommandExecutor::getInstance();
-    auto  copy_executor = executor[vk::QueueFamily::TRANSFER];
-    auto  graphics_executor = executor[vk::QueueFamily::GRAPHICS][0];
+    auto copy_executor = vk::executors::copy;
+    auto tool_executor = vk::executors::tool;
 
     auto family_transfer =
-      vk::FamilyTransferInfo{ copy_executor.getFamily(), graphics_executor.getFamily() };
+      vk::FamilyTransferInfo{ copy_executor.getFamily(), tool_executor.getFamily() };
     auto copy_recorder = [&](VkCommandBuffer cmdbuf) {
       vk::recordCopyBuffer(cmdbuf, _staging_buffer, *this, buffer_size);
       vk::recordBufferBarrier(
@@ -155,7 +154,7 @@ public:
       vk::recordBufferBarrier(cmdbuf, get(), vk::BarrierScope::acquire(dst_scope), family_transfer);
     };
     auto waitable = copy_executor.submit(copy_recorder, {}, 1).second;
-    auto fence = graphics_executor
+    auto fence = tool_executor
                    .submit(
                      acquire_recorder,
                      std::array{ vk::WaitInfo{ waitable, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
@@ -163,7 +162,7 @@ public:
                    )
                    .first;
     // todo: no need to wait, sync with sema
-    fence.get().wait();
+    fence.get().wait(false);
   }
 };
 

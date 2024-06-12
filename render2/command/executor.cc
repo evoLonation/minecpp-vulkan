@@ -54,19 +54,9 @@ auto hungarian(std::span<const std::vector<int>> graph, int right_count)
   }
 }
 
-struct QueueFamilyCheckContext {
-  VkPhysicalDevice        device;
-  VkSurfaceKHR            surface;
-  size_t                  index;
-  VkQueueFamilyProperties properties;
-};
-/**
- * @brief first: queue number, second: queue checker
- */
-using QueueRequest = std::pair<int, std::function<bool(const QueueFamilyCheckContext&)>>;
-
-auto getQueueFamilyIndices(const PdeviceContext& ctx, std::span<const QueueRequest> queue_requests)
-  -> std::optional<std::vector<uint32_t>> {
+auto getQueueFamilyIndices(
+  const PdeviceContext& ctx, std::span<const QueueFamilyRequestor> queue_requests
+) -> std::optional<std::vector<uint32_t>> {
 
   auto queue_families = getVkResources(vkGetPhysicalDeviceQueueFamilyProperties, ctx.device);
 
@@ -98,30 +88,23 @@ auto getQueueFamilyIndices(const PdeviceContext& ctx, std::span<const QueueReque
   });
 }
 
-auto checkGraphicQueue(const QueueFamilyCheckContext& ctx) -> bool {
-  return ctx.properties.queueFlags & VK_QUEUE_GRAPHICS_BIT;
-}
-auto checkPresentQueue(const QueueFamilyCheckContext& ctx) -> bool {
-  VkBool32 presentSupport = VK_FALSE;
-  vkGetPhysicalDeviceSurfaceSupportKHR(ctx.device, ctx.index, ctx.surface, &presentSupport);
-  return presentSupport == VK_TRUE;
-}
-auto checkTransferQueue(const QueueFamilyCheckContext& ctx) -> bool {
-  // 支持 graphics 和 compute operation 的 queue 也必定支持 transfer operation
-  return ctx.properties.queueFlags &
-         (VK_QUEUE_TRANSFER_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_GRAPHICS_BIT);
-}
-
 auto CommandExecutor::checkPdevice(const PdeviceContext& ctx) -> bool {
-  auto queue_requests = std::array{
-    QueueRequest{ worker_count * 2 + 1, vk::checkGraphicQueue },
-    QueueRequest{ 2, vk::checkPresentQueue },
-    QueueRequest{ 1, vk::checkTransferQueue },
-  };
-  if (auto res = getQueueFamilyIndices(ctx, queue_requests); res.has_value()) {
-    _queue_meta.append_range(
-      views::zip(queue_requests, res.value()) |
-      views::transform([](auto pair) { return std::pair{ pair.second, pair.first.first }; })
+  auto queue_requests = registerFamilies();
+  if (auto res =
+        getQueueFamilyIndices(ctx, queue_requests | views::values | ranges::to<std::vector>());
+      res.has_value()) {
+    _queue_meta.insert_range(
+      views::zip(queue_requests, res.value()) | views::transform([](auto pair_) {
+        auto& [pair, family_index] = pair_;
+        auto& [family, requestor] = pair;
+        return std::pair{
+          family,
+          QueueFamilyInfo{
+            .family_index = family_index,
+            .queue_number = requestor.queue_number,
+          },
+        };
+      })
     );
     return true;
   } else {

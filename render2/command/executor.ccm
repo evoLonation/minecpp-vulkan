@@ -1,4 +1,4 @@
-export module render.vk.executor;
+export module render.vk.executor:impl;
 
 import "vulkan_config.h";
 import render.vk.tool;
@@ -10,9 +10,9 @@ import render.vk.command;
 import std;
 import toy;
 
-export namespace rd::vk {
+namespace rd::vk {
 
-enum class QueueFamily { TRANSFER, GRAPHICS, PRESENT };
+enum class QueueFamily;
 
 struct PoolState {
   std::size_t allocate_n;
@@ -126,13 +126,24 @@ public:
   auto consume() -> SemaphoreRef;
 };
 
-struct WaitInfo {
+export struct WaitInfo {
   Waitable&            waitable;
   VkPipelineStageFlags stage_mask;
 };
 
-class CommandExecutor : public toy::ProactiveSingleton<CommandExecutor>,
-                        public DeviceChecker<CommandExecutor> {
+struct QueueFamilyCheckContext {
+  VkPhysicalDevice        device;
+  VkSurfaceKHR            surface;
+  size_t                  index;
+  VkQueueFamilyProperties properties;
+};
+struct QueueFamilyRequestor {
+  uint32_t                                            queue_number;
+  std::function<bool(const QueueFamilyCheckContext&)> checker;
+};
+
+export class CommandExecutor : public toy::ProactiveSingleton<CommandExecutor>,
+                               public DeviceChecker<CommandExecutor> {
 public:
   auto submit(
     QueueFamily               family,
@@ -143,25 +154,27 @@ public:
   ) -> std::pair<FenceRef, Waitable>;
 
   auto submit(
-    QueueFamily                  family,
-    uint32_t                     queue_index,
-    Recorder auto&&              recorder,
-    std::span<const WaitInfo>    wait_infos,
-    std::span<const VkSemaphore> signal_semas
+    QueueFamily                    family,
+    uint32_t                       queue_index,
+    Recorder auto&&                recorder,
+    std::span<const WaitSemaphore> wait_infos,
+    std::span<const VkSemaphore>   signal_semas
   ) -> FenceRef;
 
   class QueueExecutor {
   private:
-    QueueFamily _family;
-    uint32_t    _queue_index;
+    QueueFamily                   _family;
+    std::pair<uint32_t, uint32_t> _queue_range;
+    uint32_t                      _queue_index;
 
   public:
-    QueueExecutor(QueueFamily family, uint32_t queue_index)
-      : _family(family), _queue_index(queue_index) {}
+    QueueExecutor() = default;
+    QueueExecutor(QueueFamily family, std::pair<uint32_t, uint32_t> queue_range)
+      : _family(family), _queue_range(queue_range), _queue_index(queue_range.first) {}
     auto submit(
-      Recorder auto&&              recorder,
-      std::span<const WaitInfo>    wait_infos,
-      std::span<const VkSemaphore> signal_semas
+      Recorder auto&&                recorder,
+      std::span<const WaitSemaphore> wait_infos,
+      std::span<const VkSemaphore>   signal_semas
     ) -> FenceRef {
       return getInstance().submit(
         _family, _queue_index, std::forward<decltype(recorder)>(recorder), wait_infos, signal_semas
@@ -179,11 +192,12 @@ public:
       return getInstance()._cmd_contexts.at(_family).queues[_queue_index];
     }
 
-    auto operator[](uint32_t queue_index) -> QueueExecutor {
-      return QueueExecutor{ _family, queue_index };
+    auto operator[](uint32_t queue_index) -> QueueExecutor& {
+      _queue_index = _queue_range.first + queue_index;
+      toy::throwf(_queue_index < _queue_range.second, "out of queue range");
+      return *this;
     }
   };
-  auto operator[](QueueFamily family) -> QueueExecutor { return QueueExecutor{ family, 0 }; }
 
   struct State {
     std::map<QueueFamily, PoolState> cmdbuf_states;
@@ -209,14 +223,23 @@ public:
     std::vector<std::vector<float>>      queue_priorities;
     std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
   };
-  static auto getQueueInfo() -> QueueInfo;
 
 private:
-  using QueueMeta = std::vector<std::pair<uint32_t, uint32_t>>;
-  static constexpr auto worker_count = 2;
-  static QueueMeta      _queue_meta;
+  static auto registerFamilies() -> std::vector<std::pair<QueueFamily, QueueFamilyRequestor>>;
+
+  struct QueueFamilyInfo {
+    uint32_t family_index;
+    uint32_t queue_number;
+  };
+  using QueueMeta = std::map<QueueFamily, QueueFamilyInfo>;
+  static QueueMeta _queue_meta;
   friend DeviceChecker<CommandExecutor>;
   static auto checkPdevice(const PdeviceContext& ctx) -> bool;
+
+  void buildQueueExecutors();
+
+public:
+  static auto getQueueInfo() -> QueueInfo;
 
 private:
   struct WorkingCmdbuf {
@@ -318,11 +341,11 @@ auto CommandExecutor::submit(
 }
 
 auto CommandExecutor::submit(
-  QueueFamily                  family,
-  uint32_t                     queue_index,
-  Recorder auto&&              recorder,
-  std::span<const WaitInfo>    wait_infos,
-  std::span<const VkSemaphore> signal_semas
+  QueueFamily                    family,
+  uint32_t                       queue_index,
+  Recorder auto&&                recorder,
+  std::span<const WaitSemaphore> wait_infos,
+  std::span<const VkSemaphore>   signal_semas
 ) -> FenceRef {
   auto guard = std::lock_guard<std::mutex>{ _mutex };
   auto& [_, queues, cmdbuf_pool, working_cmdbufs] = _cmd_contexts.at(family);
@@ -334,5 +357,7 @@ auto CommandExecutor::submit(
 }
 
 decltype(CommandExecutor::_queue_meta) CommandExecutor::_queue_meta = QueueMeta{};
+
+export using WaitSemaphore = WaitSemaphore;
 
 } // namespace rd::vk

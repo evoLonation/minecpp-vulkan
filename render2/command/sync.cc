@@ -27,13 +27,16 @@ Fence::Fence(bool signaled) {
   rs::Fence::operator=({ Device::getInstance(), create_info });
 }
 
-void Fence::wait() {
+void Fence::wait(bool reset) {
   checkVkResult(
     vkWaitForFences(
       Device::getInstance(), 1, &get(), VK_TRUE, std::numeric_limits<uint64_t>::max()
     ),
     "wait fences"
   );
+  if (reset) {
+    this->reset();
+  }
 }
 
 void Fence::reset() {

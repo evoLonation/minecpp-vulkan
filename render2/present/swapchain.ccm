@@ -67,6 +67,7 @@ private:
   VkSurfaceCapabilitiesKHR _capabilities;
   VkExtent2D               _swapchain_extent;
   Semaphore                _image_available_sema;
+  Fence                    _image_available_fence;
 
   auto acquireNextImage() -> bool;
 
@@ -75,7 +76,7 @@ private:
    * zero then create empty resources
    */
   void create();
-  // create by create() (also contains rs::Swapchain base class)
+  // member below is created by create() (also contains rs::Swapchain base class)
   std::vector<VkImage> _images;
   bool                 _last_present_failed;
   uint32_t             _image_index;
