@@ -171,9 +171,9 @@ private:
   std::vector<Pipeline> _pipelines;
 };
 
-class DescritporPool : public rs::DescriptorPool {
+class DescriptorPool : public rs::DescriptorPool {
 public:
-  DescritporPool(uint32_t set_count, std::span<const VkDescriptorPoolSize> type_counts) {
+  DescriptorPool(uint32_t set_count, std::span<const VkDescriptorPoolSize> type_counts) {
     auto pool_create_info = VkDescriptorPoolCreateInfo{
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
       // VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT: 允许freeDescriptorSets
@@ -189,7 +189,8 @@ public:
 
 class DescriptorSet {
 public:
-  DescriptorSet(const DescritporPool& pool, const Pipeline& pipeline, uint32_t set_id) {
+  DescriptorSet() = default;
+  DescriptorSet(const DescriptorPool& pool, const Pipeline& pipeline, uint32_t set_id) {
     auto dset_layout = pipeline.descriptor_set_layouts()[set_id].get();
     auto allocate_info = VkDescriptorSetAllocateInfo{
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,

@@ -46,7 +46,9 @@ void Swapchain::create() {
 
   if (_swapchain_extent.height == 0 || _swapchain_extent.width == 0) {
     rs::Swapchain::operator=({});
-    _images = {};
+    _image_views.clear();
+    _images.clear();
+    return;
   }
 
   auto create_info = VkSwapchainCreateInfoKHR{
@@ -94,6 +96,10 @@ void Swapchain::create() {
 
   rs::Swapchain::operator=({ device, create_info });
   _images = getVkResources(vkGetSwapchainImagesKHR, device, get());
+  _image_views = _images | views::transform([&](VkImage image) {
+                   return rd::vk::createImageView(image, _format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+                 }) |
+                 ranges::to<std::vector>();
   toy::throwf(acquireNextImage(), "acquire error");
   _last_present_failed = false;
 }

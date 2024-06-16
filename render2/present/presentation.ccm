@@ -23,14 +23,17 @@ public:
     // sema that need signal after draw is done and in render_done_layout
     VkSemaphore signal_sema;
     uint32_t    image_index;
+    bool        need_recreate;
   };
 
   auto prepare() -> std::optional<PresentContext> {
     auto& swapchain = Swapchain::getInstance();
+    bool  recreated = _present_recreated;
     if (!swapchain.valid()) {
       swapchain.updateCapabilities();
       if (swapchain.needRecreate()) {
         swapchain.recreate();
+        recreated = true;
       }
     }
     if (!swapchain.valid()) {
@@ -81,6 +84,7 @@ public:
       .wait_sema = graphic_acquire_sema,
       .signal_sema = _image_resources[image].render_done_sema,
       .image_index = image_index,
+      .need_recreate = recreated,
     };
   }
   /**
@@ -132,6 +136,9 @@ public:
     if (!swapchain.present(present_acquire_sema, present_executor[1].getQueue())) {
       swapchain.updateCapabilities();
       swapchain.recreate();
+      _present_recreated = true;
+    } else {
+      _present_recreated = false;
     }
   }
 
@@ -148,6 +155,8 @@ private:
   };
 
   std::map<VkImage, ImageResource> _image_resources;
+
+  bool _present_recreated;
 };
 
 } // namespace rd::vk

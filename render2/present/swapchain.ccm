@@ -5,6 +5,7 @@ import render.vk.resource;
 import render.vk.tool;
 import render.vk.device;
 import render.vk.sync;
+import render.vk.image;
 
 import std;
 import toy;
@@ -42,6 +43,7 @@ public:
   auto present(VkSemaphore wait_sema, VkQueue present_queue) -> bool;
   auto valid() -> bool { return get() != VK_NULL_HANDLE; }
   auto images() const -> std::span<const VkImage> { return _images; }
+  auto image_views() const -> std::span<const rs::ImageView> { return _image_views; }
   auto getCurrentImageIndex() const -> uint32_t { return _image_index; }
   auto extent() const -> VkExtent2D { return _swapchain_extent; }
   /**
@@ -77,9 +79,10 @@ private:
    */
   void create();
   // member below is created by create() (also contains rs::Swapchain base class)
-  std::vector<VkImage> _images;
-  bool                 _last_present_failed;
-  uint32_t             _image_index;
+  std::vector<VkImage>       _images;
+  std::vector<rs::ImageView> _image_views;
+  bool                       _last_present_failed;
+  uint32_t                   _image_index;
 };
 
 } // namespace rd::vk

@@ -125,7 +125,7 @@ public:
     }
   }
   ResourceManager(const ResourceManager&) = delete;
-  ResourceManager(ResourceManager&& resource) {
+  ResourceManager(ResourceManager&& resource) noexcept {
     if constexpr (!destroy_multi_) {
       handle_ = resource.handle_;
       resource.handle_ = VK_NULL_HANDLE;
@@ -135,7 +135,7 @@ public:
     context_ = resource.context_;
   }
   auto operator=(const ResourceManager&) -> ResourceManager& = delete;
-  auto operator=(ResourceManager&& resource) -> ResourceManager& {
+  auto operator=(ResourceManager&& resource) noexcept -> ResourceManager& {
     destroyResource();
     if constexpr (!destroy_multi_) {
       handle_ = resource.handle_;
@@ -246,9 +246,9 @@ public:
   Resource() = default;
   Resource(ConstructArgs... args) : Base(Factory::create(args...)) {}
   Resource(const Resource&) = delete;
-  Resource(Resource&&) = default;
+  Resource(Resource&&) noexcept = default;
   auto operator=(const Resource&) -> Resource& = delete;
-  auto operator=(Resource&&) -> Resource& = default;
+  auto operator=(Resource&&) noexcept -> Resource& = default;
 };
 
 template <typename Arg>
