@@ -135,15 +135,16 @@ auto RenderPass::createRenderPass(
         "the sample count of depth attachment[{}] is not match with subpass",
         depst_attachment_i
       );
-      if (ranges::find(_depth_formats, attachment.format) != _depth_formats.end() || 
+      if (ranges::find(_depth_formats, attachment.format) != _depth_formats.end() ||
           ranges::find(_depth_stencil_formats, attachment.format) != _depth_stencil_formats.end()) {
         toy::throwf(
           subpass.depth_option.has_value(),
           "the attachment[{}] has depth component but depth_option is nullopt",
           depst_attachment_i
         );
-      } else if (ranges::find(_stencil_formats, attachment.format) != _stencil_formats.end() || 
-                 ranges::find(_depth_stencil_formats, attachment.format) != _depth_stencil_formats.end()) {
+      } else if (ranges::find(_stencil_formats, attachment.format) != _stencil_formats.end() ||
+                 ranges::find(_depth_stencil_formats, attachment.format) !=
+                   _depth_stencil_formats.end()) {
         toy::throwf(
           subpass.stencil_option.has_value(),
           "the attachment[{}] has stencil component but depth_option is nullopt",
@@ -179,7 +180,8 @@ auto RenderPass::createRenderPass(
       .pInputAttachments = attachment_refs.data() + input_index,
       .colorAttachmentCount = static_cast<uint32_t>(subpass.colors.size()),
       .pColorAttachments = attachment_refs.data() + color_index,
-      .pResolveAttachments = attachment_refs.data() + resolve_index,
+      .pResolveAttachments =
+        subpass.multi_sample.has_value() ? attachment_refs.data() + resolve_index : nullptr,
       // pInputAttachments: Attachments that are read from a shader
       // pResolveAttachments: Attachments used for multisampling color attachments
       // pDepthStencilAttachment: Attachment for depth and stencil data

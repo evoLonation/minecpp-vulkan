@@ -254,7 +254,8 @@ auto RenderPass::createPipeline(
         { subpass.vertex_info.binding_description, 1 },
         subpass.vertex_info.attribute_descriptions,
         dset_layout_handles,
-        subpass.multi_sample->sample_count,
+        subpass.multi_sample.transform([](auto x) { return x.sample_count; }
+        ).value_or(VK_SAMPLE_COUNT_1_BIT),
         subpass.stencil_option
       ),
       std::move(dset_layouts)

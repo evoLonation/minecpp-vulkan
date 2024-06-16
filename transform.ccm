@@ -162,7 +162,7 @@ auto create(
   const glm::vec3& up = glm::vec3{ 0.0f, 0.0f, 2.0f }
 ) -> glm::mat4 {
   auto x = glm::normalize(target - position);
-  auto y = glm::cross(up, x);
+  auto y = glm::normalize(glm::cross(up, x));
   auto z = glm::normalize(glm::cross(x, y));
   // 用单位基构成的矩阵的几何意义是将向量的坐标变换为这些单位基构成的空间下的坐标
   auto m_rotate = matrix({

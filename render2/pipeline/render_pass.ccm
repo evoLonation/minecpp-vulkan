@@ -43,7 +43,7 @@ struct AttachmentInfo {
   struct ExternalDependency {
     Scope         scope;
     VkImageLayout layout;
-    bool          keep_content = false;
+    bool          keep_content;
   };
   ExternalDependency enter_dep = {
     .scope = {
@@ -58,6 +58,7 @@ struct AttachmentInfo {
       .access_mask = 0,
     },
     .layout = VK_IMAGE_LAYOUT_UNDEFINED,
+    .keep_content = true,
   };
 };
 
