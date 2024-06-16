@@ -218,9 +218,8 @@ auto createGraphicsPipeline(
            std::move(pipeline) };
 }
 
-auto RenderPass::createPipeline(
-  VkRenderPass render_pass, VkExtent2D extent, std::span<const SubpassInfo> subpasses
-) -> std::vector<Pipeline> {
+auto RenderPass::createPipeline(VkRenderPass render_pass, std::span<const SubpassInfo> subpasses)
+  -> std::vector<Pipeline> {
   auto pipelines = std::vector<Pipeline>{};
   for (auto const& subpass : subpasses) {
     auto dset_layouts = std::vector<rs::DescriptorSetLayout>{};

@@ -97,7 +97,6 @@ template <typename ResourceT>
 class ResourceRef {
 private:
   static inline auto borrow_deleter = [](bool* borrowed) { *borrowed = false; };
-  static inline auto empty_deleter = [](auto* p) {};
   std::unique_ptr<bool, decltype(borrow_deleter)> _borrowed;
 
 protected:
@@ -113,7 +112,23 @@ public:
   auto& get() { return *_resource; }
 };
 
-using FenceRef = ResourceRef<Fence>;
+class FenceRef : public ResourceRef<Fence> {
+public:
+  FenceRef() = default;
+  FenceRef(Fence* fence, bool& borrowed, std::mutex& mutex)
+    : ResourceRef<Fence>(fence, borrowed), _mutex(&mutex) {}
+  void wait() {
+    auto guard = std::lock_guard<std::mutex>{ *_mutex };
+    get().wait(false);
+  }
+  auto isSignaled() -> bool {
+    auto guard = std::lock_guard<std::mutex>{ *_mutex };
+    return get().isSignaled();
+  }
+
+private:
+  std::mutex* _mutex;
+};
 using SemaphoreRef = ResourceRef<Semaphore>;
 
 class Waitable {
@@ -218,6 +233,10 @@ public:
 
   CommandExecutor();
   ~CommandExecutor();
+  CommandExecutor(const CommandExecutor&) noexcept = delete;
+  CommandExecutor(CommandExecutor&&) noexcept = delete;
+  auto operator=(const CommandExecutor&) noexcept -> CommandExecutor& = delete;
+  auto operator=(CommandExecutor&&) noexcept -> CommandExecutor& = delete;
 
   struct QueueInfo {
     std::vector<std::vector<float>>      queue_priorities;

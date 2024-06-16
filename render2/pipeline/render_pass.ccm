@@ -103,7 +103,6 @@ struct SubpassInfo {
 };
 
 struct RenderPassInfo {
-  VkExtent2D                  extent;
   std::vector<AttachmentInfo> attachments;
   std::vector<SubpassInfo>    subpasses;
 };
@@ -130,13 +129,11 @@ class Framebuffer;
 class RenderPass {
 public:
   auto render_pass() const -> VkRenderPass { return _render_pass; }
-  auto extent() const -> VkExtent2D { return _extent; }
 
   RenderPass() = default;
   RenderPass(RenderPassInfo info) {
-    _extent = info.extent;
     _render_pass = createRenderPass(info.attachments, info.subpasses);
-    _pipelines = createPipeline(_render_pass, info.extent, info.subpasses);
+    _pipelines = createPipeline(_render_pass, info.subpasses);
   }
 
   auto operator[](uint32_t index) -> Pipeline& { return _pipelines[index]; }
@@ -149,9 +146,8 @@ private:
   static auto createRenderPass(
     std::span<const AttachmentInfo> attachments, std::span<const SubpassInfo> subpasses
   ) -> rs::RenderPass;
-  static auto createPipeline(
-    VkRenderPass render_pass, VkExtent2D extent, std::span<const SubpassInfo> subpasses
-  ) -> std::vector<Pipeline>;
+  static auto createPipeline(VkRenderPass render_pass, std::span<const SubpassInfo> subpasses)
+    -> std::vector<Pipeline>;
   static constexpr auto _color_formats = std::array{
     VK_FORMAT_R8G8B8A8_SRGB,
   };
@@ -166,7 +162,6 @@ private:
     VK_FORMAT_D24_UNORM_S8_UINT,
   };
 
-  VkExtent2D            _extent;
   rs::RenderPass        _render_pass;
   std::vector<Pipeline> _pipelines;
 };
@@ -268,18 +263,25 @@ auto DescriptorSet::operator[](uint32_t binding) -> Descriptor { return { this, 
 class Framebuffer : public rs::Framebuffer {
 public:
   Framebuffer() = default;
-  Framebuffer(RenderPass& render_pass, std::span<const VkImageView> image_views) {
+  Framebuffer(
+    RenderPass& render_pass, VkExtent2D extent, std::span<const VkImageView> image_views
+  ) {
+    _extent = extent;
     auto create_info = VkFramebufferCreateInfo{
       .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
       .renderPass = render_pass.render_pass(),
       .attachmentCount = static_cast<uint32_t>(image_views.size()),
       .pAttachments = image_views.data(),
-      .width = render_pass.extent().width,
-      .height = render_pass.extent().height,
+      .width = extent.width,
+      .height = extent.height,
       .layers = 1,
     };
     rs::Framebuffer::operator=({ Device::getInstance(), create_info });
   }
+  auto extent() const -> VkExtent2D { return _extent; }
+
+private:
+  VkExtent2D _extent;
 };
 
 class Pipeline::Recorder {
@@ -390,7 +392,7 @@ void RenderPass::recordDraw(
     .framebuffer = framebuffer,
     .renderArea = {
       .offset = {0, 0},
-      .extent = _extent,
+      .extent = framebuffer.extent(),
     },
     .clearValueCount = static_cast<uint32_t>(clear_values.size()),
     .pClearValues = clear_values.data(),
@@ -400,8 +402,9 @@ void RenderPass::recordDraw(
   // 将会从次缓冲区执行
   vkCmdBeginRenderPass(cmdbuf, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
   for (auto& pipeline : _pipelines) {
-    auto recorder =
-      Pipeline::Recorder{ cmdbuf, pipeline.pipeline(), pipeline.pipeline_layout(), _extent };
+    auto recorder = Pipeline::Recorder{
+      cmdbuf, pipeline.pipeline(), pipeline.pipeline_layout(), framebuffer.extent()
+    };
     pipeline.recorder(recorder);
   }
   vkCmdEndRenderPass(cmdbuf);

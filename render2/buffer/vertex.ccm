@@ -162,7 +162,7 @@ public:
                    )
                    .first;
     // todo: no need to wait, sync with sema
-    fence.get().wait(false);
+    fence.wait();
   }
 };
 

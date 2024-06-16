@@ -25,7 +25,7 @@ auto Waitable::consume() -> SemaphoreRef {
 auto CommandExecutor::addWorkingFence() -> FenceRef {
   auto  working_ = WorkingFence{ _fence_pool };
   auto& working = _working_fences.emplace(working_.fence->get(), std::move(working_)).first->second;
-  return { working.fence.get(), working.borrowed };
+  return { working.fence.get(), working.borrowed, _mutex };
 }
 
 auto CommandExecutor::addWorkingSemas(uint32_t sema_n) -> std::vector<SemaphoreRef> {
@@ -122,7 +122,6 @@ void CommandExecutor::collect() {
   // DO NOT erase element in range for iteration, if need erase, do like this
   for (auto& ctx : _cmd_contexts | views::values) {
     auto& working_cmdbufs = ctx.working_cmdbufs;
-    auto& cmdbuf_pool = ctx.cmdbuf_pool;
     for (auto iter = working_cmdbufs.begin(); iter != working_cmdbufs.end();) {
       auto& info = iter->second;
       if (info.fence->isSignaled()) {

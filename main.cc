@@ -57,7 +57,6 @@ int main() {
       rd::vk::Presentation{ VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR };
 
     auto render_pass_info = rd::vk::RenderPassInfo{
-      .extent = swapchain.extent(),
       .attachments = {
         // rd::vk::AttachmentInfo{
         //   .format = swapchain.format(),
@@ -153,6 +152,7 @@ int main() {
     auto vertex_buffer = rd::VertexBuffer{ vertexes };
     auto index_buffer = rd::IndexBuffer{ indices };
 
+    auto render_pass = rd::vk::RenderPass{ render_pass_info };
     auto dset_pool = rd::vk::DescriptorPool{
       3,
       std::vector{
@@ -160,40 +160,32 @@ int main() {
         VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
       }
     };
-    struct RenderResource {
-      rd::vk::RenderPass               render_pass;
-      rd::vk::DescriptorSet            dset_model;
-      rd::vk::DescriptorSet            dset_camera;
-      rd::vk::DescriptorSet            dset_texture;
-      std::vector<rd::vk::Framebuffer> framebuffers;
-    };
-    auto render_resource = RenderResource{};
-    auto createResource = [&]() {
-      render_resource = {};
-      render_pass_info.extent = swapchain.extent();
-      render_resource.render_pass = rd::vk::RenderPass{ render_pass_info };
-      render_resource.dset_model =
-        rd::vk::DescriptorSet{ dset_pool, render_resource.render_pass[0], 0 };
-      render_resource.dset_model[0] = model_uniform;
-      render_resource.dset_camera =
-        rd::vk::DescriptorSet{ dset_pool, render_resource.render_pass[0], 1 };
-      render_resource.dset_camera[0] = view_uniform;
-      render_resource.dset_camera[1] = proj_uniform;
-      render_resource.dset_texture =
-        rd::vk::DescriptorSet{ dset_pool, render_resource.render_pass[0], 2 };
-      render_resource.dset_texture[0] = sampled_texture;
-      render_resource.framebuffers =
-        swapchain.image_views() | views::transform([&](VkImageView image_view) {
-          return rd::vk::Framebuffer{ render_resource.render_pass, std::array{ image_view } };
-        }) |
-        ranges::to<std::vector>();
+    auto dset_model = rd::vk::DescriptorSet{ dset_pool, render_pass[0], 0 };
+    dset_model[0] = model_uniform;
+    auto dset_camera = rd::vk::DescriptorSet{ dset_pool, render_pass[0], 1 };
+    dset_camera[0] = view_uniform;
+    dset_camera[1] = proj_uniform;
+    auto dset_texture = rd::vk::DescriptorSet{ dset_pool, render_pass[0], 2 };
+    dset_texture[0] = sampled_texture;
+
+    auto framebuffers =
+      swapchain.image_views() | views::transform([&](VkImageView image_view) {
+        return rd::vk::Framebuffer{ render_pass, swapchain.extent(), std::array{ image_view } };
+      }) |
+      ranges::to<std::vector>();
+
+    auto recreateResource = [&]() {
       proj_data = trans::proj::perspective({
         .width = swapchain.extent().width,
         .height = swapchain.extent().height,
       });
       proj_uniform.update();
+      framebuffers =
+        swapchain.image_views() | views::transform([&](VkImageView image_view) {
+          return rd::vk::Framebuffer{ render_pass, swapchain.extent(), std::array{ image_view } };
+        }) |
+        ranges::to<std::vector>();
     };
-    createResource();
 
     auto clear_values = std::array{
       // VkClearValue{ .color = { .float32 = { 0.5f, 0.5f, 0.5f, 1.0f } } },
@@ -207,22 +199,20 @@ int main() {
       if (auto res = presentation.prepare(); res.has_value()) {
         auto& context = res.value();
         if (context.need_recreate) {
-          createResource();
+          recreateResource();
         }
-        render_resource.render_pass[0].recorder = [&](rd::vk::Pipeline::Recorder& recorder) {
+        render_pass[0].recorder = [&](rd::vk::Pipeline::Recorder& recorder) {
           recorder.init();
           recorder.vertex_buffer = vertex_buffer;
           recorder.index_buffer = index_buffer;
-          recorder.descriptor_set[0] = render_resource.dset_model;
-          recorder.descriptor_set[1] = render_resource.dset_camera;
-          recorder.descriptor_set[2] = render_resource.dset_texture;
+          recorder.descriptor_set[0] = dset_model;
+          recorder.descriptor_set[1] = dset_camera;
+          recorder.descriptor_set[2] = dset_texture;
           recorder.draw();
         };
         auto fence = rd::vk::executors::render.submit(
           [&](auto cmdbuf) {
-            render_resource.render_pass.recordDraw(
-              cmdbuf, render_resource.framebuffers[context.image_index], clear_values
-            );
+            render_pass.recordDraw(cmdbuf, framebuffers[context.image_index], clear_values);
           },
           std::array{
             rd::vk::WaitSemaphore{ context.wait_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
@@ -233,7 +223,7 @@ int main() {
           toy::debug(count);
         }
         presentation.present();
-        fence.get().wait(false);
+        fence.wait();
       }
     }
   } catch (const std::exception& e) {
