@@ -52,7 +52,7 @@ int main() {
     auto executor = rd::vk::CommandExecutor{};
 
     auto depth_format = VK_FORMAT_D32_SFLOAT;
-    auto sample_count = VK_SAMPLE_COUNT_8_BIT;
+    auto sample_count = VK_SAMPLE_COUNT_2_BIT;
     toy::throwf(
       (rd::vk::Image::getAvailableSampleCounts() | sample_count) > 0,
       "the sample count is not available"
@@ -64,10 +64,10 @@ int main() {
     auto render_pass_info = rd::vk::RenderPassInfo{
       .extent = swapchain.extent(),
       .attachments = {
-        rd::vk::AttachmentInfo{
-          .format = swapchain.format(),
-          .sample_count = sample_count,
-        },
+        // rd::vk::AttachmentInfo{
+        //   .format = swapchain.format(),
+        //   .sample_count = sample_count,
+        // },
         rd::vk::AttachmentInfo{
           .format = swapchain.format(),
           .sample_count = VK_SAMPLE_COUNT_1_BIT,
@@ -82,31 +82,31 @@ int main() {
               .stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
             },
             .layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            .keep_content = true,
           },
         },
-        rd::vk::AttachmentInfo{
-          .format = depth_format,
-          .sample_count = sample_count,
-        },
+        // rd::vk::AttachmentInfo{
+        //   .format = depth_format,
+        //   .sample_count = sample_count,
+        // },
       },
       .subpasses = {
         rd::vk::SubpassInfo{
           .colors = {0},
           .inputs = {},
-          .multi_sample = {{
-            .resolves = {1},
-            .sample_count = sample_count,
-          }},
-          .depst_attachment = 2,
-          .depth_option = {{
-            .compare_op = VK_COMPARE_OP_LESS,
-            .overwrite = true,
-          }},
+          .multi_sample = {},
+          // .multi_sample = {{
+          //   .resolves = {1},
+          //   .sample_count = sample_count,
+          // }},
+          .depst_attachment = {},
+          .depth_option = {},
           .stencil_option = {},
           .vertex_shader_name = "hello.vert",
           .frag_shader_name = "hello.frag",
           .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
           .vertex_info = model::Vertex::getVertexInfo(),
+          // .vertex_info = Vertex::getVertexInfo(),
           .descriptor_sets = {
             rd::vk::DescriptorSetInfo{
               .descriptors = {
@@ -153,7 +153,8 @@ int main() {
       }
     };
     auto dset_model = rd::vk::DescriptorSet{ dset_pool, render_pass[0], 0 };
-    auto model_data = trans::model::create();
+    auto model_data = trans::model::create(glm::vec3{ 0.0f, 0.0f, 0.0f });
+    model_data = model_data * trans::rotate<trans::Axis::Z>(90.0f);
     auto model_uniform = rd::vk::UniformBuffer{ model_data };
     dset_model[0] = model_uniform;
 
@@ -163,10 +164,6 @@ int main() {
     auto proj_data = trans::proj::perspective({
       .width = swapchain.extent().width,
       .height = swapchain.extent().height,
-    });
-    proj_data = trans::proj::perspective({
-      .width = 1920,
-      .height = 1080,
     });
     auto proj_uniform = rd::vk::UniformBuffer{ proj_data };
     dset_camera[0] = view_uniform;
@@ -224,19 +221,15 @@ int main() {
       )
       .get()
       .wait(false);
-
-    auto framebuffers =
-      swapchain_image_views | views::transform([&](VkImageView image_view) {
-        return rd::vk::Framebuffer{
-          render_pass, std::array{ sample_image.image_view(), image_view, depth_image.image_view() }
-        };
-      }) |
-      ranges::to<std::vector>();
+    auto framebuffers = swapchain_image_views | views::transform([&](VkImageView image_view) {
+                          return rd::vk::Framebuffer{ render_pass, std::array{ image_view } };
+                        }) |
+                        ranges::to<std::vector>();
 
     auto clear_values = std::array{
-      VkClearValue{ .color = { .float32 = { 0.5f, 0.5f, 0.5f, 1.0f } } },
-      VkClearValue{ .color = { .float32 = { 0.5f, 0.5f, 0.5f, 1.0f } } },
-      VkClearValue{ .depthStencil = { .depth = 1.0f, } },
+      // VkClearValue{ .color = { .float32 = { 0.5f, 0.5f, 0.5f, 1.0f } } },
+      VkClearValue{ .color = { .float32 = { 1.0f, 1.0f, 1.0f, 1.0f } } },
+      // VkClearValue{ .depthStencil = { .depth = 1.0f, } },
     };
 
     auto count = 0;
