@@ -127,7 +127,7 @@ public:
         mip_levels,
         [&]() {
           toy::throwf(
-            (getAvailableSampleCounts() | sample_count) > 0,
+            (getAvailableSampleCounts() & sample_count) > 0,
             "the sample count {} is not supported",
             uint32_t(sample_count)
           );
