@@ -1,12 +1,8 @@
 module render.vk.sync;
 
 import "vulkan_config.h";
-import render.vk.resource;
 import render.vk.tool;
 import render.vk.device;
-
-import std;
-import toy;
 
 namespace rd::vk {
 

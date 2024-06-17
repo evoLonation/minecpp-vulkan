@@ -182,7 +182,8 @@ int main() {
       .height = swapchain.extent().height,
     });
     auto proj_uniform = rd::vk::UniformBuffer{ proj_data };
-    auto sampled_texture = rd::SampledTexture{ "model/viking_room.png", true };
+    auto sampled_texture =
+      rd::SampledTexture{ "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT };
     auto [vertexes, indices] = model::getModelInfo("model/viking_room.obj");
     auto vertex_buffer = rd::VertexBuffer{ vertexes };
     auto index_buffer = rd::IndexBuffer{ indices };

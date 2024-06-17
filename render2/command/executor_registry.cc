@@ -2,9 +2,6 @@ module render.vk.executor;
 
 import "vulkan_config.h";
 
-import std;
-import toy;
-
 namespace rd::vk {
 
 auto checkGraphicQueue(const QueueFamilyCheckContext& ctx) -> bool {
@@ -28,6 +25,29 @@ auto CommandExecutor::registerFamilies()
     { QueueFamily::PRESENT, QueueFamilyRequestor{ 2, vk::checkPresentQueue } },
     { QueueFamily::TRANSFER, QueueFamilyRequestor{ 1, vk::checkTransferQueue } },
   };
+}
+
+void CommandExecutor::buildQueueExecutors() {
+  auto queue_base_indices = std::map<QueueFamily, uint32_t>{};
+
+  auto buildQueueExecutor = [&](QueueFamily family, uint32_t queue_number) -> QueueExecutor {
+    auto& old_base_index = queue_base_indices[family];
+    auto  executor = QueueExecutor{
+      family,
+       { old_base_index, old_base_index + queue_number },
+    };
+    old_base_index += queue_number;
+    toy::throwf(
+      old_base_index <= _cmd_contexts[family].queues.size(),
+      "the queue executor's queue number is out of range"
+    );
+    return executor;
+  };
+  using namespace executors;
+  copy = buildQueueExecutor(QueueFamily::TRANSFER, 1);
+  present = buildQueueExecutor(QueueFamily::PRESENT, 2);
+  tool = buildQueueExecutor(QueueFamily::GRAPHICS, 1);
+  render = buildQueueExecutor(QueueFamily::GRAPHICS, 2);
 }
 
 } // namespace rd::vk

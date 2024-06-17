@@ -1,3 +1,5 @@
 source:
 - image.ccm
+- image.cc
 - sampler.ccm
+- sampler.cc

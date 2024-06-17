@@ -1,12 +1,7 @@
 module render.vk.command;
 
-import "vulkan_config.h";
-import render.vk.tool;
-import render.vk.resource;
 import render.vk.device;
-
-import std;
-import toy;
+import render.vk.tool;
 
 namespace rd::vk {
 
@@ -35,6 +30,56 @@ auto allocateCommandBuffers(VkCommandPool command_pool, uint32_t count) -> rs::C
     .commandBufferCount = count,
   };
   return { Device::getInstance(), cbuffer_alloc_info };
+}
+
+void beginRecord(VkCommandBuffer cmdbuf) {
+  // vkBeginCommandBuffer 会隐式执行vkResetCommandBuffer
+  // vkResetCommandBuffer(worker.command_buffer, 0);
+  auto begin_info = VkCommandBufferBeginInfo{
+    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+    /** \param VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT specifies that each
+     * recording of the command buffer will only be submitted once, and the
+     * command buffer will be reset and recorded again between each submission.
+     * \param VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT specifies that a
+     * secondary command buffer is considered to be entirely inside a render
+     * pass. If this is a primary command buffer, then this bit is ignored.
+     * \param VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT specifies that a
+     * command buffer can be resubmitted to any queue of the same queue family
+     * while it is in the pending state, and recorded into multiple primary
+     * command buffers.*/
+    .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    .pInheritanceInfo = nullptr,
+  };
+  checkVkResult(vkBeginCommandBuffer(cmdbuf, &begin_info), "begin command buffer");
+}
+void endAndSubmitRecord(
+  VkCommandBuffer                cmdbuf,
+  VkQueue                        queue,
+  std::span<const WaitSemaphore> wait_infos,
+  std::span<const VkSemaphore>   signal_semas,
+  VkFence                        signal_fence
+) {
+  checkVkResult(vkEndCommandBuffer(cmdbuf), "end command buffer");
+
+  auto wait_semas = wait_infos | views::transform([](const auto& pair) { return pair.sema; }) |
+                    ranges::to<std::vector>();
+  auto wait_stages = wait_infos |
+                     views::transform([](const auto& pair) { return pair.stage_mask; }) |
+                     ranges::to<std::vector>();
+  auto submit_info = VkSubmitInfo{
+    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+    .pNext = nullptr,
+    .waitSemaphoreCount = (uint32_t)wait_infos.size(),
+    // 对 pWaitSemaphores 中的每个 semaphore 都定义了 semaphore wait operation
+    // 触发阶段由 dst stage mask 定义
+    .pWaitSemaphores = wait_semas.data(),
+    .pWaitDstStageMask = wait_stages.data(),
+    .commandBufferCount = 1,
+    .pCommandBuffers = &cmdbuf,
+    .signalSemaphoreCount = (uint32_t)signal_semas.size(),
+    .pSignalSemaphores = signal_semas.data(),
+  };
+  checkVkResult(vkQueueSubmit(queue, 1, &submit_info, signal_fence), "submit queue");
 }
 
 } // namespace rd::vk

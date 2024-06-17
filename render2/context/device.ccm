@@ -9,6 +9,8 @@ import render.vk.format;
 
 export namespace rd::vk {
 
+using FormatTarget = FormatTarget;
+
 struct PdeviceContext {
   VkPhysicalDevice           device;
   VkPhysicalDeviceProperties properties;

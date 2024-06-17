@@ -1,7 +1,6 @@
 export module render.vk.executor:impl;
 
 import "vulkan_config.h";
-import render.vk.tool;
 import render.vk.resource;
 import render.vk.device;
 import render.vk.sync;

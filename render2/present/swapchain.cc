@@ -2,7 +2,6 @@ module render.vk.swapchain;
 
 import "vulkan_config.h";
 import render.vk.surface;
-import render.vk.format;
 import render.vk.sync;
 
 import std;

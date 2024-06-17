@@ -1,64 +1,123 @@
-module render.presentation;
+module render.vk.presentation;
 
 import "vulkan_config.h";
+import render.vk.swapchain;
+import render.vk.executor;
+import render.vk.image;
 
-import std;
-import toy;
+namespace rd::vk {
 
-namespace rd {
-
-class Presentation: public toy::ProactiveSingleton<Presentation> {
-public:
-  auto needRecreate() -> bool;
-  auto getCurrentImage() -> VkImage;
-  void submitPresent(VkSemaphore wait_sema, VkSemaphore available_sema) {
-    auto present_info = VkPresentInfoKHR{
-      .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-      .waitSemaphoreCount = 1,
-      .pWaitSemaphores = wait_sema,
-      .swapchainCount = 1,
-      .pSwapchains = &Swapchain::getInstance().get(),
-      .pImageIndices = &_current_index,
-      // .pResults: 当有多个 swapchain 时检查每个的result
-    };
-    if (auto result =
-          vkQueuePresentKHR(present_executor[_in_flight_index].getQueue(), &present_info);
-        result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-      toy::debugf(
-        "the queue present return {}",
-        result == VK_ERROR_OUT_OF_DATE_KHR ? "out of date error" : "sub optimal"
-      );
-      _last_present_failed = true;
-    } else {
-      vk::checkVkResult(result, "present");
-    }
-    if (auto result = vkAcquireNextImageKHR(
-          ctx.device,
-          ctx.swapchain,
-          std::numeric_limits<uint64_t>::max(),
-          worker.image_available_sema,
-          VK_NULL_HANDLE,
-          &image_index
-        );
-        result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || _last_present_failed) {
-      if (ctx.tryRecreate()) {
-        _last_present_failed = false;
-        for (auto usage : _image_useds) {
-          usage = false;
-        }
-        draw();
-        return;
-      } else {
-        // toy::debugf("recreate swapchain failed, draw frame return");
-        return;
-      }
-    } else {
-      vk::checkVkResult(result, "acquire next image");
+auto Presentation::prepare() -> std::optional<PresentContext> {
+  auto& swapchain = Swapchain::getInstance();
+  bool  recreated = _present_recreated;
+  if (!swapchain.valid()) {
+    swapchain.updateCapabilities();
+    if (swapchain.needRecreate()) {
+      swapchain.recreate();
+      recreated = true;
     }
   }
+  if (!swapchain.valid()) {
+    return std::nullopt;
+  }
+  // transfer new image ownership from present to graphics
+  // transfer new image layout from presentable to <custom>
+  auto  image_available_sema = swapchain.getImageAvailableSema();
+  auto  image_index = swapchain.getCurrentImageIndex();
+  auto& present_executor = executors::present;
+  auto& graphic_executor = executors::tool;
+  auto  image = swapchain.images()[image_index];
+  auto  record_p2g = [&](VkCommandBuffer cmdbuf, bool acquire) {
+    recordImageBarrier(
+      cmdbuf,
+      image,
+      getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, vk::MipRange{ 0, 1 }),
+      LayoutTransitionInfo{
+        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        _available_layout,
+      },
+      acquire ? vk::BarrierScope::acquire(vk::Scope{
+                   .stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                })
+               : vk::BarrierScope::release(vk::Scope{
+                   .stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                }),
+      FamilyTransferInfo{
+        present_executor.getFamily(),
+        graphic_executor.getFamily(),
+      }
+    );
+  };
+  auto present_release_sema = _image_resources[image].present_release_sema.get();
+  auto graphic_acquire_sema = _image_resources[image].graphic_acquire_sema.get();
+  present_executor[0].submit(
+    [&](auto cmdbuf) { record_p2g(cmdbuf, false); },
+    std::array{ WaitSemaphore{ image_available_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
+    std::array{ present_release_sema }
+  );
+  graphic_executor.submit(
+    [&](auto cmdbuf) { record_p2g(cmdbuf, true); },
+    std::array{ WaitSemaphore{ present_release_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
+    std::array{ graphic_acquire_sema }
+  );
 
-private:
-  uint32_t _current_index;
-};
+  return PresentContext{
+    .wait_sema = graphic_acquire_sema,
+    .signal_sema = _image_resources[image].render_done_sema,
+    .image_index = image_index,
+    .need_recreate = recreated,
+  };
+}
 
-} // namespace rd
+void Presentation::present() {
+  // transfer image ownership from graphics to present
+  // transfer image layout from <custom> to presentable
+  auto& swapchain = Swapchain::getInstance();
+  auto  image_index = swapchain.getCurrentImageIndex();
+  auto& present_executor = executors::present;
+  auto& graphic_executor = executors::tool;
+  auto  image = swapchain.images()[image_index];
+  auto  record_g2p = [&](VkCommandBuffer cmdbuf, bool acquire) {
+    recordImageBarrier(
+      cmdbuf,
+      image,
+      getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, vk::MipRange{ 0, 1 }),
+      vk::LayoutTransitionInfo{
+        _render_done_layout,
+        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+      },
+      acquire ? vk::BarrierScope::acquire(vk::Scope{
+                   .stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                })
+               : vk::BarrierScope::release(vk::Scope{
+                   .stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                }),
+      vk::FamilyTransferInfo{
+        graphic_executor.getFamily(),
+        present_executor.getFamily(),
+      }
+    );
+  };
+  auto render_done_sema = _image_resources[image].render_done_sema.get();
+  auto graphic_release_sema = _image_resources[image].graphic_release_sema.get();
+  auto present_acquire_sema = _image_resources[image].present_acquire_sema.get();
+  graphic_executor.submit(
+    [&](auto cmdbuf) { record_g2p(cmdbuf, false); },
+    std::array{ WaitSemaphore{ render_done_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
+    std::array{ graphic_release_sema }
+  );
+  present_executor[1].submit(
+    [&](auto cmdbuf) { record_g2p(cmdbuf, true); },
+    std::array{ WaitSemaphore{ graphic_release_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
+    std::array{ present_acquire_sema }
+  );
+  if (!swapchain.present(present_acquire_sema, present_executor[1].getQueue())) {
+    swapchain.updateCapabilities();
+    swapchain.recreate();
+    _present_recreated = true;
+  } else {
+    _present_recreated = false;
+  }
+}
+
+} // namespace rd::vk

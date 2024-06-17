@@ -4,30 +4,15 @@ import std;
 import toy;
 
 import "vulkan_config.h";
-import render.vk.tool;
 import render.vk.resource;
-import render.vk.device;
 import render.vk.memory;
 
 export namespace rd::vk {
 
-auto createBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage) -> rs::Buffer {
-  auto buffer_info = VkBufferCreateInfo{
-    .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-    .size = buffer_size,
-    .usage = usage,
-    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-  };
-  return { Device::getInstance(), buffer_info };
-}
-
 class Buffer : public rs::Buffer {
 public:
   Buffer() = default;
-  Buffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage, VkMemoryPropertyFlags property_flags) {
-    rs::Buffer::operator=(createBuffer(buffer_size, usage));
-    _memory = { get(), property_flags };
-  }
+  Buffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage, VkMemoryPropertyFlags property_flags);
   auto memory() const -> VkDeviceMemory { return _memory; }
 
 private:

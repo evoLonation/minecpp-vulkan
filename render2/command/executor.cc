@@ -2,14 +2,8 @@ module render.vk.executor;
 
 import "vulkan_config.h";
 import render.vk.tool;
-import render.vk.resource;
 import render.vk.surface;
 import render.vk.device;
-import render.vk.sync;
-import render.vk.command;
-
-import std;
-import toy;
 
 namespace rd::vk {
 

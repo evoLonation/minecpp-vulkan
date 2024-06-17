@@ -1,3 +1,5 @@
 source:
 - buffer.ccm
+- buffer.cc
 - vertex.ccm
+- vertex.cc
