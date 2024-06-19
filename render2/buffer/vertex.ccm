@@ -21,6 +21,14 @@ consteval auto formatMapper() -> VkFormat {
     return VK_FORMAT_R32G32B32A32_SFLOAT;
   } else if constexpr (std::same_as<Type, float>) {
     return VK_FORMAT_R32_SFLOAT;
+  } else if constexpr (std::same_as<Type, glm::dvec2>) {
+    return VK_FORMAT_R64G64_SFLOAT;
+  } else if constexpr (std::same_as<Type, glm::dvec3>) {
+    return VK_FORMAT_R64G64B64_SFLOAT;
+  } else if constexpr (std::same_as<Type, glm::dvec4>) {
+    return VK_FORMAT_R64G64B64A64_SFLOAT;
+  } else if constexpr (std::same_as<Type, double>) {
+    return VK_FORMAT_R64_SFLOAT;
   }
 }
 
@@ -40,19 +48,43 @@ private:
   static auto checkPdevice(const vk::PdeviceContext& ctx) -> bool;
 };
 
-// todo: add align
 template <typename... DataTypes>
   requires(std::is_trivially_copyable_v<DataTypes> && ...)
-struct Vertex : public std::array<char, (sizeof(DataTypes) + ...)> {
-  using Base = std::array<char, (sizeof(DataTypes) + ...)>;
-  Vertex(DataTypes&&... data) {
-    int offset = 0;
-    ((*reinterpret_cast<DataTypes*>(Base::data() + offset) = data, offset += sizeof(DataTypes)),
+struct Vertex {
+public:
+  Vertex(const DataTypes&... data) {
+    int i = 0;
+    ((*reinterpret_cast<DataTypes*>(
+        std::launder(reinterpret_cast<char*>(&storage) + align_info.second[i])
+      ) = data,
+      i++),
      ...);
   }
   static auto getVertexInfo() -> VertexInfo {
     return { &binding_description<>, attribute_descriptions<> };
   }
+
+private:
+  static constexpr auto align_info = []() {
+    auto alignments = std::array{ alignof(DataTypes)... };
+    auto sizeofs = std::array{ sizeof(DataTypes)... };
+    auto alignment = size_t{ 0 };
+    auto offsets = std::array<uint32_t, sizeof...(DataTypes)>{};
+
+    alignment = *ranges::max_element(alignments);
+    offsets[0] = 0;
+    for (auto i = 1; i < sizeof...(DataTypes); i++) {
+      auto unalign_offset = offsets[i - 1] + sizeofs[i - 1];
+      offsets[i] =
+        (unalign_offset / alignments[i] + static_cast<bool>(unalign_offset % alignments[i])) *
+        alignments[i];
+    }
+    return std::pair{ alignment, offsets };
+  }();
+  using Base = std::aligned_storage_t<
+    align_info.second.back() + sizeof(typename toy::TypePack<DataTypes...>::template at<-1>),
+    align_info.first>;
+  Base storage;
 
   // must make the static member as template variable, otherwise the Vertex is incomplete type when
   // construct the variable
@@ -68,18 +100,15 @@ struct Vertex : public std::array<char, (sizeof(DataTypes) + ...)> {
   static constexpr auto attribute_descriptions = []() {
     auto attribute_descriptions =
       std::array<VkVertexInputAttributeDescription, sizeof...(DataTypes)>{};
-
     uint32_t i = 0;
-    uint32_t offset = 0;
     ((attribute_descriptions[i] =
         VkVertexInputAttributeDescription{
           .location = i,
           .binding = 0,
           .format = formatMapper<DataTypes>(),
-          .offset = offset,
+          .offset = align_info.second[i],
         },
-      i++,
-      offset += sizeof(DataTypes)),
+      i++),
      ...);
     return attribute_descriptions;
   }();

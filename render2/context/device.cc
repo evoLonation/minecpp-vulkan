@@ -55,7 +55,6 @@ auto pickPhysicalDevice(
   return selected_device;
 }
 
-// todo: change queue_create_info to anyview
 auto createDevice(
   VkPhysicalDevice                         pdevice,
   std::span<const VkDeviceQueueCreateInfo> queue_create_infos,
