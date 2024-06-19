@@ -1,9 +1,0 @@
-export module vulkan.shader_code;
-
-import std;
-
-namespace vk {
-
-export auto get_shader_code(std::string_view shader) -> std::span<const std::byte>;
-
-} // namespace vk
