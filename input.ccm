@@ -493,6 +493,8 @@ public:
     };
     glfwSetCursorPosCallback(window, [](GLFWwindow* window, double x, double y) {
       auto& instance = getInstance();
+      toy::checkf(x - (int32_t)x == 0.0f, "the x from cursor callback is not integer");
+      toy::checkf(y - (int32_t)y == 0.0f, "the y from cursor callback is not integer");
       instance._cursor_state.x_move = (int32_t)x - (int32_t)instance._cursor_state.x;
       instance._cursor_state.y_move = (int32_t)y - (int32_t)instance._cursor_state.y;
       instance._cursor_state.x = x;
