@@ -10,7 +10,7 @@ Semaphore::Semaphore(bool init) {
   VkSemaphoreCreateInfo create_info{
     .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
   };
-  rs::Semaphore::operator=({ Device::getInstance(), create_info });
+  rs::Semaphore::operator=(create_info);
 }
 
 Fence::Fence(bool signaled) {
@@ -20,13 +20,14 @@ Fence::Fence(bool signaled) {
   if (signaled) {
     create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
   }
-  rs::Fence::operator=({ Device::getInstance(), create_info });
+  rs::Fence::operator=(create_info);
 }
 
 void Fence::wait(bool reset) {
+  auto handle = get();
   checkVkResult(
     vkWaitForFences(
-      Device::getInstance(), 1, &get(), VK_TRUE, std::numeric_limits<uint64_t>::max()
+      Device::getInstance(), 1, &handle, VK_TRUE, std::numeric_limits<uint64_t>::max()
     ),
     "wait fences"
   );
@@ -36,7 +37,8 @@ void Fence::wait(bool reset) {
 }
 
 void Fence::reset() {
-  checkVkResult(vkResetFences(Device::getInstance(), 1, &get()), "reset fence");
+  auto handle = get();
+  checkVkResult(vkResetFences(Device::getInstance(), 1, &handle), "reset fence");
 }
 
 auto Fence::isSignaled() -> bool {

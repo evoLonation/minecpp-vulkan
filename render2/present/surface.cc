@@ -11,7 +11,7 @@ Surface::Surface() {
     .hinstance = GetModuleHandle(nullptr),
     .hwnd = glfwGetWin32Window(glfw::Window::getInstance().get()),
   };
-  rs::Surface::operator=({ Instance::getInstance().instance(), create_info });
+  rs::Surface::operator=(create_info);
 }
 
 } // namespace rd::vk

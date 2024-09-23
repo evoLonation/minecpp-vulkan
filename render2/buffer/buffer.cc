@@ -11,7 +11,7 @@ auto createBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage) -> rs::Buf
     .usage = usage,
     .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
   };
-  return { Device::getInstance(), buffer_info };
+  return { buffer_info };
 }
 
 Buffer::Buffer(

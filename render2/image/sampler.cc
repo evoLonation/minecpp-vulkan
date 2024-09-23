@@ -46,7 +46,7 @@ auto createSampler(float max_anisotropy) -> vk::rs::Sampler {
     // VK_FALSE: (0, 1)寻址， 反之 (0, width), (0, height)寻址
     .unnormalizedCoordinates = VK_FALSE,
   };
-  return { vk::Device::getInstance(), sampler_info };
+  return { sampler_info };
 }
 
 decltype(SampledTexture::_formats) SampledTexture::_formats = { VK_FORMAT_R8G8B8A8_SRGB };

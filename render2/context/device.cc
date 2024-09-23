@@ -88,6 +88,7 @@ Device::Device() {
   _properties = ctx.properties;
   _features = ctx.features;
 
+  rs::Device::setInvalid();
   rs::Device::operator=({ createDevice(
     _pdevice, CommandExecutor::getQueueInfo().queue_create_infos, _features, extensions
   ) });

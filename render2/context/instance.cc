@@ -64,8 +64,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugHandler(
   return VK_FALSE;
 }
 
-auto getDebugMessengerInfo(const DebugMessengerConfig& config)
-  -> VkDebugUtilsMessengerCreateInfoEXT {
+auto getDebugMessengerInfo(const DebugMessengerConfig& config
+) -> VkDebugUtilsMessengerCreateInfoEXT {
   return {
     .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
     .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
@@ -145,13 +145,15 @@ InstanceTemp<true>::InstanceTemp(
     .message_severity_level = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT,
     .message_type_flags = VK_DEBUG_UTILS_MESSAGE_TYPE_FLAG_BITS_MAX_ENUM_EXT,
   };
+  _instance.setInvalid();
   _instance = createInstance(app_name, getDebugMessengerInfo(_debug_config), required_extensions);
-  _debug_messenger = { _instance, getDebugMessengerInfo(_debug_config) };
+  _debug_messenger = getDebugMessengerInfo(_debug_config);
 }
 
 InstanceTemp<false>::InstanceTemp(
   const std::string& app_name, std::span<const char* const> required_extensions
 ) {
+  _instance.setInvalid();
   _instance = createInstance(app_name, std::nullopt, required_extensions);
 }
 

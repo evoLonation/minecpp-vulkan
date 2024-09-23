@@ -17,7 +17,7 @@ auto createCommandPool(uint32_t family_index, bool short_live) -> rs::CommandPoo
   if (short_live) {
     pool_create_info.flags |= VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
   }
-  return { Device::getInstance(), pool_create_info };
+  return { pool_create_info };
 }
 
 auto allocateCommandBuffers(VkCommandPool command_pool, uint32_t count) -> rs::CommandBuffers {
@@ -29,7 +29,7 @@ auto allocateCommandBuffers(VkCommandPool command_pool, uint32_t count) -> rs::C
     .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
     .commandBufferCount = count,
   };
-  return { Device::getInstance(), cbuffer_alloc_info };
+  return { cbuffer_alloc_info };
 }
 
 void beginRecord(VkCommandBuffer cmdbuf) {

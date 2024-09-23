@@ -42,11 +42,16 @@ public:
     return *_instance_ptr;
   }
 
+  void setInvalid() { _instance_ptr = nullptr; }
+
   // deleted copy semantic
   ProactiveSingleton& operator=(const ProactiveSingleton&) = delete;
   ProactiveSingleton(const ProactiveSingleton&) = delete;
   // move semantic
-  ProactiveSingleton& operator=(ProactiveSingleton&&) { _instance_ptr = &self(); }
+  ProactiveSingleton& operator=(ProactiveSingleton&&) {
+    _instance_ptr = &self();
+    return *this;
+  }
   ProactiveSingleton(ProactiveSingleton&&) { _instance_ptr = &self(); }
 };
 
@@ -173,23 +178,6 @@ struct StringLiteral {
   char value[N];
 };
 
-template <size_t size, typename Func>
-decltype(auto) applyIndexSequence(Func&& func) {
-  return [&]<size_t... indices>(std::index_sequence<indices...> _) {
-    return func.template operator()<indices...>();
-  }(std::make_index_sequence<size>{});
-}
-
-template <size_t size, typename Func>
-  requires(size == 0) || requires(Func&& func) { func.template operator()<0>(); }
-void templateForEach(Func&& func) {
-  if constexpr (size != 0) {
-    applyIndexSequence<size>([&]<size_t... indices>() {
-      (func.template operator()<indices>(), ...);
-    });
-  }
-}
-
 namespace test_refContainer {
 class B : public RefLoader<B> {
 public:
@@ -241,12 +229,5 @@ void func() {}
 void test() { func<"abcd">(); }
 
 } // namespace test_StringLiteral
-
-void test_templateForEach() {
-  templateForEach<10>([]<size_t indice>() {
-    if constexpr (indice == 0) {
-    }
-  });
-}
 
 } // namespace toy

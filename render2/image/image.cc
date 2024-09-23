@@ -70,7 +70,7 @@ auto createImage(
     // layout before they are accessed by the device.
     .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
   };
-  return { Device::getInstance(), image_info };
+  return { image_info };
 }
 
 auto createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect, uint32_t mip_levels)
@@ -92,7 +92,7 @@ auto createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect, 
     // view 访问 image 资源的范围
     .subresourceRange = getSubresourceRange(aspect, {0, mip_levels}),
   };
-  return { Device::getInstance(), create_info };
+  return { create_info };
 }
 
 Image::Image(

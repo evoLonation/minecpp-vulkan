@@ -12,14 +12,14 @@ import toy;
 
 namespace rd::vk {
 
-auto createShaderModule(std::string_view filename, VkDevice device) -> rs::ShaderModule {
+auto createShaderModule(std::string_view filename) -> rs::ShaderModule {
   auto content = get_shader_code(filename);
   auto create_info = VkShaderModuleCreateInfo{
     .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
     .codeSize = content.size(),
     .pCode = reinterpret_cast<const uint32_t*>(content.data()),
   };
-  return rs::ShaderModule{ device, create_info };
+  return rs::ShaderModule{ create_info };
 }
 
 auto createGraphicsPipeline(
@@ -35,9 +35,8 @@ auto createGraphicsPipeline(
 ) -> PipelineResource {
   constexpr bool enable_blending_color = false;
 
-  auto& device = Device::getInstance();
-  auto  vertex_shader = createShaderModule(vertex_shader_name, device);
-  auto  frag_shader = createShaderModule(frag_shader_name, device);
+  auto vertex_shader = createShaderModule(vertex_shader_name);
+  auto frag_shader = createShaderModule(frag_shader_name);
   // pSpecializationInfo 可以为 管道 配置着色器的常量，利于编译器优化
   // 类似 constexpr
   auto shader_stage_infos = std::array{
@@ -187,7 +186,7 @@ auto createGraphicsPipeline(
     .setLayoutCount = (uint32_t)descriptor_set_layouts.size(),
     .pSetLayouts = descriptor_set_layouts.data(),
   };
-  auto pipeline_layout = rs::PipelineLayout{ device, pipeline_layout_info };
+  auto pipeline_layout = rs::PipelineLayout{ pipeline_layout_info };
 
   auto pipeline_create_info = VkGraphicsPipelineCreateInfo{
     .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -209,9 +208,9 @@ auto createGraphicsPipeline(
     .basePipelineHandle = VK_NULL_HANDLE,
   };
 
-  auto pipeline = std::move(rs::GraphicsPipelineFactory::create(
-    device, VK_NULL_HANDLE, std::span{ &pipeline_create_info, 1 }
-  )[0]);
+  auto pipeline = std::move(
+    rs::GraphicsPipelineFactory::create(VK_NULL_HANDLE, std::span{ &pipeline_create_info, 1 })[0]
+  );
   return { std::move(vertex_shader),
            std::move(frag_shader),
            std::move(pipeline_layout),
@@ -241,7 +240,7 @@ auto RenderPass::createPipeline(VkRenderPass render_pass, std::span<const Subpas
         .bindingCount = static_cast<uint32_t>(dset_layout.size()),
         .pBindings = dset_layout.data(),
       };
-      dset_layouts.emplace_back(Device::getInstance(), dset_create_info);
+      dset_layouts.emplace_back(dset_create_info);
       dset_layout_handles.push_back(dset_layouts.back());
     }
     pipelines.emplace_back(

@@ -93,7 +93,7 @@ void Swapchain::create() {
 
   auto& device = Device::getInstance();
 
-  rs::Swapchain::operator=({ device, create_info });
+  rs::Swapchain::operator=(create_info);
   _images = getVkResources(vkGetSwapchainImagesKHR, device, get());
   _image_views = _images | views::transform([&](VkImage image) {
                    return rd::vk::createImageView(image, _format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
@@ -107,12 +107,13 @@ auto Swapchain::present(VkSemaphore wait_sema, VkQueue present_queue) -> bool {
   if (_last_present_failed) {
     toy::throwf("call present after a failed present without recreate");
   }
+  auto handle = get();
   auto present_info = VkPresentInfoKHR{
     .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
     .waitSemaphoreCount = 1,
     .pWaitSemaphores = &wait_sema,
     .swapchainCount = 1,
-    .pSwapchains = &get(),
+    .pSwapchains = &handle,
     .pImageIndices = &_image_index,
     // .pResults: 当有多个 swapchain 时检查每个的result
   };

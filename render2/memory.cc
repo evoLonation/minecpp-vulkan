@@ -65,7 +65,7 @@ Memory::Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property
     .allocationSize = requirements.size,
     .memoryTypeIndex = memory_type_index,
   };
-  rs::Memory::operator=({ device, allocate_info });
+  rs::Memory::operator=(allocate_info);
 }
 
 HostVisibleMemory::HostVisibleMemory(HostVisibleMemory&& e) noexcept {

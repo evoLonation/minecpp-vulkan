@@ -372,7 +372,7 @@ auto RenderPass::createRenderPass(
     .dependencyCount = static_cast<uint32_t>(merged_dependencies.size()),
     .pDependencies = merged_dependencies.data(),
   };
-  return { vk::Device::getInstance(), render_pass_create_info };
+  return { render_pass_create_info };
 }
 
 } // namespace rd::vk

@@ -66,9 +66,8 @@ private:
 
 class Instance : public InstanceTemp<toy::enable_debug>, public toy::ProactiveSingleton<Instance> {
 public:
-  Instance(const std::string& app_name) {
-    InstanceTemp<toy::enable_debug>::operator=({ app_name, registerExtensions() });
-  };
+  Instance(const std::string& app_name)
+    : InstanceTemp<toy::enable_debug>({ app_name, registerExtensions() }) {}
 
 private:
   auto registerExtensions() -> std::vector<const char*>;

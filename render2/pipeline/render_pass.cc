@@ -17,7 +17,7 @@ DescriptorPool::DescriptorPool(
     .poolSizeCount = static_cast<uint32_t>(type_counts.size()),
     .pPoolSizes = type_counts.data(),
   };
-  rs::DescriptorPool::operator=({ Device::getInstance(), pool_create_info });
+  rs::DescriptorPool::operator=({ pool_create_info });
 }
 
 DescriptorSet::DescriptorSet(
@@ -30,7 +30,7 @@ DescriptorSet::DescriptorSet(
     .descriptorSetCount = 1,
     .pSetLayouts = &dset_layout,
   };
-  _dsets = { Device::getInstance(), allocate_info };
+  _dsets = { allocate_info };
 }
 
 auto Descriptor::operator=(std::initializer_list<std::reference_wrapper<Buffer const>> resources
@@ -94,7 +94,7 @@ Framebuffer::Framebuffer(
     .height = extent.height,
     .layers = 1,
   };
-  rs::Framebuffer::operator=({ Device::getInstance(), create_info });
+  rs::Framebuffer::operator=(create_info);
 }
 
 void Pipeline::Recorder::init() {
@@ -140,7 +140,8 @@ auto Pipeline::Recorder::DescriptorSetBinding::DescriptorSetBindingTarget::opera
 auto Pipeline::Recorder::VertexBufferBinding::operator=(VertexBuffer& vertex_buffer
 ) -> VertexBufferBinding& {
   auto offset = VkDeviceSize{ 0 };
-  vkCmdBindVertexBuffers(_cmdbuf, 0, 1, &vertex_buffer.get(), &offset);
+  auto buffer = vertex_buffer.get();
+  vkCmdBindVertexBuffers(_cmdbuf, 0, 1, &buffer, &offset);
   return *this;
 }
 

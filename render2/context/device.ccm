@@ -73,6 +73,8 @@ public:
   auto properties() const -> const auto& { return _properties; }
   auto features() const -> const auto& { return _features; }
 
+  using toy::ProactiveSingleton<Device>::getInstance;
+
 private:
   auto registerExtensions() -> std::vector<const char*>;
   auto registerCheckers() -> std::vector<bool (*)(const PdeviceContext&)>;
