@@ -6,56 +6,40 @@ import std;
 
 import render.vk.instance;
 
-namespace glfw {
+export namespace glfw {
 
-void checkGlfwError();
-
-export class Window : public toy::ProactiveSingleton<Window> {
-private:
-  void        destroyResource();
-  GLFWwindow* window_;
-
+class Context : public toy::ProactiveSingleton<Context> {
 public:
-  auto get() const -> GLFWwindow* { return window_; }
-  operator GLFWwindow*() const { return get(); }
-
-  Window(const Window&) = delete;
-  Window(Window&& window) : window_(window.window_) { window.window_ = nullptr; }
-  auto operator=(const Window&) -> Window& = delete;
-  auto operator=(Window&& window) -> Window& {
-    destroyResource();
-    window_ = window.window_;
-    window.window_ = nullptr;
-    return *this;
-  }
-  Window() : window_(nullptr) {}
-  Window(int width, int height, const std::string& title);
-};
-
-void Window::destroyResource() {
-  if (window_ != nullptr) {
-    glfwDestroyWindow(window_);
-    glfwTerminate();
-  }
-}
-
-Window::Window(int width, int height, const std::string& title) {
-  try {
+  Context() {
     if (glfwInit() != GLFW_TRUE) {
       throw std::runtime_error("glfw init failed");
     }
-    // 不要创建openGL上下文
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    // 禁用改变窗口尺寸
-    // glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-
-    window_ = glfwCreateWindow(width, height, title.data(), nullptr, nullptr);
-
-    checkGlfwError();
-  } catch (const std::exception&) {
-    glfwTerminate();
-    throw;
   }
+  ~Context() { glfwTerminate(); }
+};
+
+void checkGlfwError();
+
+class Window : public toy::ProactiveSingleton<Window> {
+public:
+  Window() = default;
+  Window(int width, int height, const std::string& title);
+  auto get() const -> GLFWwindow* { return _window.get(); }
+  operator GLFWwindow*() const { return get(); }
+
+private:
+  void               destroyResource();
+  static inline auto deleter = [](GLFWwindow* window) { glfwDestroyWindow(window); };
+  std::unique_ptr<GLFWwindow, decltype(deleter)> _window;
+};
+
+Window::Window(int width, int height, const std::string& title) {
+  // 不要创建openGL上下文
+  glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+  // 禁用改变窗口尺寸
+  // glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+  _window.reset(glfwCreateWindow(width, height, title.data(), nullptr, nullptr));
+  checkGlfwError();
 }
 
 void checkGlfwError() {
