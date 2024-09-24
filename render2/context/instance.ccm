@@ -6,6 +6,7 @@ export module render.vk.instance;
 
 import "vulkan_config.h";
 import render.vk.resource;
+import render.vk.tool;
 import toy;
 import std;
 
@@ -16,64 +17,106 @@ struct DebugMessengerConfig {
   VkDebugUtilsMessageTypeFlagsEXT        message_type_flags;
 };
 
-template <bool enable_debug_messenger>
-class InstanceTemp;
+auto getDebugMessengerInfo(const DebugMessengerConfig& config
+) -> VkDebugUtilsMessengerCreateInfoEXT;
 
+template <bool enable>
+struct DebugMessenger;
 template <>
-class InstanceTemp<true> {
-public:
-  InstanceTemp() = default;
-  InstanceTemp(const std::string& app_name, std::span<const char* const> required_extensions);
-  auto instance() const { return _instance.get(); }
-
-private:
-  DebugMessengerConfig _debug_config;
-  rs::Instance         _instance;
-  rs::DebugMessenger   _debug_messenger;
-};
-
+struct DebugMessenger<false> {};
 template <>
-class InstanceTemp<false> {
-public:
-  InstanceTemp() = default;
-  InstanceTemp(const std::string& app_name, std::span<const char* const> required_extensions);
-  auto instance() const { return _instance.get(); }
-
-private:
-  rs::Instance _instance;
+struct DebugMessenger<true> {
+  DebugMessengerConfig _config;
+  rs::DebugMessenger   _messenger;
 };
 
-template <typename Derived>
-class InstanceExtensionRequestor {
+VKAPI_ATTR VkBool32 VKAPI_CALL debugHandler(
+  VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
+  VkDebugUtilsMessageTypeFlagsEXT             message_type,
+  const VkDebugUtilsMessengerCallbackDataEXT* p_callback_data,
+  void*                                       p_user_data
+);
+
+class Instance : public rs::Instance,
+                 private DebugMessenger<toy::enable_debug>,
+                 public toy::ProactiveSingleton<Instance> {
 public:
-  InstanceExtensionRequestor() {
-    toy::throwf(requested, "please add the requestor to instance extension list first");
-  }
+  Instance(const std::string& app_name, std::span<std::string> extensions) {
 
-private:
-  static inline auto requested = false;
+    auto debug_info = std::optional<VkDebugUtilsMessengerCreateInfoEXT>{};
+    using DebugMessenger = DebugMessenger<toy::enable_debug>;
+    if (toy::enable_debug) {
+      DebugMessenger::_config = DebugMessengerConfig{
+        .message_severity_level = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT,
+        .message_type_flags = VK_DEBUG_UTILS_MESSAGE_TYPE_FLAG_BITS_MAX_ENUM_EXT,
+      };
+      debug_info = VkDebugUtilsMessengerCreateInfoEXT{
+        .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+        .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+        .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                       VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                       VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+        .pfnUserCallback = debugHandler,
+        .pUserData = reinterpret_cast<void*>(&(DebugMessenger::_config)),
+      };
+    }
 
-  friend class Instance;
-  template <typename _ = void>
-    requires std::derived_from<Derived, InstanceExtensionRequestor> &&
-             toy::RangeOf<decltype(Derived::instance_extensions), const char*> &&
-             ranges::input_range<decltype(Derived::instance_extensions)>
-  static auto getExtentsions() {
-    requested = true;
-    return Derived::instance_extensions;
-  }
-};
+    /*
+     * 1. 创建appInfo
+     * 2. 创建createInfo（指向appInfo）
+     * 3. 调用createInstance创建instance
+     */
 
-class Instance : public InstanceTemp<toy::enable_debug>, public toy::ProactiveSingleton<Instance> {
-public:
-  Instance(const std::string& app_name)
-    : InstanceTemp<toy::enable_debug>({ app_name, registerExtensions() }) {}
+    auto app_info = VkApplicationInfo{
+      .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+      .pApplicationName = app_name.data(),
+      .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
+      .engineVersion = VK_MAKE_VERSION(1, 0, 0),
+      .apiVersion = VK_API_VERSION_1_0,
+    };
 
-private:
-  auto registerExtensions() -> std::vector<const char*>;
-  template <typename Derived>
-  auto registerExtension(std::vector<const char*>& extensions) {
-    extensions.append_range(InstanceExtensionRequestor<Derived>::getExtentsions());
+    std::vector<const char*> required_extensions;
+    std::vector<const char*> required_layers;
+
+    required_extensions.append_range(extensions | views::transform([](const auto& str) {
+                                       return str.data();
+                                     }));
+
+    if (debug_info.has_value()) {
+      // VK_EXT_debug_utils 扩展用于扩展debug功能
+      required_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+      required_layers.push_back("VK_LAYER_KHRONOS_validation");
+    }
+
+    checkAvaliableSupports(
+      required_extensions,
+      getVkResources(vkEnumerateInstanceExtensionProperties, nullptr),
+      [](auto& extension) { return extension.extensionName; }
+    );
+
+    checkAvaliableSupports(
+      required_layers,
+      getVkResources(vkEnumerateInstanceLayerProperties),
+      [](auto& layer) { return layer.layerName; }
+    );
+
+    auto create_info = VkInstanceCreateInfo{
+      .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+      .pNext = debug_info.has_value() ? &debug_info.value() : nullptr,
+      .pApplicationInfo = &app_info,
+      .enabledLayerCount = (uint32_t)required_layers.size(),
+      .ppEnabledLayerNames = required_layers.data(),
+      .enabledExtensionCount = (uint32_t)required_extensions.size(),
+      .ppEnabledExtensionNames = required_extensions.data(),
+    };
+
+    rs::Instance::operator=({ create_info });
+    if (debug_info.has_value()) {
+      DebugMessenger::_messenger = { debug_info.value() };
+    }
   }
 };
 
