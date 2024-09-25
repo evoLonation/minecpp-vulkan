@@ -5,6 +5,6 @@ source:
 - command.cc
 - executor.ccm
 - queue_requestor.ccm
-- executor_2.cc
+- executor.cc
 - executor_registry.ccm
 # - executor_registry.cc

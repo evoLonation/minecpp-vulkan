@@ -9,7 +9,9 @@ import toy;
 
 namespace rd::vk {
 
-Swapchain::Swapchain(uint32_t concurrent_image_count) {
+Swapchain::Swapchain(
+  toy::ImplicitDep<Surface>, toy::ImplicitDep<Device>, uint32_t concurrent_image_count
+) {
   updateCapabilities();
   _swapchain_extent = _capabilities.currentExtent;
   // the driver will use _capabilities.minImageCount - 1 images
@@ -91,10 +93,8 @@ void Swapchain::create() {
   toy::debugf("min image count:{}", _min_image_count);
   toy::debugf("extent:({},{})", _swapchain_extent.width, _swapchain_extent.height);
 
-  auto& device = Device::getInstance();
-
   rs::Swapchain::operator=(create_info);
-  _images = getVkResources(vkGetSwapchainImagesKHR, device, get());
+  _images = getVkResources(vkGetSwapchainImagesKHR, Device::getInstance(), get());
   _image_views = _images | views::transform([&](VkImage image) {
                    return rd::vk::createImageView(image, _format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
                  }) |
@@ -148,7 +148,7 @@ void Swapchain::recreate() {
   create();
 }
 
-auto Swapchain::checkPdevice(DeviceCapabilityRequest& request) -> bool {
+auto Swapchain::checkPdevice(DeviceCapabilityBuilder& request) -> bool {
   if (!request.enableExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
     return false;
   }

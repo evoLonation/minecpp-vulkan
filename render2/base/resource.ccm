@@ -7,12 +7,11 @@ import toy;
 
 namespace rd::vk::rs {
 
-// vkCreateXXX([phisicalDevice], createInfo, allocator, &handle);
-// vkDestroyXXX(handle, allocator);
-
 template <typename T>
 concept isConstPointer = std::is_pointer_v<T> && std::is_const_v<std::remove_pointer_t<T>>;
 
+// vkCreateXXX([phisicalDevice], createInfo, allocator, &handle);
+// vkDestroyXXX(handle, allocator);
 template <
   typename VkHandle,
   auto* Creator,
@@ -63,13 +62,13 @@ private:
 // 每个特化版本的type成员映射到一个具体的SingletonResource
 // 用于ContextualResource检索某个VkHandle的实际SingletonResource类型
 template <typename VkHandle>
-struct SingletonResourceRetriver;
+struct SingletonResourceRetriever;
 
 #define DEF_SINGETON_RESOURCE(Name, VkHandle, Creator, Destroyer)                                  \
   template class SingletonResource<VkHandle, Creator, Destroyer>;                                  \
   export using Name = SingletonResource<VkHandle, Creator, Destroyer>;                             \
   template <>                                                                                      \
-  struct SingletonResourceRetriver<VkHandle> {                                                     \
+  struct SingletonResourceRetriever<VkHandle> {                                                    \
     using type = Name;                                                                             \
   };
 
@@ -86,7 +85,7 @@ private:
   using CreateInfoArg =
     std::remove_pointer_t<typename toy::FuncArgs<decltype(Creator)>::template at<1>>&;
   using ContextResource =
-    SingletonResourceRetriver<typename toy::FuncArgs<decltype(Creator)>::template at<0>>::type;
+    SingletonResourceRetriever<typename toy::FuncArgs<decltype(Creator)>::template at<0>>::type;
 
 public:
   ContextualResource() = default;
@@ -160,7 +159,7 @@ private:
     std::remove_pointer_t<typename toy::FuncArgs<decltype(Creator)>::template at<1>>&;
   using PoolHandle = typename toy::FuncArgs<decltype(Destroyer)>::template at<1>;
   using ContextResource =
-    SingletonResourceRetriver<typename toy::FuncArgs<decltype(Creator)>::template at<0>>::type;
+    SingletonResourceRetriever<typename toy::FuncArgs<decltype(Creator)>::template at<0>>::type;
 
 public:
   AllocatedResources() : _pool(nullptr) {}
@@ -272,7 +271,7 @@ public:
     -> std::vector<Pipeline> {
     auto pipelines = std::vector<VkPipeline>{ create_infos.size() };
     creator(
-      SingletonResourceRetriver<VkDevice>::type::getInstance().get(),
+      SingletonResourceRetriever<VkDevice>::type::getInstance().get(),
       cache,
       create_infos.size(),
       create_infos.data(),

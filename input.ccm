@@ -470,7 +470,7 @@ private:
   auto operator=(InputProcessor&&) -> InputProcessor& = delete;
 
 public:
-  InputProcessor() {
+  InputProcessor(toy::ImplicitDep<glfw::Context> ctx) {
     auto window = glfw::Window::getInstance().get();
     // 须在创建窗口后、开始渲染前注册回调函数
     glfwSetKeyCallback(

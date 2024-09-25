@@ -67,7 +67,7 @@ class QueueRequestor {
 public:
   QueueRequestor(std::span<QueueFamilyRequirement const> requirements)
     : _requirements(requirements | ranges::to<std::vector>()) {}
-  auto checkPdevice(DeviceCapabilityRequest& request) -> bool {
+  auto checkPdevice(DeviceCapabilityBuilder& request) -> bool {
     auto& pdevice = request.getPdevice();
     auto& surface = Surface::getInstance();
 

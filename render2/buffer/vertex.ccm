@@ -45,7 +45,7 @@ struct VertexInfo {
 private:
   static std::vector<VkFormat> _formats;
 
-  static auto checkPdevice(vk::DeviceCapabilityRequest&) -> bool;
+  static auto checkPdevice(vk::DeviceCapabilityBuilder&) -> bool;
 };
 
 template <typename... DataTypes>

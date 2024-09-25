@@ -45,12 +45,12 @@ auto CommandExecutor::addWorkingCmdbuf(
   return cmdbuf;
 }
 
-CommandExecutor::CommandExecutor(std::span<FamilyQueueCount const> family_infos) {
-  auto queues = family_infos | views::transform([device = Device::getInstance().get()](auto& info) {
+CommandExecutor::CommandExecutor(Device& device, std::span<FamilyQueueCount const> family_infos) {
+  auto queues = family_infos | views::transform([&](auto& info) {
                   return views::iota(0u, info.queue_count) |
                          views::transform([&](auto queue_index) {
                            VkQueue queue;
-                           vkGetDeviceQueue(device, info.family_index, queue_index, &queue);
+                           vkGetDeviceQueue(device.get(), info.family_index, queue_index, &queue);
                            return queue;
                          }) |
                          ranges::to<std::vector>();

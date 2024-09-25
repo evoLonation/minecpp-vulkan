@@ -6,6 +6,8 @@ import render.vk.tool;
 import render.vk.device;
 import render.vk.sync;
 import render.vk.image;
+import render.vk.surface;
+import render.vk.device;
 
 import std;
 import toy;
@@ -18,7 +20,9 @@ public:
    * @brief maybe empty
    * @param concurrent_image_count the max image count user can acquire at same time, must >= 1
    */
-  Swapchain(uint32_t concurrent_image_count = 1);
+  Swapchain(
+    toy::ImplicitDep<Surface>, toy::ImplicitDep<Device>, uint32_t concurrent_image_count = 1
+  );
   /**
    * @brief call this method when need newest _capabilities such as needRecreate(), recreate()
    */
@@ -56,7 +60,7 @@ private:
   static constexpr auto _color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 
 public:
-  static auto checkPdevice(DeviceCapabilityRequest&) -> bool;
+  static auto checkPdevice(DeviceCapabilityBuilder&) -> bool;
 
 private:
   uint32_t                 _min_image_count;

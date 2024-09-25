@@ -36,7 +36,7 @@ private:
   static inline auto    _max_anisotropy = float{};
 
 public:
-  static auto device_checker(vk::DeviceCapabilityRequest& request) -> bool {
+  static auto device_checker(vk::DeviceCapabilityBuilder& request) -> bool {
     return request.getPdevice().checkFormatSupport(
       vk::FormatTarget::OPTIMAL_TILING,
       VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |

@@ -30,7 +30,7 @@ decltype(VertexInfo::_formats) VertexInfo::_formats = {
   VK_FORMAT_R64G64B64A64_SFLOAT, VK_FORMAT_R64_SFLOAT,
 };
 
-auto VertexInfo::checkPdevice(vk::DeviceCapabilityRequest& request) -> bool {
+auto VertexInfo::checkPdevice(vk::DeviceCapabilityBuilder& request) -> bool {
   return request.getPdevice().checkFormatSupport(
     vk::FormatTarget::BUFFER, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT, _formats
   );

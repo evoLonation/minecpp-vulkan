@@ -8,6 +8,7 @@ import render.vk.instance;
 import render.vk.device;
 import render.vk.surface;
 import render.vk.swapchain;
+import render.vk.resource;
 import render.vk.executor;
 import render.vk.queue_requestor;
 import render.vk.image;
@@ -33,13 +34,13 @@ int main() {
     toy::test_EnumSet::test();
     trans::test_trans();
 
+    auto instance =
+      rd::vk::createInstance("hello", rd::vk::Surface::getRequiredInstanceExtensions());
     auto glfw_ctx = glfw::Context{};
 
-    auto instance = rd::vk::Instance{ "hello", rd::vk::Surface::instance_extensions };
-
-    auto window = glfw::Window{ 1920, 1080, "hello vulkan" };
-    auto input_processor = input::InputProcessor{};
-    auto surface = rd::vk::Surface{};
+    auto window = glfw::Window{ 1920, 1080, "hello vulkan", glfw_ctx };
+    auto input_processor = input::InputProcessor{ glfw_ctx };
+    auto surface = rd::vk::Surface{ instance.instance, window };
 
     auto queue_requirements = std::array{
       rd::vk::QueueFamilyRequirement{ rd::vk::requestGraphicQueue, 3 },
@@ -49,16 +50,17 @@ int main() {
     auto queue_requestor = rd::vk::QueueRequestor{ queue_requirements };
 
     auto device_checkers = std::array{
-      rd::vk::DeviceCheckerCallback{ [&](auto& ctx) { return queue_requestor.checkPdevice(ctx); } },
-      rd::vk::DeviceCheckerCallback{ rd::vk::Swapchain::checkPdevice },
-      rd::vk::DeviceCheckerCallback{ rd::SampledTexture::device_checker },
+      rd::vk::DeviceCapabilityChecker{
+        [&](auto& ctx) { return queue_requestor.checkPdevice(ctx); } },
+      rd::vk::DeviceCapabilityChecker{ rd::vk::Swapchain::checkPdevice },
+      rd::vk::DeviceCapabilityChecker{ rd::SampledTexture::device_checker },
     };
 
-    auto device = rd::vk::Device{ device_checkers };
+    auto device = rd::vk::Device{ device_checkers, instance.instance };
 
-    auto swapchain = rd::vk::Swapchain{};
+    auto swapchain = rd::vk::Swapchain{ surface, device };
 
-    auto executor = rd::vk::CommandExecutor{ queue_requestor.getFamilyQueueCounts(device) };
+    auto executor = rd::vk::CommandExecutor{ device, queue_requestor.getFamilyQueueCounts(device) };
     {
       using namespace rd::vk::executors;
       using QueueExecutor = rd::vk::CommandExecutor::QueueExecutor;
@@ -74,8 +76,9 @@ int main() {
       "the sample count is not available"
     );
 
-    auto presentation =
-      rd::vk::Presentation{ VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR };
+    auto presentation = rd::vk::Presentation{ swapchain,
+                                              VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                              VK_IMAGE_LAYOUT_PRESENT_SRC_KHR };
 
     auto render_pass_info = rd::vk::RenderPassInfo{
       .attachments = {

@@ -219,7 +219,7 @@ public:
     };
   }
 
-  CommandExecutor(std::span<FamilyQueueCount const> family_infos);
+  CommandExecutor(Device& device, std::span<FamilyQueueCount const> family_infos);
   ~CommandExecutor();
   CommandExecutor(const CommandExecutor&) noexcept = delete;
   CommandExecutor(CommandExecutor&&) noexcept = delete;

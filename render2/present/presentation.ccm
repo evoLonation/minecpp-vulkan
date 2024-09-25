@@ -5,12 +5,15 @@ import toy;
 
 import "vulkan_config.h";
 import render.vk.sync;
+import render.vk.swapchain;
 
 export namespace rd::vk {
 
 class Presentation {
 public:
-  Presentation(VkImageLayout available_layout, VkImageLayout render_done_layout)
+  Presentation(
+    toy::ImplicitDep<Swapchain>, VkImageLayout available_layout, VkImageLayout render_done_layout
+  )
     : _available_layout(available_layout), _render_done_layout(render_done_layout) {}
 
   struct PresentContext {
