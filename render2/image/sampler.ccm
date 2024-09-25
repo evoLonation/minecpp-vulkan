@@ -11,7 +11,7 @@ import toy;
 
 export namespace rd {
 
-class SampledTexture : public vk::DeviceChecker<SampledTexture> {
+class SampledTexture {
 public:
   SampledTexture() = default;
   SampledTexture(const std::string& path, bool mipmap, VkPipelineStageFlagBits use_stage);
@@ -35,8 +35,15 @@ private:
   static constexpr auto _aspect = VK_IMAGE_ASPECT_COLOR_BIT;
   static inline auto    _max_anisotropy = float{};
 
-  friend vk::DeviceChecker<SampledTexture>;
-  static auto checkPdevice(const vk::PdeviceContext& ctx) -> bool;
+public:
+  static auto device_checker(vk::DeviceCapabilityRequest& request) -> bool {
+    return request.getPdevice().checkFormatSupport(
+      vk::FormatTarget::OPTIMAL_TILING,
+      VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+        VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT,
+      _formats
+    );
+  }
 };
 
 } // namespace rd

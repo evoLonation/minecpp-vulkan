@@ -3,7 +3,6 @@ module render.vk.device;
 import "vulkan_config.h";
 import render.vk.tool;
 import render.vk.instance;
-import render.vk.executor;
 import toy;
 
 namespace rd::vk {

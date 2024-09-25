@@ -9,6 +9,7 @@ import render.vk.device;
 import render.vk.surface;
 import render.vk.swapchain;
 import render.vk.executor;
+import render.vk.queue_requestor;
 import render.vk.image;
 import render.vk.render_pass;
 import render.vk.buffer;
@@ -32,20 +33,40 @@ int main() {
     toy::test_EnumSet::test();
     trans::test_trans();
 
+    auto glfw_ctx = glfw::Context{};
+
+    auto instance = rd::vk::Instance{ "hello", rd::vk::Surface::instance_extensions };
+
     auto window = glfw::Window{ 1920, 1080, "hello vulkan" };
-
     auto input_processor = input::InputProcessor{};
-
-    auto instance = rd::vk::Instance{ "hello" };
-
     auto surface = rd::vk::Surface{};
 
-    auto device = rd::vk::Device{};
+    auto queue_requirements = std::array{
+      rd::vk::QueueFamilyRequirement{ rd::vk::requestGraphicQueue, 3 },
+      rd::vk::QueueFamilyRequirement{ rd::vk::requestPresentQueue, 2 },
+      rd::vk::QueueFamilyRequirement{ rd::vk::requestTransferQueue, 1 },
+    };
+    auto queue_requestor = rd::vk::QueueRequestor{ queue_requirements };
+
+    auto device_checkers = std::array{
+      rd::vk::DeviceCheckerCallback{ [&](auto& ctx) { return queue_requestor.checkPdevice(ctx); } },
+      rd::vk::DeviceCheckerCallback{ rd::vk::Swapchain::checkPdevice },
+      rd::vk::DeviceCheckerCallback{ rd::SampledTexture::device_checker },
+    };
+
+    auto device = rd::vk::Device{ device_checkers };
 
     auto swapchain = rd::vk::Swapchain{};
 
-    auto executor = rd::vk::CommandExecutor{};
-
+    auto executor = rd::vk::CommandExecutor{ queue_requestor.getFamilyQueueCounts(device) };
+    {
+      using namespace rd::vk::executors;
+      using QueueExecutor = rd::vk::CommandExecutor::QueueExecutor;
+      copy = QueueExecutor{ 2, { 0, 1 } };
+      present = QueueExecutor{ 1, { 0, 2 } };
+      tool = QueueExecutor{ 0, { 0, 1 } };
+      render = QueueExecutor{ 0, { 1, 3 } };
+    }
     auto depth_format = VK_FORMAT_D32_SFLOAT;
     auto sample_count = VK_SAMPLE_COUNT_8_BIT;
     toy::throwf(

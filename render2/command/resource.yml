@@ -4,7 +4,7 @@ source:
 - command.ccm
 - command.cc
 - executor.ccm
-- executor.cc
+- queue_requestor.ccm
 - executor_2.cc
 - executor_registry.ccm
-- executor_registry.cc
+# - executor_registry.cc

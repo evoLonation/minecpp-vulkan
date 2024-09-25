@@ -12,10 +12,7 @@ import toy;
 
 export namespace rd::vk {
 
-class Swapchain : public rs::Swapchain,
-                  public toy::ProactiveSingleton<Swapchain>,
-                  public DeviceChecker<Swapchain>,
-                  public DeviceExtensionRequestor<Swapchain> {
+class Swapchain : public rs::Swapchain, public toy::ProactiveSingleton<Swapchain> {
 public:
   /**
    * @brief maybe empty
@@ -54,15 +51,12 @@ public:
   static auto format() -> VkFormat { return _format; }
 
 private:
-  friend DeviceExtensionRequestor<Swapchain>;
-  static inline auto pdevice_extensions = std::array{ VK_KHR_SWAPCHAIN_EXTENSION_NAME };
-
   static constexpr auto _format = VK_FORMAT_R8G8B8A8_SRGB;
   static constexpr auto _present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
   static constexpr auto _color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 
-  friend DeviceChecker<Swapchain>;
-  static auto checkPdevice(const PdeviceContext& ctx) -> bool;
+public:
+  static auto checkPdevice(DeviceCapabilityRequest&) -> bool;
 
 private:
   uint32_t                 _min_image_count;

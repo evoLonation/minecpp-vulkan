@@ -7,7 +7,5 @@ sub_dir:
 - image
 - pipeline
 source:
-- format.ccm
-- format.cc
 - memory.ccm
 - memory.cc

@@ -148,9 +148,13 @@ void Swapchain::recreate() {
   create();
 }
 
-auto Swapchain::checkPdevice(const PdeviceContext& ctx) -> bool {
+auto Swapchain::checkPdevice(DeviceCapabilityRequest& request) -> bool {
+  if (!request.enableExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
+    return false;
+  }
+  auto& pdevice = request.getPdevice();
   auto& surface = Surface::getInstance();
-  auto  formats = getVkResources(vkGetPhysicalDeviceSurfaceFormatsKHR, ctx.device, surface);
+  auto  formats = getVkResources(vkGetPhysicalDeviceSurfaceFormatsKHR, pdevice.get(), surface);
   auto  iter_format = ranges::find_if(formats, [&](auto format) {
     return format.format == _format && format.colorSpace == _color_space;
   });
@@ -158,7 +162,7 @@ auto Swapchain::checkPdevice(const PdeviceContext& ctx) -> bool {
     toy::debugf("no suitable format");
     return false;
   }
-  if (!ctx.checkFormatSupport(
+  if (!pdevice.checkFormatSupport(
         FormatTarget::OPTIMAL_TILING,
         VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
         { &_format, &_format + 1 }
@@ -175,7 +179,7 @@ auto Swapchain::checkPdevice(const PdeviceContext& ctx) -> bool {
    * 不阻塞而是直接将队中图像替换为提交的图像
    */
   auto present_modes =
-    getVkResources(vkGetPhysicalDeviceSurfacePresentModesKHR, ctx.device, surface);
+    getVkResources(vkGetPhysicalDeviceSurfacePresentModesKHR, pdevice.get(), surface);
   auto p_present_mode = ranges::find(present_modes, _present_mode);
   if (p_present_mode == present_modes.end()) {
     toy::debugf("no suitable present mode");
@@ -191,7 +195,7 @@ void Swapchain::updateCapabilities() {
   // of them 0.
   VkSurfaceCapabilitiesKHR capabilities;
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
-    Device::getInstance().pdevice(), Surface::getInstance(), &capabilities
+    Device::getInstance().getPdevice().get(), Surface::getInstance(), &capabilities
   );
   auto eq_extent = [](auto a, auto b) { return a.height == b.height && a.width == b.width; };
   toy::throwf(

@@ -41,13 +41,10 @@ Memory::Memory(VkImage image, VkMemoryPropertyFlags property_flags)
 Memory::Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property_flags) {
   auto& device = Device::getInstance();
 
-  if (_memory_properties.get() == nullptr) {
-    _memory_properties.reset(new VkPhysicalDeviceMemoryProperties{});
-    vkGetPhysicalDeviceMemoryProperties(device.pdevice(), _memory_properties.get());
-  }
+  auto     memory_properties = device.getPdevice().getMemoryProperties();
   uint32_t memory_type_index;
   if (auto optional = toy::findIf(
-        std::span(_memory_properties->memoryTypes, _memory_properties->memoryTypeCount) |
+        std::span(memory_properties.memoryTypes, memory_properties.memoryTypeCount) |
           toy::enumerate,
         [requirements, property_flags](auto pair) {
           auto [i, memory_type] = pair;

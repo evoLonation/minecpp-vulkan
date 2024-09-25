@@ -123,7 +123,7 @@ Image::Image(
     _image_view(createImageView(get(), format, aspect, mip_levels)) {}
 auto Image::getAvailableSampleCounts() -> VkSampleCountFlags {
   if (_sample_counts == 0) {
-    auto& properties = Device::getInstance().properties();
+    auto& properties = Device::getInstance().getPdevice().getProperties();
     _sample_counts = properties.limits.framebufferColorSampleCounts &
                      properties.limits.framebufferDepthSampleCounts &
                      properties.limits.framebufferStencilSampleCounts &

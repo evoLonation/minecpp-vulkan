@@ -11,7 +11,8 @@ import toy;
 
 namespace rd::vk {
 
-enum class QueueFamily;
+// 按照构造时的顺序
+using QueueFamily = uint32_t;
 
 struct PoolState {
   std::size_t allocate_n;
@@ -145,19 +146,7 @@ export struct WaitInfo {
   VkPipelineStageFlags stage_mask;
 };
 
-struct QueueFamilyCheckContext {
-  VkPhysicalDevice        device;
-  VkSurfaceKHR            surface;
-  size_t                  index;
-  VkQueueFamilyProperties properties;
-};
-struct QueueFamilyRequestor {
-  uint32_t                                            queue_number;
-  std::function<bool(const QueueFamilyCheckContext&)> checker;
-};
-
-export class CommandExecutor : public toy::ProactiveSingleton<CommandExecutor>,
-                               public DeviceChecker<CommandExecutor> {
+export class CommandExecutor : public toy::ProactiveSingleton<CommandExecutor> {
 public:
   auto submit(
     QueueFamily               family,
@@ -230,34 +219,12 @@ public:
     };
   }
 
-  CommandExecutor();
+  CommandExecutor(std::span<FamilyQueueCount const> family_infos);
   ~CommandExecutor();
   CommandExecutor(const CommandExecutor&) noexcept = delete;
   CommandExecutor(CommandExecutor&&) noexcept = delete;
   auto operator=(const CommandExecutor&) noexcept -> CommandExecutor& = delete;
   auto operator=(CommandExecutor&&) noexcept -> CommandExecutor& = delete;
-
-  struct QueueInfo {
-    std::vector<std::vector<float>>      queue_priorities;
-    std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
-  };
-
-private:
-  static auto registerFamilies() -> std::vector<std::pair<QueueFamily, QueueFamilyRequestor>>;
-
-  struct QueueFamilyInfo {
-    uint32_t family_index;
-    uint32_t queue_number;
-  };
-  using QueueMeta = std::map<QueueFamily, QueueFamilyInfo>;
-  static QueueMeta _queue_meta;
-  friend DeviceChecker<CommandExecutor>;
-  static auto checkPdevice(const PdeviceContext& ctx) -> bool;
-
-  void buildQueueExecutors();
-
-public:
-  static auto getQueueInfo() -> QueueInfo;
 
 private:
   struct WorkingCmdbuf {
@@ -373,8 +340,6 @@ auto CommandExecutor::submit(
   recordAndSubmit(cmdbuf, queue, recorder, wait_infos, signal_semas, borrowed_fence.get());
   return borrowed_fence;
 }
-
-decltype(CommandExecutor::_queue_meta) CommandExecutor::_queue_meta = QueueMeta{};
 
 export using WaitSemaphore = WaitSemaphore;
 

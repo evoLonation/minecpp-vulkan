@@ -32,7 +32,7 @@ consteval auto formatMapper() -> VkFormat {
   }
 }
 
-struct VertexInfo : public vk::DeviceChecker<VertexInfo> {
+struct VertexInfo {
   const VkVertexInputBindingDescription*             binding_description;
   std::span<const VkVertexInputAttributeDescription> attribute_descriptions;
   friend auto operator==(const VertexInfo& a, const VertexInfo& b) -> bool;
@@ -44,8 +44,8 @@ struct VertexInfo : public vk::DeviceChecker<VertexInfo> {
 
 private:
   static std::vector<VkFormat> _formats;
-  friend vk::DeviceChecker<VertexInfo>;
-  static auto checkPdevice(const vk::PdeviceContext& ctx) -> bool;
+
+  static auto checkPdevice(vk::DeviceCapabilityRequest&) -> bool;
 };
 
 template <typename... DataTypes>

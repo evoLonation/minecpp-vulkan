@@ -20,13 +20,7 @@ public:
    */
   Memory(VkImage image, VkMemoryPropertyFlags property_flags);
   Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property_flags);
-
-private:
-  // directly inline will occur frontend crash
-  static std::unique_ptr<VkPhysicalDeviceMemoryProperties> _memory_properties;
 };
-
-decltype(Memory::_memory_properties) Memory::_memory_properties = {};
 
 class HostVisibleMemory {
 public:

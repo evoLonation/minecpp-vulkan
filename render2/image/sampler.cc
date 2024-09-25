@@ -51,22 +51,13 @@ auto createSampler(float max_anisotropy) -> vk::rs::Sampler {
 
 decltype(SampledTexture::_formats) SampledTexture::_formats = { VK_FORMAT_R8G8B8A8_SRGB };
 
-auto SampledTexture::checkPdevice(const vk::PdeviceContext& ctx) -> bool {
-  return ctx.checkFormatSupport(
-    vk::FormatTarget::OPTIMAL_TILING,
-    VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
-      VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT,
-    _formats
-  );
-}
-
 SampledTexture::SampledTexture(
   const std::string& path, bool mipmap, VkPipelineStageFlagBits use_stage
 ) {
   auto& ctx = vk::Device::getInstance();
 
   // todo: just execute once in whole program
-  _max_anisotropy = ctx.properties().limits.maxSamplerAnisotropy;
+  _max_anisotropy = ctx.getPdevice().getProperties().limits.maxSamplerAnisotropy;
 
   uint32_t width, height, channels;
 

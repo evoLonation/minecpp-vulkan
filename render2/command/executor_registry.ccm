@@ -9,12 +9,6 @@ import toy;
 
 namespace rd::vk {
 
-enum class QueueFamily {
-  TRANSFER,
-  GRAPHICS,
-  PRESENT,
-};
-
 export namespace executors {
 
 CommandExecutor::QueueExecutor copy;

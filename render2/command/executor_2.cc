@@ -45,51 +45,24 @@ auto CommandExecutor::addWorkingCmdbuf(
   return cmdbuf;
 }
 
-auto CommandExecutor::getQueueInfo() -> QueueInfo {
-  auto info_queue_priorities =
-    _queue_meta | views::values | views::transform([](auto& info) {
-      return views::repeat(1.0f) | views::take(info.queue_number) | ranges::to<std::vector>();
-    }) |
-    ranges::to<std::vector>();
-  auto queue_create_infos = views::zip(_queue_meta | views::values, info_queue_priorities) |
-                            views::transform([](auto pair) {
-                              auto& [family_info, priorities] = pair;
-                              return VkDeviceQueueCreateInfo{
-                                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                                .queueFamilyIndex = family_info.family_index,
-                                .queueCount = static_cast<uint32_t>(family_info.queue_number),
-                                .pQueuePriorities = priorities.data(),
-                              };
-                            }) |
-                            ranges::to<std::vector>();
-
-  return QueueInfo{ std::move(info_queue_priorities), std::move(queue_create_infos) };
-}
-
-CommandExecutor::CommandExecutor() {
-  auto queues = _queue_meta |
-                views::transform([device = Device::getInstance().get()](auto& key_value) {
-                  auto& [family, pair] = key_value;
-                  auto& [family_index, queue_n] = pair;
-                  return std::pair{
-                    family,
-                    views::iota(0u, queue_n) | views::transform([&](auto queue_index) {
-                      VkQueue queue;
-                      vkGetDeviceQueue(device, family_index, queue_index, &queue);
-                      return queue;
-                    }) |
-                      ranges::to<std::vector>(),
-                  };
+CommandExecutor::CommandExecutor(std::span<FamilyQueueCount const> family_infos) {
+  auto queues = family_infos | views::transform([device = Device::getInstance().get()](auto& info) {
+                  return views::iota(0u, info.queue_count) |
+                         views::transform([&](auto queue_index) {
+                           VkQueue queue;
+                           vkGetDeviceQueue(device, info.family_index, queue_index, &queue);
+                           return queue;
+                         }) |
+                         ranges::to<std::vector>();
                 }) |
-                ranges::to<std::map>();
-  for (auto& [family, info] : _queue_meta) {
+                ranges::to<std::vector>();
+  for (auto [family, info] : family_infos | toy::enumerate) {
     _cmd_contexts.emplace(
       family, CommandContext{ info.family_index, queues[family], info.family_index }
     );
   }
   _thread = std::thread{ &CommandExecutor::task, this };
   _task_done = false;
-  buildQueueExecutors();
 }
 
 CommandExecutor::~CommandExecutor() {
