@@ -10,7 +10,7 @@ import toy;
 namespace rd::vk {
 
 Swapchain::Swapchain(
-  toy::ImplicitDep<Surface>, toy::ImplicitDep<Device>, uint32_t concurrent_image_count
+  toy::ImplicitDep<Surface>, toy::ImplicitDep<Device>, uint32 concurrent_image_count
 ) {
   updateCapabilities();
   _swapchain_extent = _capabilities.currentExtent;

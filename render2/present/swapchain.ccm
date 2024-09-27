@@ -21,7 +21,7 @@ public:
    * @param concurrent_image_count the max image count user can acquire at same time, must >= 1
    */
   Swapchain(
-    toy::ImplicitDep<Surface>, toy::ImplicitDep<Device>, uint32_t concurrent_image_count = 1
+    toy::ImplicitDep<Surface>, toy::ImplicitDep<Device>, uint32 concurrent_image_count = 1
   );
   /**
    * @brief call this method when need newest _capabilities such as needRecreate(), recreate()
@@ -45,7 +45,7 @@ public:
   auto valid() -> bool { return get() != VK_NULL_HANDLE; }
   auto images() const -> std::span<const VkImage> { return _images; }
   auto image_views() const -> std::span<const rs::ImageView> { return _image_views; }
-  auto getCurrentImageIndex() const -> uint32_t { return _image_index; }
+  auto getCurrentImageIndex() const -> uint32 { return _image_index; }
   auto extent() const -> VkExtent2D { return _swapchain_extent; }
   /**
    * @brief must wait it after successfully present() or create() (check by valid())
@@ -63,7 +63,7 @@ public:
   static auto checkPdevice(DeviceCapabilityBuilder&) -> bool;
 
 private:
-  uint32_t                 _min_image_count;
+  uint32                 _min_image_count;
   VkSurfaceCapabilitiesKHR _capabilities;
   VkExtent2D               _swapchain_extent;
   Semaphore                _image_available_sema;
@@ -80,7 +80,7 @@ private:
   std::vector<VkImage>       _images;
   std::vector<rs::ImageView> _image_views;
   bool                       _last_present_failed;
-  uint32_t                   _image_index;
+  uint32                   _image_index;
 };
 
 } // namespace rd::vk

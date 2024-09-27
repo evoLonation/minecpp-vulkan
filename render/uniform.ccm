@@ -81,7 +81,7 @@ public:
                               ranges::to<std::vector>(),
              .resource_type = ResourceType::UNIFORM };
   }
-  void loopAction(uint32_t _) override { update(Drawer::getInstance().currentFlightIndex()); }
+  void loopAction(uint32 _) override { update(Drawer::getInstance().currentFlightIndex()); }
 
   void set(DataType& data) { _p_data = &data; }
 };

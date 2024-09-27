@@ -54,7 +54,7 @@ Device::Device(std::span<DeviceCapabilityChecker> checkers, rs::Instance& instan
 
   auto& requests = selected_device.second;
 
-  auto queue_family_counts = std::map<uint32_t, uint32_t>{};
+  auto queue_family_counts = std::map<uint32, uint32>{};
   for (auto& request : requests) {
     for (auto [index, count] : request.family_queue_counts) {
       queue_family_counts[index] += count;
@@ -92,9 +92,9 @@ Device::Device(std::span<DeviceCapabilityChecker> checkers, rs::Instance& instan
 
   auto create_info = VkDeviceCreateInfo{
     .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-    .queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size()),
+    .queueCreateInfoCount = static_cast<uint32>(queue_create_infos.size()),
     .pQueueCreateInfos = queue_create_infos.data(),
-    .enabledExtensionCount = static_cast<uint32_t>(unique_required_extensions.size()),
+    .enabledExtensionCount = static_cast<uint32>(unique_required_extensions.size()),
     .ppEnabledExtensionNames = unique_required_extensions.data(),
     .pEnabledFeatures = &enabled_features,
     // .pEnabledFeatures = &selected_device.first.getFeatures(),
@@ -104,7 +104,7 @@ Device::Device(std::span<DeviceCapabilityChecker> checkers, rs::Instance& instan
   // 旧实现在 (instance, physical device) 和 (logic device以上) 两个层面有不同的
   // layer, 而在新实现中合并了 不再需要定义 enabledLayerCount 和
   // ppEnabledLayerNames createInfo.enabledLayerCount =
-  // static_cast<uint32_t>(requiredLayers_.size());
+  // static_cast<uint32>(requiredLayers_.size());
   // createInfo.ppEnabledLayerNames = requiredLayers_.data();
   rs::Device::setInvalid();
   rs::Device::operator=({ selected_device.first.get(), create_info });

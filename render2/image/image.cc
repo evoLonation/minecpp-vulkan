@@ -15,7 +15,7 @@ auto getSubresourceRange(VkImageAspectFlags aspect, MipRange mip_range) -> VkIma
   };
 }
 
-auto getSubresourceLayers(VkImageAspectFlags aspect, uint32_t mip_level)
+auto getSubresourceLayers(VkImageAspectFlags aspect, uint32 mip_level)
   -> VkImageSubresourceLayers {
   return {
     .aspectMask = aspect,
@@ -27,10 +27,10 @@ auto getSubresourceLayers(VkImageAspectFlags aspect, uint32_t mip_level)
 
 auto createImage(
   VkFormat              format,
-  uint32_t              width,
-  uint32_t              height,
+  uint32              width,
+  uint32              height,
   VkImageUsageFlags     usage,
-  uint32_t              mip_levels,
+  uint32              mip_levels,
   VkSampleCountFlagBits sample_count
 ) -> rs::Image {
   // if use for staging image, combine use:
@@ -73,7 +73,7 @@ auto createImage(
   return { image_info };
 }
 
-auto createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect, uint32_t mip_levels)
+auto createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect, uint32 mip_levels)
   -> rs::ImageView {
   auto create_info = VkImageViewCreateInfo{
     .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -97,11 +97,11 @@ auto createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect, 
 
 Image::Image(
   VkFormat              format,
-  uint32_t              width,
-  uint32_t              height,
+  uint32              width,
+  uint32              height,
   VkImageUsageFlags     usage,
   VkImageAspectFlags    aspect,
-  uint32_t              mip_levels,
+  uint32              mip_levels,
   VkSampleCountFlagBits sample_count
 )
   : rs::Image(createImage(
@@ -114,7 +114,7 @@ Image::Image(
         toy::throwf(
           (getAvailableSampleCounts() & sample_count) > 0,
           "the sample count {} is not supported",
-          uint32_t(sample_count)
+          uint32(sample_count)
         );
         return sample_count;
       }()
@@ -142,9 +142,9 @@ void copyBufferToImage(
   VkBuffer              buffer,
   VkImage               image,
   VkImageAspectFlagBits aspect,
-  uint32_t              width,
-  uint32_t              height,
-  uint32_t              mip_level
+  uint32              width,
+  uint32              height,
+  uint32              mip_level
 ) {
   auto image_copy = VkBufferImageCopy{
     .bufferOffset = 0,
@@ -161,8 +161,8 @@ void copyBufferToImage(
       },
     .imageExtent =
       VkExtent3D{
-        .width = (uint32_t)width,
-        .height = (uint32_t)height,
+        .width = (uint32)width,
+        .height = (uint32)height,
         .depth = 1,
       },
   };
@@ -184,7 +184,7 @@ void blitImage(VkCommandBuffer cmdbuf, ImageBlit src, ImageBlit dst) {
 }
 
 auto computeMipExtents(VkExtent2D extent) -> std::vector<VkExtent2D> {
-  auto mip_levels = uint32_t(std::floor(std::log2(std::max(extent.width, extent.height)))) + 1;
+  auto mip_levels = uint32(std::floor(std::log2(std::max(extent.width, extent.height)))) + 1;
   auto mip_extents = std::vector<VkExtent2D>{};
   auto now_extent = extent;
   for (auto i : views::iota(0u, mip_levels)) {

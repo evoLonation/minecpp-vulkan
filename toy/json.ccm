@@ -75,10 +75,10 @@ public:
   auto to() -> T& {
     return std::get<T>(_value);
   }
-  auto toInteger() -> int64_t {
+  auto toInteger() -> int64 {
     auto value = to<Number>();
     toy::throwf(value == std::ceil(value), "the number can not convert to integer");
-    return static_cast<int64_t>(value);
+    return static_cast<int64>(value);
   }
 
 public:

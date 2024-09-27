@@ -64,7 +64,7 @@ struct AttachmentInfo {
 struct DescriptorInfo {
   VkDescriptorType   type;
   VkShaderStageFlags stage;
-  uint32_t           count;
+  uint32           count;
 };
 
 struct DescriptorSetInfo {
@@ -73,24 +73,24 @@ struct DescriptorSetInfo {
 
 struct SubpassInfo {
   // if multi_sample has value, every color attachment in colors must has the same sample_count
-  std::vector<uint32_t> colors;
+  std::vector<uint32> colors;
   // if inputs is
-  std::vector<uint32_t> inputs;
+  std::vector<uint32> inputs;
   struct MultiSample {
     // size must equal to colors
-    std::vector<std::optional<uint32_t>> resolves;
+    std::vector<std::optional<uint32>> resolves;
     // must not sample_1
     VkSampleCountFlagBits sample_count;
   };
   std::optional<MultiSample> multi_sample;
   struct DepthStencil {
-    uint32_t      attachment;
+    uint32      attachment;
     DepthOption   depth_option;
     StencilOption stencil_option;
   };
 
   // if has value, depth_option and stencil_option has value depend on attachment format
-  std::optional<uint32_t>      depst_attachment;
+  std::optional<uint32>      depst_attachment;
   std::optional<DepthOption>   depth_option;
   std::optional<StencilOption> stencil_option;
 
@@ -135,7 +135,7 @@ public:
     _pipelines = createPipeline(_render_pass, info.subpasses);
   }
 
-  auto operator[](uint32_t index) -> Pipeline& { return _pipelines[index]; }
+  auto operator[](uint32 index) -> Pipeline& { return _pipelines[index]; }
 
   void recordDraw(
     VkCommandBuffer cmdbuf, Framebuffer& framebuffer, std::span<const VkClearValue> clear_values
@@ -167,14 +167,14 @@ private:
 
 class DescriptorPool : public rs::DescriptorPool {
 public:
-  DescriptorPool(uint32_t set_count, std::span<const VkDescriptorPoolSize> type_counts);
+  DescriptorPool(uint32 set_count, std::span<const VkDescriptorPoolSize> type_counts);
 };
 
 class DescriptorSet {
 public:
   DescriptorSet() = default;
-  DescriptorSet(const DescriptorPool& pool, const Pipeline& pipeline, uint32_t set_id);
-  auto operator[](uint32_t binding) -> class Descriptor;
+  DescriptorSet(const DescriptorPool& pool, const Pipeline& pipeline, uint32 set_id);
+  auto operator[](uint32 binding) -> class Descriptor;
   auto get() const -> VkDescriptorSet { return _dsets.get()[0]; }
 
 private:
@@ -188,14 +188,14 @@ public:
   auto operator=(std::initializer_list<std::reference_wrapper<SampledTexture const>> resources
   ) -> Descriptor&;
   auto operator=(auto const& resource) -> Descriptor& { return *this = { std::cref(resource) }; }
-  Descriptor(DescriptorSet* dset, uint32_t binding) : _dset(dset), _binding(binding) {}
+  Descriptor(DescriptorSet* dset, uint32 binding) : _dset(dset), _binding(binding) {}
 
 private:
   DescriptorSet* _dset;
-  uint32_t       _binding;
+  uint32       _binding;
 };
 
-auto DescriptorSet::operator[](uint32_t binding) -> Descriptor { return { this, binding }; }
+auto DescriptorSet::operator[](uint32 binding) -> Descriptor { return { this, binding }; }
 
 class Framebuffer : public rs::Framebuffer {
 public:
@@ -227,14 +227,14 @@ public:
     class DescriptorSetBindingTarget {
     public:
       auto operator=(DescriptorSet& descriptor_set) -> DescriptorSetBindingTarget&;
-      DescriptorSetBindingTarget(uint32_t index, DescriptorSetBinding* parent)
+      DescriptorSetBindingTarget(uint32 index, DescriptorSetBinding* parent)
         : _index(index), _parent(parent) {}
 
     private:
-      uint32_t              _index;
+      uint32              _index;
       DescriptorSetBinding* _parent;
     };
-    auto operator[](uint32_t index) { return DescriptorSetBindingTarget{ index, this }; }
+    auto operator[](uint32 index) { return DescriptorSetBindingTarget{ index, this }; }
 
   private:
     VkCommandBuffer  _cmdbuf;
@@ -266,7 +266,7 @@ private:
   VkCommandBuffer _cmdbuf;
   VkPipeline      _pipeline;
   VkExtent2D      _extent;
-  uint32_t        _index_count;
+  uint32        _index_count;
 };
 
 } // namespace rd::vk

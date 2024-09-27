@@ -46,8 +46,8 @@ private:
 };
 
 struct FamilyQueueCount {
-  uint32_t family_index;
-  uint32_t queue_count;
+  uint32 family_index;
+  uint32 queue_count;
 };
 
 struct DeviceCapabilityBuilder {

@@ -21,7 +21,7 @@ auto CommandExecutor::addWorkingFence() -> FenceRef {
   return { working.fence.get(), working.borrowed, _mutex };
 }
 
-auto CommandExecutor::addWorkingSemas(uint32_t sema_n) -> std::vector<SemaphoreRef> {
+auto CommandExecutor::addWorkingSemas(uint32 sema_n) -> std::vector<SemaphoreRef> {
   auto borrowed_semas = std::vector<SemaphoreRef>{};
   while (sema_n--) {
     auto  working_ = WorkingSemaphore{ _sema_pool };
@@ -124,7 +124,7 @@ void CommandExecutor::collect() {
 }
 
 auto CommandExecutor::submitImpl(
-  QueueFamily family, uint32_t queue_index, std::span<WaitInfo const> wait_infos, uint32_t signal_n
+  QueueFamily family, uint32 queue_index, std::span<WaitInfo const> wait_infos, uint32 signal_n
 ) -> SubmitImplResult {
   auto result = SubmitImplResult{};
   auto guard = std::lock_guard<std::mutex>{ _mutex };

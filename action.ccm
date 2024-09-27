@@ -18,8 +18,8 @@ using CursorState = rd::CursorState;
 using KeyboardEvent = rd::KeyboardEvent;
 using MouseEvent = rd::MouseEvent;
 struct Screen {
-  uint32_t width;
-  uint32_t height;
+  uint32 width;
+  uint32 height;
 };
 struct KeyboardStateChecker {
   auto operator[](Keyboard key) const -> std::optional<ButtonState> {
@@ -33,7 +33,7 @@ struct MouseStateChecker {
 };
 
 struct ActionContext {
-  uint32_t             interval_milli;
+  uint32             interval_milli;
   Screen               screen;
   CursorState          cursor;
   KeyboardStateChecker keyboard;
@@ -211,7 +211,7 @@ private:
 
 public:
   ActionManager() = default;
-  void loopAction(uint32_t interval_milli) override {
+  void loopAction(uint32 interval_milli) override {
     auto& extent = rd::Context::getInstance().extent;
     auto& input = rd::InputProcessor::getInstance();
     _ctx.interval_milli = interval_milli;

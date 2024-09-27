@@ -42,7 +42,7 @@ Memory::Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property
   auto& device = Device::getInstance();
 
   auto     memory_properties = device.getPdevice().getMemoryProperties();
-  uint32_t memory_type_index;
+  uint32 memory_type_index;
   if (auto optional = toy::findIf(
         std::span(memory_properties.memoryTypes, memory_properties.memoryTypeCount) |
           toy::enumerate,

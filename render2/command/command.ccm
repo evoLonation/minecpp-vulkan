@@ -16,9 +16,9 @@ export namespace rd::vk {
  * they will by reset or freed in short time
  * @return CommandPool
  */
-auto createCommandPool(uint32_t family_index, bool short_live) -> rs::CommandPool;
+auto createCommandPool(uint32 family_index, bool short_live) -> rs::CommandPool;
 
-auto allocateCommandBuffers(VkCommandPool command_pool, uint32_t count) -> rs::CommandBuffers;
+auto allocateCommandBuffers(VkCommandPool command_pool, uint32 count) -> rs::CommandBuffers;
 
 template <typename T>
 concept Recorder = std::invocable<T, VkCommandBuffer>;

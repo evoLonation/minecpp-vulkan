@@ -59,7 +59,7 @@ SampledTexture::SampledTexture(
   // todo: just execute once in whole program
   _max_anisotropy = ctx.getPdevice().getProperties().limits.maxSamplerAnisotropy;
 
-  uint32_t width, height, channels;
+  uint32 width, height, channels;
 
   auto* pixels =
     stbi_load(path.data(), &(int&)width, &(int&)height, &(int&)channels, STBI_rgb_alpha);
@@ -79,7 +79,7 @@ SampledTexture::SampledTexture(
     .base_level = 0,
     .count = 1,
   };
-  auto mip_levels = uint32_t{};
+  auto mip_levels = uint32{};
   if (mipmap) {
     mip_extents = vk::computeMipExtents({ width, height });
     mip_levels = mip_extents.size();

@@ -249,7 +249,7 @@ public:
 
 private:
   auto getContext(Family family, int queue_index)
-    -> std::tuple<uint32_t, VkQueue, CmdbufPool&, WorkingCmdbufs&> {
+    -> std::tuple<uint32, VkQueue, CmdbufPool&, WorkingCmdbufs&> {
     auto& ctx = Context::getInstance();
     switch (family) {
     case Family::GRAPHICS:
@@ -459,7 +459,7 @@ public:
       );
     }
 
-    auto getFamily() -> uint32_t {
+    auto getFamily() -> uint32 {
       return std::get<0>(_cmd_executor->getContext(_family, _queue_index));
     }
     auto getQueue() -> VkQueue {

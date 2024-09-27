@@ -57,11 +57,11 @@ template <typename Func, typename... Args>
   requires std::is_invocable_v<
     Func,
     std::remove_reference_t<Args>...,
-    uint32_t*,
+    uint32*,
     typename toy::FuncArgs<Func>::template at<-1>>
 auto getVkResources(Func func, Args&&... args) {
   using Resource = std::remove_pointer_t<typename toy::FuncArgs<Func>::template at<-1>>;
-  uint32_t count;
+  uint32 count;
 
   constexpr bool need_check = std::same_as<toy::FuncRet<Func>, VkResult>;
   if constexpr (need_check) {

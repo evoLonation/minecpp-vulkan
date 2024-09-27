@@ -10,7 +10,7 @@ export namespace rd {
 
 class LoopAction {
 public:
-  virtual void loopAction(uint32_t interval_milli) = 0;
+  virtual void loopAction(uint32 interval_milli) = 0;
   LoopAction() = default;
 };
 

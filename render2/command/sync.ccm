@@ -94,8 +94,8 @@ struct BarrierScope {
 };
 
 struct FamilyTransferInfo {
-  uint32_t src_family = VK_QUEUE_FAMILY_IGNORED;
-  uint32_t dst_family = VK_QUEUE_FAMILY_IGNORED;
+  uint32 src_family = VK_QUEUE_FAMILY_IGNORED;
+  uint32 dst_family = VK_QUEUE_FAMILY_IGNORED;
 };
 
 void recordBufferBarrier(

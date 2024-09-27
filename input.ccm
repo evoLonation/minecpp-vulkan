@@ -406,8 +406,8 @@ struct ButtonState {
   float hold_time;
 };
 struct CursorState {
-  uint32_t x;
-  uint32_t y;
+  uint32 x;
+  uint32 y;
   int32_t  x_move;
   int32_t  y_move;
   bool     visible;
@@ -485,8 +485,8 @@ public:
     double last_x, last_y;
     glfwGetCursorPos(window, &last_x, &last_y);
     _cursor_state = {
-      .x = static_cast<uint32_t>(last_x),
-      .y = static_cast<uint32_t>(last_y),
+      .x = static_cast<uint32>(last_x),
+      .y = static_cast<uint32>(last_y),
       .x_move = 0,
       .y_move = 0,
       .visible = false,

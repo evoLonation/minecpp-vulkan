@@ -10,25 +10,25 @@ import render.vk.memory;
 export namespace rd::vk {
 
 struct MipRange {
-  uint32_t base_level;
-  uint32_t count;
+  uint32 base_level;
+  uint32 count;
 };
 
 auto getSubresourceRange(VkImageAspectFlags aspect, MipRange mip_range) -> VkImageSubresourceRange;
 
-auto getSubresourceLayers(VkImageAspectFlags aspect, uint32_t mip_level)
+auto getSubresourceLayers(VkImageAspectFlags aspect, uint32 mip_level)
   -> VkImageSubresourceLayers;
 
 auto createImage(
   VkFormat              format,
-  uint32_t              width,
-  uint32_t              height,
+  uint32              width,
+  uint32              height,
   VkImageUsageFlags     usage,
-  uint32_t              mip_levels,
+  uint32              mip_levels,
   VkSampleCountFlagBits sample_count
 ) -> rs::Image;
 
-auto createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect, uint32_t mip_levels)
+auto createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect, uint32 mip_levels)
   -> rs::ImageView;
 
 struct Image : public rs::Image {
@@ -36,11 +36,11 @@ public:
   Image() = default;
   Image(
     VkFormat              format,
-    uint32_t              width,
-    uint32_t              height,
+    uint32              width,
+    uint32              height,
     VkImageUsageFlags     usage,
     VkImageAspectFlags    aspect,
-    uint32_t              mip_levels,
+    uint32              mip_levels,
     VkSampleCountFlagBits sample_count
   );
   auto        image_view() const -> VkImageView { return _image_view; }
@@ -59,16 +59,16 @@ void copyBufferToImage(
   VkBuffer              buffer,
   VkImage               image,
   VkImageAspectFlagBits aspect,
-  uint32_t              width,
-  uint32_t              height,
-  uint32_t              mip_level
+  uint32              width,
+  uint32              height,
+  uint32              mip_level
 );
 
 struct ImageBlit {
   VkImage               image;
   VkImageAspectFlagBits aspect;
   VkImageLayout         layout;
-  uint32_t              mip_level;
+  uint32              mip_level;
   VkExtent2D            extent;
 };
 

@@ -27,7 +27,7 @@ void file_reader(
     toy::throwf("failed to open file {}", filename);
   }
   auto file_size = file.tellg();
-  toy::debug(uint64_t(file_size));
+  toy::debug(uint64(file_size));
   *buf = new char[file_size];
   file.seekg(0);
   file.read(*buf, file_size);
@@ -39,7 +39,7 @@ void file_reader(
  * @param path Do not use string_view because of not guarantee null terminated
  */
 auto getModelInfo(const std::string& path
-) -> std::pair<std::vector<Vertex>, std::vector<uint16_t>> {
+) -> std::pair<std::vector<Vertex>, std::vector<uint16>> {
   tinyobj_attrib_t    attrib;
   tinyobj_shape_t*    p_shape;
   size_t              shape_num;
@@ -59,7 +59,7 @@ auto getModelInfo(const std::string& path
   );
   auto vertices = std::vector<Vertex>{};
   vertices.reserve(attrib.num_vertices);
-  auto indices = std::vector<uint16_t>{};
+  auto indices = std::vector<uint16>{};
   indices.reserve(attrib.num_faces);
 
   toy::debugf("number of shape: {}, number of material: {}", shape_num, material_num);

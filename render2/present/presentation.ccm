@@ -22,7 +22,7 @@ public:
     VkSemaphore wait_sema;
     // sema that need signal after draw is done and in render_done_layout
     VkSemaphore signal_sema;
-    uint32_t    image_index;
+    uint32    image_index;
     bool        need_recreate;
   };
 

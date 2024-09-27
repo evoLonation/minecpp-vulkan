@@ -40,7 +40,7 @@ DeviceLocalBuffer::DeviceLocalBuffer(
 ) {
   auto& ctx = vk::Device::getInstance();
 
-  auto buffer_size = (uint32_t)buffer_data.size();
+  auto buffer_size = (uint32)buffer_data.size();
   _staging_buffer = { buffer_data };
 
   vk::Buffer::operator=({

@@ -17,7 +17,7 @@ struct DebugMessengerConfig {
   VkDebugUtilsMessageTypeFlagsEXT        message_type_flags;
 };
 
-struct InstanceResource {
+export struct InstanceResource {
   rs::Instance                          instance;
   rs::DebugMessenger                    debug_messenger;
   std::unique_ptr<DebugMessengerConfig> messenger_config;
@@ -152,9 +152,9 @@ auto createInstance(
     .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
     .pNext = debug_info.has_value() ? &debug_info.value() : nullptr,
     .pApplicationInfo = &app_info,
-    .enabledLayerCount = (uint32_t)required_layers.size(),
+    .enabledLayerCount = (uint32)required_layers.size(),
     .ppEnabledLayerNames = required_layers.data(),
-    .enabledExtensionCount = (uint32_t)required_extensions.size(),
+    .enabledExtensionCount = (uint32)required_extensions.size(),
     .ppEnabledExtensionNames = required_extensions.data(),
   };
   auto instance = rs::Instance{ create_info };

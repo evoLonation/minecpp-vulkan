@@ -10,7 +10,7 @@ import glfw;
 export namespace rd {
 
 struct BaseContext {
-  uint32_t worker_count;
+  uint32 worker_count;
 
   glfw::Window window;
 
@@ -35,7 +35,7 @@ struct BaseContext {
 
   struct CommandContext {
     std::vector<VkQueue> queues;
-    uint32_t             family_index;
+    uint32             family_index;
   };
 
   CommandContext graphic_ctx;
@@ -53,7 +53,7 @@ struct BaseContext {
 
   BaseContext() = default;
   BaseContext(
-    const std::string& app_name, int width, int height, uint32_t worker_count, bool multi_sample
+    const std::string& app_name, int width, int height, uint32 worker_count, bool multi_sample
   ) {
     this->worker_count = worker_count;
     window = glfw::Window{ width, height, app_name };

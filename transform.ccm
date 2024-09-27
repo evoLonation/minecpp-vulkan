@@ -208,8 +208,8 @@ auto perspective(float near, float far, float left, float right, float bottom, f
 }
 
 struct ProjectionInfo {
-  uint32_t width;
-  uint32_t height;
+  uint32 width;
+  uint32 height;
   float    fovy_degree = 45.0f;
   float    near = 0.1f;
   float    far = 100.f;

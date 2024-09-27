@@ -6,7 +6,7 @@ import render.vk.device;
 namespace rd::vk {
 
 DescriptorPool::DescriptorPool(
-  uint32_t set_count, std::span<const VkDescriptorPoolSize> type_counts
+  uint32 set_count, std::span<const VkDescriptorPoolSize> type_counts
 ) {
   auto pool_create_info = VkDescriptorPoolCreateInfo{
     .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -14,14 +14,14 @@ DescriptorPool::DescriptorPool(
     .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
     // 会分配描述符集的最大数量
     .maxSets = set_count,
-    .poolSizeCount = static_cast<uint32_t>(type_counts.size()),
+    .poolSizeCount = static_cast<uint32>(type_counts.size()),
     .pPoolSizes = type_counts.data(),
   };
   rs::DescriptorPool::operator=({ pool_create_info });
 }
 
 DescriptorSet::DescriptorSet(
-  const DescriptorPool& pool, const Pipeline& pipeline, uint32_t set_id
+  const DescriptorPool& pool, const Pipeline& pipeline, uint32 set_id
 ) {
   auto dset_layout = pipeline.descriptor_set_layouts()[set_id].get();
   auto allocate_info = VkDescriptorSetAllocateInfo{
@@ -49,7 +49,7 @@ auto Descriptor::operator=(std::initializer_list<std::reference_wrapper<Buffer c
     .dstBinding = _binding,
     // 数组起始索引
     .dstArrayElement = 0,
-    .descriptorCount = static_cast<uint32_t>(resources.size()),
+    .descriptorCount = static_cast<uint32>(resources.size()),
     .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
     .pBufferInfo = buffer_infos.data(),
   };
@@ -73,7 +73,7 @@ auto Descriptor::operator=(
     .dstBinding = _binding,
     // 数组起始索引
     .dstArrayElement = 0,
-    .descriptorCount = static_cast<uint32_t>(resources.size()),
+    .descriptorCount = static_cast<uint32>(resources.size()),
     .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
     .pImageInfo = image_infos.data(),
   };
@@ -88,7 +88,7 @@ Framebuffer::Framebuffer(
   auto create_info = VkFramebufferCreateInfo{
     .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
     .renderPass = render_pass.render_pass(),
-    .attachmentCount = static_cast<uint32_t>(image_views.size()),
+    .attachmentCount = static_cast<uint32>(image_views.size()),
     .pAttachments = image_views.data(),
     .width = extent.width,
     .height = extent.height,
@@ -163,7 +163,7 @@ void RenderPass::recordDraw(
       .offset = {0, 0},
       .extent = framebuffer.extent(),
     },
-    .clearValueCount = static_cast<uint32_t>(clear_values.size()),
+    .clearValueCount = static_cast<uint32>(clear_values.size()),
     .pClearValues = clear_values.data(),
   };
   // VK_SUBPASS_CONTENTS_INLINE: render pass的command被嵌入主缓冲区

@@ -91,7 +91,7 @@ public:
     auto& executor = CommandExecutor::getInstance();
     auto& worker = _workers[_in_flight_index];
 
-    uint32_t image_index;
+    uint32 image_index;
 
     auto& fence = worker.fence;
     fence.wait();
@@ -237,7 +237,7 @@ public:
     }
     _in_flight_index = (_in_flight_index + 1) % _workers.size();
   }
-  void loopAction(uint32_t _) override { draw(); }
+  void loopAction(uint32 _) override { draw(); }
 };
 
 } // namespace rd

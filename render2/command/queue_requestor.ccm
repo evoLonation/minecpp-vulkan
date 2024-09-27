@@ -60,7 +60,7 @@ struct QueueFamilyCheckContext {
 
 struct QueueFamilyRequirement {
   std::function<bool(QueueFamilyCheckContext)> checker;
-  uint32_t                                     queue_count;
+  uint32                                     queue_count;
 };
 
 class QueueRequestor {
@@ -98,7 +98,7 @@ public:
       request.family_queue_counts.append_range(
         res.value() | toy::enumerate | views::transform([&](auto pair) {
           auto& [index, family] = pair;
-          return FamilyQueueCount{ static_cast<uint32_t>(family),
+          return FamilyQueueCount{ static_cast<uint32>(family),
                                    _requirements[index].queue_count };
         })
       );

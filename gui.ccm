@@ -261,7 +261,7 @@ public:
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmdbuf);
   }
 
-  void loopAction(uint32_t _) override { draw(); }
+  void loopAction(uint32 _) override { draw(); }
 
   operator toy::RefContainer<toy::Generator>&() { return _co_drawers; }
 };

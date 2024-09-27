@@ -5,7 +5,7 @@ import render.vk.tool;
 
 namespace rd::vk {
 
-auto createCommandPool(uint32_t family_index, bool short_live) -> rs::CommandPool {
+auto createCommandPool(uint32 family_index, bool short_live) -> rs::CommandPool {
   auto pool_create_info = VkCommandPoolCreateInfo{
     .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
     // VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT：允许重置单个command
@@ -20,7 +20,7 @@ auto createCommandPool(uint32_t family_index, bool short_live) -> rs::CommandPoo
   return { pool_create_info };
 }
 
-auto allocateCommandBuffers(VkCommandPool command_pool, uint32_t count) -> rs::CommandBuffers {
+auto allocateCommandBuffers(VkCommandPool command_pool, uint32 count) -> rs::CommandBuffers {
   auto cbuffer_alloc_info = VkCommandBufferAllocateInfo{
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
     .commandPool = command_pool,
@@ -69,14 +69,14 @@ void endAndSubmitRecord(
   auto submit_info = VkSubmitInfo{
     .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
     .pNext = nullptr,
-    .waitSemaphoreCount = (uint32_t)wait_infos.size(),
+    .waitSemaphoreCount = (uint32)wait_infos.size(),
     // 对 pWaitSemaphores 中的每个 semaphore 都定义了 semaphore wait operation
     // 触发阶段由 dst stage mask 定义
     .pWaitSemaphores = wait_semas.data(),
     .pWaitDstStageMask = wait_stages.data(),
     .commandBufferCount = 1,
     .pCommandBuffers = &cmdbuf,
-    .signalSemaphoreCount = (uint32_t)signal_semas.size(),
+    .signalSemaphoreCount = (uint32)signal_semas.size(),
     .pSignalSemaphores = signal_semas.data(),
   };
   checkVkResult(vkQueueSubmit(queue, 1, &submit_info, signal_fence), "submit queue");

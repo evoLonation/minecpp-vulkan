@@ -17,7 +17,7 @@ auto createShaderModule(std::string_view filename) -> rs::ShaderModule {
   auto create_info = VkShaderModuleCreateInfo{
     .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
     .codeSize = content.size(),
-    .pCode = reinterpret_cast<const uint32_t*>(content.data()),
+    .pCode = reinterpret_cast<const uint32*>(content.data()),
   };
   return rs::ShaderModule{ create_info };
 }
@@ -68,15 +68,15 @@ auto createGraphicsPipeline(
 
   auto dynamic_state_info = VkPipelineDynamicStateCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-    .dynamicStateCount = (uint32_t)dynamic_states.size(),
+    .dynamicStateCount = (uint32)dynamic_states.size(),
     .pDynamicStates = dynamic_states.data(),
   };
 
   auto vertex_input_info = VkPipelineVertexInputStateCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-    .vertexBindingDescriptionCount = (uint32_t)vertex_binding_descriptions.size(),
+    .vertexBindingDescriptionCount = (uint32)vertex_binding_descriptions.size(),
     .pVertexBindingDescriptions = vertex_binding_descriptions.data(),
-    .vertexAttributeDescriptionCount = (uint32_t)vertex_attribute_descriptions.size(),
+    .vertexAttributeDescriptionCount = (uint32)vertex_attribute_descriptions.size(),
     .pVertexAttributeDescriptions = vertex_attribute_descriptions.data(),
   };
 
@@ -183,7 +183,7 @@ auto createGraphicsPipeline(
   // 指定 uniform 全局变量
   auto pipeline_layout_info = VkPipelineLayoutCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-    .setLayoutCount = (uint32_t)descriptor_set_layouts.size(),
+    .setLayoutCount = (uint32)descriptor_set_layouts.size(),
     .pSetLayouts = descriptor_set_layouts.data(),
   };
   auto pipeline_layout = rs::PipelineLayout{ pipeline_layout_info };
@@ -237,7 +237,7 @@ auto RenderPass::createPipeline(VkRenderPass render_pass, std::span<const Subpas
                          ranges::to<std::vector>();
       auto dset_create_info = VkDescriptorSetLayoutCreateInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = static_cast<uint32_t>(dset_layout.size()),
+        .bindingCount = static_cast<uint32>(dset_layout.size()),
         .pBindings = dset_layout.data(),
       };
       dset_layouts.emplace_back(dset_create_info);

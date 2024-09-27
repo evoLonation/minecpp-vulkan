@@ -106,7 +106,7 @@ private:
 
   std::vector<std::vector<VkDescriptorSet>> _worker_dsets;
 
-  std::optional<uint32_t> _stencil_reference;
+  std::optional<uint32> _stencil_reference;
 
 public:
   DrawUnitInfo() = default;
@@ -115,7 +115,7 @@ public:
     VertexBuffer&              vertex_buffer,
     IndexBuffer&               index_buffer,
     std::span<Resource* const> resources,
-    std::optional<uint32_t>    stencil_reference
+    std::optional<uint32>    stencil_reference
   ) {
     auto& ctx = Context::getInstance();
     auto& resource_types = pipeline._resource_types;
@@ -173,11 +173,11 @@ public:
       auto pool_infos = std::array{
         VkDescriptorPoolSize{
           .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-          .descriptorCount = (uint32_t)uniform_count,
+          .descriptorCount = (uint32)uniform_count,
         },
         VkDescriptorPoolSize{
           .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-          .descriptorCount = (uint32_t)sampler_count,
+          .descriptorCount = (uint32)sampler_count,
         },
       };
       if (uniform_count == 0 || sampler_count == 0) {
@@ -229,7 +229,7 @@ public:
     VertexBuffer&              vertex_buffer,
     IndexBuffer&               index_buffer,
     std::span<Resource* const> resources,
-    std::optional<uint32_t>    stencil_reference
+    std::optional<uint32>    stencil_reference
   )
     : DrawUnitInfo(pipeline, vertex_buffer, index_buffer, resources, stencil_reference),
       toy::RefLoader<DrawUnit>(pipeline._draw_units) {}
@@ -239,14 +239,14 @@ public:
   auto operator=(DrawUnit&&) noexcept -> DrawUnit& = delete;
 };
 
-auto getStencilReferences(std::span<const uint32_t> references)
-  -> std::vector<std::pair<size_t, uint32_t>> {
+auto getStencilReferences(std::span<const uint32> references)
+  -> std::vector<std::pair<size_t, uint32>> {
   return references | toy::enumerate |
          toy::chunkBy([](auto a, auto b) { return a.second == b.second; }) |
          views::transform([](auto sub_range) {
            // the stencil reference is a reference, LOL
            auto [index, reference] = *sub_range.begin();
-           return std::pair<size_t, uint32_t>{ index, reference };
+           return std::pair<size_t, uint32>{ index, reference };
          }) |
          ranges::to<std::vector>();
 }
@@ -271,7 +271,7 @@ inline void PipelineInfo::record(VkCommandBuffer cmdbuf, int in_flight_index) {
       return vk::DrawUnit{
         .vertex_buffer = unit->_vertex_buffer->get(),
         .index_buffer = unit->_index_buffer->get(),
-        .count = (uint32_t)unit->_index_buffer->getIndexNumber(),
+        .count = (uint32)unit->_index_buffer->getIndexNumber(),
         .descriptor_sets = unit->_worker_dsets[in_flight_index],
       };
     }),

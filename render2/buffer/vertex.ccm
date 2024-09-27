@@ -69,7 +69,7 @@ private:
     auto alignments = std::array{ alignof(DataTypes)... };
     auto sizeofs = std::array{ sizeof(DataTypes)... };
     auto alignment = size_t{ 0 };
-    auto offsets = std::array<uint32_t, sizeof...(DataTypes)>{};
+    auto offsets = std::array<uint32, sizeof...(DataTypes)>{};
 
     alignment = *ranges::max_element(alignments);
     offsets[0] = 0;
@@ -100,7 +100,7 @@ private:
   static constexpr auto attribute_descriptions = []() {
     auto attribute_descriptions =
       std::array<VkVertexInputAttributeDescription, sizeof...(DataTypes)>{};
-    uint32_t i = 0;
+    uint32 i = 0;
     ((attribute_descriptions[i] =
         VkVertexInputAttributeDescription{
           .location = i,
@@ -156,7 +156,7 @@ public:
   IndexBuffer() = default;
   IndexBuffer(std::span<const uint16_t> indices);
 
-  auto getIndexNumber() -> uint32_t { return _index_number; }
+  auto getIndexNumber() -> uint32 { return _index_number; }
 };
 
 } // namespace rd

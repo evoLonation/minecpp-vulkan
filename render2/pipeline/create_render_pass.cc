@@ -71,7 +71,7 @@ auto RenderPass::createRenderPass(
   auto subpass_descriptions = std::vector<VkSubpassDescription>{};
   auto attachment_refs = std::vector<VkAttachmentReference>{};
   for (auto& subpass : subpasses) {
-    auto color_index = static_cast<uint32_t>(attachment_refs.size());
+    auto color_index = static_cast<uint32>(attachment_refs.size());
     for (auto color_i : subpass.colors) {
       auto attachment = attachments[color_i];
       // check the format is match with attachment type (color or depst)
@@ -95,7 +95,7 @@ auto RenderPass::createRenderPass(
         .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
       });
     }
-    auto resolve_index = static_cast<uint32_t>(attachment_refs.size());
+    auto resolve_index = static_cast<uint32>(attachment_refs.size());
     if (subpass.multi_sample.has_value()) {
       for (auto resolve_i_opt : subpass.multi_sample->resolves) {
         if (resolve_i_opt.has_value()) {
@@ -119,10 +119,10 @@ auto RenderPass::createRenderPass(
         }
       }
     }
-    auto depst_index = std::optional<uint32_t>{};
+    auto depst_index = std::optional<uint32>{};
     if (subpass.depst_attachment.has_value()) {
       auto depst_attachment_i = subpass.depst_attachment.value();
-      depst_index = static_cast<uint32_t>(attachment_refs.size());
+      depst_index = static_cast<uint32>(attachment_refs.size());
       attachment_refs.push_back(VkAttachmentReference{
         .attachment = depst_attachment_i,
         .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
@@ -152,7 +152,7 @@ auto RenderPass::createRenderPass(
         );
       }
     }
-    auto input_index = static_cast<uint32_t>(attachment_refs.size());
+    auto input_index = static_cast<uint32>(attachment_refs.size());
     for (auto input_i : subpass.inputs) {
       toy::throwf(
         ranges::find(subpass.colors, input_i) == subpass.colors.end() &&
@@ -176,9 +176,9 @@ auto RenderPass::createRenderPass(
       // 还有 compute、 ray tracing 等等
       .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
       // 这里的数组的索引和 着色器里的 layout 数值一一对应
-      .inputAttachmentCount = static_cast<uint32_t>(subpass.inputs.size()),
+      .inputAttachmentCount = static_cast<uint32>(subpass.inputs.size()),
       .pInputAttachments = attachment_refs.data() + input_index,
-      .colorAttachmentCount = static_cast<uint32_t>(subpass.colors.size()),
+      .colorAttachmentCount = static_cast<uint32>(subpass.colors.size()),
       .pColorAttachments = attachment_refs.data() + color_index,
       .pResolveAttachments =
         subpass.multi_sample.has_value() ? attachment_refs.data() + resolve_index : nullptr,
@@ -196,15 +196,15 @@ auto RenderPass::createRenderPass(
    * @brief get subpass dependencies
    *
    */
-  auto dependencies = std::map<std::pair<uint32_t, uint32_t>, std::vector<VkSubpassDependency>>{};
+  auto dependencies = std::map<std::pair<uint32, uint32>, std::vector<VkSubpassDependency>>{};
   // Either there is one write, or there are multiple reads
   // For certine frambuf, the reads and write can contains subpass at the same time, the write is
   // before the reads
   // attachment_i -> subpass_i
-  auto color_last_write = std::map<uint32_t, uint32_t>{};
-  auto depst_last_write = std::map<uint32_t, uint32_t>{};
+  auto color_last_write = std::map<uint32, uint32>{};
+  auto depst_last_write = std::map<uint32, uint32>{};
   // attachment_i -> vector of subpass_i
-  auto last_read = std::map<uint32_t, std::vector<uint32_t>>{};
+  auto last_read = std::map<uint32, std::vector<uint32>>{};
 
   auto color_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
   auto color_src_access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
@@ -223,7 +223,7 @@ auto RenderPass::createRenderPass(
   auto input_src_scope = vk::Scope{ input_stage, input_src_access };
   for (auto [subpass_i, subpass] : subpasses | toy::enumerate) {
     for (auto color_i : subpass.colors) {
-      auto add_dependency = [&](uint32_t src_subpass, vk::Scope src_scope) {
+      auto add_dependency = [&](uint32 src_subpass, vk::Scope src_scope) {
         dependencies[{ src_subpass, subpass_i }].push_back(VkSubpassDependency{
           .srcSubpass = src_subpass,
           .dstSubpass = subpass_i,
@@ -247,7 +247,7 @@ auto RenderPass::createRenderPass(
     }
     if (subpass.depst_attachment.has_value()) {
       auto depst_i = subpass.depst_attachment.value();
-      auto add_dependency = [&](uint32_t src_subpass, vk::Scope src_scope) {
+      auto add_dependency = [&](uint32 src_subpass, vk::Scope src_scope) {
         dependencies[{ src_subpass, subpass_i }].push_back(VkSubpassDependency{
           .srcSubpass = src_subpass,
           .dstSubpass = subpass_i,
@@ -270,7 +270,7 @@ auto RenderPass::createRenderPass(
       depst_last_write[depst_i] = subpass_i;
     }
     for (auto& input_i : subpass.inputs) {
-      auto add_dependency = [&](uint32_t src_subpass, vk::Scope src_scope) {
+      auto add_dependency = [&](uint32 src_subpass, vk::Scope src_scope) {
         dependencies[{ src_subpass, subpass_i }].push_back(VkSubpassDependency{
           .srcSubpass = src_subpass,
           .dstSubpass = subpass_i,
@@ -365,11 +365,11 @@ auto RenderPass::createRenderPass(
     ranges::to<std::vector>();
   auto render_pass_create_info = VkRenderPassCreateInfo{
     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-    .attachmentCount = static_cast<uint32_t>(attachment_descs.size()),
+    .attachmentCount = static_cast<uint32>(attachment_descs.size()),
     .pAttachments = attachment_descs.data(),
-    .subpassCount = static_cast<uint32_t>(subpass_descriptions.size()),
+    .subpassCount = static_cast<uint32>(subpass_descriptions.size()),
     .pSubpasses = subpass_descriptions.data(),
-    .dependencyCount = static_cast<uint32_t>(merged_dependencies.size()),
+    .dependencyCount = static_cast<uint32>(merged_dependencies.size()),
     .pDependencies = merged_dependencies.data(),
   };
   return { render_pass_create_info };

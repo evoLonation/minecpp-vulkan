@@ -180,7 +180,7 @@ using FuncArgs = FuncInfo<Func>::template remove<0>;
  * @brief get the parameter type of a function with index
  * can not use for a overload function!
  */
-// template <uint32_t index, typename Func>
+// template <uint32 index, typename Func>
 // using FuncArg = FuncInfo<Func>::template at<index + 1>;
 
 /**
