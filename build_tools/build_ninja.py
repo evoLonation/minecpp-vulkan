@@ -130,9 +130,6 @@ def build_link(writer: ninja.Writer, sources, link_lib_paths):
 def add_sub_ninja(ninja_writer: ninja.Writer, src_ninja, sub_ninja):
   ninja_writer.subninja(ospath.relpath(sub_ninja, ospath.dirname(src_ninja)))
 
-def execute_ninja(ninja_file, extra = '', stdout = None):
-  return sp.run(f'ninja -C {ospath.dirname(ninja_file)} -f {ospath.basename(ninja_file)} {extra}', stdout=stdout)
-
 def get_module_info(source):
   with open(pub.path.get_dyndep_file(source), 'rt') as f:
     for line in f:
@@ -187,9 +184,7 @@ def open_ninja(path):
   os.makedirs(ospath.dirname(path), exist_ok=True)
   return NinjaWriterContextManager(open(path, 'wt'))
 
-
-
-if __name__ == '__main__':
+def build():
   resources_dict = get_all_file()
 
   def get_resource(resource_type):
@@ -220,7 +215,7 @@ if __name__ == '__main__':
     build_module_scan(writer, sources + [info[0] for info in need_gen_sources], flag)
   # 执行module scan ninja来更新源文件的 provided module info
   print('analysis source module info...')
-  execute_ninja(pub.path.ninja_module_scan_file, extra=' '.join(pub.path.get_dyndep_file(source) for source in sources))
+  pub.ninja.execute(pub.path.ninja_module_scan_file, extra=' '.join(pub.path.get_dyndep_file(source) for source in sources))
 
   # 更新 resources_dict ，为source扩展模块信息
   sources = list(map(lambda source: (source, get_module_info(source)), sources)) + need_gen_sources
@@ -241,5 +236,8 @@ if __name__ == '__main__':
                  [pub.path.get_dylib_target_file(dylib) for dylib in get_resource(pub.rsc.type_dylib_file)])
   # 创建 compile_commands.json
   with open('compile_commands.json', 'wb') as f:
-    result = execute_ninja(pub.path.ninja_file, extra=f'-t compdb {pub.ninja.compile_rule} {pub.ninja.precompile_rule}', stdout=sp.PIPE).stdout
+    result = pub.ninja.execute(pub.path.ninja_file, extra=f'-t compdb {pub.ninja.compile_rule} {pub.ninja.precompile_rule}', stdout=sp.PIPE).stdout
     f.write(result)
+
+if __name__ == '__main__':
+  build()

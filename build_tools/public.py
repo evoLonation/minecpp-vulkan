@@ -1,5 +1,6 @@
 import os.path as ospath
 from enum import Enum
+import subprocess as sp
 
 class TargetType(Enum):
   EXECUTABLE = 0
@@ -149,6 +150,9 @@ class Ninja:
     self.copy_rule = 'copy'
     self.shader_code_rule = 'shader_code_generate'
     self.shader_code_total_rule = 'shader_code_total_generate'
+
+  def execute(self, ninja_file, extra = '', stdout = None):
+    return sp.run(f'ninja -C {ospath.dirname(ninja_file)} -f {ospath.basename(ninja_file)} {extra}', stdout=stdout)
     
 
 ninja = Ninja()
