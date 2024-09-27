@@ -13,8 +13,7 @@ export namespace executors {
 
 CommandExecutor::QueueExecutor copy;
 CommandExecutor::QueueExecutor present;
-CommandExecutor::QueueExecutor tool;
-CommandExecutor::QueueExecutor render;
+CommandExecutor::QueueExecutor graphics;
 
 } // namespace executors
 

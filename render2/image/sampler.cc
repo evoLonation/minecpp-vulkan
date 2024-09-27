@@ -93,9 +93,9 @@ SampledTexture::SampledTexture(
   _sampler = createSampler(_max_anisotropy);
 
   auto copy_executor = vk::executors::copy;
-  auto tool_executor = vk::executors::tool;
+  auto graphics_executor = vk::executors::graphics;
   auto family_transfer =
-    vk::FamilyTransferInfo{ copy_executor.getFamily(), tool_executor.getFamily() };
+    vk::FamilyTransferInfo{ copy_executor.getFamily(), graphics_executor.getFamily() };
 
   auto recorder_copy = [&](VkCommandBuffer cmdbuf) {
     vk::recordImageBarrier(
@@ -224,7 +224,7 @@ SampledTexture::SampledTexture(
 
   auto waitable = copy_executor.submit(recorder_copy, {}, 1).second;
   auto fence =
-    tool_executor
+    graphics_executor
       .submit(
         recorder_blit, std::array{ vk::WaitInfo{ waitable, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } }, 0
       )

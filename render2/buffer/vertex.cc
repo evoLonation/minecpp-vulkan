@@ -50,10 +50,10 @@ DeviceLocalBuffer::DeviceLocalBuffer(
   });
 
   auto copy_executor = vk::executors::copy;
-  auto tool_executor = vk::executors::tool;
+  auto graphcis_executor = vk::executors::graphics;
 
   auto family_transfer =
-    vk::FamilyTransferInfo{ copy_executor.getFamily(), tool_executor.getFamily() };
+    vk::FamilyTransferInfo{ copy_executor.getFamily(), graphcis_executor.getFamily() };
   auto copy_recorder = [&](VkCommandBuffer cmdbuf) {
     vk::recordCopyBuffer(cmdbuf, _staging_buffer, *this, buffer_size);
     vk::recordBufferBarrier(
@@ -70,7 +70,7 @@ DeviceLocalBuffer::DeviceLocalBuffer(
     vk::recordBufferBarrier(cmdbuf, get(), vk::BarrierScope::acquire(dst_scope), family_transfer);
   };
   auto waitable = copy_executor.submit(copy_recorder, {}, 1).second;
-  auto fence = tool_executor
+  auto fence = graphcis_executor
                  .submit(
                    acquire_recorder,
                    std::array{ vk::WaitInfo{ waitable, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },

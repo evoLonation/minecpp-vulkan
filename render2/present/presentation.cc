@@ -25,7 +25,7 @@ auto Presentation::prepare() -> std::optional<PresentContext> {
   auto  image_available_sema = swapchain.getImageAvailableSema();
   auto  image_index = swapchain.getCurrentImageIndex();
   auto& present_executor = executors::present;
-  auto& graphic_executor = executors::tool;
+  auto& graphics_executor = executors::graphics;
   auto  image = swapchain.images()[image_index];
   auto  record_p2g = [&](VkCommandBuffer cmdbuf, bool acquire) {
     recordImageBarrier(
@@ -44,7 +44,7 @@ auto Presentation::prepare() -> std::optional<PresentContext> {
                 }),
       FamilyTransferInfo{
         present_executor.getFamily(),
-        graphic_executor.getFamily(),
+        graphics_executor.getFamily(),
       }
     );
   };
@@ -55,7 +55,7 @@ auto Presentation::prepare() -> std::optional<PresentContext> {
     std::array{ WaitSemaphore{ image_available_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
     std::array{ present_release_sema }
   );
-  graphic_executor.submit(
+  graphics_executor.submit(
     [&](auto cmdbuf) { record_p2g(cmdbuf, true); },
     std::array{ WaitSemaphore{ present_release_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
     std::array{ graphic_acquire_sema }
@@ -75,7 +75,7 @@ void Presentation::present() {
   auto& swapchain = Swapchain::getInstance();
   auto  image_index = swapchain.getCurrentImageIndex();
   auto& present_executor = executors::present;
-  auto& graphic_executor = executors::tool;
+  auto& graphics_executor = executors::graphics;
   auto  image = swapchain.images()[image_index];
   auto  record_g2p = [&](VkCommandBuffer cmdbuf, bool acquire) {
     recordImageBarrier(
@@ -93,7 +93,7 @@ void Presentation::present() {
                    .stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                 }),
       vk::FamilyTransferInfo{
-        graphic_executor.getFamily(),
+        graphics_executor.getFamily(),
         present_executor.getFamily(),
       }
     );
@@ -101,17 +101,17 @@ void Presentation::present() {
   auto render_done_sema = _image_resources[image].render_done_sema.get();
   auto graphic_release_sema = _image_resources[image].graphic_release_sema.get();
   auto present_acquire_sema = _image_resources[image].present_acquire_sema.get();
-  graphic_executor.submit(
+  graphics_executor.submit(
     [&](auto cmdbuf) { record_g2p(cmdbuf, false); },
     std::array{ WaitSemaphore{ render_done_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
     std::array{ graphic_release_sema }
   );
-  present_executor[1].submit(
+  present_executor[0].submit(
     [&](auto cmdbuf) { record_g2p(cmdbuf, true); },
     std::array{ WaitSemaphore{ graphic_release_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
     std::array{ present_acquire_sema }
   );
-  if (!swapchain.present(present_acquire_sema, present_executor[1].getQueue())) {
+  if (!swapchain.present(present_acquire_sema, present_executor[0].getQueue())) {
     swapchain.updateCapabilities();
     swapchain.recreate();
     _present_recreated = true;
