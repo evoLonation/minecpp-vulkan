@@ -15,6 +15,7 @@ import render.vk.image;
 import render.vk.render_pass;
 import render.vk.buffer;
 import render.vk.presentation;
+import render.context;
 import render.vk.sync;
 import render.sampler;
 import render.vertex;
@@ -33,42 +34,10 @@ int main() {
     toy::test_Generator::test();
     toy::test_EnumSet::test();
     trans::test_trans();
+    auto ctx = rd::Context{ "hello vulkan", 1920, 1080 };
+    auto& swapchain = rd::vk::Swapchain::getInstance();
+    auto& input_processor = input::InputProcessor::getInstance();
 
-    auto instance =
-      rd::vk::createInstance("hello", rd::vk::Surface::getRequiredInstanceExtensions());
-    auto glfw_ctx = glfw::Context{};
-
-    auto window = glfw::Window{ 1920, 1080, "hello vulkan", glfw_ctx };
-    auto input_processor = input::InputProcessor{ glfw_ctx };
-    auto surface = rd::vk::Surface{ instance.instance, window };
-
-    auto queue_requirements = std::array{
-      rd::vk::QueueFamilyRequirement{ rd::vk::requestGraphicQueue, 3 },
-      rd::vk::QueueFamilyRequirement{ rd::vk::requestPresentQueue, 2 },
-      rd::vk::QueueFamilyRequirement{ rd::vk::requestTransferQueue, 1 },
-    };
-    auto queue_requestor = rd::vk::QueueRequestor{ queue_requirements };
-
-    auto device_checkers = std::array{
-      rd::vk::DeviceCapabilityChecker{
-        [&](auto& ctx) { return queue_requestor.checkPdevice(ctx); } },
-      rd::vk::DeviceCapabilityChecker{ rd::vk::Swapchain::checkPdevice },
-      rd::vk::DeviceCapabilityChecker{ rd::SampledTexture::device_checker },
-    };
-
-    auto device = rd::vk::Device{ device_checkers, instance.instance };
-
-    auto swapchain = rd::vk::Swapchain{ surface, device };
-
-    auto executor = rd::vk::CommandExecutor{ device, queue_requestor.getFamilyQueueCounts(device) };
-    {
-      using namespace rd::vk::executors;
-      using QueueExecutor = rd::vk::CommandExecutor::QueueExecutor;
-      copy = QueueExecutor{ 2, { 0, 1 } };
-      present = QueueExecutor{ 1, { 0, 2 } };
-      tool = QueueExecutor{ 0, { 0, 1 } };
-      render = QueueExecutor{ 0, { 1, 3 } };
-    }
     auto depth_format = VK_FORMAT_D32_SFLOAT;
     auto sample_count = VK_SAMPLE_COUNT_8_BIT;
     toy::throwf(
@@ -251,7 +220,7 @@ int main() {
         sample_count,
       };
       // convert layout
-      rd::vk::executors::tool
+      rd::vk::executors::graphics
         .submit(
           [&](VkCommandBuffer cmdbuf) {
             rd::vk::recordImageBarrier(
@@ -323,7 +292,7 @@ int main() {
           recorder.descriptor_set[2] = dset_texture;
           recorder.draw();
         };
-        rd::vk::executors::render.submit(
+        rd::vk::executors::graphics.submit(
           [&](auto cmdbuf) {
             render_pass.recordDraw(
               cmdbuf, framebuffer_resource.framebuffers[context.image_index], clear_values

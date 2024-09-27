@@ -1,0 +1,31 @@
+export module render.context;
+import std;
+import toy;
+
+import render.vk.device;
+import render.vk.instance;
+import render.vk.surface;
+import render.vk.swapchain;
+import render.vk.executor;
+import input;
+import glfw;
+
+export namespace rd {
+
+class Context : public toy::ProactiveSingleton<Context> {
+public:
+  Context(const std::string& app_name, uint32 width, uint32 height);
+
+private:
+  std::unique_ptr<glfw::Context>         _glfw_ctx;
+  std::unique_ptr<glfw::Window>          _glfw_window;
+  std::unique_ptr<input::InputProcessor> _input_processor;
+
+  std::unique_ptr<vk::InstanceResource> _instance;
+  std::unique_ptr<vk::Surface>          _surface;
+  std::unique_ptr<vk::Device>           _device;
+  std::unique_ptr<vk::Swapchain>        _swapchain;
+  std::unique_ptr<vk::CommandExecutor>  _command_executor;
+};
+
+} // namespace rd
