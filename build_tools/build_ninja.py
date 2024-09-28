@@ -8,6 +8,17 @@ import public as pub
 
 pub.set_path('./', 'hello', pub.TargetType.EXECUTABLE)
 
+import argparse
+
+def init_arg_parser():
+  parser = argparse.ArgumentParser()
+  subparsers = parser.add_subparsers(dest = 'task')
+
+  precompile_task = subparsers.add_parser('precompile', help='precompile a module interface file')
+  precompile_task.add_argument('file', type=str, help='the file need to be precompiled')
+
+  return parser.parse_args()
+
 def get_all_file():
   # 记录每个resource type的所有资源,资源要么是一个绝对路径，要么是一个(绝对路径，元信息)元组
   resources_dict = {}
@@ -100,7 +111,7 @@ def build_source(writer: ninja.Writer, sources, flag: pub.Flags):
     else:
       build(pub.ninja.precompile_rule, source, pub.path.get_pcm_file(module))
       build(pub.ninja.compile_rule, pub.path.get_pcm_file(module), pub.path.get_obj_file(source))
-      writer.build(outputs=ospath.join('mod', module), rule='phony', inputs=pub.path.get_pcm_file(module))
+      writer.build(outputs=pub.ninja.module_phony(module), rule='phony', inputs=pub.path.get_pcm_file(module))
   dir_sources_dict = {}
   for source, _ in sources:
     sub_dir = ospath.dirname(source)
@@ -184,7 +195,8 @@ def open_ninja(path):
   os.makedirs(ospath.dirname(path), exist_ok=True)
   return NinjaWriterContextManager(open(path, 'wt'))
 
-def build():
+def build_ninja():
+  # 遍历项目的所有配置文件，得到所有类型的资源
   resources_dict = get_all_file()
 
   def get_resource(resource_type):
@@ -198,10 +210,12 @@ def build():
   # 尚未生成的sources，是一个(source, module)的列表
   need_gen_sources = []
 
-  # 添加shader generate
+  # 添加shader generate的ninja文件
+  print('build shader generate ninja file...')
   with open_ninja(pub.path.ninja_shader_code_gen_file) as writer:
-    if resources_dict.get(pub.rsc.type_shader) is not None:
-      need_gen_sources +=  build_shader_code_generate(writer, resources_dict.get(pub.rsc.type_shader))
+    shader_resources = get_resource(pub.rsc.type_shader)
+    if len(shader_resources) != 0:
+      need_gen_sources += build_shader_code_generate(writer, shader_resources)
   
   # 创建header precompile的ninja文件
   print('build header precompile ninja file...')
@@ -217,7 +231,7 @@ def build():
   print('analysis source module info...')
   pub.ninja.execute(pub.path.ninja_module_scan_file, extra=' '.join(pub.path.get_dyndep_file(source) for source in sources))
 
-  # 更新 resources_dict ，为source扩展模块信息
+  # 根据刚刚更新的 sources 的 dyndep 文件，为source扩展模块信息
   sources = list(map(lambda source: (source, get_module_info(source)), sources)) + need_gen_sources
 
   # 创建 compile , precompile 和 link 的 ninja 文件
@@ -240,4 +254,12 @@ def build():
     f.write(result)
 
 if __name__ == '__main__':
-  build()
+  args = init_arg_parser()
+  build_ninja()
+  if args.task == 'precompile':
+    file_path = args.file
+    module_name = get_module_info(file_path)
+    if module_name is False:
+      raise RuntimeError("the file need to be precompiled is not a module interface file")
+    print(f'precompile the [{module_name}] module (file {file_path})')
+    pub.ninja.execute(pub.path.ninja_file, pub.ninja.module_phony(module_name))

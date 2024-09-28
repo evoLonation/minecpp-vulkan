@@ -153,6 +153,8 @@ class Ninja:
 
   def execute(self, ninja_file, extra = '', stdout = None):
     return sp.run(f'ninja -C {ospath.dirname(ninja_file)} -f {ospath.basename(ninja_file)} {extra}', stdout=stdout)
-    
+  
+  def module_phony(self, module_name):
+    return ospath.join('mod', module_name)
 
 ninja = Ninja()
