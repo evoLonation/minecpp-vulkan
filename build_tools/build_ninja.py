@@ -3,19 +3,18 @@ import os
 import subprocess as sp
 import ninja_syntax as ninja
 import yaml
-
 import public as pub
-
-pub.set_path('./', 'hello', pub.TargetType.EXECUTABLE)
-
 import argparse
 
 def init_arg_parser():
   parser = argparse.ArgumentParser()
+  parser.add_argument('--root', type=str, dest='root', required=False, default='./')
   subparsers = parser.add_subparsers(dest = 'task')
 
   precompile_task = subparsers.add_parser('precompile', help='precompile a module interface file')
   precompile_task.add_argument('file', type=str, help='the file need to be precompiled')
+
+  precompile_task = subparsers.add_parser('build', help='build whole project')
 
   return parser.parse_args()
 
@@ -253,13 +252,27 @@ def build_ninja():
     result = pub.ninja.execute(pub.path.ninja_file, extra=f'-t compdb {pub.ninja.compile_rule} {pub.ninja.precompile_rule}', stdout=sp.PIPE).stdout
     f.write(result)
 
+def precompile_by_module(module_name: str):
+  if module_name is False:
+    raise RuntimeError("the file need to be precompiled is not a module interface file")
+  print(f'precompile the [{module_name}] module')
+  pub.ninja.execute(pub.path.ninja_file, pub.ninja.module_phony(module_name))
+
+def precompile_by_file(file_path: str):
+  module_name = get_module_info(file_path)
+  if not module_name:
+    raise RuntimeError(f"The file {file_path} is not a module interface file")
+  precompile_by_module(module_name)
+
+
 if __name__ == '__main__':
   args = init_arg_parser()
-  build_ninja()
+  pub.set_path(args.root, 'hello', pub.TargetType.EXECUTABLE)
   if args.task == 'precompile':
-    file_path = args.file
-    module_name = get_module_info(file_path)
-    if module_name is False:
-      raise RuntimeError("the file need to be precompiled is not a module interface file")
-    print(f'precompile the [{module_name}] module (file {file_path})')
-    pub.ninja.execute(pub.path.ninja_file, pub.ninja.module_phony(module_name))
+    build_ninja()
+    precompile_by_file(args.file)
+  elif args.task == 'build':
+    build_ninja()
+    pub.ninja.execute(pub.path.ninja_file)
+  else:
+    build_ninja()

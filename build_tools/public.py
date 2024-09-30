@@ -7,7 +7,7 @@ class TargetType(Enum):
   DYNAMIC_LIBRARY = 1
 
 class Paths:
-  def __init__(self, root_dir_, target_, type_: TargetType):
+  def __init__(self, root_dir_: str, target_: str, type_: TargetType):
     self.target_type = type_
     self.root_dir = ospath.abspath(root_dir_)
     self.target = target_
@@ -33,7 +33,7 @@ class Paths:
     elif self.target_type == TargetType.DYNAMIC_LIBRARY:
       self.target_file = ospath.join(self.target_dir, self.target+'.dll')
 
-    self.build_tools_dir = ospath.join(self.root_dir, 'build_tools')
+    self.build_tools_dir = ospath.dirname(ospath.abspath(__file__))
     self.dyndep_generate_script = ospath.join(self.build_tools_dir, 'dyndep_generate.py')
     self.shader_generate_script = ospath.join(self.build_tools_dir, 'shader_code_generate.py')
 
@@ -58,7 +58,7 @@ class Paths:
 
 
 path = Paths('./', 'test', TargetType.EXECUTABLE)
-def set_path(root_dir, target, type: TargetType = TargetType.EXECUTABLE):
+def set_path(root_dir: str, target: str, type: TargetType = TargetType.EXECUTABLE):
   global path
   path = Paths(root_dir, target, type)
 
