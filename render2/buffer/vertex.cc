@@ -10,31 +10,17 @@ auto operator==(const VertexInfo& a, const VertexInfo& b) -> bool {
          a.attribute_descriptions.end() == b.attribute_descriptions.end();
 }
 
-VertexInfo::VertexInfo(
-  const VkVertexInputBindingDescription*             binding_description,
-  std::span<const VkVertexInputAttributeDescription> attribute_descriptions
-)
-  : binding_description(binding_description), attribute_descriptions(attribute_descriptions) {
-  toy::throwf(
-    ranges::all_of(
-      attribute_descriptions,
-      [](auto& attrib) { return ranges::find(_formats, attrib.format) != _formats.end(); }
-    ),
-    "the attribute is not included in _formats"
+auto checkVertexPdeviceSupport(vk::DeviceCapabilityBuilder& builder) -> bool {
+  auto formats =
+    FormatTypeInfos::applyFunc([]<typename... Info> { return std::array{ Info::format... }; });
+  toy::debugf("the vertex formats: {::}", formats | views::transform([](auto a) {
+                                            return static_cast<uint32>(a);
+                                          }));
+  return builder.getPdevice().checkFormatSupport(
+    vk::FormatTarget::BUFFER, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT, formats
   );
 }
 
-decltype(VertexInfo::_formats) VertexInfo::_formats = {
-  VK_FORMAT_R32G32_SFLOAT,       VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32B32A32_SFLOAT,
-  VK_FORMAT_R32_SFLOAT,          VK_FORMAT_R64G64_SFLOAT,    VK_FORMAT_R64G64B64_SFLOAT,
-  VK_FORMAT_R64G64B64A64_SFLOAT, VK_FORMAT_R64_SFLOAT,
-};
-
-auto VertexInfo::checkPdevice(vk::DeviceCapabilityBuilder& request) -> bool {
-  return request.getPdevice().checkFormatSupport(
-    vk::FormatTarget::BUFFER, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT, _formats
-  );
-}
 DeviceLocalBuffer::DeviceLocalBuffer(
   VkBufferUsageFlags usage, vk::Scope dst_scope, std::span<const std::byte> buffer_data
 ) {

@@ -9,30 +9,29 @@ import std;
 import glm;
 import toy;
 
-export namespace rd {
+namespace rd {
 
-template <typename Type>
-consteval auto formatMapper() -> VkFormat {
-  if constexpr (std::same_as<Type, glm::vec2>) {
-    return VK_FORMAT_R32G32_SFLOAT;
-  } else if constexpr (std::same_as<Type, glm::vec3>) {
-    return VK_FORMAT_R32G32B32_SFLOAT;
-  } else if constexpr (std::same_as<Type, glm::vec4>) {
-    return VK_FORMAT_R32G32B32A32_SFLOAT;
-  } else if constexpr (std::same_as<Type, float>) {
-    return VK_FORMAT_R32_SFLOAT;
-  } else if constexpr (std::same_as<Type, glm::dvec2>) {
-    return VK_FORMAT_R64G64_SFLOAT;
-  } else if constexpr (std::same_as<Type, glm::dvec3>) {
-    return VK_FORMAT_R64G64B64_SFLOAT;
-  } else if constexpr (std::same_as<Type, glm::dvec4>) {
-    return VK_FORMAT_R64G64B64A64_SFLOAT;
-  } else if constexpr (std::same_as<Type, double>) {
-    return VK_FORMAT_R64_SFLOAT;
-  }
-}
+template <VkFormat format_, typename T>
+  requires std::is_trivially_copyable_v<T>
+struct FormatTypeInfo {
+  static constexpr auto format = format_;
+  using type = T;
+};
 
-struct VertexInfo {
+using FormatTypeInfos = toy::TypePack<
+  FormatTypeInfo<VK_FORMAT_R32G32_SFLOAT, glm::vec2>,        //
+  FormatTypeInfo<VK_FORMAT_R32G32B32_SFLOAT, glm::vec3>,     //
+  FormatTypeInfo<VK_FORMAT_R32G32B32A32_SFLOAT, glm::vec4>,  //
+  FormatTypeInfo<VK_FORMAT_R32_SFLOAT, float>,               //
+  FormatTypeInfo<VK_FORMAT_R64G64_SFLOAT, glm::dvec2>,       //
+  FormatTypeInfo<VK_FORMAT_R64G64B64_SFLOAT, glm::dvec3>,    //
+  FormatTypeInfo<VK_FORMAT_R64G64B64A64_SFLOAT, glm::dvec4>, //
+  FormatTypeInfo<VK_FORMAT_R64_SFLOAT, double>               //
+  >;
+
+export auto checkVertexPdeviceSupport(vk::DeviceCapabilityBuilder&) -> bool;
+
+export struct VertexInfo {
   const VkVertexInputBindingDescription*             binding_description;
   std::span<const VkVertexInputAttributeDescription> attribute_descriptions;
   friend auto operator==(const VertexInfo& a, const VertexInfo& b) -> bool;
@@ -40,15 +39,18 @@ struct VertexInfo {
   VertexInfo(
     const VkVertexInputBindingDescription*             binding_description,
     std::span<const VkVertexInputAttributeDescription> attribute_descriptions
-  );
-
-private:
-  static std::vector<VkFormat> _formats;
-
-  static auto checkPdevice(vk::DeviceCapabilityBuilder&) -> bool;
+  )
+    : binding_description(binding_description), attribute_descriptions(attribute_descriptions) {}
 };
 
-template <typename... DataTypes>
+template <typename Type>
+consteval auto formatMapper() -> VkFormat {
+  return FormatTypeInfos::filter<[]<typename T>() {
+    return std::same_as<typename T::type, Type>;
+  }>::template at<0>::format;
+}
+
+export template <typename... DataTypes>
   requires(std::is_trivially_copyable_v<DataTypes> && ...)
 struct Vertex {
 public:
@@ -126,7 +128,7 @@ public:
   );
 };
 
-class VertexBuffer : public DeviceLocalBuffer {
+export class VertexBuffer : public DeviceLocalBuffer {
 private:
   VertexInfo _vertex_info;
 
@@ -145,7 +147,7 @@ private:
   VertexBuffer(std::span<const std::byte> vertex_data, VertexInfo vertex_info);
 };
 
-class IndexBuffer : public DeviceLocalBuffer {
+export class IndexBuffer : public DeviceLocalBuffer {
 public:
   auto getIndexType() -> VkIndexType { return VK_INDEX_TYPE_UINT16; }
 
