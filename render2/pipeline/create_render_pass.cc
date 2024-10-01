@@ -227,9 +227,10 @@ auto RenderPass::createRenderPass(
         dependencies[{ src_subpass, subpass_i }].push_back(VkSubpassDependency{
           .srcSubpass = src_subpass,
           .dstSubpass = subpass_i,
-          .srcStageMask = src_scope.stage_mask,
+          // todo: change to synchronization2
+          .srcStageMask = static_cast<VkPipelineStageFlags>(src_scope.stage_mask),
           .dstStageMask = color_stage,
-          .srcAccessMask = src_scope.access_mask,
+          .srcAccessMask = static_cast<VkAccessFlags>(src_scope.access_mask),
           .dstAccessMask = color_dst_access,
         });
       };
@@ -251,9 +252,9 @@ auto RenderPass::createRenderPass(
         dependencies[{ src_subpass, subpass_i }].push_back(VkSubpassDependency{
           .srcSubpass = src_subpass,
           .dstSubpass = subpass_i,
-          .srcStageMask = src_scope.stage_mask,
+          .srcStageMask = static_cast<VkPipelineStageFlags>(src_scope.stage_mask),
           .dstStageMask = depst_stage,
-          .srcAccessMask = src_scope.access_mask,
+          .srcAccessMask = static_cast<VkAccessFlags>(src_scope.access_mask),
           .dstAccessMask = depst_dst_access,
         });
       };
@@ -274,9 +275,9 @@ auto RenderPass::createRenderPass(
         dependencies[{ src_subpass, subpass_i }].push_back(VkSubpassDependency{
           .srcSubpass = src_subpass,
           .dstSubpass = subpass_i,
-          .srcStageMask = src_scope.stage_mask,
+          .srcStageMask = static_cast<VkPipelineStageFlags>(src_scope.stage_mask),
           .dstStageMask = input_stage,
-          .srcAccessMask = src_scope.access_mask,
+          .srcAccessMask = static_cast<VkAccessFlags>(src_scope.access_mask),
           .dstAccessMask = input_dst_access,
         });
       };
@@ -299,9 +300,9 @@ auto RenderPass::createRenderPass(
       .srcSubpass = subpass_i,
       .dstSubpass = VK_SUBPASS_EXTERNAL,
       .srcStageMask = color_stage,
-      .dstStageMask = attachment.exit_dep.scope.stage_mask,
+      .dstStageMask = static_cast<VkPipelineStageFlags>(attachment.exit_dep.scope.stage_mask),
       .srcAccessMask = color_src_access,
-      .dstAccessMask = attachment.exit_dep.scope.access_mask,
+      .dstAccessMask = static_cast<VkAccessFlags>(attachment.exit_dep.scope.access_mask),
     });
   }
   for (auto [attachment_i, subpass_i] : depst_last_write) {
@@ -313,9 +314,9 @@ auto RenderPass::createRenderPass(
       .srcSubpass = subpass_i,
       .dstSubpass = VK_SUBPASS_EXTERNAL,
       .srcStageMask = depst_stage,
-      .dstStageMask = attachment.exit_dep.scope.stage_mask,
+      .dstStageMask = static_cast<VkPipelineStageFlags>(attachment.exit_dep.scope.stage_mask),
       .srcAccessMask = depst_src_access,
-      .dstAccessMask = attachment.exit_dep.scope.access_mask,
+      .dstAccessMask = static_cast<VkAccessFlags>(attachment.exit_dep.scope.access_mask),
     });
   }
   for (auto [attachment_i, subpasses] : last_read) {
@@ -325,9 +326,9 @@ auto RenderPass::createRenderPass(
         .srcSubpass = subpass_i,
         .dstSubpass = VK_SUBPASS_EXTERNAL,
         .srcStageMask = input_stage,
-        .dstStageMask = attachment.exit_dep.scope.stage_mask,
+        .dstStageMask = static_cast<VkPipelineStageFlags>(attachment.exit_dep.scope.stage_mask),
         .srcAccessMask = input_src_access,
-        .dstAccessMask = attachment.exit_dep.scope.access_mask,
+        .dstAccessMask = static_cast<VkAccessFlags>(attachment.exit_dep.scope.access_mask),
       });
     }
   }

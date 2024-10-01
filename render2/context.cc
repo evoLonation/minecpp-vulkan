@@ -1,7 +1,9 @@
 module render.context;
 
 import render.vk.queue_requestor;
+import render.vk.sync;
 import render.sampler;
+import render.vertex;
 
 namespace rd {
 
@@ -23,6 +25,8 @@ Context::Context(const std::string& app_name, uint32 width, uint32 height) {
     vk::DeviceCapabilityChecker{ [&](auto& ctx) { return queue_requestor.checkPdevice(ctx); } },
     vk::DeviceCapabilityChecker{ vk::Swapchain::checkPdevice },
     vk::DeviceCapabilityChecker{ SampledTexture::device_checker },
+    vk::DeviceCapabilityChecker{ checkVertexPdeviceSupport },
+    vk::DeviceCapabilityChecker{ vk::sync::checkPdevice },
   };
   _device.reset(new vk::Device{ device_checkers, _instance->instance });
   _swapchain.reset(new vk::Swapchain{ *_surface, *_device });

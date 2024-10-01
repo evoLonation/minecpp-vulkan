@@ -2,11 +2,20 @@ export module render.vk.sync;
 
 import "vulkan_config.h";
 import render.vk.resource;
+import render.vk.device;
 
 import std;
 import toy;
 
 export namespace rd::vk {
+
+namespace sync {
+
+auto checkPdevice(DeviceCapabilityBuilder& builder) -> bool {
+  return builder.enableFeature(&VkPhysicalDeviceVulkan13Features::synchronization2);
+}
+
+} // namespace sync
 
 class Semaphore : public rs::Semaphore {
 public:
@@ -27,49 +36,47 @@ public:
 };
 
 void recordPipelineBarrier(
-  VkCommandBuffer                                       cmdbuf,
-  std::pair<VkPipelineStageFlags, VkPipelineStageFlags> stage_mask,
-  std::span<const VkMemoryBarrier>                      memory_barriers,
-  std::span<const VkBufferMemoryBarrier>                buffer_barriers,
-  std::span<const VkImageMemoryBarrier>                 image_barriers
+  VkCommandBuffer                         cmdbuf,
+  std::span<const VkMemoryBarrier2>       memory_barriers,
+  std::span<const VkBufferMemoryBarrier2> buffer_barriers,
+  std::span<const VkImageMemoryBarrier2>  image_barriers
 ) {
-  vkCmdPipelineBarrier(
-    cmdbuf,
-    stage_mask.first,
-    stage_mask.second,
+  auto dependency_info = VkDependencyInfo{
+    .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
     //  VK_DEPENDENCY_BY_REGION_BIT:
     //  实现可以分区域进行同步(前面写一部分，后面就可以先读一部分)
-    VK_DEPENDENCY_BY_REGION_BIT,
-    memory_barriers.size(),
-    memory_barriers.data(),
-    buffer_barriers.size(),
-    buffer_barriers.data(),
-    image_barriers.size(),
-    image_barriers.data()
-  );
+    .dependencyFlags = 0,
+    .memoryBarrierCount = static_cast<uint32>(memory_barriers.size()),
+    .pMemoryBarriers = memory_barriers.data(),
+    .bufferMemoryBarrierCount = static_cast<uint32>(buffer_barriers.size()),
+    .pBufferMemoryBarriers = buffer_barriers.data(),
+    .imageMemoryBarrierCount = static_cast<uint32>(image_barriers.size()),
+    .pImageMemoryBarriers = image_barriers.data(),
+  };
+  vkCmdPipelineBarrier2(cmdbuf, &dependency_info);
 };
 
 struct Scope {
-  VkPipelineStageFlags stage_mask;
-  VkAccessFlags        access_mask;
+  VkPipelineStageFlags2 stage_mask;
+  VkAccessFlags2        access_mask;
 };
 
 /**
  * @brief In case of ownership transfer that with src_use_stage/access and dst_use_stage/access
  * barrier in src family:
  * - src_stage/access: src_use_stage, src_use_access
- * - dst_stage/access: BOTTOM, 0 (by spec: dst_stage/access are ignored)
+ * - dst_stage/access: NONE, 0 (by spec: dst_stage/access are ignored)
  * barrier in dst family:
  * - must wait semaphore, wait stage: TOP
- * - src_stage/access: TOP, 0 (by spec: src_stage/access are ignored)
+ * - src_stage/access: NONE, 0 (by spec: src_stage/access are ignored)
  * - dst_stage/access: dst_use_stage, dst_use_access
  * dependency chain:
  * src_use -> release op -> src_command done -> dst_command's wait stage start execute -> acquire op
  * -> dst_use
  */
 struct BarrierScope {
-  Scope src_scope = { .stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT };
-  Scope dst_scope = { .stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT };
+  Scope src_scope;
+  Scope dst_scope;
 
   /**
    * @brief generate the barrier scope used to record release operation
@@ -78,7 +85,7 @@ struct BarrierScope {
   static auto release(Scope src_scope) -> BarrierScope {
     return {
       src_scope,
-      Scope{ VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0 },
+      Scope{ VK_PIPELINE_STAGE_NONE, VK_ACCESS_NONE },
     };
   }
   /**
@@ -87,7 +94,7 @@ struct BarrierScope {
    */
   static auto acquire(Scope dst_scope) -> BarrierScope {
     return {
-      Scope{ VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0 },
+      Scope{ VK_PIPELINE_STAGE_NONE, VK_ACCESS_NONE },
       dst_scope,
     };
   }
@@ -105,10 +112,12 @@ void recordBufferBarrier(
   FamilyTransferInfo family_info
 ) {
   auto [src_scope, dst_scope] = barrier_scope;
-  auto buffer_barrier = VkBufferMemoryBarrier{
-    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+  auto buffer_barrier = VkBufferMemoryBarrier2{
+    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
     .pNext = nullptr,
+    .srcStageMask = src_scope.stage_mask,
     .srcAccessMask = src_scope.access_mask,
+    .dstStageMask = dst_scope.stage_mask,
     .dstAccessMask = dst_scope.access_mask,
     .srcQueueFamilyIndex = family_info.src_family,
     .dstQueueFamilyIndex = family_info.dst_family,
@@ -116,9 +125,7 @@ void recordBufferBarrier(
     .offset = 0,
     .size = VK_WHOLE_SIZE,
   };
-  recordPipelineBarrier(
-    cmdbuf, { src_scope.stage_mask, dst_scope.stage_mask }, {}, { &buffer_barrier, 1 }, {}
-  );
+  recordPipelineBarrier(cmdbuf, {}, { &buffer_barrier, 1 }, {});
 }
 
 struct LayoutTransitionInfo {
@@ -135,10 +142,12 @@ void recordImageBarrier(
   FamilyTransferInfo      family_info
 ) {
   auto [src_scope, dst_scope] = barrier_scope;
-  auto image_barrier = VkImageMemoryBarrier{
-    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+  auto image_barrier = VkImageMemoryBarrier2{
+    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
     .pNext = nullptr,
+    .srcStageMask = src_scope.stage_mask,
     .srcAccessMask = src_scope.access_mask,
+    .dstStageMask = dst_scope.stage_mask,
     .dstAccessMask = dst_scope.access_mask,
     .oldLayout = layout_info.src_layout,
     .newLayout = layout_info.dst_layout,
@@ -147,9 +156,7 @@ void recordImageBarrier(
     .image = image,
     .subresourceRange = subresource_range,
   };
-  recordPipelineBarrier(
-    cmdbuf, { src_scope.stage_mask, dst_scope.stage_mask }, {}, {}, { &image_barrier, 1 }
-  );
+  recordPipelineBarrier(cmdbuf, {}, {}, { &image_barrier, 1 });
 }
 
 } // namespace rd::vk
