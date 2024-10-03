@@ -16,6 +16,9 @@ auto checkVertexPdeviceSupport(vk::DeviceCapabilityBuilder& builder) -> bool {
   toy::debugf("the vertex formats: {::}", formats | views::transform([](auto a) {
                                             return static_cast<uint32>(a);
                                           }));
+  if (!builder.enableFeature(&VkPhysicalDeviceFeatures::shaderFloat64)) {
+    return false;
+  }
   return builder.getPdevice().checkFormatSupport(
     vk::FormatTarget::BUFFER, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT, formats
   );
@@ -34,37 +37,30 @@ DeviceLocalBuffer::DeviceLocalBuffer(
     usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
   });
+  _tracker = { get() };
 
   auto copy_executor = vk::executors::copy;
   auto graphcis_executor = vk::executors::graphics;
 
-  auto family_transfer =
-    vk::FamilyTransferInfo{ copy_executor.getFamily(), graphcis_executor.getFamily() };
+  auto barrier = _tracker.setNewScope(
+    vk::Scope{
+      .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+      .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
+    },
+    copy_executor.getFamily()
+  );
+  toy::checkf(std::get_if<std::monostate>(&barrier), "setNewScope failed");
+  barrier = _tracker.setNewScope(dst_scope, graphcis_executor.getFamily());
+  auto& [release, acquire] = std::get<vk::FamilyTransferRecorder>(barrier);
+
   auto copy_recorder = [&](VkCommandBuffer cmdbuf) {
     vk::recordCopyBuffer(cmdbuf, _staging_buffer, *this, buffer_size);
-    vk::recordBufferBarrier(
-      cmdbuf,
-      get(),
-      vk::BarrierScope::release(vk::Scope{
-        .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-        .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
-      }),
-      family_transfer
-    );
-  };
-  auto acquire_recorder = [&](VkCommandBuffer cmdbuf) {
-    vk::recordBufferBarrier(cmdbuf, get(), vk::BarrierScope::acquire(dst_scope), family_transfer);
+    release(cmdbuf);
   };
   auto waitable = copy_executor.submit(copy_recorder, {}, 1).second;
-  auto fence = graphcis_executor
-                 .submit(
-                   acquire_recorder,
-                   std::array{ vk::WaitInfo{ waitable, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
-                   0
-                 )
-                 .first;
-  // todo: no need to wait, sync with sema
-  fence.wait();
+  graphcis_executor.submit(
+    acquire, std::array{ vk::WaitInfo{ waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } }, 0
+  );
 }
 
 VertexBuffer::VertexBuffer(std::span<const std::byte> vertex_data, VertexInfo vertex_info)

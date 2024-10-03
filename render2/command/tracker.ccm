@@ -1,0 +1,98 @@
+export module render.vk.tracker;
+import std;
+import toy;
+import render.vk.sync;
+
+import <vulkan_config.h>;
+
+export namespace rd::vk {
+
+enum class AccessType {
+  WRITE,
+  READ,
+};
+
+constexpr auto read_accesses = std::array{
+  VK_ACCESS_INDIRECT_COMMAND_READ_BIT,
+  VK_ACCESS_INDEX_READ_BIT,
+  VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+  VK_ACCESS_UNIFORM_READ_BIT,
+  VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
+  VK_ACCESS_SHADER_READ_BIT,
+  VK_ACCESS_SHADER_WRITE_BIT,
+  VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
+  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
+  VK_ACCESS_TRANSFER_READ_BIT,
+  VK_ACCESS_HOST_READ_BIT,
+  VK_ACCESS_MEMORY_READ_BIT,
+};
+
+constexpr auto write_accesses = std::array{
+  VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, //
+  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+  VK_ACCESS_TRANSFER_WRITE_BIT,
+  VK_ACCESS_HOST_WRITE_BIT,
+  VK_ACCESS_MEMORY_WRITE_BIT,
+};
+constexpr auto write_access_bits =
+  std::reduce(write_accesses.begin(), write_accesses.end(), VkAccessFlags{}, [](auto a, auto b) {
+    return a | b;
+  });
+constexpr auto read_access_bits =
+  std::reduce(read_accesses.begin(), read_accesses.end(), VkAccessFlags{}, [](auto a, auto b) {
+    return a | b;
+  });
+
+void checkAccessSupported(VkAccessFlags access) {
+  toy::throwf(
+    (access & (write_access_bits | read_access_bits)) == access,
+    "The access contains bit that is not supported"
+  );
+}
+auto extractWriteAccess(VkAccessFlags access) -> VkAccessFlags {
+  checkAccessSupported(access);
+  return (access & write_access_bits);
+}
+/**
+ * @brief if exist write bit then return write
+ *
+ * @param access
+ * @return AccessType
+ */
+auto checkAccessType(VkAccessFlags access) -> AccessType {
+  checkAccessSupported(access);
+  return extractWriteAccess(access) == 0 ? AccessType::READ : AccessType::WRITE;
+}
+
+struct Range {
+  VkDeviceSize begin;
+  VkDeviceSize end;
+};
+
+using BarrierRecorder = std::function<void(VkCommandBuffer)>;
+struct FamilyTransferRecorder {
+  std::function<void(VkCommandBuffer)> release;
+  std::function<void(VkCommandBuffer)> acquire;
+};
+
+// note:
+// 目前只可用于 每个family只有一个queue的 情况
+// 单线程顺序执行
+// todo:
+// 可以同步一个buffer的子范围
+// 可以同步不同Queue之间
+class BufferBarrierTracker {
+public:
+  BufferBarrierTracker() = default;
+  BufferBarrierTracker(VkBuffer buffer) : _buffer(buffer), _last_write_scope(), _last_read_stages() {}
+  auto setNewScope(Scope scope, uint32 family)
+    -> std::variant<std::monostate, BarrierRecorder, FamilyTransferRecorder>;
+
+private:
+  VkBuffer              _buffer;
+  Scope                 _last_write_scope;
+  VkPipelineStageFlags2 _last_read_stages;
+  uint32                _family;
+};
+
+} // namespace rd::vk

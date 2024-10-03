@@ -2,10 +2,10 @@ sub_dir:
 - base
 - context
 - command
-- present
 - buffer
 - image
 - pipeline
+- present
 source:
 - memory.ccm
 - memory.cc

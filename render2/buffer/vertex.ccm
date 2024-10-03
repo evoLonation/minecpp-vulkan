@@ -4,6 +4,7 @@ import "vulkan_config.h";
 import render.vk.device;
 import render.vk.buffer;
 import render.vk.sync;
+import render.vk.tracker;
 
 import std;
 import glm;
@@ -119,6 +120,7 @@ private:
 class DeviceLocalBuffer : public vk::Buffer {
 private:
   vk::StagingBuffer _staging_buffer;
+  vk::BufferBarrierTracker _tracker;
 
 public:
   DeviceLocalBuffer() = default;
