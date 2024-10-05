@@ -22,6 +22,7 @@ auto createShaderModule(std::string_view filename) -> rs::ShaderModule {
   return rs::ShaderModule{ create_info };
 }
 
+// todo: add depth option
 auto createGraphicsPipeline(
   VkRenderPass                                       render_pass,
   VkPrimitiveTopology                                topology,
@@ -254,7 +255,7 @@ auto RenderPass::createPipeline(VkRenderPass render_pass, std::span<const Subpas
         dset_layout_handles,
         subpass.multi_sample.transform([](auto x) { return x.sample_count; }
         ).value_or(VK_SAMPLE_COUNT_1_BIT),
-        subpass.stencil_option
+        subpass.depst_info.transform([](auto x) { return x.stencil_option; })
       ),
       std::move(dset_layouts)
     );

@@ -13,86 +13,38 @@ namespace rd::vk {
 
 auto RenderPass::createRenderPass(
   std::span<const AttachmentInfo> attachments, std::span<const SubpassInfo> subpasses
-) -> rs::RenderPass {
-  auto attachment_descs =
-    attachments | views::transform([&](const AttachmentInfo& attachment) {
-      toy::throwf(
-        ranges::find(_color_formats, attachment.format) != _color_formats.end() ||
-          ranges::find(_depth_formats, attachment.format) != _depth_formats.end() ||
-          ranges::find(_stencil_formats, attachment.format) != _stencil_formats.end() ||
-          ranges::find(_depth_stencil_formats, attachment.format) != _depth_stencil_formats.end(),
-        "the format of attachment not support by renderpass"
-      );
-      return VkAttachmentDescription{
-        /**
-         * @brief if color format, the stencilxxxOp is ignored;
-         * if depth and/or stencil format, xxxOp apply to depth, stencilxxxOp apply to stencil
-         */
-        .format = attachment.format,
-        .samples = attachment.sample_count,
-        /**
-         * @brief load op: define load operation behavior of color and depth
-         * the load op happen in VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT(color
-         * attachment) or VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT(depth attachment) and
-         * happen before any command which access the sample in the render pass
-         */
-        // VK_ATTACHMENT_LOAD_OP_LOAD: 保留 attachment 中现有内容
-        // VK_ATTACHMENT_LOAD_OP_CLEAR: 将其中内容清理为一个常量
-        // VK_ATTACHMENT_LOAD_OP_DONT_CARE: 不在乎
-        .loadOp = attachment.enter_dep.keep_content ? VK_ATTACHMENT_LOAD_OP_LOAD
-                                                    : VK_ATTACHMENT_LOAD_OP_CLEAR,
-        /**
-         * @brief store op: define store operation behavior of color and depth
-         * the store op happen in VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT(color
-         * attachment) or VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT(depth attachment) and
-         * happen after any command which access the sample in the render pass
-         */
-        // VK_ATTACHMENT_STORE_OP_STORE: 渲染后内容存入内存稍后使用
-        // VK_ATTACHMENT_STORE_OP_DONT_CARE: 不在乎
-        .storeOp = attachment.exit_dep.keep_content ? VK_ATTACHMENT_STORE_OP_STORE
-                                                    : VK_ATTACHMENT_STORE_OP_DONT_CARE,
-
-        .stencilLoadOp = attachment.enter_dep.keep_content ? VK_ATTACHMENT_LOAD_OP_LOAD
-                                                           : VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .stencilStoreOp = attachment.exit_dep.keep_content ? VK_ATTACHMENT_STORE_OP_STORE
-                                                           : VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        // 开启及结束时 要求 的图像布局
-        // UNDEINFED init layout use with CLEAR load op together
-        .initialLayout = attachment.enter_dep.layout,
-        .finalLayout = attachment.exit_dep.layout,
-      };
-    }) |
-    ranges::to<std::vector>();
-
+) -> std::tuple<rs::RenderPass, std::vector<AttachmentSyncInfo>> {
   /**
-   * @brief get subpass descriptions
+   * @brief get attachment refs and subpass descriptions
    *
    */
-  auto subpass_descriptions = std::vector<VkSubpassDescription>{};
-  auto attachment_refs = std::vector<VkAttachmentReference>{};
-  for (auto& subpass : subpasses) {
+  auto subpass_descriptions = std::vector<VkSubpassDescription2>{};
+  auto attachment_refs = std::vector<VkAttachmentReference2>{};
+  for (auto [subpass_i, subpass] : subpasses | toy::enumerate) {
+    auto check = [subpass_i](bool condition, uint32 attachment_i, std::string_view msg) {
+      if (!condition) {
+        toy::throwf("Subpass {} is not match with attachment {}: {}", subpass_i, attachment_i, msg);
+      }
+    };
     auto color_index = static_cast<uint32>(attachment_refs.size());
     for (auto color_i : subpass.colors) {
       auto attachment = attachments[color_i];
-      // check the format is match with attachment type (color or depst)
-      toy::throwf(
-        ranges::find(_color_formats, attachments[color_i].format) != _color_formats.end(),
-        "the format of attachment[{}] is not color format",
-        color_i
-      );
-      toy::throwf(
+      check(attachment.format.getType() == AttachmentFormat::COLOR, color_i, "not color format");
+      check(
         subpass.multi_sample.has_value()
           ? attachment.sample_count == subpass.multi_sample->sample_count
           : attachment.sample_count == VK_SAMPLE_COUNT_1_BIT,
-        "the sample count of color attachment[{}] is not match with subpass",
-        color_i
+        color_i,
+        "the sample count is not match"
       );
-      attachment_refs.push_back(VkAttachmentReference{
+      attachment_refs.push_back(VkAttachmentReference2{
+        .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
         // 引用的 attachment 的索引
         .attachment = color_i,
         // 用到该 ref 的 subpass 过程中使用的布局，会自动转换
         // if enable multi sample, resolve op also occur in color attachment ouput stage
         .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        // aspectMask is just used for input attachment
       });
     }
     auto resolve_index = static_cast<uint32>(attachment_refs.size());
@@ -101,18 +53,20 @@ auto RenderPass::createRenderPass(
         if (resolve_i_opt.has_value()) {
           auto  resolve_i = resolve_i_opt.value();
           auto& resolve_attachment = attachments[resolve_i];
-          toy::throwf(
+          check(
             resolve_attachment.sample_count == VK_SAMPLE_COUNT_1_BIT &&
-              ranges::find(_color_formats, resolve_attachment.format) != _color_formats.end(),
-            "the attachment [{}] is not capable for resolve attachment",
-            resolve_i
+              resolve_attachment.format.getType() == AttachmentFormat::COLOR,
+            resolve_i,
+            "not capable for resolve attachment"
           );
-          attachment_refs.push_back(VkAttachmentReference{
+          attachment_refs.push_back(VkAttachmentReference2{
+            .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
             .attachment = resolve_i,
             .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
           });
         } else {
-          attachment_refs.push_back(VkAttachmentReference{
+          attachment_refs.push_back(VkAttachmentReference2{
+            .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
             .attachment = VK_ATTACHMENT_UNUSED,
             .layout = VK_IMAGE_LAYOUT_UNDEFINED,
           });
@@ -120,59 +74,54 @@ auto RenderPass::createRenderPass(
       }
     }
     auto depst_index = std::optional<uint32>{};
-    if (subpass.depst_attachment.has_value()) {
-      auto depst_attachment_i = subpass.depst_attachment.value();
+    if (subpass.depst_info.has_value()) {
+      auto depst_attachment_i = subpass.depst_info->attachment;
       depst_index = static_cast<uint32>(attachment_refs.size());
-      attachment_refs.push_back(VkAttachmentReference{
+      attachment_refs.push_back(VkAttachmentReference2{
+        .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
         .attachment = depst_attachment_i,
         .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
       });
       auto& attachment = attachments[depst_attachment_i];
-      toy::throwf(
+      check(
         subpass.multi_sample.has_value()
           ? attachment.sample_count == subpass.multi_sample->sample_count
           : attachment.sample_count == VK_SAMPLE_COUNT_1_BIT,
-        "the sample count of depth attachment[{}] is not match with subpass",
-        depst_attachment_i
+        depst_attachment_i,
+        "the sample count is not match"
       );
-      if (ranges::find(_depth_formats, attachment.format) != _depth_formats.end() ||
-          ranges::find(_depth_stencil_formats, attachment.format) != _depth_stencil_formats.end()) {
-        toy::throwf(
-          subpass.depth_option.has_value(),
-          "the attachment[{}] has depth component but depth_option is nullopt",
-          depst_attachment_i
-        );
-      } else if (ranges::find(_stencil_formats, attachment.format) != _stencil_formats.end() ||
-                 ranges::find(_depth_stencil_formats, attachment.format) !=
-                   _depth_stencil_formats.end()) {
-        toy::throwf(
-          subpass.stencil_option.has_value(),
-          "the attachment[{}] has stencil component but depth_option is nullopt",
-          depst_attachment_i
-        );
-      }
+      check(
+        attachment.format.getType() & AttachmentFormat::DEPTH_STENCIL,
+        depst_attachment_i,
+        "not depth or stencil"
+      );
     }
     auto input_index = static_cast<uint32>(attachment_refs.size());
     for (auto input_i : subpass.inputs) {
-      toy::throwf(
-        ranges::find(subpass.colors, input_i) == subpass.colors.end() &&
-          (!subpass.depst_attachment.has_value() || input_i != subpass.depst_attachment.value()),
-        "the input[{}] use attachment write in current subpass",
-        input_i
+      check(
+        !ranges::contains(subpass.colors, input_i) &&
+          (!subpass.depst_info.has_value() || input_i != subpass.depst_info->attachment),
+        input_i,
+        "input attachment write in same subpass"
       );
-      if (ranges::find(_color_formats, attachments[input_i].format) != _color_formats.end()) {
-        attachment_refs.push_back(VkAttachmentReference{
+      if (attachments[input_i].format.getType() == AttachmentFormat::COLOR) {
+        attachment_refs.push_back(VkAttachmentReference2{
+          .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
           .attachment = input_i,
           .layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
         });
       } else {
-        attachment_refs.push_back(VkAttachmentReference{
+        attachment_refs.push_back(VkAttachmentReference2{
+          .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
           .attachment = input_i,
           .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+          .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
         });
       }
     }
-    subpass_descriptions.push_back(VkSubpassDescription{
+    subpass_descriptions.push_back(VkSubpassDescription2{
+      .sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2,
       // 还有 compute、 ray tracing 等等
       .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
       // 这里的数组的索引和 着色器里的 layout 数值一一对应
@@ -193,12 +142,76 @@ auto RenderPass::createRenderPass(
     });
   }
   /**
+   * @brief get attachment descriptions
+   *
+   */
+  auto attachment_initial_layout = std::vector<VkImageLayout>{};
+  attachment_initial_layout.resize(attachments.size(), VK_IMAGE_LAYOUT_UNDEFINED);
+  auto attachment_final_layout = std::vector<VkImageLayout>{};
+  attachment_final_layout.resize(attachments.size(), VK_IMAGE_LAYOUT_UNDEFINED);
+  for (auto& ref : attachment_refs | views::filter([](auto& attachment) {
+                     return attachment.attachment != VK_ATTACHMENT_UNUSED;
+                   })) {
+    if (attachment_initial_layout[ref.attachment] == VK_IMAGE_LAYOUT_UNDEFINED) {
+      attachment_initial_layout[ref.attachment] = ref.layout;
+    }
+    attachment_final_layout[ref.attachment] = ref.layout;
+  }
+  auto attachment_descs =
+    attachments | toy::enumerate | views::transform([&](auto pair) {
+      auto& [i, attachment] = pair;
+      return VkAttachmentDescription2{
+        .sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2,
+        /**
+         * @brief if color format, the stencilxxxOp is ignored;
+         * if depth and/or stencil format, xxxOp apply to depth, stencilxxxOp apply to stencil
+         */
+        .format = attachment.format,
+        .samples = attachment.sample_count,
+        /**
+         * @brief load op: define load operation behavior of color and depth
+         * the load op happen in VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT(color
+         * attachment) or VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT(depth attachment) and
+         * happen before any command which access the sample in the render pass
+         */
+        // VK_ATTACHMENT_LOAD_OP_LOAD: 保留 attachment 中现有内容
+        // VK_ATTACHMENT_LOAD_OP_CLEAR: 将其中内容清理为一个常量
+        // VK_ATTACHMENT_LOAD_OP_DONT_CARE: 不在乎
+        .loadOp =
+          attachment.keep_old_content ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR,
+        /**
+         * @brief store op: define store operation behavior of color and depth
+         * the store op happen in VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT(color
+         * attachment) or VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT(depth attachment) and
+         * happen after any command which access the sample in the render pass
+         */
+        // VK_ATTACHMENT_STORE_OP_STORE: 渲染后内容存入内存稍后使用
+        // VK_ATTACHMENT_STORE_OP_DONT_CARE: 不在乎
+        .storeOp = attachment.keep_new_content ? VK_ATTACHMENT_STORE_OP_STORE
+                                               : VK_ATTACHMENT_STORE_OP_DONT_CARE,
+
+        .stencilLoadOp =
+          attachment.keep_old_content ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .stencilStoreOp = attachment.keep_new_content ? VK_ATTACHMENT_STORE_OP_STORE
+                                                      : VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        // 开启及结束时 要求 的图像布局
+        // UNDEINFED init layout use with CLEAR load op together
+        .initialLayout = attachment_initial_layout[i],
+        .finalLayout = attachment_final_layout[i],
+      };
+    }) |
+    ranges::to<std::vector>();
+
+  /**
    * @brief get subpass dependencies
    *
    */
-  auto dependencies = std::map<std::pair<uint32, uint32>, std::vector<VkSubpassDependency>>{};
+  auto barriers = std::map<std::pair<uint32, uint32>, std::vector<VkMemoryBarrier2>>{};
+  // key: attachment, value: {src_subpass, dst_subpass, barrier_index}[]
+  auto attachment_barriers = std::vector<std::vector<std::tuple<uint32, uint32, uint32>>>{};
+  attachment_barriers.resize(attachments.size());
   // Either there is one write, or there are multiple reads
-  // For certine frambuf, the reads and write can contains subpass at the same time, the write is
+  // For certine framebuf, the reads and write can contains subpass at the same time, the write is
   // before the reads
   // attachment_i -> subpass_i
   auto color_last_write = std::map<uint32, uint32>{};
@@ -206,85 +219,98 @@ auto RenderPass::createRenderPass(
   // attachment_i -> vector of subpass_i
   auto last_read = std::map<uint32, std::vector<uint32>>{};
 
-  auto color_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-  auto color_src_access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-  auto color_dst_access =
-    VkAccessFlags{ VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT };
-  auto color_src_scope = vk::Scope{ color_stage, color_src_access };
-  auto depst_stage = VkPipelineStageFlags{ VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-                                           VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT };
-  auto depst_src_access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-  auto depst_dst_access = VkAccessFlags{ VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
-                                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT };
-  auto depst_src_scope = vk::Scope{ depst_stage, depst_src_access };
-  auto input_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-  auto input_src_access = VkAccessFlags{ 0 };
-  auto input_dst_access = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
-  auto input_src_scope = vk::Scope{ input_stage, input_src_access };
+  auto color_scope = Scope{
+    .stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    .access_mask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
+  };
+  auto depst_scope = Scope{
+    .stage_mask =
+      VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+    .access_mask =
+      VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+  };
+  auto input_scope = vk::Scope{
+    .stage_mask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+    .access_mask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
+  };
+  auto add_dependency_ =
+    [&](
+      uint32 src_subpass, uint32 dst_subpass, Scope src_scope, Scope dst_scope, uint32 attachment
+    ) {
+      auto& barriers_ = barriers[{ src_subpass, dst_subpass }];
+      barriers_.push_back(VkMemoryBarrier2{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask = static_cast<VkPipelineStageFlags>(src_scope.stage_mask),
+        .srcAccessMask = static_cast<VkAccessFlags>(src_scope.access_mask),
+        .dstStageMask = static_cast<VkPipelineStageFlags>(dst_scope.stage_mask),
+        .dstAccessMask = static_cast<VkAccessFlags>(dst_scope.access_mask),
+      });
+      attachment_barriers[attachment].emplace_back(src_subpass, dst_subpass, barriers_.size() - 1);
+    };
   for (auto [subpass_i, subpass] : subpasses | toy::enumerate) {
     for (auto color_i : subpass.colors) {
       auto add_dependency = [&](uint32 src_subpass, vk::Scope src_scope) {
-        dependencies[{ src_subpass, subpass_i }].push_back(VkSubpassDependency{
-          .srcSubpass = src_subpass,
-          .dstSubpass = subpass_i,
-          // todo: change to synchronization2
-          .srcStageMask = static_cast<VkPipelineStageFlags>(src_scope.stage_mask),
-          .dstStageMask = color_stage,
-          .srcAccessMask = static_cast<VkAccessFlags>(src_scope.access_mask),
-          .dstAccessMask = color_dst_access,
-        });
+        add_dependency_(src_subpass, subpass_i, src_scope, color_scope, color_i);
       };
       if (last_read.contains(color_i)) {
         for (auto read : last_read.at(color_i)) {
-          add_dependency(read, input_src_scope);
+          add_dependency(read, input_scope.extractWriteAccess());
         }
         last_read.erase(color_i);
       } else if (color_last_write.contains(color_i)) {
-        add_dependency(color_last_write.at(color_i), color_src_scope);
+        add_dependency(color_last_write.at(color_i), color_scope.extractWriteAccess());
       } else {
-        add_dependency(VK_SUBPASS_EXTERNAL, attachments[color_i].enter_dep.scope);
+        add_dependency(VK_SUBPASS_EXTERNAL, Scope{ .stage_mask = color_scope.stage_mask });
       }
       color_last_write[color_i] = subpass_i;
     }
-    if (subpass.depst_attachment.has_value()) {
-      auto depst_i = subpass.depst_attachment.value();
+    if (subpass.multi_sample.has_value()) {
+      for (auto resolve_opt : subpass.multi_sample->resolves) {
+        if (!resolve_opt.has_value()) {
+          continue;
+        }
+        auto resolve_i = resolve_opt.value();
+        auto add_dependency = [&](uint32 src_subpass, vk::Scope src_scope) {
+          add_dependency_(src_subpass, subpass_i, src_scope, color_scope, resolve_i);
+        };
+        if (last_read.contains(resolve_i)) {
+          for (auto read : last_read.at(resolve_i)) {
+            add_dependency(read, input_scope.extractWriteAccess());
+          }
+          last_read.erase(resolve_i);
+        } else if (color_last_write.contains(resolve_i)) {
+          add_dependency(color_last_write.at(resolve_i), color_scope.extractWriteAccess());
+        } else {
+          add_dependency(VK_SUBPASS_EXTERNAL, Scope{ .stage_mask = color_scope.stage_mask });
+        }
+        color_last_write[resolve_i] = subpass_i;
+      }
+    }
+    if (subpass.depst_info.has_value()) {
+      auto depst_i = subpass.depst_info->attachment;
       auto add_dependency = [&](uint32 src_subpass, vk::Scope src_scope) {
-        dependencies[{ src_subpass, subpass_i }].push_back(VkSubpassDependency{
-          .srcSubpass = src_subpass,
-          .dstSubpass = subpass_i,
-          .srcStageMask = static_cast<VkPipelineStageFlags>(src_scope.stage_mask),
-          .dstStageMask = depst_stage,
-          .srcAccessMask = static_cast<VkAccessFlags>(src_scope.access_mask),
-          .dstAccessMask = depst_dst_access,
-        });
+        add_dependency_(src_subpass, subpass_i, src_scope, depst_scope, depst_i);
       };
       if (last_read.contains(depst_i)) {
         for (auto read : last_read.at(depst_i)) {
-          add_dependency(read, input_src_scope);
+          add_dependency(read, input_scope.extractWriteAccess());
         }
         last_read.erase(depst_i);
       } else if (depst_last_write.contains(depst_i)) {
-        add_dependency(depst_last_write.at(depst_i), depst_src_scope);
+        add_dependency(depst_last_write.at(depst_i), depst_scope.extractWriteAccess());
       } else {
-        add_dependency(VK_SUBPASS_EXTERNAL, attachments[depst_i].enter_dep.scope);
+        add_dependency(VK_SUBPASS_EXTERNAL, Scope{ .stage_mask = depst_scope.stage_mask });
       }
       depst_last_write[depst_i] = subpass_i;
     }
     for (auto& input_i : subpass.inputs) {
       auto add_dependency = [&](uint32 src_subpass, vk::Scope src_scope) {
-        dependencies[{ src_subpass, subpass_i }].push_back(VkSubpassDependency{
-          .srcSubpass = src_subpass,
-          .dstSubpass = subpass_i,
-          .srcStageMask = static_cast<VkPipelineStageFlags>(src_scope.stage_mask),
-          .dstStageMask = input_stage,
-          .srcAccessMask = static_cast<VkAccessFlags>(src_scope.access_mask),
-          .dstAccessMask = input_dst_access,
-        });
+        add_dependency_(src_subpass, subpass_i, src_scope, input_scope, input_i);
       };
       if (color_last_write.contains(input_i)) {
-        add_dependency(color_last_write.at(input_i), color_src_scope);
+        add_dependency(color_last_write.at(input_i), color_scope.extractWriteAccess());
       } else if (depst_last_write.contains(input_i)) {
-        add_dependency(depst_last_write.at(input_i), depst_src_scope);
+        add_dependency(depst_last_write.at(input_i), depst_scope.extractWriteAccess());
       } else {
         toy::throwf("the input attachment appears byfore a write");
       }
@@ -295,77 +321,80 @@ auto RenderPass::createRenderPass(
     if (last_read.contains(attachment_i)) {
       continue;
     }
-    auto& attachment = attachments[attachment_i];
-    dependencies[{ subpass_i, VK_SUBPASS_EXTERNAL }].push_back(VkSubpassDependency{
-      .srcSubpass = subpass_i,
-      .dstSubpass = VK_SUBPASS_EXTERNAL,
-      .srcStageMask = color_stage,
-      .dstStageMask = static_cast<VkPipelineStageFlags>(attachment.exit_dep.scope.stage_mask),
-      .srcAccessMask = color_src_access,
-      .dstAccessMask = static_cast<VkAccessFlags>(attachment.exit_dep.scope.access_mask),
-    });
+    add_dependency_(
+      subpass_i,
+      VK_SUBPASS_EXTERNAL,
+      color_scope.extractWriteAccess(),
+      Scope{ .stage_mask = color_scope.stage_mask },
+      attachment_i
+    );
   }
   for (auto [attachment_i, subpass_i] : depst_last_write) {
     if (last_read.contains(attachment_i)) {
       continue;
     }
-    auto& attachment = attachments[attachment_i];
-    dependencies[{ subpass_i, VK_SUBPASS_EXTERNAL }].push_back(VkSubpassDependency{
-      .srcSubpass = subpass_i,
-      .dstSubpass = VK_SUBPASS_EXTERNAL,
-      .srcStageMask = depst_stage,
-      .dstStageMask = static_cast<VkPipelineStageFlags>(attachment.exit_dep.scope.stage_mask),
-      .srcAccessMask = depst_src_access,
-      .dstAccessMask = static_cast<VkAccessFlags>(attachment.exit_dep.scope.access_mask),
-    });
+    add_dependency_(
+      subpass_i,
+      VK_SUBPASS_EXTERNAL,
+      depst_scope.extractWriteAccess(),
+      Scope{ .stage_mask = depst_scope.stage_mask },
+      attachment_i
+    );
   }
   for (auto [attachment_i, subpasses] : last_read) {
     for (auto subpass_i : subpasses) {
-      auto& attachment = attachments[attachment_i];
-      dependencies[{ subpass_i, VK_SUBPASS_EXTERNAL }].push_back(VkSubpassDependency{
-        .srcSubpass = subpass_i,
-        .dstSubpass = VK_SUBPASS_EXTERNAL,
-        .srcStageMask = input_stage,
-        .dstStageMask = static_cast<VkPipelineStageFlags>(attachment.exit_dep.scope.stage_mask),
-        .srcAccessMask = input_src_access,
-        .dstAccessMask = static_cast<VkAccessFlags>(attachment.exit_dep.scope.access_mask),
-      });
+      add_dependency_(
+        subpass_i,
+        VK_SUBPASS_EXTERNAL,
+        input_scope.extractWriteAccess(),
+        Scope{ .stage_mask = input_scope.stage_mask },
+        attachment_i
+      );
     }
   }
+  auto merged_barriers = //
+    barriers | views::transform([](auto& pair) {
+      auto& [subpass_info, barrier] = pair;
+      auto [src_scope, dst_scope] = std::reduce(
+        barrier.begin(),
+        barrier.end(),
+        std::pair{ Scope{}, Scope{} },
+        [](auto a, auto& b) {
+          return std::pair{
+            Scope{
+              .stage_mask = a.first.stage_mask | b.srcStageMask,
+              .access_mask = a.first.access_mask | b.srcAccessMask,
+            },
+            Scope{
+              .stage_mask = a.second.stage_mask | b.dstStageMask,
+              .access_mask = a.second.access_mask | b.dstAccessMask,
+            },
+          };
+        }
+      );
+      auto memory_barrier = VkMemoryBarrier2{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask = src_scope.stage_mask,
+        .srcAccessMask = src_scope.access_mask,
+        .dstStageMask = dst_scope.stage_mask,
+        .dstAccessMask = dst_scope.access_mask,
+      };
+      return std::pair{ subpass_info, memory_barrier };
+    }) |
+    ranges::to<std::vector>();
   auto merged_dependencies = //
-    dependencies | views::values | views::transform([](auto& deps) {
-      return VkSubpassDependency{
-        .srcSubpass = deps[0].srcSubpass,
-        .dstSubpass = deps[0].dstSubpass,
-        .srcStageMask = std::reduce(
-          deps.begin(),
-          deps.end(),
-          VkPipelineStageFlags{},
-          [](auto a, auto& b) { return a | b.srcStageMask; }
-        ),
-        .dstStageMask = std::reduce(
-          deps.begin(),
-          deps.end(),
-          VkPipelineStageFlags{},
-          [](auto a, auto& b) { return a | b.dstStageMask; }
-        ),
-        .srcAccessMask = std::reduce(
-          deps.begin(),
-          deps.end(),
-          VkAccessFlags{},
-          [](auto a, auto& b) { return a | b.srcAccessMask; }
-        ),
-        .dstAccessMask = std::reduce(
-          deps.begin(),
-          deps.end(),
-          VkAccessFlags{},
-          [](auto a, auto& b) { return a | b.dstAccessMask; }
-        ),
+    merged_barriers | views::transform([](auto& pair) {
+      auto& [subpass_info, memory_barrier] = pair;
+      return VkSubpassDependency2{
+        .sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2,
+        .pNext = &memory_barrier,
+        .srcSubpass = subpass_info.first,
+        .dstSubpass = subpass_info.second,
       };
     }) |
     ranges::to<std::vector>();
-  auto render_pass_create_info = VkRenderPassCreateInfo{
-    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+  auto render_pass_create_info = VkRenderPassCreateInfo2{
+    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2,
     .attachmentCount = static_cast<uint32>(attachment_descs.size()),
     .pAttachments = attachment_descs.data(),
     .subpassCount = static_cast<uint32>(subpass_descriptions.size()),
@@ -373,7 +402,30 @@ auto RenderPass::createRenderPass(
     .dependencyCount = static_cast<uint32>(merged_dependencies.size()),
     .pDependencies = merged_dependencies.data(),
   };
-  return { render_pass_create_info };
+  auto render_pass = rs::RenderPass{ render_pass_create_info };
+  auto attachment_sync_infos = std::vector<AttachmentSyncInfo>{};
+  for (auto index : views::iota(0u, attachments.size())) {
+
+    auto& initial_tuple = *ranges::find_if(attachment_barriers[index], [](auto& tuple) {
+      return std::get<0>(tuple) == VK_SUBPASS_EXTERNAL;
+    });
+    auto  initial_stage = barriers[{ std::get<0>(initial_tuple), std::get<1>(initial_tuple) }]
+                                 [std::get<2>(initial_tuple)]
+                                   .srcStageMask;
+    auto& final_tuple = *ranges::find_if(attachment_barriers[index], [](auto& tuple) {
+      return std::get<1>(tuple) == VK_SUBPASS_EXTERNAL;
+    });
+    auto  final_stage = barriers[{ std::get<0>(initial_tuple), std::get<1>(initial_tuple) }]
+                               [std::get<2>(initial_tuple)]
+                                 .dstStageMask;
+    attachment_sync_infos.push_back(AttachmentSyncInfo{
+      .initial_stage = initial_stage,
+      .final_stage = final_stage,
+      .initial_layout = attachment_descs[index].initialLayout,
+      .final_layout = attachment_descs[index].finalLayout,
+    });
+  }
+  return { std::move(render_pass), std::move(attachment_sync_infos) };
 }
 
 } // namespace rd::vk

@@ -4,6 +4,8 @@ import "vulkan_config.h";
 import render.vk.resource;
 import render.vk.sync;
 import render.vk.buffer;
+import render.vk.tracker;
+import render.vk.executor;
 import render.vertex;
 import render.sampler;
 
@@ -12,10 +14,10 @@ import toy;
 
 export namespace rd::vk {
 
-class FlightContext {
-public:
-  static constexpr auto flight_n = 2;
-};
+// class FlightContext {
+// public:
+//   static constexpr auto flight_n = 2;
+// };
 
 struct PipelineResource {
   rs::ShaderModule   vertex_shader;
@@ -36,35 +38,66 @@ struct DepthOption {
   bool        overwrite;
 };
 
+struct AttachmentFormat {
+  AttachmentFormat(VkFormat format) : _format(format) {
+    toy::throwf(
+      ranges::find(_color_formats, _format) != _color_formats.end() ||
+        ranges::find(_depth_formats, _format) != _depth_formats.end() ||
+        ranges::find(_stencil_formats, _format) != _stencil_formats.end() ||
+        ranges::find(_depth_stencil_formats, _format) != _depth_stencil_formats.end(),
+      "the format of attachment not support by renderpass"
+    );
+  }
+  enum FormatType {
+    COLOR = 1 << 0,
+    DEPTH = 1 << 1,
+    STENCIL = 1 << 2,
+    DEPTH_STENCIL = DEPTH | STENCIL,
+  };
+
+  auto getType() const -> FormatType {
+    if (ranges::find(_color_formats, _format) != _color_formats.end()) {
+      return FormatType::COLOR;
+    } else if (ranges::find(_depth_formats, _format) != _depth_formats.end()) {
+      return FormatType::DEPTH;
+    } else if (ranges::find(_stencil_formats, _format) != _stencil_formats.end()) {
+      return FormatType::STENCIL;
+    } else if (ranges::find(_depth_stencil_formats, _format) != _depth_stencil_formats.end()) {
+      return FormatType::DEPTH_STENCIL;
+    }
+    std::unreachable();
+  }
+  operator VkFormat() const { return _format; }
+
+private:
+  VkFormat _format;
+
+  static constexpr auto _color_formats = std::array{
+    VK_FORMAT_R8G8B8A8_SRGB,
+  };
+  static constexpr auto _depth_formats = std::array{
+    VK_FORMAT_D16_UNORM,
+    VK_FORMAT_D32_SFLOAT,
+  };
+  static constexpr auto _stencil_formats = std::array{
+    VK_FORMAT_S8_UINT,
+  };
+  static constexpr auto _depth_stencil_formats = std::array{
+    VK_FORMAT_D24_UNORM_S8_UINT,
+  };
+};
+
 struct AttachmentInfo {
-  VkFormat              format;
+  AttachmentFormat      format;
   VkSampleCountFlagBits sample_count;
-  struct ExternalDependency {
-    Scope         scope;
-    VkImageLayout layout;
-    bool          keep_content;
-  };
-  ExternalDependency enter_dep = {
-    .scope = {
-      .stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-      .access_mask = 0,
-    },
-    .layout = VK_IMAGE_LAYOUT_UNDEFINED,
-  };
-  ExternalDependency exit_dep = {
-    .scope = {
-      .stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-      .access_mask = 0,
-    },
-    .layout = VK_IMAGE_LAYOUT_UNDEFINED,
-    .keep_content = true,
-  };
+  bool                  keep_old_content;
+  bool                  keep_new_content;
 };
 
 struct DescriptorInfo {
   VkDescriptorType   type;
   VkShaderStageFlags stage;
-  uint32           count;
+  uint32             count;
 };
 
 struct DescriptorSetInfo {
@@ -84,15 +117,12 @@ struct SubpassInfo {
   };
   std::optional<MultiSample> multi_sample;
   struct DepthStencil {
-    uint32      attachment;
+    uint32 attachment;
+    // if has value, depth_option and stencil_option is used depend on attachment format
     DepthOption   depth_option;
     StencilOption stencil_option;
   };
-
-  // if has value, depth_option and stencil_option has value depend on attachment format
-  std::optional<uint32>      depst_attachment;
-  std::optional<DepthOption>   depth_option;
-  std::optional<StencilOption> stencil_option;
+  std::optional<DepthStencil> depst_info;
 
   std::string                    vertex_shader_name;
   std::string                    frag_shader_name;
@@ -124,6 +154,13 @@ private:
   std::vector<rs::DescriptorSetLayout> _dset_layouts;
 };
 
+struct AttachmentSyncInfo {
+  VkPipelineStageFlags2 initial_stage;
+  VkPipelineStageFlags2 final_stage;
+  VkImageLayout         initial_layout;
+  VkImageLayout         final_layout;
+};
+
 class Framebuffer;
 class RenderPass {
 public:
@@ -131,7 +168,7 @@ public:
 
   RenderPass() = default;
   RenderPass(RenderPassInfo info) {
-    _render_pass = createRenderPass(info.attachments, info.subpasses);
+    std::tie(_render_pass, _attachment_syncs) = createRenderPass(info.attachments, info.subpasses);
     _pipelines = createPipeline(_render_pass, info.subpasses);
   }
 
@@ -141,28 +178,20 @@ public:
     VkCommandBuffer cmdbuf, Framebuffer& framebuffer, std::span<const VkClearValue> clear_values
   );
 
+  auto syncAttachments(std::span<ImageBarrierTracker* const> trackers, VkSemaphore wait_sema)
+    -> void;
+  void updateAttachmentsScope(std::span<ImageBarrierTracker* const> trackers, uint32 family);
+
 private:
   static auto createRenderPass(
     std::span<const AttachmentInfo> attachments, std::span<const SubpassInfo> subpasses
-  ) -> rs::RenderPass;
+  ) -> std::tuple<rs::RenderPass, std::vector<AttachmentSyncInfo>>;
   static auto createPipeline(VkRenderPass render_pass, std::span<const SubpassInfo> subpasses)
     -> std::vector<Pipeline>;
-  static constexpr auto _color_formats = std::array{
-    VK_FORMAT_R8G8B8A8_SRGB,
-  };
-  static constexpr auto _depth_formats = std::array{
-    VK_FORMAT_D16_UNORM,
-    VK_FORMAT_D32_SFLOAT,
-  };
-  static constexpr auto _stencil_formats = std::array{
-    VK_FORMAT_S8_UINT,
-  };
-  static constexpr auto _depth_stencil_formats = std::array{
-    VK_FORMAT_D24_UNORM_S8_UINT,
-  };
 
-  rs::RenderPass        _render_pass;
-  std::vector<Pipeline> _pipelines;
+  rs::RenderPass                  _render_pass;
+  std::vector<Pipeline>           _pipelines;
+  std::vector<AttachmentSyncInfo> _attachment_syncs;
 };
 
 class DescriptorPool : public rs::DescriptorPool {
@@ -192,7 +221,7 @@ public:
 
 private:
   DescriptorSet* _dset;
-  uint32       _binding;
+  uint32         _binding;
 };
 
 auto DescriptorSet::operator[](uint32 binding) -> Descriptor { return { this, binding }; }
@@ -231,7 +260,7 @@ public:
         : _index(index), _parent(parent) {}
 
     private:
-      uint32              _index;
+      uint32                _index;
       DescriptorSetBinding* _parent;
     };
     auto operator[](uint32 index) { return DescriptorSetBindingTarget{ index, this }; }
@@ -266,7 +295,67 @@ private:
   VkCommandBuffer _cmdbuf;
   VkPipeline      _pipeline;
   VkExtent2D      _extent;
-  uint32        _index_count;
+  uint32          _index_count;
 };
+
+void RenderPass::syncAttachments(
+  std::span<ImageBarrierTracker* const> trackers, VkSemaphore wait_sema
+) {
+  static auto transfer_semas = [&]() {
+    auto semas = std::vector<Semaphore>{};
+    auto n = (int)trackers.size();
+    while (n--) {
+      semas.emplace_back(true);
+    }
+    return semas;
+  }();
+
+  toy::throwf(trackers.size() == _attachment_syncs.size(), "mismatched attachment count");
+  auto& graphics_executor = executors::graphics;
+  for (auto [index, info, tracker, transfer_sema] : views::zip(
+         views::iota(0u, _attachment_syncs.size()), _attachment_syncs, trackers, transfer_semas
+       )) {
+    auto sync = tracker->syncScope(
+      Scope{ .stage_mask = info.initial_stage }, graphics_executor.getFamily(), info.initial_layout
+    );
+    if (auto* barrier = std::get_if<BarrierRecorder>(&sync)) {
+      if (index == 1) {
+        graphics_executor.submit(
+          *barrier,
+          std::array{ rd::vk::WaitSemaphore{ wait_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
+          {}
+        );
+      } else {
+        graphics_executor.submit(*barrier, {}, {});
+      }
+    } else if (auto* barrier = std::get_if<FamilyTransferRecorder>(&sync)) {
+      if (index == 1) {
+
+        executors::getByFamily(barrier->release_family)
+          .submit(
+            barrier->release,
+            std::array{ rd::vk::WaitSemaphore{ wait_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
+            std::array{ transfer_sema.get() }
+          );
+      } else {
+        executors::getByFamily(barrier->release_family)
+          .submit(barrier->release, {}, std::array{ transfer_sema.get() });
+      }
+      graphics_executor.submit(
+        barrier->acquire,
+        std::array{ WaitSemaphore{ transfer_sema.get(), VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
+        {}
+      );
+    }
+  }
+}
+void RenderPass::updateAttachmentsScope(
+  std::span<ImageBarrierTracker* const> trackers, uint32 family
+) {
+  toy::throwf(trackers.size() == _attachment_syncs.size(), "mismatched attachment count");
+  for (auto [info, tracker] : views::zip(_attachment_syncs, trackers)) {
+    tracker->setNewScope(Scope{ .stage_mask = info.final_stage }, family, info.final_layout);
+  }
+}
 
 } // namespace rd::vk

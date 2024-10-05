@@ -127,7 +127,7 @@ DEF_CONTEXTUAL_RESOURCE(Swapchain, VkSwapchainKHR, vkCreateSwapchainKHR, vkDestr
 DEF_CONTEXTUAL_RESOURCE(ImageView, VkImageView, vkCreateImageView, vkDestroyImageView)
 DEF_CONTEXTUAL_RESOURCE(Image, VkImage, vkCreateImage, vkDestroyImage)
 DEF_CONTEXTUAL_RESOURCE(Sampler, VkSampler, vkCreateSampler, vkDestroySampler)
-DEF_CONTEXTUAL_RESOURCE(RenderPass, VkRenderPass, vkCreateRenderPass, vkDestroyRenderPass)
+DEF_CONTEXTUAL_RESOURCE(RenderPass, VkRenderPass, vkCreateRenderPass2, vkDestroyRenderPass)
 DEF_CONTEXTUAL_RESOURCE(Framebuffer, VkFramebuffer, vkCreateFramebuffer, vkDestroyFramebuffer)
 DEF_CONTEXTUAL_RESOURCE(CommandPool, VkCommandPool, vkCreateCommandPool, vkDestroyCommandPool)
 DEF_CONTEXTUAL_RESOURCE(ShaderModule, VkShaderModule, vkCreateShaderModule, vkDestroyShaderModule)

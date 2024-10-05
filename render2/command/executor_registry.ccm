@@ -15,6 +15,11 @@ CommandExecutor::QueueExecutor copy;
 CommandExecutor::QueueExecutor present;
 CommandExecutor::QueueExecutor graphics;
 
+std::unordered_map<uint32, vk::CommandExecutor::QueueExecutor*> queue_executors;
+auto getByFamily(uint32 family) -> CommandExecutor::QueueExecutor& {
+  return *queue_executors.at(family);
+}
+
 } // namespace executors
 
 } // namespace rd::vk

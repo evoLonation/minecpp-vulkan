@@ -35,6 +35,74 @@ public:
   auto isSignaled() -> bool;
 };
 
+enum class AccessType {
+  WRITE,
+  READ,
+};
+
+constexpr auto read_accesses = std::array{
+  VK_ACCESS_INDIRECT_COMMAND_READ_BIT,
+  VK_ACCESS_INDEX_READ_BIT,
+  VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+  VK_ACCESS_UNIFORM_READ_BIT,
+  VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
+  VK_ACCESS_SHADER_READ_BIT,
+  VK_ACCESS_SHADER_WRITE_BIT,
+  VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
+  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
+  VK_ACCESS_TRANSFER_READ_BIT,
+  VK_ACCESS_HOST_READ_BIT,
+  VK_ACCESS_MEMORY_READ_BIT,
+};
+
+constexpr auto write_accesses = std::array{
+  VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, //
+  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+  VK_ACCESS_TRANSFER_WRITE_BIT,
+  VK_ACCESS_HOST_WRITE_BIT,
+  VK_ACCESS_MEMORY_WRITE_BIT,
+};
+constexpr auto write_access_bits =
+  std::reduce(write_accesses.begin(), write_accesses.end(), VkAccessFlags2{}, [](auto a, auto b) {
+    return a | b;
+  });
+constexpr auto read_access_bits =
+  std::reduce(read_accesses.begin(), read_accesses.end(), VkAccessFlags2{}, [](auto a, auto b) {
+    return a | b;
+  });
+
+void checkAccessSupported(VkAccessFlags2 access) {
+  toy::throwf(
+    (access & (write_access_bits | read_access_bits)) == access,
+    "The access contains bit that is not supported"
+  );
+}
+auto extractWriteAccess(VkAccessFlags2 access) -> VkAccessFlags2 {
+  checkAccessSupported(access);
+  return (access & write_access_bits);
+}
+/**
+ * @brief if exist write bit then return write
+ *
+ * @param access
+ * @return AccessType
+ */
+auto checkAccessType(VkAccessFlags access) -> AccessType {
+  checkAccessSupported(access);
+  return extractWriteAccess(access) == 0 ? AccessType::READ : AccessType::WRITE;
+}
+
+struct Scope {
+  VkPipelineStageFlags2 stage_mask;
+  VkAccessFlags2        access_mask;
+
+  auto extractWriteAccess() const -> Scope {
+    auto scope = *this;
+    scope.access_mask = vk::extractWriteAccess(scope.access_mask);
+    return scope;
+  }
+};
+
 void recordPipelineBarrier(
   VkCommandBuffer                         cmdbuf,
   std::span<const VkMemoryBarrier2>       memory_barriers,
@@ -54,11 +122,6 @@ void recordPipelineBarrier(
     .pImageMemoryBarriers = image_barriers.data(),
   };
   vkCmdPipelineBarrier2(cmdbuf, &dependency_info);
-};
-
-struct Scope {
-  VkPipelineStageFlags2 stage_mask;
-  VkAccessFlags2        access_mask;
 };
 
 /**
@@ -133,6 +196,102 @@ struct LayoutTransitionInfo {
   VkImageLayout dst_layout;
 };
 
+#define CASE(x)                                                                                    \
+  case x:                                                                                          \
+    return #x
+auto imageLayout2Str(VkImageLayout image_layout) -> std::string_view {
+  switch (image_layout) {
+    CASE(VK_IMAGE_LAYOUT_UNDEFINED);
+    CASE(VK_IMAGE_LAYOUT_GENERAL);
+    CASE(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    CASE(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+    CASE(VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    CASE(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    CASE(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    CASE(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    CASE(VK_IMAGE_LAYOUT_PREINITIALIZED);
+    CASE(VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL);
+    CASE(VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL);
+    CASE(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+  default:
+    return "unknown";
+  }
+}
+
+auto stageMask2Str(VkPipelineStageFlags2 stage_mask) -> std::string {
+  auto str_list = std::vector<std::string>{};
+  auto mapper = [](VkPipelineStageFlagBits stage) -> std::string_view {
+    switch (stage) {
+      CASE(VK_PIPELINE_STAGE_VERTEX_INPUT_BIT);
+      CASE(VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);
+      CASE(VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+      CASE(VK_PIPELINE_STAGE_TRANSFER_BIT);
+      CASE(VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+      CASE(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+      CASE(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+      CASE(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+      CASE(VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
+      CASE(VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT);
+      CASE(VK_PIPELINE_STAGE_NONE);
+    default:
+      return "unknown";
+    }
+  };
+  for (auto i = 0; i < sizeof(VkPipelineStageFlagBits) * 8; ++i) {
+    auto stage = static_cast<VkPipelineStageFlagBits>(1 << i);
+    if (stage & stage_mask) {
+      str_list.push_back(std::string{ mapper(stage) } + " | ");
+    }
+  }
+  if (str_list.empty()) {
+    return std::string{ mapper(VK_PIPELINE_STAGE_NONE) };
+  } else {
+    return views::join(str_list) | views::reverse | views::drop(3) | views::reverse |
+           ranges::to<std::string>();
+  }
+}
+
+auto accessMask2Str(VkAccessFlags2 access_mask) -> std::string {
+  auto str_list = std::vector<std::string>{};
+  auto mapper = [](VkAccessFlagBits access) -> std::string_view {
+    switch (access) {
+      CASE(VK_ACCESS_INDEX_READ_BIT);
+      CASE(VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT);
+      CASE(VK_ACCESS_UNIFORM_READ_BIT);
+      CASE(VK_ACCESS_INPUT_ATTACHMENT_READ_BIT);
+      CASE(VK_ACCESS_SHADER_READ_BIT);
+      CASE(VK_ACCESS_SHADER_WRITE_BIT);
+      CASE(VK_ACCESS_COLOR_ATTACHMENT_READ_BIT);
+      CASE(VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+      CASE(VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
+      CASE(VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+      CASE(VK_ACCESS_TRANSFER_READ_BIT);
+      CASE(VK_ACCESS_TRANSFER_WRITE_BIT);
+      CASE(VK_ACCESS_NONE);
+    default:
+      return "unknown";
+    };
+  };
+  for (auto i = 0; i < sizeof(VkAccessFlagBits) * 8; ++i) {
+    auto access = static_cast<VkAccessFlagBits>(1 << i);
+    if (access & access_mask) {
+      str_list.push_back(std::string{ mapper(access) } + " | ");
+    }
+  }
+  if (str_list.empty()) {
+    return std::string{ mapper(VK_ACCESS_NONE) };
+  } else {
+    return views::join(str_list) | views::reverse | views::drop(3) | views::reverse |
+           ranges::to<std::string>();
+  }
+}
+
+auto scope2Str(Scope scope) -> std::string {
+  return "{" + stageMask2Str(scope.stage_mask) + " / " + accessMask2Str(scope.access_mask) + "}";
+}
+
+#undef CASE
+
 void recordImageBarrier(
   VkCommandBuffer         cmdbuf,
   VkImage                 image,
@@ -141,6 +300,16 @@ void recordImageBarrier(
   BarrierScope            barrier_scope,
   FamilyTransferInfo      family_info
 ) {
+  // toy::debugf(
+  //   "record image barrier: image = {}, layout = {} -> {}, scope = {} -> {}, family = {} -> {}",
+  //   reinterpret_cast<void*>(image),
+  //   imageLayout2Str(layout_info.src_layout),
+  //   imageLayout2Str(layout_info.dst_layout),
+  //   scope2Str(barrier_scope.src_scope),
+  //   scope2Str(barrier_scope.dst_scope),
+  //   family_info.src_family,
+  //   family_info.dst_family
+  // );
   auto [src_scope, dst_scope] = barrier_scope;
   auto image_barrier = VkImageMemoryBarrier2{
     .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,

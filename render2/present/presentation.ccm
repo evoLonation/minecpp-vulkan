@@ -6,24 +6,22 @@ import toy;
 import "vulkan_config.h";
 import render.vk.sync;
 import render.vk.swapchain;
+import render.vk.tracker;
+import render.vk.image;
 
 export namespace rd::vk {
 
 class Presentation {
 public:
-  Presentation(
-    toy::ImplicitDep<Swapchain>, VkImageLayout available_layout, VkImageLayout render_done_layout
-  )
-    : _available_layout(available_layout), _render_done_layout(render_done_layout) {}
+  Presentation(Swapchain& swapchain);
 
   struct PresentContext {
     // must consume semas until present()
     // sema that need wait until image is available (transfer to graphics and available_layout)
-    VkSemaphore wait_sema;
-    // sema that need signal after draw is done and in render_done_layout
-    VkSemaphore signal_sema;
-    uint32    image_index;
-    bool        need_recreate;
+    VkSemaphore          wait_sema;
+    uint32               image_index;
+    bool                 need_recreate;
+    ImageBarrierTracker& tracker;
   };
 
   auto prepare() -> std::optional<PresentContext>;
@@ -34,20 +32,28 @@ public:
   void present();
 
 private:
-  VkImageLayout _available_layout;
-  VkImageLayout _render_done_layout;
-
   struct ImageResource {
-    Semaphore present_release_sema = { true };
-    Semaphore graphic_acquire_sema = { true };
-    Semaphore render_done_sema = { true };
-    Semaphore graphic_release_sema = { true };
-    Semaphore present_acquire_sema = { true };
+    Semaphore           present_wait_sema = { true };
+    Semaphore           present_transfer_sema = { true };
+    ImageBarrierTracker tracker;
   };
 
   std::map<VkImage, ImageResource> _image_resources;
 
   bool _present_recreated;
 };
+
+Presentation::Presentation(Swapchain& swapchain) {
+  auto images = swapchain.images();
+  for (auto& image : images) {
+    _image_resources[image] = ImageResource{
+      .tracker =
+        ImageBarrierTracker{
+          image,
+          getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, vk::MipRange{ 0, 1 }),
+        },
+    };
+  }
+}
 
 } // namespace rd::vk

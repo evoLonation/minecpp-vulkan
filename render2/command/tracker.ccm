@@ -7,72 +7,16 @@ import <vulkan_config.h>;
 
 export namespace rd::vk {
 
-enum class AccessType {
-  WRITE,
-  READ,
-};
-
-constexpr auto read_accesses = std::array{
-  VK_ACCESS_INDIRECT_COMMAND_READ_BIT,
-  VK_ACCESS_INDEX_READ_BIT,
-  VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
-  VK_ACCESS_UNIFORM_READ_BIT,
-  VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
-  VK_ACCESS_SHADER_READ_BIT,
-  VK_ACCESS_SHADER_WRITE_BIT,
-  VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
-  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
-  VK_ACCESS_TRANSFER_READ_BIT,
-  VK_ACCESS_HOST_READ_BIT,
-  VK_ACCESS_MEMORY_READ_BIT,
-};
-
-constexpr auto write_accesses = std::array{
-  VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, //
-  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-  VK_ACCESS_TRANSFER_WRITE_BIT,
-  VK_ACCESS_HOST_WRITE_BIT,
-  VK_ACCESS_MEMORY_WRITE_BIT,
-};
-constexpr auto write_access_bits =
-  std::reduce(write_accesses.begin(), write_accesses.end(), VkAccessFlags{}, [](auto a, auto b) {
-    return a | b;
-  });
-constexpr auto read_access_bits =
-  std::reduce(read_accesses.begin(), read_accesses.end(), VkAccessFlags{}, [](auto a, auto b) {
-    return a | b;
-  });
-
-void checkAccessSupported(VkAccessFlags access) {
-  toy::throwf(
-    (access & (write_access_bits | read_access_bits)) == access,
-    "The access contains bit that is not supported"
-  );
-}
-auto extractWriteAccess(VkAccessFlags access) -> VkAccessFlags {
-  checkAccessSupported(access);
-  return (access & write_access_bits);
-}
-/**
- * @brief if exist write bit then return write
- *
- * @param access
- * @return AccessType
- */
-auto checkAccessType(VkAccessFlags access) -> AccessType {
-  checkAccessSupported(access);
-  return extractWriteAccess(access) == 0 ? AccessType::READ : AccessType::WRITE;
-}
-
-struct Range {
-  VkDeviceSize begin;
-  VkDeviceSize end;
-};
-
 using BarrierRecorder = std::function<void(VkCommandBuffer)>;
 struct FamilyTransferRecorder {
   std::function<void(VkCommandBuffer)> release;
   std::function<void(VkCommandBuffer)> acquire;
+  uint32                               release_family;
+};
+
+struct ImageAdditionalInfo {
+  VkImageLayout           _layout;
+  VkImageSubresourceRange _subresource_range;
 };
 
 // note:
@@ -81,18 +25,208 @@ struct FamilyTransferRecorder {
 // todo:
 // 可以同步一个buffer的子范围
 // 可以同步不同Queue之间
-class BufferBarrierTracker {
+template <bool IsImage>
+class CommonBarrierTracker
+  : private std::conditional_t<IsImage, ImageAdditionalInfo, std::tuple<>> {
+private:
+  using VkHandle = std::conditional_t<IsImage, VkImage, VkBuffer>;
+
 public:
-  BufferBarrierTracker() = default;
-  BufferBarrierTracker(VkBuffer buffer) : _buffer(buffer), _last_write_scope(), _last_read_stages() {}
-  auto setNewScope(Scope scope, uint32 family)
+  CommonBarrierTracker() = default;
+  CommonBarrierTracker(VkHandle handle, VkImageSubresourceRange subresource_range)
+    : _handle(handle), _last_write_scope(), _last_read_stages(), _family() {
+    // the resource first is not owned by any family
+    _family = std::numeric_limits<uint32>::max();
+    if constexpr (IsImage) {
+      ImageAdditionalInfo::_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+      ImageAdditionalInfo::_subresource_range = subresource_range;
+    }
+  }
+  /**
+   * @brief Sync the new scope to old scope(s)
+   * For read scope, it will generate a dependency between last write scope
+   * For write scope, it will generate a dependency between all old read scopes or old write scope
+   * For family change, all type of new scope will sync to the all type of old scope, and it will
+   * generate a ownership transfer.
+   *
+   * @param scope
+   * @param family
+   * @param layout
+   * @return std::variant<std::monostate, BarrierRecorder, FamilyTransferRecorder>
+   */
+  auto syncScope(Scope scope, uint32 family, VkImageLayout layout)
     -> std::variant<std::monostate, BarrierRecorder, FamilyTransferRecorder>;
 
+  /**
+   * @brief Set the last scope of the dependency chain, generally use after the resource's scope
+   * changed due to other factors, such as render pass since render pass will execute internal
+   * dependency and change the scope of the resource.
+   * After call, next call of syncScope will definitely generate a dependency between this scope and
+   * new scope
+   *
+   */
+  void setNewScope(Scope scope, uint32 family, VkImageLayout layout);
+
 private:
-  VkBuffer              _buffer;
+  VkHandle              _handle;
   Scope                 _last_write_scope;
   VkPipelineStageFlags2 _last_read_stages;
   uint32                _family;
+
+  auto generateRecorder(Scope src_scope, Scope dst_scope, uint32 family, VkImageLayout layout)
+    -> std::variant<std::monostate, BarrierRecorder, FamilyTransferRecorder>;
+
+  auto needFamilyTransfer(uint32 family) -> bool {
+    return _family != family && _family != std::numeric_limits<uint32>::max();
+  }
+};
+
+template <bool IsImage>
+auto CommonBarrierTracker<IsImage>::generateRecorder(
+  Scope src_scope, Scope dst_scope, uint32 family, VkImageLayout layout
+) -> std::variant<std::monostate, BarrierRecorder, FamilyTransferRecorder> {
+  auto recorder = std::variant<std::monostate, BarrierRecorder, FamilyTransferRecorder>{};
+  auto handle = _handle;
+  if (!needFamilyTransfer(family)) {
+    auto scopes = BarrierScope{ src_scope, dst_scope };
+    if constexpr (IsImage) {
+      auto subresource = ImageAdditionalInfo::_subresource_range;
+      auto layouts = LayoutTransitionInfo{ ImageAdditionalInfo::_layout, layout };
+      recorder = [handle, scopes, subresource, layouts](VkCommandBuffer cmdbuf) {
+        recordImageBarrier(cmdbuf, handle, subresource, layouts, scopes, {});
+      };
+    } else {
+      recorder = [handle, scopes](VkCommandBuffer cmdbuf) {
+        recordBufferBarrier(cmdbuf, handle, scopes, {});
+      };
+    }
+  } else {
+    auto release_scopes = BarrierScope::release(src_scope);
+    auto acquire_scopes = BarrierScope::acquire(dst_scope);
+    auto families = FamilyTransferInfo{ _family, family };
+    if constexpr (IsImage) {
+      auto subresource = ImageAdditionalInfo::_subresource_range;
+      auto layouts = LayoutTransitionInfo{ ImageAdditionalInfo::_layout, layout };
+      recorder = FamilyTransferRecorder{
+        .release =
+          [handle, release_scopes, families, subresource, layouts](VkCommandBuffer cmdbuf) {
+            recordImageBarrier(cmdbuf, handle, subresource, layouts, release_scopes, families);
+          },
+        .acquire =
+          [handle, acquire_scopes, families, subresource, layouts](VkCommandBuffer cmdbuf) {
+            recordImageBarrier(cmdbuf, handle, subresource, layouts, acquire_scopes, families);
+          },
+        .release_family = _family,
+      };
+    } else {
+      recorder = FamilyTransferRecorder{
+        .release = [handle, release_scopes, families](VkCommandBuffer cmdbuf
+                   ) { recordBufferBarrier(cmdbuf, handle, release_scopes, families); },
+        .acquire = [handle, acquire_scopes, families](VkCommandBuffer cmdbuf
+                   ) { recordBufferBarrier(cmdbuf, handle, acquire_scopes, families); },
+        .release_family = _family,
+      };
+    }
+  }
+  return recorder;
+}
+
+template <bool IsImage>
+auto CommonBarrierTracker<IsImage>::syncScope(Scope scope, uint32 family, VkImageLayout layout)
+  -> std::variant<std::monostate, BarrierRecorder, FamilyTransferRecorder> {
+  toy::throwf(scope.stage_mask != 0, "scope.stage_mask must not is STAGE_NONE");
+  auto type = checkAccessType(scope.access_mask);
+  using enum AccessType;
+  auto recorder = std::variant<std::monostate, BarrierRecorder, FamilyTransferRecorder>{};
+  auto generateRecorder = [&](Scope src_scope) {
+    recorder = this->generateRecorder(src_scope, scope, family, layout);
+  };
+  if (type == WRITE) {
+    // dep: if old reads exist, exedep to all old reads, else memdep to old write
+    // old write = scope - read, clear old reads
+    if (_last_read_stages != 0) {
+      generateRecorder(Scope{
+        .stage_mask = _last_read_stages,
+        .access_mask = 0,
+      });
+    } else if (IsImage || _last_write_scope.stage_mask != 0) {
+      generateRecorder(_last_write_scope);
+    }
+    _last_read_stages = 0;
+    _last_write_scope = scope;
+    _last_write_scope.access_mask = extractWriteAccess(_last_write_scope.access_mask);
+  } else if (type == READ) {
+    if (!needFamilyTransfer(family)) {
+      // dep: memdep to old write
+      // old_reads += scope.stage
+      if (IsImage || _last_write_scope.stage_mask != 0) {
+        generateRecorder(_last_write_scope);
+      }
+      _last_read_stages |= scope.stage_mask;
+    } else {
+      // dep: first try dep to reads, then try dep to writes
+      if (_last_read_stages != 0) {
+        generateRecorder(Scope{
+          .stage_mask = _last_read_stages,
+          .access_mask = 0,
+        });
+      } else if (_last_write_scope.stage_mask != 0) {
+        generateRecorder(_last_write_scope);
+      }
+      _last_write_scope = {};
+      _last_read_stages = scope.stage_mask;
+    }
+  }
+  _family = family;
+  if constexpr (IsImage) {
+    ImageAdditionalInfo::_layout = layout;
+  }
+  return recorder;
+}
+
+template <bool IsImage>
+inline void CommonBarrierTracker<IsImage>::setNewScope(
+  Scope scope, uint32 family, VkImageLayout layout
+) {
+  // No matter what type of scope it is, just assign to write scope, so that we can ensure next
+  // syncScope call can sync with it
+  _last_read_stages = 0;
+  _last_write_scope = scope;
+  _family = family;
+  if constexpr (IsImage) {
+    ImageAdditionalInfo::_layout = layout;
+  }
+}
+
+class BufferBarrierTracker {
+public:
+  BufferBarrierTracker() = default;
+  BufferBarrierTracker(VkBuffer buffer) : _base(buffer, {}) {}
+  auto syncScope(Scope scope, uint32 family)
+    -> std::variant<std::monostate, BarrierRecorder, FamilyTransferRecorder> {
+    return _base.syncScope(scope, family, {});
+  }
+  void setNewScope(Scope scope, uint32 family) { _base.setNewScope(scope, family, {}); }
+
+private:
+  CommonBarrierTracker<false> _base;
+};
+
+class ImageBarrierTracker {
+public:
+  ImageBarrierTracker() = default;
+  ImageBarrierTracker(VkImage image, VkImageSubresourceRange subresource_range)
+    : _base(image, subresource_range) {}
+  auto syncScope(Scope scope, uint32 family, VkImageLayout layout)
+    -> std::variant<std::monostate, BarrierRecorder, FamilyTransferRecorder> {
+    return _base.syncScope(scope, family, layout);
+  }
+  void setNewScope(Scope scope, uint32 family, VkImageLayout layout) {
+    _base.setNewScope(scope, family, layout);
+  }
+
+private:
+  CommonBarrierTracker<true> _base;
 };
 
 } // namespace rd::vk

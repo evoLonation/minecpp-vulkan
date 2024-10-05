@@ -1,5 +1,7 @@
 import "vulkan_config.h";
 
+import toy;
+
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateDebugUtilsMessengerEXT(
   VkInstance                                instance,
   const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
@@ -24,5 +26,7 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDebugUtilsMessengerEXT(
       );
       func != nullptr) {
     func(instance, messenger, pAllocator);
+  } else {
+    toy::debugf("error: vkDestroyDebugUtilsMessengerEXT not found");
   }
 }

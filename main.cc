@@ -17,6 +17,7 @@ import render.vk.buffer;
 import render.vk.presentation;
 import render.context;
 import render.vk.sync;
+import render.vk.tracker;
 import render.sampler;
 import render.vertex;
 import glm;
@@ -34,7 +35,7 @@ int main() {
     toy::test_Generator::test();
     toy::test_EnumSet::test();
     trans::test_trans();
-    auto ctx = rd::Context{ "hello vulkan", 1920, 1080 };
+    auto  ctx = rd::Context{ "hello vulkan", 1920, 1080 };
     auto& swapchain = rd::vk::Swapchain::getInstance();
     auto& input_processor = input::InputProcessor::getInstance();
 
@@ -45,66 +46,28 @@ int main() {
       "the sample count is not available"
     );
 
-    auto presentation = rd::vk::Presentation{ swapchain,
-                                              VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                              VK_IMAGE_LAYOUT_PRESENT_SRC_KHR };
+    auto presentation = rd::vk::Presentation{ swapchain };
 
     auto render_pass_info = rd::vk::RenderPassInfo{
       .attachments = {
         rd::vk::AttachmentInfo{
           .format = swapchain.format(),
           .sample_count = sample_count,
-          .enter_dep = {
-            .scope = rd::vk::Scope{
-              .stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            },
-            .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .keep_content = false,
-          },
-          .exit_dep = {
-            .scope = rd::vk::Scope{
-              .stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            },
-            .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .keep_content = false,
-          },
+          .keep_old_content = false,
+          .keep_new_content = false,
         },
         rd::vk::AttachmentInfo{
           .format = swapchain.format(),
           .sample_count = VK_SAMPLE_COUNT_1_BIT,
-          .enter_dep = {
-            .scope = rd::vk::Scope{
-              .stage_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            },
-            .layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            .keep_content = false,
-          },
-          .exit_dep = {
-            .scope = rd::vk::Scope{
-              .stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-            },
-            .layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            .keep_content = true,
-          },
+          .keep_old_content = false,
+          .keep_new_content = true,
         },
         rd::vk::AttachmentInfo{
           .format = depth_format,
           // .sample_count = VK_SAMPLE_COUNT_1_BIT,
           .sample_count = sample_count,
-          .enter_dep = {
-            .scope = rd::vk::Scope{
-              .stage_mask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-            },
-            .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-            .keep_content = false,
-          },
-          .exit_dep = {
-            .scope = rd::vk::Scope{
-              .stage_mask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-            },
-            .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-            .keep_content = false,
-          },
+          .keep_old_content = false,
+          .keep_new_content = false,
         },
       },
       .subpasses = {
@@ -115,12 +78,13 @@ int main() {
             .resolves = {1},
             .sample_count = sample_count,
           }},
-          .depst_attachment = 2,
-          .depth_option = {{
-            .compare_op = VK_COMPARE_OP_LESS,
-            .overwrite = false,
+          .depst_info = {{
+            .attachment = 2,
+            .depth_option = {
+              .compare_op = VK_COMPARE_OP_LESS,
+              .overwrite = false,
+            },
           }},
-          .stencil_option = {},
           .vertex_shader_name = "hello.vert",
           .frag_shader_name = "hello.frag",
           .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
@@ -195,7 +159,9 @@ int main() {
 
     struct FramebufferResource {
       rd::vk::Image                    sample_image;
+      rd::vk::ImageBarrierTracker      sample_image_tracker;
       rd::vk::Image                    depth_image;
+      rd::vk::ImageBarrierTracker      depth_image_tracker;
       std::vector<rd::vk::Framebuffer> framebuffers;
     };
     auto framebuffer_resource = FramebufferResource{};
@@ -210,6 +176,10 @@ int main() {
         1,
         sample_count,
       };
+      framebuffer_resource.sample_image_tracker = rd::vk::ImageBarrierTracker{
+        framebuffer_resource.sample_image,
+        rd::vk::getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, { 0, 1 }),
+      };
       framebuffer_resource.depth_image = rd::vk::Image{
         depth_format,
         swapchain.extent().width,
@@ -219,31 +189,10 @@ int main() {
         1,
         sample_count,
       };
-      // convert layout
-      rd::vk::executors::graphics
-        .submit(
-          [&](VkCommandBuffer cmdbuf) {
-            rd::vk::recordImageBarrier(
-              cmdbuf,
-              framebuffer_resource.sample_image,
-              rd::vk::getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, { 0, 1 }),
-              { VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL },
-              {},
-              {}
-            );
-            rd::vk::recordImageBarrier(
-              cmdbuf,
-              framebuffer_resource.depth_image,
-              rd::vk::getSubresourceRange(VK_IMAGE_ASPECT_DEPTH_BIT, { 0, 1 }),
-              { VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL },
-              {},
-              {}
-            );
-          },
-          std::span<const rd::vk::WaitSemaphore>{},
-          {}
-        )
-        .wait();
+      framebuffer_resource.depth_image_tracker = rd::vk::ImageBarrierTracker{
+        framebuffer_resource.depth_image,
+        rd::vk::getSubresourceRange(VK_IMAGE_ASPECT_DEPTH_BIT, { 0, 1 }),
+      };
       framebuffer_resource.framebuffers = //
         swapchain.image_views() | views::transform([&](VkImageView image_view) {
           return rd::vk::Framebuffer{
@@ -283,7 +232,7 @@ int main() {
         if (context.need_recreate) {
           recreateResource();
         }
-        render_pass[0].recorder = [&](rd::vk::Pipeline::Recorder& recorder) {
+        auto recorder = render_pass[0].recorder = [&](rd::vk::Pipeline::Recorder& recorder) {
           recorder.init();
           recorder.vertex_buffer = vertex_buffer;
           recorder.index_buffer = index_buffer;
@@ -292,16 +241,32 @@ int main() {
           recorder.descriptor_set[2] = dset_texture;
           recorder.draw();
         };
+        render_pass.syncAttachments(
+          std::array{
+            &framebuffer_resource.sample_image_tracker,
+            &context.tracker,
+            &framebuffer_resource.depth_image_tracker,
+          },
+          context.wait_sema
+        );
         rd::vk::executors::graphics.submit(
           [&](auto cmdbuf) {
             render_pass.recordDraw(
               cmdbuf, framebuffer_resource.framebuffers[context.image_index], clear_values
             );
           },
-          std::array{
-            rd::vk::WaitSemaphore{ context.wait_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
-          std::array{ context.signal_sema }
+          {},
+          {}
         );
+        render_pass.updateAttachmentsScope(
+          std::array{
+            &framebuffer_resource.sample_image_tracker,
+            &context.tracker,
+            &framebuffer_resource.depth_image_tracker,
+          },
+          rd::vk::executors::graphics.getFamily()
+        );
+
         count++;
         if (count % 60 == 0) {
           toy::debug(count);

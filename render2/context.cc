@@ -38,6 +38,11 @@ Context::Context(const std::string& app_name, uint32 width, uint32 height) {
     graphics = QueueExecutor{ 0, { 0, 1 } };
     present = QueueExecutor{ 1, { 0, 1 } };
     copy = QueueExecutor{ 2, { 0, 1 } };
+    queue_executors = {
+      { graphics.getFamily(), &graphics },
+      { present.getFamily(), &present },
+      { copy.getFamily(), &copy },
+    };
   }
 }
 

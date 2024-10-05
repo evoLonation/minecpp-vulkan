@@ -3,6 +3,7 @@ module render.vk.presentation;
 import "vulkan_config.h";
 import render.vk.swapchain;
 import render.vk.executor;
+import render.vk.sync;
 import render.vk.image;
 
 namespace rd::vk {
@@ -20,52 +21,24 @@ auto Presentation::prepare() -> std::optional<PresentContext> {
   if (!swapchain.valid()) {
     return std::nullopt;
   }
-  // transfer new image ownership from present to graphics
-  // transfer new image layout from presentable to <custom>
-  auto  image_available_sema = swapchain.getImageAvailableSema();
-  auto  image_index = swapchain.getCurrentImageIndex();
-  auto& present_executor = executors::present;
-  auto& graphics_executor = executors::graphics;
-  auto  image = swapchain.images()[image_index];
-  auto  record_p2g = [&](VkCommandBuffer cmdbuf, bool acquire) {
-    recordImageBarrier(
-      cmdbuf,
-      image,
-      getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, vk::MipRange{ 0, 1 }),
-      LayoutTransitionInfo{
-        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-        _available_layout,
-      },
-      acquire ? vk::BarrierScope::acquire(vk::Scope{
-                   .stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                })
-               : vk::BarrierScope::release(vk::Scope{
-                   .stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                }),
-      FamilyTransferInfo{
-        present_executor.getFamily(),
-        graphics_executor.getFamily(),
-      }
-    );
-  };
-  auto present_release_sema = _image_resources[image].present_release_sema.get();
-  auto graphic_acquire_sema = _image_resources[image].graphic_acquire_sema.get();
-  present_executor[0].submit(
-    [&](auto cmdbuf) { record_p2g(cmdbuf, false); },
-    std::array{ WaitSemaphore{ image_available_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
-    std::array{ present_release_sema }
-  );
-  graphics_executor.submit(
-    [&](auto cmdbuf) { record_p2g(cmdbuf, true); },
-    std::array{ WaitSemaphore{ present_release_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
-    std::array{ graphic_acquire_sema }
-  );
+  if (recreated) {
+    auto images = swapchain.images();
+    for (auto image : images) {
+      _image_resources[image].tracker = ImageBarrierTracker{
+        image,
+        getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, vk::MipRange{ 0, 1 }),
+      };
+    }
+  }
+  auto image_available_sema = swapchain.getImageAvailableSema();
+  auto image_index = swapchain.getCurrentImageIndex();
+  auto image = swapchain.images()[image_index];
 
   return PresentContext{
-    .wait_sema = graphic_acquire_sema,
-    .signal_sema = _image_resources[image].render_done_sema,
+    .wait_sema = image_available_sema,
     .image_index = image_index,
     .need_recreate = recreated,
+    .tracker = _image_resources[image].tracker,
   };
 }
 
@@ -75,43 +48,43 @@ void Presentation::present() {
   auto& swapchain = Swapchain::getInstance();
   auto  image_index = swapchain.getCurrentImageIndex();
   auto& present_executor = executors::present;
-  auto& graphics_executor = executors::graphics;
   auto  image = swapchain.images()[image_index];
-  auto  record_g2p = [&](VkCommandBuffer cmdbuf, bool acquire) {
-    recordImageBarrier(
-      cmdbuf,
-      image,
-      getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, vk::MipRange{ 0, 1 }),
-      vk::LayoutTransitionInfo{
-        _render_done_layout,
-        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-      },
-      acquire ? vk::BarrierScope::acquire(vk::Scope{
-                   .stage_mask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                })
-               : vk::BarrierScope::release(vk::Scope{
-                   .stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                }),
-      vk::FamilyTransferInfo{
-        graphics_executor.getFamily(),
-        present_executor.getFamily(),
-      }
+  auto& tracker = _image_resources[image].tracker;
+  auto& present_wait_sema = _image_resources[image].present_wait_sema;
+  auto  sync = tracker.syncScope(
+    Scope{ .stage_mask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT },
+    present_executor.getFamily(),
+    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+  );
+  if (auto* barrier = std::get_if<BarrierRecorder>(&sync)) {
+    present_executor.submit(*barrier, {}, std::array{ present_wait_sema.get() });
+  } else if (auto* barrier = std::get_if<FamilyTransferRecorder>(&sync)) {
+    auto transfer_sema = _image_resources[image].present_transfer_sema.get();
+    executors::getByFamily(barrier->release_family)
+      .submit(barrier->release, {}, std::array{ transfer_sema });
+    present_executor.submit(
+      barrier->acquire,
+      std::array{ WaitSemaphore{ transfer_sema, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
+      std::array{ present_wait_sema.get() }
     );
-  };
-  auto render_done_sema = _image_resources[image].render_done_sema.get();
-  auto graphic_release_sema = _image_resources[image].graphic_release_sema.get();
-  auto present_acquire_sema = _image_resources[image].present_acquire_sema.get();
-  graphics_executor.submit(
-    [&](auto cmdbuf) { record_g2p(cmdbuf, false); },
-    std::array{ WaitSemaphore{ render_done_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
-    std::array{ graphic_release_sema }
-  );
-  present_executor[0].submit(
-    [&](auto cmdbuf) { record_g2p(cmdbuf, true); },
-    std::array{ WaitSemaphore{ graphic_release_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
-    std::array{ present_acquire_sema }
-  );
-  if (!swapchain.present(present_acquire_sema, present_executor[0].getQueue())) {
+  } else {
+    present_executor.submit(
+      [&](VkCommandBuffer cmdbuf) {
+        recordImageBarrier(
+          cmdbuf,
+          image,
+          getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, vk::MipRange{ 0, 1 }),
+          { VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR },
+          { Scope{ .stage_mask = VK_PIPELINE_STAGE_NONE },
+            Scope{ .stage_mask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
+          {}
+        );
+      },
+      {},
+      std::array{ present_wait_sema.get() }
+    );
+  }
+  if (!swapchain.present(present_wait_sema, present_executor[0].getQueue())) {
     swapchain.updateCapabilities();
     swapchain.recreate();
     _present_recreated = true;
