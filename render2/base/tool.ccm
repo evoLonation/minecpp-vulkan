@@ -1,51 +1,12 @@
 export module render.vk.tool;
 
+import render.vk.reflections;
+
 import "vulkan_config.h";
 import std;
 import toy;
 
 export namespace rd::vk {
-
-template <typename Resource>
-consteval auto getResourceName() -> const char* {
-#define REGISTER(type)                                                                             \
-  if (std::same_as<Resource, type>) {                                                              \
-    return #type;                                                                                  \
-  }
-  REGISTER(VkInstance)
-  REGISTER(VkDebugUtilsMessengerEXT)
-  REGISTER(VkDevice)
-  REGISTER(VkPhysicalDevice)
-  REGISTER(VkSurfaceKHR)
-  REGISTER(VkSwapchainKHR)
-  REGISTER(VkPresentModeKHR)
-  REGISTER(VkSurfaceFormatKHR)
-
-  REGISTER(VkExtensionProperties)
-  REGISTER(VkLayerProperties)
-
-  REGISTER(VkImageView)
-  REGISTER(VkImage)
-  REGISTER(VkSampler)
-
-  REGISTER(VkRenderPass)
-
-  REGISTER(VkShaderModule)
-  REGISTER(VkPipeline)
-  REGISTER(VkPipelineLayout)
-  REGISTER(VkQueueFamilyProperties)
-  REGISTER(VkDescriptorSetLayout)
-  REGISTER(VkDescriptorSet)
-  REGISTER(VkDescriptorPool)
-  REGISTER(VkCommandBuffer)
-  REGISTER(VkCommandPool)
-  REGISTER(VkDeviceMemory)
-  REGISTER(VkBuffer)
-  REGISTER(VkFramebuffer)
-  REGISTER(VkSemaphore)
-  REGISTER(VkFence)
-  std::unreachable();
-}
 
 auto checkVkResult(
   VkResult                        result,
@@ -78,7 +39,7 @@ auto getVkResources(Func func, Args&&... args) {
   if constexpr (need_check) {
     checkVkResult(
       func(std::forward<Args>(args)..., &count, nullptr),
-      std::format("retain number of resource {}", getResourceName<Resource>())
+      std::format("retain number of resource {}", refl::resource<Resource>())
     );
   } else {
     func(std::forward<Args>(args)..., &count, nullptr);
@@ -87,7 +48,7 @@ auto getVkResources(Func func, Args&&... args) {
   if constexpr (need_check) {
     checkVkResult(
       func(args..., &count, resources.data()),
-      std::format("get {} resources", getResourceName<Resource>())
+      std::format("get {} resources", refl::resource<Resource>())
     );
   } else {
     func(args..., &count, resources.data());
@@ -107,7 +68,7 @@ auto createVkResource(Func func, Args&&... args) {
   Resource resource;
   checkVkResult(
     func(std::forward<Args>(args)..., nullptr, &resource),
-    std::format("create {}", getResourceName<Resource>())
+    std::format("create {}", refl::resource<Resource>())
   );
   return resource;
 }
@@ -119,7 +80,7 @@ template <ranges::contiguous_range AvailableRange, typename Mapper>
     std::span<const char* const> requiress, AvailableRange&& availables, Mapper&& mapper
   ) {
   using Resource = ranges::range_value_t<AvailableRange>;
-  constexpr const char* resource_name = getResourceName<Resource>();
+  auto resource_name = refl::resource<Resource>();
   toy::debugf(
     "the required {} {} resources are :\n {::}", requiress.size(), resource_name, requiress
   );

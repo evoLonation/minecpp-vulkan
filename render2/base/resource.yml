@@ -2,3 +2,5 @@ source:
 - tool.ccm
 - loader.cc
 - resource.ccm
+- reflections.ccm
+- reflections.cc

@@ -4,6 +4,7 @@ import "vulkan_config.h";
 import render.vk.resource;
 import render.vk.device;
 import render.vk.tool;
+import render.vk.reflections;
 
 import std;
 import toy;
@@ -376,55 +377,16 @@ struct LayoutTransitionInfo {
   VkImageLayout dst_layout;
 };
 
-#define CASE(x)                                                                                    \
-  case x:                                                                                          \
-    return #x
-auto imageLayout2Str(VkImageLayout image_layout) -> std::string_view {
-  switch (image_layout) {
-    CASE(VK_IMAGE_LAYOUT_UNDEFINED);
-    CASE(VK_IMAGE_LAYOUT_GENERAL);
-    CASE(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-    CASE(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-    CASE(VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
-    CASE(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    CASE(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-    CASE(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    CASE(VK_IMAGE_LAYOUT_PREINITIALIZED);
-    CASE(VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL);
-    CASE(VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL);
-    CASE(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-  default:
-    return "unknown";
-  }
-}
-
 auto stageMask2Str(VkPipelineStageFlags2 stage_mask) -> std::string {
   auto str_list = std::vector<std::string>{};
-  auto mapper = [](VkPipelineStageFlagBits stage) -> std::string_view {
-    switch (stage) {
-      CASE(VK_PIPELINE_STAGE_VERTEX_INPUT_BIT);
-      CASE(VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);
-      CASE(VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-      CASE(VK_PIPELINE_STAGE_TRANSFER_BIT);
-      CASE(VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
-      CASE(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
-      CASE(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
-      CASE(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
-      CASE(VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
-      CASE(VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT);
-      CASE(VK_PIPELINE_STAGE_NONE);
-    default:
-      return "unknown";
-    }
-  };
   for (auto i = 0; i < sizeof(VkPipelineStageFlagBits) * 8; ++i) {
     auto stage = static_cast<VkPipelineStageFlagBits>(1 << i);
     if (stage & stage_mask) {
-      str_list.push_back(std::string{ mapper(stage) } + " | ");
+      str_list.push_back(std::string{ refl::stageFlag(stage) } + " | ");
     }
   }
   if (str_list.empty()) {
-    return std::string{ mapper(VK_PIPELINE_STAGE_NONE) };
+    return std::string{ refl::stageFlag(VK_PIPELINE_STAGE_NONE) };
   } else {
     return views::join(str_list) | views::reverse | views::drop(3) | views::reverse |
            ranges::to<std::string>();
@@ -433,33 +395,14 @@ auto stageMask2Str(VkPipelineStageFlags2 stage_mask) -> std::string {
 
 auto accessMask2Str(VkAccessFlags2 access_mask) -> std::string {
   auto str_list = std::vector<std::string>{};
-  auto mapper = [](VkAccessFlagBits access) -> std::string_view {
-    switch (access) {
-      CASE(VK_ACCESS_INDEX_READ_BIT);
-      CASE(VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT);
-      CASE(VK_ACCESS_UNIFORM_READ_BIT);
-      CASE(VK_ACCESS_INPUT_ATTACHMENT_READ_BIT);
-      CASE(VK_ACCESS_SHADER_READ_BIT);
-      CASE(VK_ACCESS_SHADER_WRITE_BIT);
-      CASE(VK_ACCESS_COLOR_ATTACHMENT_READ_BIT);
-      CASE(VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
-      CASE(VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
-      CASE(VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
-      CASE(VK_ACCESS_TRANSFER_READ_BIT);
-      CASE(VK_ACCESS_TRANSFER_WRITE_BIT);
-      CASE(VK_ACCESS_NONE);
-    default:
-      return "unknown";
-    };
-  };
   for (auto i = 0; i < sizeof(VkAccessFlagBits) * 8; ++i) {
     auto access = static_cast<VkAccessFlagBits>(1 << i);
     if (access & access_mask) {
-      str_list.push_back(std::string{ mapper(access) } + " | ");
+      str_list.push_back(std::string{ refl::accessFlag(access) } + " | ");
     }
   }
   if (str_list.empty()) {
-    return std::string{ mapper(VK_ACCESS_NONE) };
+    return std::string{ refl::accessFlag(VK_ACCESS_NONE) };
   } else {
     return views::join(str_list) | views::reverse | views::drop(3) | views::reverse |
            ranges::to<std::string>();
@@ -469,8 +412,6 @@ auto accessMask2Str(VkAccessFlags2 access_mask) -> std::string {
 auto scope2Str(Scope scope) -> std::string {
   return "{" + stageMask2Str(scope.stage_mask) + " / " + accessMask2Str(scope.access_mask) + "}";
 }
-
-#undef CASE
 
 void recordImageBarrier(
   VkCommandBuffer         cmdbuf,

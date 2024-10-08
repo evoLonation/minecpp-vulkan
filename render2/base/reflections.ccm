@@ -1,0 +1,67 @@
+export module render.vk.reflections;
+
+import std;
+import toy;
+import "vulkan_config.h";
+
+export namespace rd::vk::refl {
+
+auto imageLayout(VkImageLayout image_layout) -> std::string_view;
+
+auto stageFlag(VkPipelineStageFlagBits2 stage) -> std::string_view;
+
+auto accessFlag(VkAccessFlagBits2 access) -> std::string_view;
+
+auto format(VkFormat format) -> std::string_view;
+
+template <typename Resource>
+consteval auto resource() -> std::string_view;
+
+#undef CASE
+} // namespace rd::vk::refl
+
+namespace rd::vk::refl {
+template <typename Resource>
+consteval auto resource() -> std::string_view {
+#define REGISTER(type)                                                                             \
+  if (std::same_as<Resource, type>) {                                                              \
+    return #type;                                                                                  \
+  }
+  REGISTER(VkInstance)
+  REGISTER(VkDebugUtilsMessengerEXT)
+  REGISTER(VkDevice)
+  REGISTER(VkPhysicalDevice)
+  REGISTER(VkSurfaceKHR)
+  REGISTER(VkSwapchainKHR)
+  REGISTER(VkPresentModeKHR)
+  REGISTER(VkSurfaceFormatKHR)
+
+  REGISTER(VkExtensionProperties)
+  REGISTER(VkLayerProperties)
+
+  REGISTER(VkImageView)
+  REGISTER(VkImage)
+  REGISTER(VkSampler)
+
+  REGISTER(VkRenderPass)
+
+  REGISTER(VkShaderModule)
+  REGISTER(VkPipeline)
+  REGISTER(VkPipelineLayout)
+  REGISTER(VkQueueFamilyProperties)
+  REGISTER(VkDescriptorSetLayout)
+  REGISTER(VkDescriptorSet)
+  REGISTER(VkDescriptorPool)
+  REGISTER(VkCommandBuffer)
+  REGISTER(VkCommandPool)
+  REGISTER(VkDeviceMemory)
+  REGISTER(VkBuffer)
+  REGISTER(VkFramebuffer)
+  REGISTER(VkSemaphore)
+  REGISTER(VkFence)
+
+#undef REGISTER
+
+  toy::throwf("unknown resource type");
+}
+} // namespace rd::vk::refl

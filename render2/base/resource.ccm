@@ -2,6 +2,7 @@ export module render.vk.resource;
 
 import "vulkan_config.h";
 import render.vk.tool;
+import render.vk.reflections;
 import std;
 import toy;
 
@@ -40,7 +41,7 @@ public:
       &handle
     );
     _handle.reset(handle);
-    toy::debugf("create resource {}", getResourceName<VkHandle>());
+    toy::debugf("create resource {}", refl::resource<VkHandle>());
   }
   SingletonResource(const SingletonResource&) noexcept = delete;
   SingletonResource(SingletonResource&&) noexcept = default;
@@ -53,7 +54,7 @@ public:
 private:
   static inline auto deleter = [](VkHandle handle) {
     Destroyer(handle, nullptr);
-    toy::debugf("destroy resource {}", getResourceName<VkHandle>());
+    toy::debugf("destroy resource {}", refl::resource<VkHandle>());
   };
 
   std::unique_ptr<std::remove_pointer_t<VkHandle>, decltype(deleter)> _handle;
@@ -93,7 +94,7 @@ public:
     VkHandle handle;
     Creator(ContextResource::getInstance().get(), &create_info, nullptr, &handle);
     _handle.reset(handle);
-    toy::debugf("create resource {}", getResourceName<VkHandle>());
+    toy::debugf("create resource {}", refl::resource<VkHandle>());
   }
   ContextualResource(const ContextualResource&) noexcept = delete;
   ContextualResource(ContextualResource&&) noexcept = default;
@@ -106,7 +107,7 @@ public:
 private:
   static inline auto deleter = [](VkHandle handle) {
     Destroyer(ContextResource::getInstance().get(), handle, nullptr);
-    toy::debugf("destroy resource {}", getResourceName<VkHandle>());
+    toy::debugf("destroy resource {}", refl::resource<VkHandle>());
   };
 
   std::unique_ptr<std::remove_pointer_t<VkHandle>, decltype(deleter)> _handle;
@@ -170,7 +171,7 @@ public:
     checkVkResult(
       Creator(ContextResource::getInstance().get(), &allocate_info, _handles.data()), "create"
     );
-    toy::debugf("create {} resources of {}", _handles.size(), getResourceName<VkHandle>());
+    toy::debugf("create {} resources of {}", _handles.size(), refl::resource<VkHandle>());
     _pool = allocate_info.*pPoolMember;
   }
   ~AllocatedResources() { destroy(); }
@@ -266,7 +267,7 @@ public:
     void destroy() {
       if (_handle) {
         Destroyer(ContextResource::getInstance().get(), _pool, 1, &_handle);
-        toy::debugf("destroy resource {}", getResourceName<VkHandle>());
+        toy::debugf("destroy resource {}", refl::resource<VkHandle>());
       }
     }
 
@@ -331,7 +332,7 @@ private:
       return;
     }
     Destroyer(ContextResource::getInstance().get(), _pool, _handles.size(), _handles.data());
-    toy::debugf("destroy {} resources of {}", _handles.size(), getResourceName<VkHandle>());
+    toy::debugf("destroy {} resources of {}", _handles.size(), refl::resource<VkHandle>());
   }
 };
 
@@ -384,7 +385,7 @@ public:
 private:
   static inline auto deleter = [](VkPipeline handle) {
     vkDestroyPipeline(Device::getInstance().get(), handle, nullptr);
-    toy::debugf("destroy resource {}", getResourceName<VkPipeline>());
+    toy::debugf("destroy resource {}", refl::resource<VkPipeline>());
   };
 
 private:
@@ -427,7 +428,7 @@ public:
       nullptr,
       pipelines.data()
     );
-    toy::debugf("create {} resources of {}", pipelines.size(), getResourceName<VkPipeline>());
+    toy::debugf("create {} resources of {}", pipelines.size(), refl::resource<VkPipeline>());
     return pipelines | views::transform([](auto handle) { return Pipeline{ handle }; }) |
            ranges::to<std::vector>();
   }
