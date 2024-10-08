@@ -2,6 +2,7 @@ export module render.context;
 import std;
 import toy;
 
+import render.vk.resource;
 import render.vk.device;
 import render.vk.instance;
 import render.vk.surface;
@@ -16,13 +17,13 @@ class Context : public toy::ProactiveSingleton<Context> {
 public:
   Context(const std::string& app_name, uint32 width, uint32 height);
 
-private:
+// private:
   std::unique_ptr<glfw::Context>         _glfw_ctx;
   std::unique_ptr<glfw::Window>          _glfw_window;
   std::unique_ptr<input::InputProcessor> _input_processor;
 
   std::unique_ptr<vk::InstanceResource>       _instance;
-  std::unique_ptr<vk::Surface>                _surface;
+  std::unique_ptr<vk::rs::Surface>            _surface;
   std::unique_ptr<vk::Device>                 _device;
   std::unique_ptr<vk::Swapchain>              _swapchain;
   std::unique_ptr<vk::CommandExecutorManager> _command_executor_manager;

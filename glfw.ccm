@@ -22,7 +22,7 @@ void checkGlfwError();
 
 class Window : public toy::ProactiveSingleton<Window> {
 public:
-  Window(uint32 width, uint32 height, const std::string& title, toy::ImplicitDep<Context> ctx);
+  Window(uint32 width, uint32 height, const std::string& title);
   auto get() const -> GLFWwindow* { return _window.get(); }
   operator GLFWwindow*() const { return get(); }
 
@@ -32,7 +32,7 @@ private:
   std::unique_ptr<GLFWwindow, decltype(deleter)> _window;
 };
 
-Window::Window(uint32 width, uint32 height, const std::string& title, toy::ImplicitDep<Context> ctx) {
+Window::Window(uint32 width, uint32 height, const std::string& title) {
   // 不要创建openGL上下文
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   // 禁用改变窗口尺寸

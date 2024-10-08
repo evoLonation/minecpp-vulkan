@@ -30,7 +30,9 @@ using FormatTypeInfos = toy::TypePack<
   FormatTypeInfo<VK_FORMAT_R64_SFLOAT, double>               //
   >;
 
-export auto checkVertexPdeviceSupport(vk::DeviceCapabilityBuilder&) -> bool;
+export namespace vk::device_checkers {
+auto vertex(vk::DeviceCapabilityBuilder&) -> bool;
+}
 
 export struct VertexInfo {
   const VkVertexInputBindingDescription*             binding_description;
@@ -119,7 +121,7 @@ private:
 
 class DeviceLocalBuffer : public vk::Buffer {
 private:
-  vk::StagingBuffer _staging_buffer;
+  vk::StagingBuffer        _staging_buffer;
   vk::BufferBarrierTracker _tracker;
 
 public:

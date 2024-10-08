@@ -36,7 +36,7 @@ private:
   static inline auto    _max_anisotropy = float{};
 
 public:
-  static auto device_checker(vk::DeviceCapabilityBuilder& request) -> bool {
+  static auto checkPdevice(vk::DeviceCapabilityBuilder& request) -> bool {
     if (!request.enableFeature(&VkPhysicalDeviceFeatures::samplerAnisotropy)) {
       return false;
     }

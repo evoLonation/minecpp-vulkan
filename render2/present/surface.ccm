@@ -3,7 +3,6 @@ export module render.vk.surface;
 import "vulkan_config.h";
 import render.vk.resource;
 import render.vk.tool;
-import render.vk.instance;
 
 import "glfw_config.h";
 import glfw;
@@ -11,30 +10,26 @@ import glfw;
 import std;
 import toy;
 
-namespace rd::vk {
+export namespace rd::vk {
 
-export class Surface : public rs::Surface, public toy::ProactiveSingleton<Surface> {
-public:
-  Surface(toy::ImplicitDep<rs::Instance> instance, glfw::Window& window);
-  static auto getRequiredInstanceExtensions() -> std::span<std::string>;
+namespace extensions {
+auto surface = std::vector<std::string>{ "VK_KHR_surface", "VK_KHR_win32_surface" };
+}
 
-private:
-  static inline auto _instance_extensions =
-    std::vector<std::string>{ "VK_KHR_surface", "VK_KHR_win32_surface" };
-};
-
-Surface::Surface(toy::ImplicitDep<rs::Instance> instance, glfw::Window& window) {
+/**
+ * @brief Create a Surface object, need created instance first
+ * 
+ * @param window 
+ * @return rs::Surface 
+ */
+auto createSurface(glfw::Window& window) -> rs::Surface {
   auto create_info = VkWin32SurfaceCreateInfoKHR{
     .sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
     .hinstance = GetModuleHandle(nullptr),
     .hwnd = glfwGetWin32Window(window.get()),
   };
   // implicit use instance
-  rs::Surface::operator=(create_info);
-}
-
-auto Surface::getRequiredInstanceExtensions() -> std::span<std::string> {
-  return _instance_extensions;
+  return rs::Surface{ create_info };
 }
 
 } // namespace rd::vk

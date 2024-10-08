@@ -14,15 +14,13 @@ import toy;
 
 export namespace rd::vk {
 
-class Swapchain : public rs::Swapchain, public toy::ProactiveSingleton<Swapchain> {
+class Swapchain : public rs::Swapchain {
 public:
   /**
    * @brief maybe empty
    * @param concurrent_image_count the max image count user can acquire at same time, must >= 1
    */
-  Swapchain(
-    toy::ImplicitDep<Surface>, toy::ImplicitDep<Device>, uint32 concurrent_image_count = 1
-  );
+  Swapchain(VkSurfaceKHR surface, uint32 concurrent_image_count = 1);
   /**
    * @brief call this method when need newest _capabilities such as needRecreate(), recreate()
    */
@@ -55,15 +53,17 @@ public:
   static auto format() -> VkFormat { return _format; }
 
 private:
-  static constexpr auto _format = VK_FORMAT_R8G8B8A8_SRGB;
-  static constexpr auto _present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
-  static constexpr auto _color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+  static VkFormat         _format;
+  static VkPresentModeKHR _present_mode;
+  static VkColorSpaceKHR  _color_space;
 
 public:
-  static auto checkPdevice(DeviceCapabilityBuilder&) -> bool;
+  static auto checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& request) -> bool;
 
 private:
-  uint32                 _min_image_count;
+  VkSurfaceKHR _surface;
+
+  uint32                   _min_image_count;
   VkSurfaceCapabilitiesKHR _capabilities;
   VkExtent2D               _swapchain_extent;
   Semaphore                _image_available_sema;
@@ -80,7 +80,7 @@ private:
   std::vector<VkImage>       _images;
   std::vector<rs::ImageView> _image_views;
   bool                       _last_present_failed;
-  uint32                   _image_index;
+  uint32                     _image_index;
 };
 
 } // namespace rd::vk

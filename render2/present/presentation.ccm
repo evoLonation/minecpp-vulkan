@@ -13,7 +13,7 @@ export namespace rd::vk {
 
 class Presentation {
 public:
-  Presentation(Swapchain& swapchain);
+  Presentation(Swapchain* swapchain);
 
   struct PresentContext {
     // must consume semas until present()
@@ -32,6 +32,8 @@ public:
   void present();
 
 private:
+  Swapchain* _swapchain;
+
   struct ImageResource {
     Semaphore           present_wait_sema = { true };
     Semaphore           present_transfer_sema = { true };
@@ -43,8 +45,9 @@ private:
   bool _present_recreated;
 };
 
-Presentation::Presentation(Swapchain& swapchain) {
-  auto images = swapchain.images();
+Presentation::Presentation(Swapchain* swapchain) {
+  _swapchain = swapchain;
+  auto images = _swapchain->images();
   for (auto& image : images) {
     _image_resources[image] = ImageResource{
       .tracker =

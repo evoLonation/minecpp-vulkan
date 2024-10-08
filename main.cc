@@ -36,7 +36,7 @@ int main() {
     toy::test_EnumSet::test();
     trans::test_trans();
     auto  ctx = rd::Context{ "hello vulkan", 1920, 1080 };
-    auto& swapchain = rd::vk::Swapchain::getInstance();
+    auto& swapchain = *ctx._swapchain.get();
     auto& input_processor = input::InputProcessor::getInstance();
 
     auto depth_format = VK_FORMAT_D32_SFLOAT;
@@ -46,7 +46,7 @@ int main() {
       "the sample count is not available"
     );
 
-    auto presentation = rd::vk::Presentation{ swapchain };
+    auto presentation = rd::vk::Presentation{ &swapchain };
 
     auto render_pass_info = rd::vk::RenderPassInfo{
       .attachments = {

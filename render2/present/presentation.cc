@@ -9,20 +9,19 @@ import render.vk.image;
 namespace rd::vk {
 
 auto Presentation::prepare() -> std::optional<PresentContext> {
-  auto& swapchain = Swapchain::getInstance();
-  bool  recreated = _present_recreated;
-  if (!swapchain.valid()) {
-    swapchain.updateCapabilities();
-    if (swapchain.needRecreate()) {
-      swapchain.recreate();
+  bool recreated = _present_recreated;
+  if (!_swapchain->valid()) {
+    _swapchain->updateCapabilities();
+    if (_swapchain->needRecreate()) {
+      _swapchain->recreate();
       recreated = true;
     }
   }
-  if (!swapchain.valid()) {
+  if (!_swapchain->valid()) {
     return std::nullopt;
   }
   if (recreated) {
-    auto images = swapchain.images();
+    auto images = _swapchain->images();
     for (auto image : images) {
       _image_resources[image].tracker = ImageBarrierTracker{
         image,
@@ -30,9 +29,9 @@ auto Presentation::prepare() -> std::optional<PresentContext> {
       };
     }
   }
-  auto image_available_sema = swapchain.getImageAvailableSema();
-  auto image_index = swapchain.getCurrentImageIndex();
-  auto image = swapchain.images()[image_index];
+  auto image_available_sema = _swapchain->getImageAvailableSema();
+  auto image_index = _swapchain->getCurrentImageIndex();
+  auto image = _swapchain->images()[image_index];
 
   return PresentContext{
     .wait_sema = image_available_sema,
@@ -45,10 +44,9 @@ auto Presentation::prepare() -> std::optional<PresentContext> {
 void Presentation::present() {
   // transfer image ownership from graphics to present
   // transfer image layout from <custom> to presentable
-  auto& swapchain = Swapchain::getInstance();
-  auto  image_index = swapchain.getCurrentImageIndex();
+  auto  image_index = _swapchain->getCurrentImageIndex();
   auto& present_executor = CommandExecutorManager::getInstance()[FamilyType::PRESENT];
-  auto  image = swapchain.images()[image_index];
+  auto  image = _swapchain->images()[image_index];
   auto& tracker = _image_resources[image].tracker;
   auto& present_wait_sema = _image_resources[image].present_wait_sema;
   auto  sync = tracker.syncScope(
@@ -91,9 +89,9 @@ void Presentation::present() {
     };
     present_executor.submit(batch);
   }
-  if (!swapchain.present(present_wait_sema, present_executor.getQueue())) {
-    swapchain.updateCapabilities();
-    swapchain.recreate();
+  if (!_swapchain->present(present_wait_sema, present_executor.getQueue())) {
+    _swapchain->updateCapabilities();
+    _swapchain->recreate();
     _present_recreated = true;
   } else {
     _present_recreated = false;

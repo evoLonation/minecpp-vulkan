@@ -1,8 +1,6 @@
 source:
 - sync.ccm
 - sync.cc
-- command.ccm
-- command.cc
 - queue_requestor.ccm
 - tracker.ccm
 - tracker.cc

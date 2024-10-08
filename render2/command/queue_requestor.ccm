@@ -53,14 +53,13 @@ auto hungarian(std::span<const std::vector<int>> graph, int right_count)
 
 struct QueueFamilyCheckContext {
   VkPhysicalDevice        device;
-  VkSurfaceKHR            surface;
   size_t                  index;
   VkQueueFamilyProperties properties;
 };
 
 struct QueueFamilyRequirement {
   std::function<bool(QueueFamilyCheckContext)> checker;
-  uint32                                     queue_count;
+  uint32                                       queue_count;
 };
 
 class QueueRequestor {
@@ -69,7 +68,6 @@ public:
     : _requirements(requirements | ranges::to<std::vector>()) {}
   auto checkPdevice(DeviceCapabilityBuilder& request) -> bool {
     auto& pdevice = request.getPdevice();
-    auto& surface = Surface::getInstance();
 
     auto family_count = pdevice.getAllQueueFamilyProperties().size();
     auto requirement_count = _requirements.size();
@@ -85,8 +83,7 @@ public:
       for (auto [requirement_i, requirement] : _requirements | toy::enumerate) {
         // auto& [queue_checker, queue_number] = queue_requirement;
         if (properties.queueCount >= requirement.queue_count &&
-            requirement.checker(QueueFamilyCheckContext{
-              pdevice.get(), surface, family_i, properties })) {
+            requirement.checker(QueueFamilyCheckContext{ pdevice.get(), family_i, properties })) {
           graph[requirement_i].push_back(family_i);
           toy::debugf("queue request {} success", requirement_i);
         } else {
@@ -98,8 +95,7 @@ public:
       request.family_queue_counts.append_range(
         res.value() | toy::enumerate | views::transform([&](auto pair) {
           auto& [index, family] = pair;
-          return FamilyQueueCount{ static_cast<uint32>(family),
-                                   _requirements[index].queue_count };
+          return FamilyQueueCount{ static_cast<uint32>(family), _requirements[index].queue_count };
         })
       );
       _pdevice2family_queue_counts[pdevice.get()] = request.family_queue_counts;
@@ -117,19 +113,5 @@ private:
   std::vector<QueueFamilyRequirement>                                 _requirements;
   std::unordered_map<VkPhysicalDevice, std::vector<FamilyQueueCount>> _pdevice2family_queue_counts;
 };
-
-auto requestGraphicQueue(const QueueFamilyCheckContext& ctx) -> bool {
-  return ctx.properties.queueFlags & VK_QUEUE_GRAPHICS_BIT;
-}
-auto requestPresentQueue(const QueueFamilyCheckContext& ctx) -> bool {
-  VkBool32 presentSupport = VK_FALSE;
-  vkGetPhysicalDeviceSurfaceSupportKHR(ctx.device, ctx.index, ctx.surface, &presentSupport);
-  return presentSupport == VK_TRUE;
-}
-auto requestTransferQueue(const QueueFamilyCheckContext& ctx) -> bool {
-  // 支持 graphics 和 compute operation 的 queue 也必定支持 transfer operation
-  return ctx.properties.queueFlags &
-         (VK_QUEUE_TRANSFER_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_GRAPHICS_BIT);
-}
 
 } // namespace rd::vk

@@ -406,11 +406,11 @@ struct ButtonState {
   float hold_time;
 };
 struct CursorState {
-  uint32 x;
-  uint32 y;
-  int32_t  x_move;
-  int32_t  y_move;
-  bool     visible;
+  uint32  x;
+  uint32  y;
+  int32_t x_move;
+  int32_t y_move;
+  bool    visible;
 };
 struct KeyboardEvent {
   Keyboard    key;
@@ -470,7 +470,7 @@ private:
   auto operator=(InputProcessor&&) -> InputProcessor& = delete;
 
 public:
-  InputProcessor(toy::ImplicitDep<glfw::Context> ctx) {
+  InputProcessor() {
     auto window = glfw::Window::getInstance().get();
     // 须在创建窗口后、开始渲染前注册回调函数
     glfwSetKeyCallback(

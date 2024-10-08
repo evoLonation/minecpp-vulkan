@@ -55,13 +55,6 @@ public:
   ProactiveSingleton(ProactiveSingleton&&) { _instance_ptr = &self(); }
 };
 
-// 作为形参，表示该函数含有对 T 实例的隐含依赖（如需要该实例的单例已经构造）
-template <typename T>
-class ImplicitDep {
-public:
-  ImplicitDep(T&) {}
-};
-
 template <typename T>
 using RefContainer = std::unordered_set<T*>;
 

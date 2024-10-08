@@ -6,8 +6,8 @@ import toy;
 
 namespace rd::vk {
 
-Device::Device(std::span<DeviceCapabilityChecker> checkers, rs::Instance& instance) {
-  auto devices = getVkResources(vkEnumeratePhysicalDevices, instance) |
+Device::Device(std::span<DeviceCapabilityChecker> checkers) {
+  auto devices = getVkResources(vkEnumeratePhysicalDevices, rs::Instance::getInstance()) |
                  views::transform([](auto handle) { return PhysicalDevice{ handle }; }) |
                  ranges::to<std::vector>();
 

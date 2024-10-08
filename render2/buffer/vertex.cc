@@ -10,7 +10,7 @@ auto operator==(const VertexInfo& a, const VertexInfo& b) -> bool {
          a.attribute_descriptions.end() == b.attribute_descriptions.end();
 }
 
-auto checkVertexPdeviceSupport(vk::DeviceCapabilityBuilder& builder) -> bool {
+auto vk::device_checkers::vertex(vk::DeviceCapabilityBuilder& builder) -> bool {
   auto formats =
     FormatTypeInfos::applyFunc([]<typename... Info> { return std::array{ Info::format... }; });
   toy::debugf("the vertex formats: {::}", formats | views::transform([](auto a) {

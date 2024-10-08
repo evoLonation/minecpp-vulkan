@@ -9,9 +9,12 @@ import toy;
 
 namespace rd::vk {
 
-Swapchain::Swapchain(
-  toy::ImplicitDep<Surface>, toy::ImplicitDep<Device>, uint32 concurrent_image_count
-) {
+VkFormat         Swapchain::_format = VK_FORMAT_R8G8B8A8_SRGB;
+VkPresentModeKHR Swapchain::_present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
+VkColorSpaceKHR  Swapchain::_color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+
+Swapchain::Swapchain(VkSurfaceKHR surface, uint32 concurrent_image_count) {
+  _surface = surface;
   updateCapabilities();
   _swapchain_extent = _capabilities.currentExtent;
   // the driver will use _capabilities.minImageCount - 1 images
@@ -54,7 +57,7 @@ void Swapchain::create() {
 
   auto create_info = VkSwapchainCreateInfoKHR{
     .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-    .surface = Surface::getInstance(),
+    .surface = _surface,
     .minImageCount = _min_image_count,
     .imageFormat = _format,
     .imageColorSpace = _color_space,
@@ -148,12 +151,11 @@ void Swapchain::recreate() {
   create();
 }
 
-auto Swapchain::checkPdevice(DeviceCapabilityBuilder& request) -> bool {
+auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& request) -> bool {
   if (!request.enableExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
     return false;
   }
   auto& pdevice = request.getPdevice();
-  auto& surface = Surface::getInstance();
   auto  formats = getVkResources(vkGetPhysicalDeviceSurfaceFormatsKHR, pdevice.get(), surface);
   auto  iter_format = ranges::find_if(formats, [&](auto format) {
     return format.format == _format && format.colorSpace == _color_space;
@@ -195,7 +197,7 @@ void Swapchain::updateCapabilities() {
   // of them 0.
   VkSurfaceCapabilitiesKHR capabilities;
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
-    Device::getInstance().getPdevice().get(), Surface::getInstance(), &capabilities
+    Device::getInstance().getPdevice().get(), _surface, &capabilities
   );
   auto eq_extent = [](auto a, auto b) { return a.height == b.height && a.width == b.width; };
   toy::throwf(

@@ -11,9 +11,9 @@ import toy;
 
 export namespace rd::vk {
 
-namespace sync {
+namespace device_checkers {
 
-auto checkPdevice(DeviceCapabilityBuilder& builder) -> bool {
+auto sync(DeviceCapabilityBuilder& builder) -> bool {
   if (!builder.enableFeature(&VkPhysicalDeviceVulkan13Features::synchronization2)) {
     return false;
   }
@@ -23,7 +23,7 @@ auto checkPdevice(DeviceCapabilityBuilder& builder) -> bool {
   return true;
 }
 
-} // namespace sync
+} // namespace device_checkers
 
 class TimelineSemaphore : public rs::Semaphore {
 public:
