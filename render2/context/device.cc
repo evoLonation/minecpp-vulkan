@@ -97,10 +97,19 @@ Device::Device(std::span<DeviceCapabilityChecker> checkers, rs::Instance& instan
       enabled_vk13features.*member = true;
     }
   }
+  auto enabled_vk12features = VkPhysicalDeviceVulkan12Features{
+    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+    .pNext = &enabled_vk13features,
+  };
+  for (auto& request : requests) {
+    for (auto member : request.vk12features) {
+      enabled_vk12features.*member = true;
+    }
+  }
 
   auto create_info = VkDeviceCreateInfo{
     .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-    .pNext = &enabled_vk13features,
+    .pNext = &enabled_vk12features,
     .queueCreateInfoCount = static_cast<uint32>(queue_create_infos.size()),
     .pQueueCreateInfos = queue_create_infos.data(),
     .enabledExtensionCount = static_cast<uint32>(unique_required_extensions.size()),
@@ -126,8 +135,10 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice pdevice) {
   vkGetPhysicalDeviceProperties(pdevice, &_properties);
   auto features2 =
     VkPhysicalDeviceFeatures2{ .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+  features2.pNext = &_vk12features;
+  _vk12features = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+  _vk12features.pNext = &_vk13features;
   _vk13features = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
-  features2.pNext = &_vk13features;
   vkGetPhysicalDeviceFeatures2(pdevice, &features2);
   _features = features2.features;
   vkGetPhysicalDeviceMemoryProperties(pdevice, &_memory_properties);

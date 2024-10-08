@@ -249,22 +249,20 @@ int main() {
           },
           context.wait_sema
         );
-        rd::vk::executors::graphics.submit(
-          [&](auto cmdbuf) {
-            render_pass.recordDraw(
-              cmdbuf, framebuffer_resource.framebuffers[context.image_index], clear_values
-            );
-          },
-          {},
-          {}
-        );
+        auto& graphics_executor =
+          rd::vk::CommandExecutorManager::getInstance()[rd::vk::FamilyType::GRAPHICS];
+        graphics_executor.submit([&](auto cmdbuf) {
+          render_pass.recordDraw(
+            cmdbuf, framebuffer_resource.framebuffers[context.image_index], clear_values
+          );
+        });
         render_pass.updateAttachmentsScope(
           std::array{
             &framebuffer_resource.sample_image_tracker,
             &context.tracker,
             &framebuffer_resource.depth_image_tracker,
           },
-          rd::vk::executors::graphics.getFamily()
+          graphics_executor.getFamily()
         );
 
         count++;

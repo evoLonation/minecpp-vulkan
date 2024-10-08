@@ -3,6 +3,7 @@ export module render.vk.sync;
 import "vulkan_config.h";
 import render.vk.resource;
 import render.vk.device;
+import render.vk.tool;
 
 import std;
 import toy;
@@ -12,10 +13,188 @@ export namespace rd::vk {
 namespace sync {
 
 auto checkPdevice(DeviceCapabilityBuilder& builder) -> bool {
-  return builder.enableFeature(&VkPhysicalDeviceVulkan13Features::synchronization2);
+  if (!builder.enableFeature(&VkPhysicalDeviceVulkan13Features::synchronization2)) {
+    return false;
+  }
+  if (!builder.enableFeature(&VkPhysicalDeviceVulkan12Features::timelineSemaphore)) {
+    return false;
+  }
+  return true;
 }
 
 } // namespace sync
+
+class TimelineSemaphore : public rs::Semaphore {
+public:
+  TimelineSemaphore(uint64 initial_value = 0) {
+    auto type_info = VkSemaphoreTypeCreateInfo{
+      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+      .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+      .initialValue = initial_value,
+    };
+    VkSemaphoreCreateInfo create_info{
+      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+      .pNext = &type_info,
+    };
+    rs::Semaphore::operator=(create_info);
+    _newest_value = initial_value;
+  }
+  ~TimelineSemaphore() {
+    if (get()) {
+      waitIdle();
+    }
+  }
+  TimelineSemaphore(const TimelineSemaphore&) noexcept = delete;
+  TimelineSemaphore(TimelineSemaphore&&) noexcept = default;
+  auto operator=(const TimelineSemaphore&) noexcept -> TimelineSemaphore& = delete;
+  auto operator=(TimelineSemaphore&&) noexcept -> TimelineSemaphore& = default;
+  auto getValue() const -> uint64 {
+    uint64 value;
+    checkVkResult(vkGetSemaphoreCounterValue(Device::getInstance().get(), get(), &value), "");
+    return value;
+  }
+
+  auto wait(uint64 value, uint64 nano_timeout = std::numeric_limits<uint64>::max()) -> bool {
+    return wait(
+      std::array{ std::pair<TimelineSemaphore&, uint64>{ *this, value } }, false, nano_timeout
+    );
+  }
+
+  static auto wait(
+    std::span<std::pair<TimelineSemaphore&, uint64> const> semaphores,
+    bool                                                   any = false,
+    uint64 nano_timeout = std::numeric_limits<uint64>::max()
+  ) -> bool {
+    auto handles = semaphores | views::transform([](auto& s) { return s.first.get(); }) |
+                   ranges::to<std::vector>();
+    auto values =
+      semaphores | views::transform([](auto& s) { return s.second; }) | ranges::to<std::vector>();
+    auto wait_info = VkSemaphoreWaitInfo{
+      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+      .flags = any ? VK_SEMAPHORE_WAIT_ANY_BIT : 0u,
+      .semaphoreCount = static_cast<uint32>(semaphores.size()),
+      .pSemaphores = handles.data(),
+      .pValues = values.data(),
+    };
+    auto res = checkVkResult(
+      vkWaitSemaphores(Device::getInstance(), &wait_info, nano_timeout),
+      "wait semaphore",
+      { VK_SUCCESS, VK_TIMEOUT }
+    );
+    if (res == VK_SUCCESS) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  void signal(uint64 value) {
+    auto signal_info = VkSemaphoreSignalInfo{
+      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO,
+      .semaphore = get(),
+      .value = value,
+    };
+    checkVkResult(vkSignalSemaphore(Device::getInstance(), &signal_info), "signal semaphore");
+    _newest_value = value;
+  }
+
+  /**
+   * @brief Update the newest and biggest signaled value (no matter pending or not)
+   *
+   * @param value must bigger than the return value of getNewestValue
+   */
+  void updateValue(uint64 value) {
+    if (value <= _newest_value) {
+      toy::throwf(
+        "TimelineSemaphore::updateValue: value must bigger than the return value of getNewestValue"
+      );
+    }
+    _newest_value = value;
+  }
+  auto getNewestValue() const -> uint64 { return _newest_value; }
+
+  auto increaseValue() -> uint64 { return ++_newest_value; }
+
+  auto waitIdle(uint64 nano_timeout = std::numeric_limits<uint64>::max()) -> bool {
+    return wait(getNewestValue(), nano_timeout);
+  }
+
+private:
+  uint64 _newest_value;
+};
+
+class TimelineSemaphorePool {
+public:
+  TimelineSemaphorePool() { _idle_semas.resize(10); }
+  auto allocate() -> TimelineSemaphore {
+    if (_idle_semas.empty()) {
+      workingToIdle();
+    } else {
+      tryShrink();
+    }
+    if (_idle_semas.empty()) {
+      return TimelineSemaphore{};
+    }
+    auto ret = std::move(_idle_semas.back());
+    _idle_semas.pop_back();
+    return ret;
+  }
+
+  void recycle(TimelineSemaphore s) { _working_semas.push_back(std::move(s)); }
+
+  void tryShrink() {
+    auto shrink_size = 20;
+    if (_idle_semas.size() <= shrink_size) {
+      return;
+    }
+    toy::debugf("shrink {} -> {}", _idle_semas.size(), shrink_size);
+    _idle_semas.erase(_idle_semas.begin() + shrink_size, _idle_semas.end());
+  }
+
+  TimelineSemaphorePool(const TimelineSemaphorePool&) noexcept = delete;
+  TimelineSemaphorePool(TimelineSemaphorePool&&) noexcept = delete;
+  auto operator=(const TimelineSemaphorePool&) noexcept -> TimelineSemaphorePool& = delete;
+  auto operator=(TimelineSemaphorePool&&) noexcept -> TimelineSemaphorePool& = delete;
+
+private:
+  std::vector<TimelineSemaphore> _idle_semas;
+  std::list<TimelineSemaphore>   _working_semas;
+
+  void workingToIdle() {
+    for (auto iter = _working_semas.begin(); iter != _working_semas.end();) {
+      if (iter->waitIdle(0)) {
+        _idle_semas.push_back(std::move(*iter));
+        iter = _working_semas.erase(iter);
+      } else {
+        iter++;
+      }
+    }
+  }
+};
+
+class TimelineSemaphoreRecyclable : public TimelineSemaphore {
+public:
+  TimelineSemaphoreRecyclable(TimelineSemaphorePool* pool)
+    : TimelineSemaphore(pool->allocate()), _pool(pool) {}
+
+  ~TimelineSemaphoreRecyclable() { recycle(); }
+  TimelineSemaphoreRecyclable(TimelineSemaphoreRecyclable&& a) noexcept = default;
+  auto operator=(TimelineSemaphoreRecyclable&& a) noexcept -> TimelineSemaphoreRecyclable& {
+    recycle();
+    TimelineSemaphore::operator=(std::move(a));
+    _pool = a._pool;
+    return *this;
+  }
+
+private:
+  TimelineSemaphorePool* _pool;
+
+  void recycle() {
+    if (get()) {
+      _pool->recycle(std::move(*this));
+    }
+  }
+};
 
 class Semaphore : public rs::Semaphore {
 public:
@@ -134,7 +313,8 @@ void recordPipelineBarrier(
  * - src_stage/access: NONE, 0 (by spec: src_stage/access are ignored)
  * - dst_stage/access: dst_use_stage, dst_use_access
  * dependency chain:
- * src_use -> release op -> src_command done -> dst_command's wait stage start execute -> acquire op
+ * src_use -> release op -> src_command done -> dst_command's wait stage start execute -> acquire
+ * op
  * -> dst_use
  */
 struct BarrierScope {

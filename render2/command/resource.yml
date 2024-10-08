@@ -3,9 +3,7 @@ source:
 - sync.cc
 - command.ccm
 - command.cc
-- executor.ccm
 - queue_requestor.ccm
-- executor.cc
-- executor_registry.ccm
 - tracker.ccm
 - tracker.cc
+- executor.ccm

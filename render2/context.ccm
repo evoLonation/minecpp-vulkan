@@ -21,11 +21,11 @@ private:
   std::unique_ptr<glfw::Window>          _glfw_window;
   std::unique_ptr<input::InputProcessor> _input_processor;
 
-  std::unique_ptr<vk::InstanceResource> _instance;
-  std::unique_ptr<vk::Surface>          _surface;
-  std::unique_ptr<vk::Device>           _device;
-  std::unique_ptr<vk::Swapchain>        _swapchain;
-  std::unique_ptr<vk::CommandExecutor>  _command_executor;
+  std::unique_ptr<vk::InstanceResource>       _instance;
+  std::unique_ptr<vk::Surface>                _surface;
+  std::unique_ptr<vk::Device>                 _device;
+  std::unique_ptr<vk::Swapchain>              _swapchain;
+  std::unique_ptr<vk::CommandExecutorManager> _command_executor_manager;
 };
 
 } // namespace rd

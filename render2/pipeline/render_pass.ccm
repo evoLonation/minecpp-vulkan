@@ -301,51 +301,47 @@ private:
 void RenderPass::syncAttachments(
   std::span<ImageBarrierTracker* const> trackers, VkSemaphore wait_sema
 ) {
-  static auto transfer_semas = [&]() {
-    auto semas = std::vector<Semaphore>{};
-    auto n = (int)trackers.size();
-    while (n--) {
-      semas.emplace_back(true);
-    }
-    return semas;
-  }();
+  // static auto transfer_semas = [&]() {
+  //   auto semas = std::vector<Semaphore>{};
+  //   auto n = (int)trackers.size();
+  //   while (n--) {
+  //     semas.emplace_back(true);
+  //   }
+  //   return semas;
+  // }();
 
   toy::throwf(trackers.size() == _attachment_syncs.size(), "mismatched attachment count");
-  auto& graphics_executor = executors::graphics;
-  for (auto [index, info, tracker, transfer_sema] : views::zip(
-         views::iota(0u, _attachment_syncs.size()), _attachment_syncs, trackers, transfer_semas
-       )) {
+  auto& graphics_executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::GRAPHICS];
+  for (auto [index, info, tracker] :
+       views::zip(views::iota(0u, _attachment_syncs.size()), _attachment_syncs, trackers)) {
     auto sync = tracker->syncScope(
       Scope{ .stage_mask = info.initial_stage }, graphics_executor.getFamily(), info.initial_layout
     );
     if (auto* barrier = std::get_if<BarrierRecorder>(&sync)) {
       if (index == 1) {
-        graphics_executor.submit(
-          *barrier,
-          std::array{ rd::vk::WaitSemaphore{ wait_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
-          {}
-        );
+        graphics_executor.submit(vk::RawWaitCommandBatch{
+          .recorder = std::move(*barrier),
+          .waits = { { wait_sema, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
+        });
       } else {
-        graphics_executor.submit(*barrier, {}, {});
+        graphics_executor.submit(*barrier);
       }
     } else if (auto* barrier = std::get_if<FamilyTransferRecorder>(&sync)) {
-      if (index == 1) {
-
-        executors::getByFamily(barrier->release_family)
-          .submit(
-            barrier->release,
-            std::array{ rd::vk::WaitSemaphore{ wait_sema, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } },
-            std::array{ transfer_sema.get() }
-          );
-      } else {
-        executors::getByFamily(barrier->release_family)
-          .submit(barrier->release, {}, std::array{ transfer_sema.get() });
-      }
-      graphics_executor.submit(
-        barrier->acquire,
-        std::array{ WaitSemaphore{ transfer_sema.get(), VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
-        {}
-      );
+      auto& release_executor = vk::CommandExecutorManager::getInstance()[barrier->release_family];
+      auto  waitable = [&]() {
+        if (index == 1) {
+          return release_executor.submit(vk::RawWaitCommandBatch{
+             .recorder = std::move(barrier->release),
+             .waits = { { wait_sema, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
+          });
+        } else {
+          return release_executor.submit(barrier->release);
+        }
+      }();
+      graphics_executor.submit(vk::CommandBatch{
+        .recorder = std::move(barrier->acquire),
+        .waits = { { &waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
+      });
     }
   }
 }

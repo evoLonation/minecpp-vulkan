@@ -1,346 +1,470 @@
-export module render.vk.executor:impl;
-
-import "vulkan_config.h";
-import render.vk.resource;
-import render.vk.device;
-import render.vk.sync;
-import render.vk.command;
-
+export module render.vk.executor;
 import std;
 import toy;
 
-namespace rd::vk {
+import render.vk.sync;
+import render.vk.resource;
+import render.vk.tool;
+import render.vk.device;
 
-// 按照构造时的顺序
-using QueueFamily = uint32;
+import "vulkan_config.h";
 
-struct PoolState {
-  std::size_t allocate_n;
-  std::size_t inuse_n;
-};
+export namespace rd::vk {
 
-template <typename ResourceT, typename Derived>
-class CommonPool {
-
-private:
-  std::deque<ResourceT>   _resources;
-  std::vector<ResourceT*> _resource_frees;
-
+class CommandBuffer : public rs::CommandBuffer {
 public:
-  auto allocate() {
-    ResourceT* resource;
-    if (_resource_frees.empty()) {
-      _resources.push_back(Derived::_creator());
-      resource = &_resources.back();
-    } else {
-      resource = _resource_frees.back();
-      _resource_frees.pop_back();
-    }
-    auto deleter = [&](ResourceT* resource) { _resource_frees.push_back(resource); };
-    return std::unique_ptr<ResourceT, decltype(deleter)>{ resource, deleter };
-  }
-  auto getState() -> PoolState {
-    return { _resources.size(), _resources.size() - _resource_frees.size() };
-  }
-};
+  /**
+   * @brief Construct a new Command Buffer object
+   *
+   * @param cmdbuf must is a newly created command buffer
+   */
+  CommandBuffer(rs::CommandBuffer cmdbuf) : rs::CommandBuffer(std::move(cmdbuf)), _semaphore{} {}
 
-class FencePool : public CommonPool<Fence, FencePool> {
-private:
-  friend CommonPool<Fence, FencePool>;
-  static constexpr auto _creator = []() { return Fence{ false }; };
-};
-class SemaphorePool : public CommonPool<Semaphore, SemaphorePool> {
-private:
-  friend CommonPool<Semaphore, SemaphorePool>;
-  static constexpr auto _creator = []() { return Semaphore{ true }; };
-};
-
-class CmdbufPool {
-private:
-  rs::CommandPool                 _cmd_pool;
-  static constexpr auto           _cmdbuf_allocate_n = 5;
-  std::vector<rs::CommandBuffers> _cmdbufs;
-  std::vector<VkCommandBuffer>    _cmdbuf_frees;
-
-public:
-  CmdbufPool() = default;
-  CmdbufPool(uint32 family_index) { _cmd_pool = createCommandPool(family_index, true); }
-
-  auto allocate() {
-    auto handle = VkCommandBuffer{};
-    if (_cmdbuf_frees.empty()) {
-      _cmdbufs.emplace_back(allocateCommandBuffers(_cmd_pool, _cmdbuf_allocate_n));
-      auto resources = _cmdbufs.back().get();
-      [&]<size_t... indices>(std::index_sequence<indices...> index_seq) {
-        (_cmdbuf_frees.emplace_back(resources[indices]), ...);
-      }(std::make_index_sequence<_cmdbuf_allocate_n - 1>{});
-      handle = resources[_cmdbuf_allocate_n - 1];
-    } else {
-      handle = _cmdbuf_frees.back();
-      _cmdbuf_frees.pop_back();
-    }
-    auto deleter = [&](VkCommandBuffer handle) { _cmdbuf_frees.push_back(handle); };
-    return std::unique_ptr<std::remove_pointer_t<VkCommandBuffer>, decltype(deleter)>{
-      handle, std::move(deleter)
+  /**
+   * @brief Must ensure waitIdle can immediately return true (into idle state). Prepare for
+   * submitting by record commands to cmdbuf and increase the semaphore signal value.
+   *
+   * @param recorder
+   */
+  void record(std::function<void(VkCommandBuffer cmdbuf)> const& recorder) {
+    // vkBeginCommandBuffer 会隐式执行vkResetCommandBuffer
+    // vkResetCommandBuffer(worker.command_buffer, 0);
+    auto begin_info = VkCommandBufferBeginInfo{
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+      /** \param VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT specifies that each
+       * recording of the command buffer will only be submitted once, and the
+       * command buffer will be reset and recorded again between each submission.
+       * \param VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT specifies that a
+       * secondary command buffer is considered to be entirely inside a render
+       * pass. If this is a primary command buffer, then this bit is ignored.
+       * \param VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT specifies that a
+       * command buffer can be resubmitted to any queue of the same queue family
+       * while it is in the pending state, and recorded into multiple primary
+       * command buffers.*/
+      .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+      .pInheritanceInfo = nullptr,
     };
+    checkVkResult(vkBeginCommandBuffer(get(), &begin_info), "begin command buffer");
+    recorder(get());
+    checkVkResult(vkEndCommandBuffer(get()), "end command buffer");
+    _semaphore.increaseValue();
   }
-  auto getState() -> PoolState {
-    return { _cmdbufs.size() * _cmdbuf_allocate_n,
-             _cmdbufs.size() * _cmdbuf_allocate_n - _cmdbuf_frees.size() };
+  /**
+   * @brief Get the Timeline Semaphore and the value should be signaled after complete execute. Call
+   * it after record().
+   *
+   * @return std::pair<VkSemaphore, uint64> The timeline semaphore and the value should be signaled
+   * to, the executor must make the cmdbuf complete execute before the semaphore is signaled to the
+   * value.
+   */
+  auto getSignalInfo() -> std::pair<VkSemaphore, uint64> {
+    return { _semaphore.get(), _semaphore.getNewestValue() };
   }
-};
-
-template <typename PoolT>
-using PoolResource = toy::FuncRet<decltype(&PoolT::allocate)>;
-
-template <typename ResourceT>
-class ResourceRef {
-private:
-  static inline auto borrow_deleter = [](bool* borrowed) { *borrowed = false; };
-  std::unique_ptr<bool, decltype(borrow_deleter)> _borrowed;
-
-protected:
-  ResourceT* _resource;
-
-public:
-  ResourceRef() = default;
-  ResourceRef(ResourceT* resource, bool& borrowed) {
-    borrowed = true;
-    _borrowed.reset(&borrowed);
-    _resource = resource;
-  }
-  auto& get() { return *_resource; }
-};
-
-class FenceRef : public ResourceRef<Fence> {
-public:
-  FenceRef() = default;
-  FenceRef(Fence* fence, bool& borrowed, std::mutex& mutex)
-    : ResourceRef<Fence>(fence, borrowed), _mutex(&mutex) {}
-  void wait() {
-    auto guard = std::lock_guard<std::mutex>{ *_mutex };
-    get().wait(false);
-  }
-  auto isSignaled() -> bool {
-    auto guard = std::lock_guard<std::mutex>{ *_mutex };
-    return get().isSignaled();
+  auto waitIdle(uint64 nano_timeout = std::numeric_limits<uint64>::max()) -> bool {
+    return _semaphore.waitIdle(nano_timeout);
   }
 
 private:
-  std::mutex* _mutex;
+  TimelineSemaphore _semaphore;
 };
-using SemaphoreRef = ResourceRef<Semaphore>;
 
+class CommandBufferPool {
+public:
+  CommandBufferPool(uint32 family_index) {
+    _pool = rs::CommandPool{ VkCommandPoolCreateInfo{
+      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      // VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT：允许重置单个command
+      // buffer，否则就要重置命令池里的所有buffer
+      // VK_COMMAND_POOL_CREATE_TRANSIENT_BIT: 命令缓冲区会很频繁的记录新命令
+      .flags =
+        VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+      .queueFamilyIndex = family_index,
+    } };
+  }
+  auto allocate() -> CommandBuffer {
+    if (_idle_cmdbufs.size() == 0) {
+      workingToIdle();
+    } else {
+      tryShrink();
+    }
+    if (_idle_cmdbufs.size() == 0) {
+      expand();
+    }
+    auto ret = std::move(_idle_cmdbufs.back());
+    _idle_cmdbufs.pop_back();
+    return ret;
+  }
+
+  void recycle(CommandBuffer cmdbuf) { _working_cmdbufs.push_back(std::move(cmdbuf)); }
+
+  CommandBufferPool(const CommandBufferPool&) noexcept = delete;
+  CommandBufferPool(CommandBufferPool&&) noexcept = delete;
+  auto operator=(const CommandBufferPool&) noexcept -> CommandBufferPool& = delete;
+  auto operator=(CommandBufferPool&&) noexcept -> CommandBufferPool& = delete;
+
+private:
+  rs::CommandPool            _pool;
+  std::vector<CommandBuffer> _idle_cmdbufs;
+  std::list<CommandBuffer>   _working_cmdbufs;
+
+  void workingToIdle() {
+    for (auto iter = _working_cmdbufs.begin(); iter != _working_cmdbufs.end();) {
+      if (iter->waitIdle(0)) {
+        _idle_cmdbufs.push_back(std::move(*iter));
+        iter = _working_cmdbufs.erase(iter);
+      } else {
+        iter++;
+      }
+    }
+  }
+  void expand() {
+    auto cmdbufs = rs::CommandBuffers{ VkCommandBufferAllocateInfo{
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+      .commandPool = _pool,
+      // VK_COMMAND_BUFFER_LEVEL_PRIMARY: 主缓冲区，类似于main
+      // VK_COMMAND_BUFFER_LEVEL_SECONDARY: 次缓冲区，可复用，类似于其他函数
+      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+      .commandBufferCount = 5,
+    } };
+    _idle_cmdbufs.append_range(
+      rs::CommandBuffers::split(std::move(cmdbufs)) |
+      views::transform([](rs::CommandBuffer& cmdbuf) { return CommandBuffer(std::move(cmdbuf)); })
+    );
+  }
+
+  void tryShrink() {
+    auto shrink_size = 20;
+    if (_idle_cmdbufs.size() <= shrink_size) {
+      return;
+    }
+    toy::debugf("shrink {} -> {}", _idle_cmdbufs.size(), shrink_size);
+    auto range = _idle_cmdbufs | views::transform([](CommandBuffer& cmdbuf) -> decltype(auto) {
+                   return static_cast<rs::CommandBuffer&>(cmdbuf);
+                 }) |
+                 views::drop(shrink_size);
+    rs::CommandBuffers::join(range);
+    _idle_cmdbufs.erase(_idle_cmdbufs.begin() + shrink_size, _idle_cmdbufs.end());
+  }
+};
+
+class CommandBufferRecyclable : public CommandBuffer {
+public:
+  CommandBufferRecyclable(CommandBufferPool* pool) : CommandBuffer(pool->allocate()), _pool(pool) {}
+  ~CommandBufferRecyclable() { recycle(); }
+  CommandBufferRecyclable(CommandBufferRecyclable&&) noexcept = default;
+
+  auto operator=(CommandBufferRecyclable&& a) noexcept -> CommandBufferRecyclable& {
+    recycle();
+    CommandBuffer::operator=(std::move(a));
+    _pool = a._pool;
+    return *this;
+  }
+
+private:
+  CommandBufferPool* _pool;
+
+  void recycle() {
+    if (get()) {
+      _pool->recycle(std::move(*this));
+    }
+  }
+};
+
+// struct WaitInfo {
+//   VkPipelineStageFlags stage_mask;
+//   TimelineSemaphore    sema;
+// };
+// struct SignalInfo {
+//   VkPipelineStageFlags stage_mask;
+//   TimelineSemaphore    sema;
+// };
+
+/**
+ * @brief Have ownership of cmdbuf will be submitted to and semaphores will be signaled by
+ * submission of the cmdbuf, user can use it to signal another submit or host wait.
+ * As long as the object is not destroyed, these semaphores and cmdbuf will remain associated
+ * with this submission and will not be recycled.
+ */
 class Waitable {
+public:
+  Waitable(
+    CommandBufferRecyclable                                                cmdbuf,
+    std::unordered_map<VkPipelineStageFlags2, TimelineSemaphoreRecyclable> _stage_semas
+  )
+    : _stage_semas(std::move(_stage_semas)), _cmdbuf(std::move(cmdbuf)) {}
+
+  auto wait(VkPipelineStageFlags2 stage, uint64 nano_timeout = std::numeric_limits<uint64>::max())
+    -> bool {
+    if (stage == VK_PIPELINE_STAGE_ALL_COMMANDS_BIT) {
+      return _cmdbuf.waitIdle(nano_timeout);
+    }
+    return _stage_semas.at(stage).waitIdle(nano_timeout);
+  }
+
+  auto getWaitInfo(VkPipelineStageFlags2 stage) -> std::pair<VkSemaphore, uint64> {
+    if (stage == VK_PIPELINE_STAGE_ALL_COMMANDS_BIT) {
+      return _cmdbuf.getSignalInfo();
+    }
+    auto& sema = _stage_semas.at(stage);
+    return { sema, sema.getNewestValue() };
+  }
+
 private:
-  std::vector<SemaphoreRef> _semas;
-
-public:
-  Waitable() = default;
-  Waitable(std::vector<SemaphoreRef> semas) : _semas(std::move(semas)) {}
-  auto consume() -> SemaphoreRef;
+  CommandBufferRecyclable                                                _cmdbuf;
+  std::unordered_map<VkPipelineStageFlags2, TimelineSemaphoreRecyclable> _stage_semas;
 };
 
-export struct WaitInfo {
-  Waitable&            waitable;
-  VkPipelineStageFlags stage_mask;
+struct CommandBatch {
+  std::function<void(VkCommandBuffer)>                     recorder;
+  std::vector<std::pair<Waitable*, VkPipelineStageFlags2>> waits;
+  std::vector<VkPipelineStageFlags2>                       signals;
 };
 
-export class CommandExecutor : public toy::ProactiveSingleton<CommandExecutor> {
+struct RawWaitCommandBatch {
+  std::function<void(VkCommandBuffer)>                       recorder;
+  std::vector<std::pair<VkSemaphore, VkPipelineStageFlags2>> waits;
+  std::vector<VkPipelineStageFlags2>                         signals;
+};
+struct RawSignalCommandBatch {
+  std::function<void(VkCommandBuffer)>                       recorder;
+  std::vector<std::pair<Waitable*, VkPipelineStageFlags2>>   waits;
+  std::vector<std::pair<VkSemaphore, VkPipelineStageFlags2>> signals;
+};
+
+class CommandExecutor {
 public:
-  auto submit(
-    QueueFamily               family,
-    uint32                  queue_index,
-    Recorder auto&&           recorder,
-    std::span<WaitInfo const> wait_infos,
-    uint32                  signal_n
-  ) -> std::pair<FenceRef, Waitable>;
+  CommandExecutor(uint32 family_index, uint32 queue_index, TimelineSemaphorePool* sema_pool)
+    : _family_index(family_index), _cmdbuf_pool(family_index), _sema_pool(sema_pool) {
+    vkGetDeviceQueue(Device::getInstance(), family_index, queue_index, &_queue);
+  }
+  auto submit(std::function<void(VkCommandBuffer)> recorder) -> Waitable {
+    auto batch = CommandBatch{ std::move(recorder), {}, {} };
+    return submit(batch);
+  }
+  /**
+   * @brief submit a command batch to device, return the waitable. Waitable can be waited for
+   * stages that include all stages in batch.signals on host (call waitable.wait()) and device
+   * (call submit()).
+   *
+   * @param batch the batch to submit
+   * @return Waitable
+   */
+  auto submit(CommandBatch const& batch) -> Waitable {
+    auto [submit_info, waitable] = getSubmitInfo(batch);
+    checkVkResult(vkQueueSubmit2(_queue, 1, &submit_info.info, VK_NULL_HANDLE), "submit queue");
+    return std::move(waitable);
+  }
 
-  auto submit(
-    QueueFamily                    family,
-    uint32                       queue_index,
-    Recorder auto&&                recorder,
-    std::span<const WaitSemaphore> wait_infos,
-    std::span<const VkSemaphore>   signal_semas
-  ) -> FenceRef;
-
-  class QueueExecutor {
-  private:
-    QueueFamily                   _family;
-    std::pair<uint32, uint32> _queue_range;
-    uint32                      _queue_index;
-
-  public:
-    QueueExecutor() = default;
-    QueueExecutor(QueueFamily family, std::pair<uint32, uint32> queue_range)
-      : _family(family), _queue_range(queue_range), _queue_index(queue_range.first) {}
-    auto submit(
-      Recorder auto&&                recorder,
-      std::span<const WaitSemaphore> wait_infos,
-      std::span<const VkSemaphore>   signal_semas
-    ) -> FenceRef {
-      return getInstance().submit(
-        _family, _queue_index, std::forward<decltype(recorder)>(recorder), wait_infos, signal_semas
-      );
+  auto submit(std::span<CommandBatch const> batches) -> std::vector<Waitable> {
+    auto submit_infos = std::vector<SubmitInfo>{};
+    auto vk_submit_infos = std::vector<VkSubmitInfo2>{};
+    auto waitables = std::vector<Waitable>{};
+    for (auto& batch : batches) {
+      auto [submit_info, waitable] = getSubmitInfo(batch);
+      submit_infos.push_back(std::move(submit_info));
+      vk_submit_infos.push_back(submit_info.info);
+      waitables.push_back(std::move(waitable));
     }
-    auto submit(Recorder auto&& recorder, std::span<WaitInfo const> wait_infos, uint32 signal_n)
-      -> std::pair<FenceRef, Waitable> {
-      return getInstance().submit(
-        _family, _queue_index, std::forward<decltype(recorder)>(recorder), wait_infos, signal_n
-      );
-    }
+    checkVkResult(
+      vkQueueSubmit2(_queue, vk_submit_infos.size(), vk_submit_infos.data(), VK_NULL_HANDLE),
+      "submit queue"
+    );
+    return waitables;
+  }
+  auto submit(RawWaitCommandBatch batch) -> Waitable {
+    auto cmdbuf = CommandBufferRecyclable{ &_cmdbuf_pool };
+    cmdbuf.record(batch.recorder);
+    auto cmdbuf_info = std::make_unique<VkCommandBufferSubmitInfo>(VkCommandBufferSubmitInfo{
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+      .commandBuffer = cmdbuf.get(),
+    });
+    auto wait_infos = getWaitInfos(batch.waits);
+    auto [waitable, signal_infos] = getSignalInfos(std::move(cmdbuf), batch.signals);
+    auto submit_info = VkSubmitInfo2{
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+      .waitSemaphoreInfoCount = static_cast<uint32_t>(wait_infos.size()),
+      .pWaitSemaphoreInfos = wait_infos.data(),
+      .commandBufferInfoCount = 1,
+      .pCommandBufferInfos = cmdbuf_info.get(),
+      .signalSemaphoreInfoCount = static_cast<uint32_t>(signal_infos.size()),
+      .pSignalSemaphoreInfos = signal_infos.data(),
+    };
+    checkVkResult(vkQueueSubmit2(_queue, 1, &submit_info, VK_NULL_HANDLE), "submit queue");
+    return std::move(waitable);
+  }
 
-    auto getFamily() -> uint32 { return getInstance()._cmd_contexts.at(_family).family_index; }
-    auto getQueue() -> VkQueue {
-      return getInstance()._cmd_contexts.at(_family).queues[_queue_index];
-    }
+  auto submit(RawSignalCommandBatch batch) -> Waitable {
+    auto cmdbuf = CommandBufferRecyclable{ &_cmdbuf_pool };
+    cmdbuf.record(batch.recorder);
+    auto cmdbuf_info = std::make_unique<VkCommandBufferSubmitInfo>(VkCommandBufferSubmitInfo{
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+      .commandBuffer = cmdbuf.get(),
+    });
+    auto wait_infos = getWaitInfos(batch.waits);
+    auto [waitable, signal_infos] = getSignalInfos(std::move(cmdbuf), batch.signals);
+    auto submit_info = VkSubmitInfo2{
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+      .waitSemaphoreInfoCount = static_cast<uint32_t>(wait_infos.size()),
+      .pWaitSemaphoreInfos = wait_infos.data(),
+      .commandBufferInfoCount = 1,
+      .pCommandBufferInfos = cmdbuf_info.get(),
+      .signalSemaphoreInfoCount = static_cast<uint32_t>(signal_infos.size()),
+      .pSignalSemaphoreInfos = signal_infos.data(),
+    };
+    checkVkResult(vkQueueSubmit2(_queue, 1, &submit_info, VK_NULL_HANDLE), "submit queue");
+    return std::move(waitable);
+  }
 
-    auto operator[](uint32 queue_index) -> QueueExecutor& {
-      _queue_index = _queue_range.first + queue_index;
-      toy::throwf(_queue_index < _queue_range.second, "out of queue range");
-      return *this;
-    }
+  auto getFamily() const -> uint32 { return _family_index; }
+  auto getQueue() const -> VkQueue { return _queue; }
+
+private:
+  struct SubmitInfo {
+    VkSubmitInfo2                              info;
+    std::vector<VkSemaphoreSubmitInfo>         wait_infos;
+    std::vector<VkSemaphoreSubmitInfo>         signal_infos;
+    std::unique_ptr<VkCommandBufferSubmitInfo> cmdbuf_info;
   };
 
-  struct State {
-    std::map<QueueFamily, PoolState> cmdbuf_states;
-    PoolState                        fence_state;
-    PoolState                        sema_state;
-  };
-  auto getState() -> State {
-    auto guard = std::lock_guard<std::mutex>{ _mutex };
-    return {
-      _cmd_contexts | views::transform([](auto& ctx) {
-        return std::pair{ ctx.first, ctx.second.cmdbuf_pool.getState() };
-      }) |
-        ranges::to<std::map>(),
-      _fence_pool.getState(),
-      _sema_pool.getState(),
+  auto getWaitInfos(std::vector<std::pair<Waitable*, VkPipelineStageFlags2>> const& waits
+  ) -> std::vector<VkSemaphoreSubmitInfo> {
+    auto wait_infos = std::vector<VkSemaphoreSubmitInfo>{};
+    for (auto& wait : waits) {
+      auto [sema, value] = wait.first->getWaitInfo(wait.second);
+      wait_infos.push_back(VkSemaphoreSubmitInfo{
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+        .semaphore = sema,
+        .value = value,
+        .stageMask = wait.second,
+      });
+    }
+    return wait_infos;
+  }
+  auto getWaitInfos(std::vector<std::pair<VkSemaphore, VkPipelineStageFlags2>> const& raw_waits
+  ) -> std::vector<VkSemaphoreSubmitInfo> {
+    auto wait_infos = std::vector<VkSemaphoreSubmitInfo>{};
+    for (auto& [sema, stage] : raw_waits) {
+      wait_infos.push_back(VkSemaphoreSubmitInfo{
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+        .semaphore = sema,
+        .stageMask = stage,
+      });
+    }
+    return wait_infos;
+  }
+
+  auto getCmdbufSignalInfo(CommandBuffer& cmdbuf) -> VkSemaphoreSubmitInfo {
+    auto [sema, value] = cmdbuf.getSignalInfo();
+    return VkSemaphoreSubmitInfo{
+      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+      .semaphore = sema,
+      .value = value,
+      .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+    };
+  }
+  auto getSignalInfos(
+    CommandBufferRecyclable                                           cmdbuf,
+    std::vector<std::pair<VkSemaphore, VkPipelineStageFlags2>> const& signals
+  ) -> std::pair<Waitable, std::vector<VkSemaphoreSubmitInfo>> {
+    auto signal_infos = getWaitInfos(signals);
+    signal_infos.push_back(getCmdbufSignalInfo(cmdbuf));
+    return { Waitable{ std::move(cmdbuf), {} }, std::move(signal_infos) };
+  }
+
+  auto getSignalInfos(
+    CommandBufferRecyclable cmdbuf, std::vector<VkPipelineStageFlags2> const& signals
+  ) -> std::pair<Waitable, std::vector<VkSemaphoreSubmitInfo>> {
+    auto signal_infos = std::vector<VkSemaphoreSubmitInfo>{};
+    auto stage_signal_semas =
+      std::unordered_map<VkPipelineStageFlags2, TimelineSemaphoreRecyclable>{};
+    for (auto& signal : signals) {
+      auto sema = TimelineSemaphoreRecyclable{ _sema_pool };
+      signal_infos.push_back(VkSemaphoreSubmitInfo{
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+        .semaphore = sema.get(),
+        .value = sema.increaseValue(),
+        .stageMask = signal,
+      });
+      stage_signal_semas.emplace(signal, std::move(sema));
+    }
+    signal_infos.push_back(getCmdbufSignalInfo(cmdbuf));
+    return { Waitable{ std::move(cmdbuf), std::move(stage_signal_semas) },
+             std::move(signal_infos) };
+  }
+
+  auto getSubmitInfo(CommandBatch const& batch) -> std::pair<SubmitInfo, Waitable> {
+    auto cmdbuf = CommandBufferRecyclable{ &_cmdbuf_pool };
+    cmdbuf.record(batch.recorder);
+    auto cmdbuf_info = std::make_unique<VkCommandBufferSubmitInfo>(VkCommandBufferSubmitInfo{
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+      .commandBuffer = cmdbuf.get(),
+    });
+    auto wait_infos = getWaitInfos(batch.waits);
+    auto [waitable, signal_infos] = getSignalInfos(std::move(cmdbuf), batch.signals);
+    auto submit_info = VkSubmitInfo2{
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+      .waitSemaphoreInfoCount = static_cast<uint32_t>(wait_infos.size()),
+      .pWaitSemaphoreInfos = wait_infos.data(),
+      .commandBufferInfoCount = 1,
+      .pCommandBufferInfos = cmdbuf_info.get(),
+      .signalSemaphoreInfoCount = static_cast<uint32_t>(signal_infos.size()),
+      .pSignalSemaphoreInfos = signal_infos.data(),
+    };
+    return std::pair{
+      SubmitInfo{
+        .info = submit_info,
+        .wait_infos = std::move(wait_infos),
+        .signal_infos = std::move(signal_infos),
+        .cmdbuf_info = std::move(cmdbuf_info),
+      },
+      std::move(waitable),
     };
   }
 
-  CommandExecutor(Device& device, std::span<FamilyQueueCount const> family_infos);
-  ~CommandExecutor();
-  CommandExecutor(const CommandExecutor&) noexcept = delete;
-  CommandExecutor(CommandExecutor&&) noexcept = delete;
-  auto operator=(const CommandExecutor&) noexcept -> CommandExecutor& = delete;
-  auto operator=(CommandExecutor&&) noexcept -> CommandExecutor& = delete;
-
 private:
-  struct WorkingCmdbuf {
-    PoolResource<CmdbufPool> cmdbuf;
-    Fence*                   fence;
-    std::vector<VkSemaphore> wait_semas;
-    std::vector<VkSemaphore> signal_semas;
-    WorkingCmdbuf(
-      CmdbufPool&              pool,
-      Fence*                   fence,
-      std::vector<VkSemaphore> wait_semas,
-      std::vector<VkSemaphore> signal_semas
-    )
-      : cmdbuf(pool.allocate()), fence(fence), wait_semas(std::move(wait_semas)),
-        signal_semas(std::move(signal_semas)) {}
-  };
-  struct WorkingFence {
-    PoolResource<FencePool> fence;
+  uint32  _family_index;
+  VkQueue _queue;
 
-    bool borrowed;
-    bool cmd_done;
-    WorkingFence(FencePool& pool) : fence(pool.allocate()), borrowed(false), cmd_done(false) {}
-  };
-  struct WorkingSemaphore {
-    PoolResource<SemaphorePool> sema;
-
-    bool borrowed;
-    bool signal_cmd_done;
-    // if no wait, true
-    bool wait_cmd_done;
-    WorkingSemaphore(SemaphorePool& pool)
-      : sema(pool.allocate()), borrowed(false), signal_cmd_done(false), wait_cmd_done(true) {}
-  };
-  using WorkingCmdbufs = std::map<VkCommandBuffer, WorkingCmdbuf>;
-  using WorkingFences = std::map<VkFence, WorkingFence>;
-  using WorkingSemaphores = std::map<VkSemaphore, WorkingSemaphore>;
-
-  auto addWorkingFence() -> FenceRef;
-  auto addWorkingSemas(uint32 sema_n) -> std::vector<SemaphoreRef>;
-  auto addWorkingCmdbuf(
-    CmdbufPool&              cmdbuf_pool,
-    WorkingCmdbufs&          working_cmdbufs,
-    Fence*                   fence,
-    std::vector<VkSemaphore> wait_semas,
-    std::vector<VkSemaphore> signal_semas
-  ) -> VkCommandBuffer;
-
-  struct CommandContext {
-    uint32             family_index;
-    std::vector<VkQueue> queues;
-    CmdbufPool           cmdbuf_pool;
-    WorkingCmdbufs       working_cmdbufs;
-  };
-
-  std::map<QueueFamily, CommandContext> _cmd_contexts;
-
-private:
-  void collect();
-
-  FencePool     _fence_pool;
-  SemaphorePool _sema_pool;
-
-  WorkingFences     _working_fences;
-  WorkingSemaphores _working_semas;
-
-  std::mutex  _mutex;
-  std::thread _thread;
-  bool        _task_done;
-
-  void task();
-
-  struct SubmitImplResult {
-    VkQueue                    queue;
-    FenceRef                   borrowed_fence;
-    std::vector<SemaphoreRef>  borrowed_semas;
-    VkCommandBuffer            cmdbuf;
-    std::vector<VkSemaphore>   signal_semas;
-    std::vector<WaitSemaphore> wait_infos;
-  };
-  auto submitImpl(
-    QueueFamily               family,
-    uint32                  queue_index,
-    std::span<WaitInfo const> wait_infos,
-    uint32                  signal_n
-  ) -> SubmitImplResult;
+  CommandBufferPool      _cmdbuf_pool;
+  TimelineSemaphorePool* _sema_pool;
 };
 
-auto CommandExecutor::submit(
-  QueueFamily               family,
-  uint32                  queue_index,
-  Recorder auto&&           recorder,
-  std::span<WaitInfo const> wait_infos_,
-  uint32                  signal_n
-) -> std::pair<FenceRef, Waitable> {
-  auto [queue, borrowed_fence, borrowed_semas, cmdbuf, signal_semas, wait_infos] =
-    submitImpl(family, queue_index, wait_infos_, signal_n);
-  recordAndSubmit(cmdbuf, queue, recorder, wait_infos, signal_semas, borrowed_fence.get());
-  return std::pair{ std::move(borrowed_fence), std::move(borrowed_semas) };
-}
+enum class FamilyType {
+  GRAPHICS,
+  TRANSFER,
+  PRESENT,
+};
 
-auto CommandExecutor::submit(
-  QueueFamily                    family,
-  uint32                       queue_index,
-  Recorder auto&&                recorder,
-  std::span<const WaitSemaphore> wait_infos,
-  std::span<const VkSemaphore>   signal_semas
-) -> FenceRef {
-  auto guard = std::lock_guard<std::mutex>{ _mutex };
-  auto& [_, queues, cmdbuf_pool, working_cmdbufs] = _cmd_contexts.at(family);
-  auto queue = queues[queue_index];
-  auto borrowed_fence = addWorkingFence();
-  auto cmdbuf = addWorkingCmdbuf(cmdbuf_pool, working_cmdbufs, &borrowed_fence.get(), {}, {});
-  recordAndSubmit(cmdbuf, queue, recorder, wait_infos, signal_semas, borrowed_fence.get());
-  return borrowed_fence;
-}
+// template <typename EnumT>
+using EnumT = FamilyType;
+class CommandExecutorManager : public toy::ProactiveSingleton<CommandExecutorManager> {
+public:
+  CommandExecutorManager(std::span<std::pair<EnumT, FamilyQueueCount> const> family_infos) {
+    for (auto& [family, info] : family_infos) {
+      auto& [family_i, count] = info;
+      _families[family] = family_i;
+      for (auto queue_index : views::iota(0u, count)) {
+        _executors[family_i].emplace_back(family_i, queue_index, &_sema_pool);
+      }
+    }
+  }
 
-export using WaitSemaphore = WaitSemaphore;
+  auto operator[](uint32 family, uint32 queue_index) -> CommandExecutor& {
+    return _executors.at(family).at(queue_index);
+  }
+
+  auto operator[](uint32 family) -> CommandExecutor& { return operator[](family, 0); }
+
+  auto operator[](EnumT family, uint32 queue_index) -> CommandExecutor& {
+    return operator[](_families.at(family), queue_index);
+  }
+
+  auto operator[](EnumT family) -> CommandExecutor& { return operator[](family, 0); }
+
+private:
+  TimelineSemaphorePool                                   _sema_pool;
+  std::unordered_map<uint32, std::deque<CommandExecutor>> _executors;
+  std::unordered_map<FamilyType, uint32>                  _families;
+};
 
 } // namespace rd::vk

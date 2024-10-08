@@ -161,42 +161,190 @@ private:
   using ContextResource =
     SingletonResourceRetriever<typename toy::FuncArgs<decltype(Creator)>::template at<0>>::type;
 
+  using Container = std::vector<VkHandle>;
+
 public:
-  AllocatedResources() : _pool(nullptr) {}
+  AllocatedResources() = default;
   AllocatedResources(AllocateInfoArg allocate_info) {
     _handles.resize(allocate_info.*pCountMember);
-    _pool = allocate_info.*pPoolMember;
-    Creator(ContextResource::getInstance().get(), &allocate_info, _handles.data());
+    checkVkResult(
+      Creator(ContextResource::getInstance().get(), &allocate_info, _handles.data()), "create"
+    );
     toy::debugf("create {} resources of {}", _handles.size(), getResourceName<VkHandle>());
+    _pool = allocate_info.*pPoolMember;
   }
-  ~AllocatedResources() {
+  ~AllocatedResources() { destroy(); }
+  AllocatedResources(const AllocatedResources&) noexcept = delete;
+  AllocatedResources(AllocatedResources&&) noexcept = default;
+  auto operator=(const AllocatedResources&) noexcept -> AllocatedResources& = delete;
+  auto operator=(AllocatedResources&& a) noexcept -> AllocatedResources& {
+    destroy();
+    _handles = std::move(a._handles);
+    _pool = a._pool;
+    return *this;
+  }
+
+  using Iterator = Container::iterator;
+
+  auto begin() -> Iterator { return _handles.begin(); }
+  auto end() -> Iterator { return _handles.end(); }
+
+  auto size() const -> size_t { return _handles.size(); }
+
+  auto get() const -> std::span<const VkHandle> { return _handles; }
+
+  static auto merge(AllocatedResources resource1, AllocatedResources resource2)
+    -> AllocatedResources {
+    if (resource1._pool != resource2._pool) {
+      toy::throwf("cannot merge AllocatedResources with different pools");
+    }
+    auto handles = Container{};
+    handles.reserve(resource1._handles.size() + resource2._handles.size());
+    handles.append_range(resource1._handles);
+    handles.append_range(resource2._handles);
+    resource1._handles = {};
+    resource2._handles = {};
+    auto resources = AllocatedResources{};
+    resources._handles = std::move(handles);
+    resources._pool = resource1._pool;
+    return resources;
+  }
+
+  /**
+   * @brief Will make the return value of get() invalied
+   *
+   * @param index The starting index to be separated
+   * @return AllocatedResources
+   */
+  auto split(size_t index) -> AllocatedResources {
+    if (index >= _handles.size()) {
+      toy::throwf("cannot split AllocatedResources with invalid index");
+    }
+    if (index == 0) {
+      return AllocatedResources{ std::move(*this) };
+    }
+    auto handles = Container{};
+    handles.append_range(_handles | views::drop(index));
+    _handles.resize(index);
+    auto resources = AllocatedResources{};
+    resources._handles = std::move(handles);
+    resources._pool = _pool;
+    return resources;
+  }
+
+  class SingleResource {
+    friend class AllocatedResources;
+
+  public:
+    SingleResource() = default;
+
+    auto get() const -> VkHandle { return _handle; }
+    operator VkHandle() const { return get(); }
+    auto getPool() const -> PoolHandle { return _pool; }
+    SingleResource(const SingleResource&) noexcept = delete;
+    SingleResource(SingleResource&& rs) noexcept {
+      _handle = nullptr;
+      *this = std::move(rs);
+    }
+    auto operator=(const SingleResource&) noexcept -> SingleResource& = delete;
+    auto operator=(SingleResource&& rs) noexcept -> SingleResource& {
+      destroy();
+      _handle = rs._handle;
+      _pool = rs._pool;
+      rs.clear();
+      return *this;
+    }
+    ~SingleResource() { destroy(); }
+
+  private:
+    SingleResource(VkHandle handle, PoolHandle pool) : _handle(handle), _pool(pool) {}
+
+    void clear() {
+      _handle = nullptr;
+      _pool = nullptr;
+    }
+    void destroy() {
+      if (_handle) {
+        Destroyer(ContextResource::getInstance().get(), _pool, 1, &_handle);
+        toy::debugf("destroy resource {}", getResourceName<VkHandle>());
+      }
+    }
+
+  private:
+    VkHandle   _handle;
+    PoolHandle _pool;
+  };
+
+  auto extract(Iterator iterator) -> SingleResource {
+    auto handle = *iterator;
+    _handles.erase(iterator);
+    return SingleResource{ handle, _pool };
+  }
+
+  void join(SingleResource resource) {
+    _handles.push_back(resource.get());
+    resource.clear();
+  }
+
+  template <typename RangeT>
+    requires ranges::forward_range<RangeT> &&
+               std::same_as<ranges::range_reference_t<RangeT>, SingleResource&>
+  static auto join(RangeT range) -> AllocatedResources {
+    auto resources = AllocatedResources{};
+    toy::throwf(
+      ranges::all_of(
+        // range, [&](auto& resource) { return resource.getPool() != range.begin()->getPool(); }
+        range,
+        [&](auto& resource) { return resource.getPool() != (*range.begin()).getPool(); }
+      ),
+      "cannot join AllocatedResources with different pools"
+    );
+    // resources._pool = range.begin()->getPool();
+    resources._pool = (*range.begin()).getPool();
+    resources._handles.reserve(ranges::size(range));
+    for (auto& resource : range) {
+      resources._handles.push_back(resource.get());
+      resource.clear();
+    }
+    return resources;
+  }
+
+  static auto split(AllocatedResources resource) -> std::vector<SingleResource> {
+    auto resources = std::vector<SingleResource>{};
+    resources.reserve(resource._handles.size());
+    for (auto& handle : resource._handles) {
+      resources.push_back(SingleResource{ handle, resource._pool });
+    }
+    resource._handles.clear();
+    return resources;
+  }
+
+  auto getPool() const -> PoolHandle { return _pool; }
+
+private:
+  Container  _handles;
+  PoolHandle _pool;
+
+private:
+  void destroy() {
     if (_handles.empty()) {
       return;
     }
     Destroyer(ContextResource::getInstance().get(), _pool, _handles.size(), _handles.data());
     toy::debugf("destroy {} resources of {}", _handles.size(), getResourceName<VkHandle>());
   }
-  AllocatedResources(const AllocatedResources&) noexcept = delete;
-  AllocatedResources(AllocatedResources&&) noexcept = default;
-  auto operator=(const AllocatedResources&) noexcept -> AllocatedResources& = delete;
-  auto operator=(AllocatedResources&&) noexcept -> AllocatedResources& = default;
-  // todo: merge and split
-
-  auto get() const -> std::span<const VkHandle> { return _handles; }
-
-  auto getPool() const -> PoolHandle { return _pool; }
-
-private:
-  std::vector<VkHandle> _handles;
-  PoolHandle            _pool;
 };
 
-#define DEF_ALLOCATED_RESOURCE(Name, VkHandle, Creator, Destroyer, CountMember, PoolMember)        \
+#define DEF_ALLOCATED_RESOURCE(                                                                    \
+  Name, SingleName, VkHandle, Creator, Destroyer, CountMember, PoolMember                          \
+)                                                                                                  \
   template class AllocatedResources<VkHandle, Creator, Destroyer, CountMember, PoolMember>;        \
-  export using Name = AllocatedResources<VkHandle, Creator, Destroyer, CountMember, PoolMember>;
+  export using Name = AllocatedResources<VkHandle, Creator, Destroyer, CountMember, PoolMember>;   \
+  export using SingleName = Name::SingleResource;
 
 DEF_ALLOCATED_RESOURCE(
   CommandBuffers,
+  CommandBuffer,
   VkCommandBuffer,
   vkAllocateCommandBuffers,
   vkFreeCommandBuffers,
@@ -205,6 +353,7 @@ DEF_ALLOCATED_RESOURCE(
 )
 DEF_ALLOCATED_RESOURCE(
   DescriptorSets,
+  DescriptorSet,
   VkDescriptorSet,
   vkAllocateDescriptorSets,
   vkFreeDescriptorSets,

@@ -91,10 +91,9 @@ SampledTexture::SampledTexture(
   };
 
   _sampler = createSampler(_max_anisotropy);
-
-  auto copy_executor = vk::executors::copy;
-  auto graphics_executor = vk::executors::graphics;
-  auto family_transfer =
+  auto& copy_executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::TRANSFER];
+  auto& graphics_executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::GRAPHICS];
+  auto  family_transfer =
     vk::FamilyTransferInfo{ copy_executor.getFamily(), graphics_executor.getFamily() };
 
   auto recorder_copy = [&](VkCommandBuffer cmdbuf) {
@@ -222,15 +221,13 @@ SampledTexture::SampledTexture(
     }
   };
 
-  auto waitable = copy_executor.submit(recorder_copy, {}, 1).second;
-  auto fence =
-    graphics_executor
-      .submit(
-        recorder_blit, std::array{ vk::WaitInfo{ waitable, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT } }, 0
-      )
-      .first;
+  auto waitable = copy_executor.submit(recorder_copy);
+  auto fence = graphics_executor.submit(vk::CommandBatch{
+    .recorder = recorder_blit,
+    .waits = { { &waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
+  });
   // todo: no need to wait, sync with sema
-  fence.wait();
+  fence.wait(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 }
 
 }; // namespace rd

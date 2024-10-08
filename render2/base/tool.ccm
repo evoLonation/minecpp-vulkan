@@ -47,10 +47,21 @@ consteval auto getResourceName() -> const char* {
   std::unreachable();
 }
 
-void checkVkResult(VkResult vk_result, std::string_view action) {
-  if (vk_result != VK_SUCCESS) {
-    toy::throwf("failed to {}, VkResult: {}", action, static_cast<int32_t>(vk_result));
+auto checkVkResult(
+  VkResult                        result,
+  std::string_view                action,
+  std::initializer_list<VkResult> expected_result = { VK_SUCCESS },
+  std::source_location            location = std::source_location::current()
+) -> VkResult {
+  if (!ranges::contains(expected_result, result)) {
+    toy::throwf(
+      "{}: failed to {}, VkResult: {}",
+      toy::formatSourceLocation(location),
+      action,
+      static_cast<int32_t>(result)
+    );
   }
+  return result;
 }
 
 template <typename Func, typename... Args>

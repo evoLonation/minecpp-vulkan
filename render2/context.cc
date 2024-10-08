@@ -30,20 +30,13 @@ Context::Context(const std::string& app_name, uint32 width, uint32 height) {
   };
   _device.reset(new vk::Device{ device_checkers, _instance->instance });
   _swapchain.reset(new vk::Swapchain{ *_surface, *_device });
-  _command_executor.reset(new vk::CommandExecutor{
-    *_device, queue_requestor.getFamilyQueueCounts(*_device) });
-  {
-    using namespace vk::executors;
-    using QueueExecutor = vk::CommandExecutor::QueueExecutor;
-    graphics = QueueExecutor{ 0, { 0, 1 } };
-    present = QueueExecutor{ 1, { 0, 1 } };
-    copy = QueueExecutor{ 2, { 0, 1 } };
-    queue_executors = {
-      { graphics.getFamily(), &graphics },
-      { present.getFamily(), &present },
-      { copy.getFamily(), &copy },
-    };
-  }
+  auto family_counts = queue_requestor.getFamilyQueueCounts(*_device);
+  auto family_info = std::vector<std::pair<vk::FamilyType, vk::FamilyQueueCount>>(3);
+  using enum vk::FamilyType;
+  family_info[0] = { GRAPHICS, family_counts[0] };
+  family_info[1] = { PRESENT, family_counts[1] };
+  family_info[2] = { TRANSFER, family_counts[2] };
+  _command_executor_manager.reset(new vk::CommandExecutorManager{ family_info });
 }
 
 } // namespace rd

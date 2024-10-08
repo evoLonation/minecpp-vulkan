@@ -39,8 +39,8 @@ DeviceLocalBuffer::DeviceLocalBuffer(
   });
   _tracker = { get() };
 
-  auto copy_executor = vk::executors::copy;
-  auto graphcis_executor = vk::executors::graphics;
+  auto& copy_executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::TRANSFER];
+  auto& graphcis_executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::GRAPHICS];
 
   auto barrier = _tracker.syncScope(
     vk::Scope{
@@ -57,10 +57,11 @@ DeviceLocalBuffer::DeviceLocalBuffer(
     vk::recordCopyBuffer(cmdbuf, _staging_buffer, *this, buffer_size);
     release(cmdbuf);
   };
-  auto waitable = copy_executor.submit(copy_recorder, {}, 1).second;
-  graphcis_executor.submit(
-    acquire, std::array{ vk::WaitInfo{ waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } }, 0
-  );
+  auto waitable = copy_executor.submit(copy_recorder);
+  graphcis_executor.submit(vk::CommandBatch{
+    .recorder = std::move(acquire),
+    .waits = { { &waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
+  });
 }
 
 VertexBuffer::VertexBuffer(std::span<const std::byte> vertex_data, VertexInfo vertex_info)

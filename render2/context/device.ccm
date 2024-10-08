@@ -21,6 +21,7 @@ public:
   auto get() const -> VkPhysicalDevice { return _handle; }
   auto getProperties() const -> VkPhysicalDeviceProperties const& { return _properties; }
   auto getFeatures() const -> VkPhysicalDeviceFeatures const& { return _features; }
+  auto getVk12Features() const -> VkPhysicalDeviceVulkan12Features const& { return _vk12features; }
   auto getVk13Features() const -> VkPhysicalDeviceVulkan13Features const& { return _vk13features; }
   auto getMemoryProperties() const -> VkPhysicalDeviceMemoryProperties const& {
     return _memory_properties;
@@ -40,6 +41,7 @@ private:
   VkPhysicalDevice                                       _handle;
   VkPhysicalDeviceProperties                             _properties;
   VkPhysicalDeviceFeatures                               _features;
+  VkPhysicalDeviceVulkan12Features                       _vk12features;
   VkPhysicalDeviceVulkan13Features                       _vk13features;
   VkPhysicalDeviceMemoryProperties                       _memory_properties;
   std::vector<VkQueueFamilyProperties>                   _queue_family_properties;
@@ -57,6 +59,7 @@ struct DeviceCapabilityBuilder {
   DeviceCapabilityBuilder(PhysicalDevice const& device) : _device(&device) {}
   std::vector<std::string>                                  extensions;
   std::vector<VkBool32 VkPhysicalDeviceFeatures::*>         features;
+  std::vector<VkBool32 VkPhysicalDeviceVulkan12Features::*> vk12features;
   std::vector<VkBool32 VkPhysicalDeviceVulkan13Features::*> vk13features;
   std::vector<FamilyQueueCount>                             family_queue_counts;
 
@@ -77,6 +80,13 @@ struct DeviceCapabilityBuilder {
   auto enableFeature(VkBool32 VkPhysicalDeviceVulkan13Features::*member) -> bool {
     if (_device->getVk13Features().*member) {
       vk13features.push_back(member);
+      return true;
+    }
+    return false;
+  }
+  auto enableFeature(VkBool32 VkPhysicalDeviceVulkan12Features::*member) -> bool {
+    if (_device->getVk12Features().*member) {
+      vk12features.push_back(member);
       return true;
     }
     return false;
