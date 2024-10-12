@@ -13,14 +13,19 @@ import toy;
 export namespace rd::vk {
 
 namespace extensions {
-auto surface = std::vector<std::string>{ "VK_KHR_surface", "VK_KHR_win32_surface" };
+auto surface = std::vector<std::string>{
+  "VK_KHR_surface",
+  "VK_KHR_win32_surface",
+  "VK_EXT_surface_maintenance1",
+  "VK_KHR_get_surface_capabilities2",
+};
 }
 
 /**
  * @brief Create a Surface object, need created instance first
- * 
- * @param window 
- * @return rs::Surface 
+ *
+ * @param window
+ * @return rs::Surface
  */
 auto createSurface(glfw::Window& window) -> rs::Surface {
   auto create_info = VkWin32SurfaceCreateInfoKHR{

@@ -6,7 +6,6 @@ import render.vk.resource;
 import render.vk.device;
 import render.vk.instance;
 import render.vk.surface;
-import render.vk.swapchain;
 import render.vk.executor;
 import input;
 import glfw;
@@ -25,7 +24,6 @@ public:
   std::unique_ptr<vk::InstanceResource>       _instance;
   std::unique_ptr<vk::rs::Surface>            _surface;
   std::unique_ptr<vk::Device>                 _device;
-  std::unique_ptr<vk::Swapchain>              _swapchain;
   std::unique_ptr<vk::CommandExecutorManager> _command_executor_manager;
 };
 

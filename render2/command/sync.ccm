@@ -197,11 +197,7 @@ private:
   }
 };
 
-class Semaphore : public rs::Semaphore {
-public:
-  Semaphore() = default;
-  Semaphore(bool init);
-};
+auto createSemaphore() -> rs::Semaphore;
 
 class Fence : public rs::Fence {
 public:
@@ -421,16 +417,20 @@ void recordImageBarrier(
   BarrierScope            barrier_scope,
   FamilyTransferInfo      family_info
 ) {
-  // toy::debugf(
-  //   "record image barrier: image = {}, layout = {} -> {}, scope = {} -> {}, family = {} -> {}",
-  //   reinterpret_cast<void*>(image),
-  //   imageLayout2Str(layout_info.src_layout),
-  //   imageLayout2Str(layout_info.dst_layout),
-  //   scope2Str(barrier_scope.src_scope),
-  //   scope2Str(barrier_scope.dst_scope),
-  //   family_info.src_family,
-  //   family_info.dst_family
-  // );
+  if constexpr (false) {
+    toy::debugf(
+      toy::NoLocation{},
+      "record image barrier:\n  image = {},\n  layout = {} -> {},\n  scope = {} -> {},\n  family = "
+      "{} -> {}",
+      reinterpret_cast<void*>(image),
+      refl::imageLayout(layout_info.src_layout),
+      refl::imageLayout(layout_info.dst_layout),
+      scope2Str(barrier_scope.src_scope),
+      scope2Str(barrier_scope.dst_scope),
+      family_info.src_family,
+      family_info.dst_family
+    );
+  }
   auto [src_scope, dst_scope] = barrier_scope;
   auto image_barrier = VkImageMemoryBarrier2{
     .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,

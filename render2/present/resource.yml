@@ -1,6 +1,4 @@
 source:
 - surface.ccm
-- swapchain.ccm
-- swapchain.cc
 - presentation.ccm
-- presentation.cc
+- swapchain.ccm

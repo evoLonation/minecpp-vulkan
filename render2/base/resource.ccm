@@ -29,7 +29,7 @@ public:
   SingletonResource() = default;
   SingletonResource(ConstructorArgs... args) {
     VkHandle handle;
-    Creator(
+    auto     result = Creator(
       [](ConstructorArgs arg) -> decltype(auto) {
         if constexpr (std::is_reference_v<ConstructorArgs>) {
           return &arg;
@@ -40,8 +40,10 @@ public:
       nullptr,
       &handle
     );
+    auto msg = std::format("create resource {}", refl::resource<VkHandle>());
+    checkVkResult(result, msg);
     _handle.reset(handle);
-    toy::debugf("create resource {}", refl::resource<VkHandle>());
+    toy::debug(msg);
   }
   SingletonResource(const SingletonResource&) noexcept = delete;
   SingletonResource(SingletonResource&&) noexcept = default;
@@ -92,9 +94,11 @@ public:
   ContextualResource() = default;
   ContextualResource(CreateInfoArg create_info) {
     VkHandle handle;
-    Creator(ContextResource::getInstance().get(), &create_info, nullptr, &handle);
+    auto     result = Creator(ContextResource::getInstance().get(), &create_info, nullptr, &handle);
+    auto     msg = std::format("create resource {}", refl::resource<VkHandle>());
+    checkVkResult(result, msg);
     _handle.reset(handle);
-    toy::debugf("create resource {}", refl::resource<VkHandle>());
+    toy::debug(msg);
   }
   ContextualResource(const ContextualResource&) noexcept = delete;
   ContextualResource(ContextualResource&&) noexcept = default;
@@ -168,10 +172,11 @@ public:
   AllocatedResources() = default;
   AllocatedResources(AllocateInfoArg allocate_info) {
     _handles.resize(allocate_info.*pCountMember);
-    checkVkResult(
-      Creator(ContextResource::getInstance().get(), &allocate_info, _handles.data()), "create"
-    );
-    toy::debugf("create {} resources of {}", _handles.size(), refl::resource<VkHandle>());
+    auto result = Creator(ContextResource::getInstance().get(), &allocate_info, _handles.data());
+    auto msg =
+      std::format("create {} resources of {}", _handles.size(), refl::resource<VkHandle>());
+    checkVkResult(result, msg);
+    toy::debug(msg);
     _pool = allocate_info.*pPoolMember;
   }
   ~AllocatedResources() { destroy(); }
@@ -272,7 +277,7 @@ public:
     }
 
   private:
-    VkHandle   _handle;
+    VkHandle   _handle{};
     PoolHandle _pool;
   };
 
@@ -420,7 +425,7 @@ public:
   static auto create(VkPipelineCache cache, std::span<CreateInfo> create_infos)
     -> std::vector<Pipeline> {
     auto pipelines = std::vector<VkPipeline>{ create_infos.size() };
-    creator(
+    auto result = creator(
       SingletonResourceRetriever<VkDevice>::type::getInstance().get(),
       cache,
       create_infos.size(),
@@ -428,7 +433,10 @@ public:
       nullptr,
       pipelines.data()
     );
-    toy::debugf("create {} resources of {}", pipelines.size(), refl::resource<VkPipeline>());
+    auto msg =
+      std::format("create {} resources of {}", pipelines.size(), refl::resource<VkPipeline>());
+    checkVkResult(result, msg);
+    toy::debug(msg);
     return pipelines | views::transform([](auto handle) { return Pipeline{ handle }; }) |
            ranges::to<std::vector>();
   }

@@ -7,7 +7,6 @@ import "glfw_config.h";
 import render.vk.instance;
 import render.vk.device;
 import render.vk.surface;
-import render.vk.swapchain;
 import render.vk.resource;
 import render.vk.executor;
 import render.vk.queue_requestor;
@@ -36,7 +35,6 @@ int main() {
     toy::test_EnumSet::test();
     trans::test_trans();
     auto  ctx = rd::Context{ "hello vulkan", 1920, 1080 };
-    auto& swapchain = *ctx._swapchain.get();
     auto& input_processor = input::InputProcessor::getInstance();
 
     auto depth_format = VK_FORMAT_D32_SFLOAT;
@@ -46,18 +44,20 @@ int main() {
       "the sample count is not available"
     );
 
-    auto presentation = rd::vk::Presentation{ &swapchain };
+    auto  presentation = rd::vk::Presentation{ ctx._surface->get() };
+    auto& swapchain = presentation.getSwapchain();
+    toy::throwf(swapchain.isValid(), "the swapchain is not valid");
 
     auto render_pass_info = rd::vk::RenderPassInfo{
       .attachments = {
         rd::vk::AttachmentInfo{
-          .format = swapchain.format(),
+          .format = swapchain.getFormat(),
           .sample_count = sample_count,
           .keep_old_content = false,
           .keep_new_content = false,
         },
         rd::vk::AttachmentInfo{
-          .format = swapchain.format(),
+          .format = swapchain.getFormat(),
           .sample_count = VK_SAMPLE_COUNT_1_BIT,
           .keep_old_content = false,
           .keep_new_content = true,
@@ -131,8 +131,8 @@ int main() {
     auto view_data = trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f });
     auto view_uniform = rd::vk::UniformBuffer{ view_data };
     auto proj_data = trans::proj::perspective({
-      .width = swapchain.extent().width,
-      .height = swapchain.extent().height,
+      .width = swapchain.getExtent().width,
+      .height = swapchain.getExtent().height,
     });
     auto proj_uniform = rd::vk::UniformBuffer{ proj_data };
     auto sampled_texture =
@@ -163,14 +163,23 @@ int main() {
       rd::vk::Image                    depth_image;
       rd::vk::ImageBarrierTracker      depth_image_tracker;
       std::vector<rd::vk::Framebuffer> framebuffers;
+
+      auto operator=(FramebufferResource&& other) = delete;
+
+      void clear() {
+        depth_image_tracker = {};
+        sample_image_tracker = {};
+        framebuffers.clear();
+        depth_image = {};
+        sample_image = {};
+      }
     };
     auto framebuffer_resource = FramebufferResource{};
     auto createFramebuffers = [&]() {
-      framebuffer_resource = {};
       framebuffer_resource.sample_image = rd::vk::Image{
-        swapchain.format(),
-        swapchain.extent().width,
-        swapchain.extent().height,
+        swapchain.getFormat(),
+        swapchain.getExtent().width,
+        swapchain.getExtent().height,
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         VK_IMAGE_ASPECT_COLOR_BIT,
         1,
@@ -182,8 +191,8 @@ int main() {
       };
       framebuffer_resource.depth_image = rd::vk::Image{
         depth_format,
-        swapchain.extent().width,
-        swapchain.extent().height,
+        swapchain.getExtent().width,
+        swapchain.getExtent().height,
         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
         VK_IMAGE_ASPECT_DEPTH_BIT,
         1,
@@ -194,10 +203,10 @@ int main() {
         rd::vk::getSubresourceRange(VK_IMAGE_ASPECT_DEPTH_BIT, { 0, 1 }),
       };
       framebuffer_resource.framebuffers = //
-        swapchain.image_views() | views::transform([&](VkImageView image_view) {
+        swapchain.getImageViews() | views::transform([&](VkImageView image_view) {
           return rd::vk::Framebuffer{
             render_pass,
-            swapchain.extent(),
+            swapchain.getExtent(),
             std::array{
               framebuffer_resource.sample_image.image_view(),
               image_view,
@@ -209,10 +218,10 @@ int main() {
     };
     createFramebuffers();
 
-    auto recreateResource = [&]() {
+    auto createResource = [&]() {
       proj_data = trans::proj::perspective({
-        .width = swapchain.extent().width,
-        .height = swapchain.extent().height,
+        .width = swapchain.getExtent().width,
+        .height = swapchain.getExtent().height,
       });
       proj_uniform.update();
       createFramebuffers();
@@ -227,12 +236,16 @@ int main() {
     auto count = 0;
     while (!glfwWindowShouldClose(glfw::Window::getInstance())) {
       input_processor.processInput(16.6);
-      if (auto res = presentation.prepare(); res.has_value()) {
-        auto& context = res.value();
-        if (context.need_recreate) {
-          recreateResource();
+      auto res = presentation.prepare();
+      // toy::debugf("res: {}", res.has_value());
+      if (!res.has_value()) {
+        framebuffer_resource.clear();
+        if (presentation.recreate()) {
+          createResource();
         }
-        auto recorder = render_pass[0].recorder = [&](rd::vk::Pipeline::Recorder& recorder) {
+      } else {
+        auto& context = res.value();
+        auto  recorder = render_pass[0].recorder = [&](rd::vk::Pipeline::Recorder& recorder) {
           recorder.init();
           recorder.vertex_buffer = vertex_buffer;
           recorder.index_buffer = index_buffer;
@@ -244,10 +257,10 @@ int main() {
         render_pass.syncAttachments(
           std::array{
             &framebuffer_resource.sample_image_tracker,
-            &context.tracker,
+            context.tracker,
             &framebuffer_resource.depth_image_tracker,
           },
-          context.wait_sema
+          VK_NULL_HANDLE
         );
         auto& graphics_executor =
           rd::vk::CommandExecutorManager::getInstance()[rd::vk::FamilyType::GRAPHICS];
@@ -259,17 +272,18 @@ int main() {
         render_pass.updateAttachmentsScope(
           std::array{
             &framebuffer_resource.sample_image_tracker,
-            &context.tracker,
+            context.tracker,
             &framebuffer_resource.depth_image_tracker,
           },
           graphics_executor.getFamily()
         );
 
         count++;
-        if (count % 60 == 0) {
+        if (count % 1000 == 0) {
           toy::debug(count);
         }
-        presentation.present();
+        presentation.present(context.image_index);
+        // return 0;
       }
     }
   } catch (const std::exception& e) {

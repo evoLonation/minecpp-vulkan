@@ -4,6 +4,7 @@ import render.vk.queue_requestor;
 import render.vk.sync;
 import render.sampler;
 import render.vertex;
+import render.vk.presentation;
 
 import "vulkan_config.h";
 
@@ -49,7 +50,6 @@ Context::Context(const std::string& app_name, uint32 width, uint32 height) {
     DeviceCapabilityChecker{ device_checkers::sync },
   };
   _device.reset(new Device{ device_checkers });
-  _swapchain.reset(new Swapchain{ *_surface });
   auto family_counts = queue_requestor.getFamilyQueueCounts(*_device);
   auto family_info = std::vector<std::pair<FamilyType, FamilyQueueCount>>(3);
   using enum FamilyType;

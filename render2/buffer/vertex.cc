@@ -42,15 +42,14 @@ DeviceLocalBuffer::DeviceLocalBuffer(
   auto& copy_executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::TRANSFER];
   auto& graphcis_executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::GRAPHICS];
 
-  auto barrier = _tracker.syncScope(
+  _tracker.setNewScope(
     vk::Scope{
       .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
       .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
     },
     copy_executor.getFamily()
   );
-  toy::checkf(std::get_if<std::monostate>(&barrier), "setNewScope failed");
-  barrier = _tracker.syncScope(dst_scope, graphcis_executor.getFamily());
+  auto barrier = _tracker.syncScope(dst_scope, graphcis_executor.getFamily());
   auto& [release, acquire, _] = std::get<vk::FamilyTransferRecorder>(barrier);
 
   auto copy_recorder = [&](VkCommandBuffer cmdbuf) {

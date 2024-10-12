@@ -193,8 +193,10 @@ public:
   )
     : _stage_semas(std::move(_stage_semas)), _cmdbuf(std::move(cmdbuf)) {}
 
-  auto wait(VkPipelineStageFlags2 stage, uint64 nano_timeout = std::numeric_limits<uint64>::max())
-    -> bool {
+  auto wait(
+    VkPipelineStageFlags2 stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+    uint64                nano_timeout = std::numeric_limits<uint64>::max()
+  ) -> bool {
     if (stage == VK_PIPELINE_STAGE_ALL_COMMANDS_BIT) {
       return _cmdbuf.waitIdle(nano_timeout);
     }

@@ -14,6 +14,8 @@ auto accessFlag(VkAccessFlagBits2 access) -> std::string_view;
 
 auto format(VkFormat format) -> std::string_view;
 
+auto result(VkResult result) -> std::string_view;
+
 template <typename Resource>
 consteval auto resource() -> std::string_view;
 
@@ -21,6 +23,7 @@ consteval auto resource() -> std::string_view;
 } // namespace rd::vk::refl
 
 namespace rd::vk::refl {
+
 template <typename Resource>
 consteval auto resource() -> std::string_view {
 #define REGISTER(type)                                                                             \

@@ -314,11 +314,12 @@ void RenderPass::syncAttachments(
   auto& graphics_executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::GRAPHICS];
   for (auto [index, info, tracker] :
        views::zip(views::iota(0u, _attachment_syncs.size()), _attachment_syncs, trackers)) {
+    // toy::debugf(toy::NoLocation{}, "syncAttachments: will call syncScope at attachment {}", index);
     auto sync = tracker->syncScope(
       Scope{ .stage_mask = info.initial_stage }, graphics_executor.getFamily(), info.initial_layout
     );
     if (auto* barrier = std::get_if<BarrierRecorder>(&sync)) {
-      if (index == 1) {
+      if (false) {
         graphics_executor.submit(vk::RawWaitCommandBatch{
           .recorder = std::move(*barrier),
           .waits = { { wait_sema, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
@@ -329,7 +330,7 @@ void RenderPass::syncAttachments(
     } else if (auto* barrier = std::get_if<FamilyTransferRecorder>(&sync)) {
       auto& release_executor = vk::CommandExecutorManager::getInstance()[barrier->release_family];
       auto  waitable = [&]() {
-        if (index == 1) {
+        if (false) {
           return release_executor.submit(vk::RawWaitCommandBatch{
              .recorder = std::move(barrier->release),
              .waits = { { wait_sema, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },

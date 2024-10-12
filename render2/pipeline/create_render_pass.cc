@@ -4,6 +4,7 @@ import "vulkan_config.h";
 import render.vk.resource;
 import render.vk.device;
 import render.vk.sync;
+import render.vk.reflections;
 import render.vertex;
 
 import std;
@@ -424,6 +425,16 @@ auto RenderPass::createRenderPass(
       .initial_layout = attachment_descs[index].initialLayout,
       .final_layout = attachment_descs[index].finalLayout,
     });
+  }
+  toy::debugf("the attachment sync infos: ");
+  for (auto& info : attachment_sync_infos) {
+    toy::debugf(
+      "initial stage: {}, final stage: {}, initial layout: {}, final layout: {}",
+      stageMask2Str(info.initial_stage),
+      stageMask2Str(info.final_stage),
+      refl::imageLayout(info.initial_layout),
+      refl::imageLayout(info.final_layout)
+    );
   }
   return { std::move(render_pass), std::move(attachment_sync_infos) };
 }

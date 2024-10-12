@@ -6,11 +6,10 @@ import render.vk.device;
 
 namespace rd::vk {
 
-Semaphore::Semaphore(bool init) {
-  VkSemaphoreCreateInfo create_info{
+auto createSemaphore() -> rs::Semaphore {
+  return rs::Semaphore{ VkSemaphoreCreateInfo{
     .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-  };
-  rs::Semaphore::operator=(create_info);
+  } };
 }
 
 Fence::Fence(bool signaled) {

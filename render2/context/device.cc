@@ -146,6 +146,12 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice pdevice) {
 
   auto extension_properties =
     getVkResources(vkEnumerateDeviceExtensionProperties, pdevice, nullptr);
+  toy::debugf(
+    "the supported {} extensions are :\n {::}",
+    extension_properties.size(),
+    extension_properties |
+      views::transform([](auto properties) { return std::string{ properties.extensionName }; })
+  );
   _extension_properties.insert_range(extension_properties | views::transform([](auto properties) {
                                        return std::pair{ std::string{ properties.extensionName },
                                                          properties };

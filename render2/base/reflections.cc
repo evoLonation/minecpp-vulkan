@@ -87,5 +87,20 @@ auto format(VkFormat format) -> std::string_view {
   }
 }
 
+auto result(VkResult result) -> std::string_view {
+  switch (result) {
+    CASE(VK_SUCCESS);
+    CASE(VK_NOT_READY);
+    CASE(VK_TIMEOUT);
+    CASE(VK_EVENT_SET);
+    CASE(VK_EVENT_RESET);
+    CASE(VK_INCOMPLETE);
+    CASE(VK_SUBOPTIMAL_KHR);
+    CASE(VK_ERROR_OUT_OF_DATE_KHR);
+  default:
+    toy::throwf("unknown VkResult: {}", static_cast<size_t>(result));
+  }
+}
+
 #undef CASE
 } // namespace rd::vk::refl
