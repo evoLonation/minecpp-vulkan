@@ -173,6 +173,7 @@ int main() {
         depth_image = {};
         sample_image = {};
       }
+      ~FramebufferResource() { clear(); }
     };
     auto framebuffer_resource = FramebufferResource{};
     auto createFramebuffers = [&]() {
@@ -239,6 +240,9 @@ int main() {
       auto res = presentation.prepare();
       // toy::debugf("res: {}", res.has_value());
       if (!res.has_value()) {
+        for (auto& image : presentation.getImages()) {
+          image.waitIdle();
+        }
         framebuffer_resource.clear();
         if (presentation.recreate()) {
           createResource();

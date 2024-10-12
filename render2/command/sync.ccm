@@ -206,7 +206,7 @@ public:
   /**
    * @brief wait to signaled state
    */
-  void wait(bool reset);
+  void wait(bool reset, uint64_t timeout = std::numeric_limits<uint64_t>::max());
   void reset();
   auto isSignaled() -> bool;
 };
