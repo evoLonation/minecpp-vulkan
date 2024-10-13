@@ -1,0 +1,159 @@
+export module render.vk.descriptor;
+import std;
+import toy;
+
+import render.vk.resource;
+
+import <vulkan_config.h>;
+
+export namespace rd::vk {
+
+class DescriptorSetLayout : public rs::DescriptorSetLayout {
+public:
+  struct BindingInfo {
+    VkDescriptorType   type;
+    VkShaderStageFlags stage;
+    uint32             count;
+  };
+  DescriptorSetLayout(std::vector<BindingInfo> infos) : _infos(std::move(infos)) {
+    auto bindings = std::vector<VkDescriptorSetLayoutBinding>{};
+    for (auto [index, info] : _infos | toy::enumerate) {
+      bindings.push_back(VkDescriptorSetLayoutBinding{
+        .binding = index,
+        .descriptorType = info.type,
+        .descriptorCount = info.count,
+        .stageFlags = info.stage,
+        .pImmutableSamplers = nullptr,
+      });
+    }
+    rs::DescriptorSetLayout::operator=(VkDescriptorSetLayoutCreateInfo{
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+      .bindingCount = static_cast<uint32>(_infos.size()),
+      .pBindings = bindings.data(),
+    });
+  }
+  auto getInfo() const -> std::span<BindingInfo const> { return _infos; }
+
+private:
+  std::vector<BindingInfo> _infos;
+};
+
+class DescriptorPool {
+public:
+  DescriptorPool(DescriptorSetLayout& layout)
+    : DescriptorPool{
+        layout.get(),
+        layout.getInfo() | views::transform([](auto info) {
+          return VkDescriptorPoolSize{
+            .type = info.type,
+            .descriptorCount = info.count,
+          };
+        }) |
+          ranges::to<std::vector>(),
+      } {}
+
+  DescriptorPool(VkDescriptorSetLayout layout, std::vector<VkDescriptorPoolSize> pool_sizes) {
+    _pool_sizes = std::move(pool_sizes);
+    for (auto& pool_size : _pool_sizes) {
+      pool_size.descriptorCount *= _allocate_count;
+    }
+    _pool_info = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+      .maxSets = _allocate_count,
+      .poolSizeCount = static_cast<uint32>(_pool_sizes.size()),
+      .pPoolSizes = _pool_sizes.data(),
+    };
+    _dset_layouts.append_range(views::repeat(layout) | views::take(_allocate_count));
+  }
+  auto allocate() -> rs::DescriptorSet {
+    tryShrink();
+    if (_pool_counts.end()->first == 0) {
+      expand();
+    }
+    auto  pool_handle = _pool_counts.extract(--_pool_counts.end()).value().second;
+    auto& dsets = _resources.at(pool_handle).second;
+    auto  dset = dsets.exit();
+    _pool_counts.emplace(dsets.size(), dsets.getPool());
+    return dset;
+  }
+
+  void recycle(rs::DescriptorSet dset) {
+    auto& dsets = _resources.at(dset.getPool()).second;
+    _pool_counts.extract(std::pair{ dsets.size(), dsets.getPool() });
+    dsets.join(std::move(dset));
+    _pool_counts.emplace(dsets.size(), dsets.getPool());
+  }
+
+  DescriptorPool(const DescriptorPool&) noexcept = delete;
+  DescriptorPool(DescriptorPool&&) noexcept = delete;
+  auto operator=(const DescriptorPool&) noexcept -> DescriptorPool& = delete;
+  auto operator=(DescriptorPool&&) noexcept -> DescriptorPool& = delete;
+
+private:
+  std::set<std::pair<size_t, VkDescriptorPool>> _pool_counts;
+  using PoolResource = std::pair<rs::DescriptorPool, rs::DescriptorSets>;
+  std::unordered_map<VkDescriptorPool, PoolResource> _resources;
+
+  VkDescriptorPoolCreateInfo         _pool_info;
+  std::vector<VkDescriptorSetLayout> _dset_layouts;
+  std::vector<VkDescriptorPoolSize>  _pool_sizes;
+  static constexpr auto              _allocate_count = 5;
+
+  void expand() {
+    auto pool = rs::DescriptorPool{ _pool_info };
+    auto dsets = rs::DescriptorSets{ VkDescriptorSetAllocateInfo{
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+      .descriptorPool = pool,
+      .descriptorSetCount = static_cast<uint32_t>(_dset_layouts.size()),
+      .pSetLayouts = _dset_layouts.data(),
+    } };
+    _pool_counts.emplace(_allocate_count, pool);
+    _resources.emplace(pool, std::pair{ std::move(pool), std::move(dsets) });
+  }
+
+  void tryShrink() {
+    auto idle_pool_num = 3;
+    if (_pool_counts.size() <= idle_pool_num) {
+      return;
+    }
+    auto iter = _pool_counts.begin();
+    std::advance(iter, idle_pool_num);
+    while (iter != _pool_counts.end() && iter->first == _allocate_count) {
+      _resources.extract(iter->second);
+      iter = _pool_counts.erase(iter);
+    }
+  }
+};
+
+struct Descriptor {};
+
+class DescriptorSet {
+public:
+  DescriptorSet(DescriptorPool* pool) {
+    _pool = pool;
+    _dset = pool->allocate();
+  }
+  ~DescriptorSet() {
+    if (_dset.get()) {
+      _pool->recycle(std::move(_dset));
+    }
+  }
+
+  class Updater {
+  public:
+    void operator=(Descriptor desp);
+    void operator=(std::initializer_list<Descriptor> desp) { *this = { desp, Descriptor{} }; }
+    void operator=(
+      std::initializer_list<std::variant<std::initializer_list<Descriptor>, Descriptor>> desp
+    );
+  };
+
+  auto operator[](size_t index) -> Updater;
+  auto operator[](size_t index, size_t offset) -> Updater;
+
+private:
+  rs::DescriptorSet _dset;
+  DescriptorPool*   _pool;
+};
+
+} // namespace rd::vk

@@ -157,12 +157,18 @@ DEF_CONTEXTUAL_RESOURCE(Fence, VkFence, vkCreateFence, vkDestroyFence)
 
 // vkAllocateXXXs(singleton, allocateInfo, &handles);
 // vkFreeXXXs(singleton, pool, count, &handles);
-template <typename VkHandle, auto* Creator, auto* Destroyer, auto pCountMember, auto pPoolMember>
+template <
+  typename VkHandle,
+  auto* Creator,
+  auto* Destroyer,
+  auto  pCountMember,
+  auto  pPoolMember,
+  bool  canDestroy>
 class AllocatedResources {
 private:
   using AllocateInfoArg =
     std::remove_pointer_t<typename toy::FuncArgs<decltype(Creator)>::template at<1>>&;
-  using PoolHandle = typename toy::FuncArgs<decltype(Destroyer)>::template at<1>;
+  using PoolHandle = std::remove_cvref_t<decltype(std::declval<AllocateInfoArg>().*pPoolMember)>;
   using ContextResource =
     SingletonResourceRetriever<typename toy::FuncArgs<decltype(Creator)>::template at<0>>::type;
 
@@ -270,6 +276,10 @@ public:
       _pool = nullptr;
     }
     void destroy() {
+      if constexpr (!canDestroy) {
+        toy::debugf("simply discard resource {}", refl::resource<VkHandle>());
+        return;
+      }
       if (_handle) {
         Destroyer(ContextResource::getInstance().get(), _pool, 1, &_handle);
         toy::debugf("destroy resource {}", refl::resource<VkHandle>());
@@ -290,6 +300,11 @@ public:
   void join(SingleResource resource) {
     _handles.push_back(resource.get());
     resource.clear();
+  }
+  auto exit() -> SingleResource {
+    auto handle = _handles.back();
+    _handles.pop_back();
+    return SingleResource{ handle, _pool };
   }
 
   template <typename RangeT>
@@ -333,6 +348,10 @@ private:
 
 private:
   void destroy() {
+    if constexpr (!canDestroy) {
+      toy::debugf("simply discard {} resources of {}", _handles.size(), refl::resource<VkHandle>());
+      return;
+    }
     if (_handles.empty()) {
       return;
     }
@@ -342,10 +361,17 @@ private:
 };
 
 #define DEF_ALLOCATED_RESOURCE(                                                                    \
-  Name, SingleName, VkHandle, Creator, Destroyer, CountMember, PoolMember                          \
+  Name, SingleName, VkHandle, Creator, Destroyer, CountMember, PoolMember, canDestroy              \
 )                                                                                                  \
-  template class AllocatedResources<VkHandle, Creator, Destroyer, CountMember, PoolMember>;        \
-  export using Name = AllocatedResources<VkHandle, Creator, Destroyer, CountMember, PoolMember>;   \
+  template class AllocatedResources<                                                               \
+    VkHandle,                                                                                      \
+    Creator,                                                                                       \
+    Destroyer,                                                                                     \
+    CountMember,                                                                                   \
+    PoolMember,                                                                                    \
+    canDestroy>;                                                                                   \
+  export using Name =                                                                              \
+    AllocatedResources<VkHandle, Creator, Destroyer, CountMember, PoolMember, canDestroy>;         \
   export using SingleName = Name::SingleResource;
 
 DEF_ALLOCATED_RESOURCE(
@@ -355,7 +381,8 @@ DEF_ALLOCATED_RESOURCE(
   vkAllocateCommandBuffers,
   vkFreeCommandBuffers,
   &VkCommandBufferAllocateInfo::commandBufferCount,
-  &VkCommandBufferAllocateInfo::commandPool
+  &VkCommandBufferAllocateInfo::commandPool,
+  true
 )
 DEF_ALLOCATED_RESOURCE(
   DescriptorSets,
@@ -364,7 +391,8 @@ DEF_ALLOCATED_RESOURCE(
   vkAllocateDescriptorSets,
   vkFreeDescriptorSets,
   &VkDescriptorSetAllocateInfo::descriptorSetCount,
-  &VkDescriptorSetAllocateInfo::descriptorPool
+  &VkDescriptorSetAllocateInfo::descriptorPool,
+  false
 )
 
 #undef DEF_ALLOCATED_RESOURCE
