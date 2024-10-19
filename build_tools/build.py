@@ -343,6 +343,18 @@ def build_total():
         writer.subninja(NinjaCtx.Task.test_gen.value)
 
 
+@cached("generate_compile_commands")
+def generate_compile_commands(cache_dep_files: list[str] = []):
+    cache_dep_files.append(NinjaCtx.get_file(NinjaCtx.Task.compile))
+    result = NinjaCtx.execute(
+        NinjaCtx.Task.compile,
+        f"-t compdb {NinjaCtx.Rule.precompile} {NinjaCtx.Rule.compile}",
+        stdout=sp.PIPE,
+    )
+    with open(path.join(PathCtx.root_dir, "compile_commands.json"), "wb") as f:
+        f.write(result.stdout)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root_dir", type=str, dest="root_dir", default="./")
@@ -364,6 +376,7 @@ def main():
     build_compile(
         resources.modules, resources.sources, resources.targets, resources.include_dirs
     )
+    generate_compile_commands()
     build_complete_dep(resources.modules, resources.sources, resources.targets)
     build_target(resources.targets, resources.sources, resources.dylib_files)
 

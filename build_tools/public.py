@@ -93,9 +93,13 @@ class NinjaCtx:
         return path.join(PathCtx.get_dir(Workspace.ninja), task.value)
 
     @staticmethod
-    def execute(ninja_file: str, extra="", stdout=None, check=True):
+    def execute(task_or_file: Task | str, extra="", stdout=None, check=True):
+        if isinstance(task_or_file, NinjaCtx.Task):
+            file = NinjaCtx.get_file(task_or_file)
+        else:
+            file = task_or_file
         return sp.run(
-            f"ninja -C {path.dirname(ninja_file)} -f {path.basename(ninja_file)} {extra}",
+            f"ninja -C {path.dirname(file)} -f {path.basename(file)} {extra}",
             stdout=stdout,
             check=check,
         )
@@ -147,6 +151,8 @@ class Compiler:
         # https://github.com/llvm/llvm-project/issues/75057
         "-Wno-deprecated-declarations",
         "-Wno-experimental-header-units",
+        # suppress error from clangd
+        "-fretain-comments-from-system-headers",
         "-g",
     ]
 
