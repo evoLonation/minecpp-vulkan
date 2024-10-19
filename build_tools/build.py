@@ -3,6 +3,7 @@ import os.path as path
 from cache import cached
 import subprocess as sp
 from public import (
+    CompileCommandNinja,
     Compiler,
     DepCtx,
     HeaderNinja,
@@ -136,7 +137,7 @@ def build_dep_scan(
         writer.rule(
             name=Rule.dep_scan,
             command=command,
-            description=f"Dependency scan $out",
+            description=f"Dependency scan $in",
         )
 
         def build_ninja(file: str, module_arg: str):
@@ -161,6 +162,12 @@ def build_dep_scan(
             else:
                 build_ninja(module.file, f"--provide {module.provide}")
 
+        writer.build(
+            outputs=Phony.dep_scan,
+            rule="phony",
+            inputs=[DepCtx.dyndep_file(x.file) for x in sources + targets + modules],
+        )
+
 
 def build_compile(
     modules: list[Module],
@@ -176,12 +183,14 @@ def build_compile(
             command=Compiler.precompile(
                 [x.file for x in includes], "$config", "$in", "$out"
             ),
+            description=f"PRECOMPILE $out",
         )
         writer.rule(
             name=Rule.compile,
             command=Compiler.compile(
                 [x.file for x in includes], "$config", "$in", "$out"
             ),
+            description=f"COMPILE $out",
         )
 
         def build(rule: str, source: str, input: str, output: str):
@@ -225,6 +234,17 @@ def build_compile(
                     module.file,
                     Compiler.obj_file(module.file),
                 )
+
+        writer.build(
+            outputs=Phony.pcm,
+            rule="phony",
+            inputs=[
+                Compiler.pcm_file(
+                    module.provide if module.provide != None else str(module.implement)
+                )
+                for module in modules
+            ],
+        )
 
 
 # a module phony A will build all relative files needed by module A (whole dependency tree)
@@ -333,16 +353,35 @@ def build_total():
 
 
 @cached("generate_compile_commands")
-def generate_compile_commands(cache_dep_files: list[str] = []):
-    # cache_dep_files.append(NinjaCtx.get_file(NinjaCtx.Task.compile))
-    # result = NinjaCtx.execute(
-    #     NinjaCtx.Task.compile,
-    #     f"-t compdb {NinjaCtx.Rule.precompile} {NinjaCtx.Rule.compile}",
-    #     stdout=sp.PIPE,
-    # )
-    # with open(path.join(Root.dir, "compile_commands.json"), "wb") as f:
-    #     f.write(result.stdout)
-    pass
+def build_compile_commands(
+    modules: list[Module],
+    sources: list[Source],
+    targets: list[Target],
+    includes: list[IncludeDir],
+):
+    Ninja = CompileCommandNinja
+    Rule = Ninja.Rule
+    with Ninja.open() as writer:
+        writer.rule(
+            name=Rule.compile_command,
+            command=Compiler.compile(
+                [x.file for x in includes],
+                "$config",
+                "$in",
+                "$out",
+                Workspace.pcm_clangd.get_dir(),
+            ),
+        )
+        for source in sources + targets + modules:
+            writer.build(
+                outputs=Compiler.obj_file(source.file),
+                rule=Rule.compile_command,
+                inputs=source.file,
+                variables={"config": DepCtx.header_dep_config_file(source.file)},
+            )
+    result = Ninja.execute(f"-t compdb {Rule.compile_command}", stdout=sp.PIPE)
+    with open(path.join(Root.dir, "compile_commands.json"), "wb") as f:
+        f.write(result.stdout)
 
 
 def main():
@@ -366,7 +405,9 @@ def main():
     build_compile(
         resources.modules, resources.sources, resources.targets, resources.include_dirs
     )
-    generate_compile_commands()
+    build_compile_commands(
+        resources.modules, resources.sources, resources.targets, resources.include_dirs
+    )
     build_complete_dep(resources.modules, resources.sources, resources.targets)
     build_target(resources.targets, resources.sources, resources.dylib_files)
 

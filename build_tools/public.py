@@ -106,7 +106,7 @@ class CompileNinja(NinjaFile):
         compile = "compile"
 
     class Phony:
-        all_pcm = "all_pcm"
+        pcm = "pcm"
 
 
 class CompleteDepNinja(NinjaFile):
@@ -148,6 +148,13 @@ class ShaderGenNinja(NinjaFile):
 
 class TestGenNinja(NinjaFile):
     task = "test_gen"
+
+
+class CompileCommandNinja(NinjaFile):
+    task = "compile_command"
+
+    class Rule:
+        compile_command = "compile_command"
 
 
 class Script(Enum):
@@ -207,11 +214,17 @@ class Compiler:
         )
 
     @staticmethod
-    def compile(include_dirs: list[str], config: str | None, input: str, output: str):
+    def compile(
+        include_dirs: list[str],
+        config: str | None,
+        input: str,
+        output: str,
+        pcm_dir: str = Workspace.pcm.get_dir(),
+    ):
         return sp.list2cmdline(
             Compiler.current_flag
             + ([] if config is None else ["--config", config])
-            + ["-fprebuilt-module-path=" + Workspace.pcm.get_dir()]
+            + ["-fprebuilt-module-path=" + pcm_dir]
             + ["-isystem" + x for x in Compiler.system_include_dirs]
             + ["-I" + x for x in include_dirs]
             + ["-c", input, "-o", output]
