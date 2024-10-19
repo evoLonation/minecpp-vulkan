@@ -4,7 +4,7 @@
  */
 export module render.vk.instance;
 
-import "vulkan_config.h";
+import <vulkan_config.h>;
 import render.vk.resource;
 import render.vk.tool;
 import toy;
@@ -46,7 +46,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugHandler(
     return VK_FALSE;
   if (!(message_type & info.message_type_flags))
     return VK_FALSE;
-  auto serverityGetter = [](VkDebugUtilsMessageSeverityFlagBitsEXT e) {
+  auto terminate = false;
+  auto serverityGetter = [&](VkDebugUtilsMessageSeverityFlagBitsEXT e) {
     switch (e) {
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
       return "VERBOSE";
@@ -55,6 +56,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugHandler(
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
       return "WARNING";
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+      terminate = true;
       return "ERROR";
     default:
       return "OTHER";
@@ -81,7 +83,9 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugHandler(
     typeGetter(message_type),
     p_callback_data->pMessage
   );
-
+  if (terminate) {
+    // std::terminate();
+  }
   return VK_FALSE;
 }
 

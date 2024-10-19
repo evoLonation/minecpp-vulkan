@@ -1,4 +1,7 @@
-source:
-- instance.ccm
-- device.ccm
-- device.cc
+module:
+- instance.ccm:
+    provide: render.vk.instance
+- device.ccm:
+    provide: render.vk.device
+- device.cc:
+    implement: render.vk.device

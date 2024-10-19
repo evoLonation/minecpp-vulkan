@@ -1,5 +1,9 @@
-source:
-- surface.ccm
-- presentation.ccm
-- swapchain.ccm
-- presentation.cc
+module:
+- surface.ccm:
+    provide: render.vk.surface
+- presentation.ccm:
+    provide: render.vk.presentation
+- swapchain.ccm:
+    provide: render.vk.swapchain
+- presentation.cc:
+    implement: render.vk.presentation

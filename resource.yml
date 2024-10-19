@@ -8,18 +8,24 @@ sub_dir:
 - shader
 # - components
 source:
-- main.cc
 - header_impl.cc
-- glfw.ccm
-- model.ccm
+target:
+- main.cc: hello_vulkan
+module:
+- glfw.ccm:
+    provide: glfw
+- model.ccm:
+    provide: model
 # - gui.ccm
-- transform.ccm
+- transform.ccm:
+    provide: transform
 # - control.ccm
 # - axis.ccm
 # - action.ccm
 # - application.ccm
 # - application.cc
-- input.ccm
+- input.ccm:
+    provide: input
 include_dir:
 - include
 

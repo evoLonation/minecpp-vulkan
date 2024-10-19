@@ -2,7 +2,7 @@ module render.vk.reflections;
 import std;
 import toy;
 
-import "vulkan_config.h";
+import <vulkan_config.h>;
 
 namespace rd::vk::refl {
 

@@ -6,8 +6,12 @@ sub_dir:
 - image
 - pipeline
 - present
-source:
-- memory.ccm
-- memory.cc
-- context.ccm
-- context.cc
+module:
+- memory.ccm:
+    provide: render.vk.memory
+- memory.cc:
+    implement: render.vk.memory
+- context.ccm:
+    provide: render.context
+- context.cc:
+    implement: render.context

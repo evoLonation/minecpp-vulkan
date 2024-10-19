@@ -1,6 +1,6 @@
 module render.vk.device;
 
-import "vulkan_config.h";
+import <vulkan_config.h>;
 import render.vk.tool;
 import toy;
 

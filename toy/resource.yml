@@ -1,12 +1,22 @@
-source:
-- toy.ccm 
-- log.ccm
-- trait.ccm
-- concepts.ccm
-- ranges.ccm
-- ranges_base.ccm
+module:
+- toy.ccm:
+    provide: toy
+- log.ccm:
+    provide: toy.log
+- trait.ccm:
+    provide: toy.trait
+- concepts.ccm:
+    provide: toy.concepts
+- ranges.ccm:
+    provide: toy.ranges
+- ranges_base.ccm:
+    provide: toy.ranges:base
 # - ranges_any_view.ccm
-- helper.ccm
-- coroutine.ccm
-- enums.ccm
-- json.ccm
+- helper.ccm:
+    provide: toy.helper
+- coroutine.ccm:
+    provide: toy.coroutine
+- enums.ccm:
+    provide: toy.enums
+- json.ccm:
+    provide: toy.json

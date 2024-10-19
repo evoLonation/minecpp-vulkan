@@ -1,160 +1,263 @@
-import os.path as ospath
 from enum import Enum
+import inspect
+from os import path
+import os
+import os.path as path
 import subprocess as sp
-
-class TargetType(Enum):
-  EXECUTABLE = 0
-  DYNAMIC_LIBRARY = 1
-
-class Paths:
-  def __init__(self, root_dir_: str, target_: str, type_: TargetType):
-    self.target_type = type_
-    self.root_dir = ospath.abspath(root_dir_)
-    self.target = target_
-    self.build_dir = ospath.join(self.root_dir, 'build')
-
-    self.gen_dir = ospath.join(self.build_dir, 'gen')
-    self.obj_dir = ospath.join(self.build_dir, 'obj')
-    self.pcm_dir = ospath.join(self.build_dir, 'pcm')
-    self.header_pcm_dir = ospath.join(self.build_dir, 'hpcm')
-
-    self.ninja_dir = self.build_dir
-    self.ninja_file = ospath.join(self.ninja_dir, 'build.ninja')
-    self.ninja_header_precompile_file = ospath.join(self.ninja_dir, 'header_precompile.ninja')
-    self.ninja_module_scan_file = ospath.join(self.ninja_dir, 'module_scan.ninja')
-    self.ninja_shader_code_gen_file = ospath.join(self.ninja_dir, 'shader_gen.ninja')
-    self.dyndep_dir = ospath.join(self.ninja_dir, 'dyndeps')
-
-    self.provide_module_info_file = ospath.join(self.build_dir, 'provide_module.json')
-
-    self.target_dir = ospath.join(self.build_dir, 'out')
-    if self.target_type == TargetType.EXECUTABLE:
-      self.target_file = ospath.join(self.target_dir, self.target+'.exe')
-    elif self.target_type == TargetType.DYNAMIC_LIBRARY:
-      self.target_file = ospath.join(self.target_dir, self.target+'.dll')
-
-    self.build_tools_dir = ospath.dirname(ospath.abspath(__file__))
-    self.dyndep_generate_script = ospath.join(self.build_tools_dir, 'dyndep_generate.py')
-    self.shader_generate_script = ospath.join(self.build_tools_dir, 'shader_code_generate.py')
-
-    self.gen_dir = ospath.join(self.build_dir, 'gen')
-    self.shader_code_all_file = ospath.join(self.gen_dir, 'shader_code.cc')
-
-  # 得到相对root_dir的路径
-  def get_rel_root_path(self, path):
-    return ospath.relpath(path, self.root_dir)
-  def get_pcm_file(self, module):
-    return ospath.abspath(ospath.join(self.pcm_dir, module.replace(':', '-') + '.pcm'))
-  def get_obj_file(self, path):
-    return ospath.join(self.obj_dir, self.get_rel_root_path(path) + '.o')
-  def get_header_pcm_file(self, path):
-    return ospath.join(self.header_pcm_dir, ospath.basename(path)[:-2] + '.pcm')
-  def get_dyndep_file(self, path):
-    return ospath.join(self.dyndep_dir, self.get_rel_root_path(path) + '.dd')
-  def get_shader_code_file(self, shader_file):
-    return ospath.join(self.gen_dir, self.get_rel_root_path(shader_file)+'.ccm')
-  def get_dylib_target_file(self, dylib_file):
-    return ospath.join(self.target_dir, ospath.basename(dylib_file))
+from typing import overload
+import ninja_syntax as ninja
 
 
-path = Paths('./', 'test', TargetType.EXECUTABLE)
-def set_path(root_dir: str, target: str, type: TargetType = TargetType.EXECUTABLE):
-  global path
-  path = Paths(root_dir, target, type)
+class Workspace(Enum):
+    build = "build"
+    ninja = build
+    gen = path.join(build, "gen")
+    gen_shader = path.join(gen, "shader")
+    gen_test = path.join(gen, "test")
+    obj = path.join(build, "obj")
+    pcm = path.join(build, "pcm")
+    hpcm = path.join(build, "hpcm")
+    out = path.join(build, "out")
+    dep_scan = path.join(build, "dep_scan")
+    cache = path.join(build, "cache")
+    complete_dyndep = path.join(build, "complete_dyndep")
 
 
-class Flags:
-  def __init__(self):
-    self.clang_executable_path = 'clang'
-    self.system_include_dirs = [
-      'C:/Users/ZhengyangZhao/msys64/mingw64/include/c++/v1',
-      'C:/Users/ZhengyangZhao/msys64/mingw64/lib/clang/18/include',
+class PathCtx:
+    root_dir = path.abspath("./")
+
+    @staticmethod
+    def set_root_dir(root_dir: str):
+        PathCtx.root_dir = path.abspath(root_dir)
+
+    @staticmethod
+    def rel_root_path(file: str):
+        return path.relpath(file, PathCtx.root_dir)
+
+    @staticmethod
+    def get_dir(workspace: Workspace):
+        return path.join(PathCtx.root_dir, workspace.value)
+
+    @staticmethod
+    def mkdirs():
+        for workspace in Workspace:
+            os.makedirs(PathCtx.get_dir(workspace), exist_ok=True)
+
+
+class NinjaCtx:
+    class WriterContextManager(ninja.Writer):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            self.close()
+
+    class Rule:
+        precompile_header = "precompile_header"
+        dep_scan = "dep_scan"
+        precompile = "precompile"
+        compile = "compile"
+        link = "link"
+        copy = "copy"
+        shader_code = "shader_code_generate"
+        shader_code_total = "shader_code_total_generate"
+        complete_dyndep = "complete_dyndep"
+
+    class Phony:
+        header_unit = "header_unit"
+
+        @staticmethod
+        def target(name: str):
+            return f"target/{name}"
+
+        @staticmethod
+        def complete_dep_module(name: str):
+            return f"module/{name}"
+
+        @staticmethod
+        def complete_dep_source(file: str):
+            return path.join("source", PathCtx.rel_root_path(file))
+
+    class Task(Enum):
+        total = "build.ninja"
+        compile = "compile.ninja"
+        header_precompile = "header_precompile.ninja"
+        dep_scan = "dep_scan.ninja"
+        complete_dep = "complete_dep.ninja"
+        target = "target.ninja"
+        shader_gen = "shader_gen.ninja"
+        test_gen = "test_gen.ninja"
+
+    @staticmethod
+    def get_file(task: Task):
+        return path.join(PathCtx.get_dir(Workspace.ninja), task.value)
+
+    @staticmethod
+    def execute(ninja_file: str, extra="", stdout=None, check=True):
+        return sp.run(
+            f"ninja -C {path.dirname(ninja_file)} -f {path.basename(ninja_file)} {extra}",
+            stdout=stdout,
+            check=check,
+        )
+
+    @staticmethod
+    def open_ninja(task_or_file: Task | str):
+        if isinstance(task_or_file, NinjaCtx.Task):
+            file = NinjaCtx.get_file(task_or_file)
+        else:
+            file = task_or_file
+        return NinjaCtx.WriterContextManager(open(file, "wt"))
+
+
+class Script(Enum):
+    dep_scan = "dep_scan.py"
+    link = "link.py"
+    shader_gen = "shader_gen.py"
+    test_gen = "test_gen.py"
+    complete_dyndep = "complete_dyndep.py"
+
+    @staticmethod
+    def get_command(script: "Script", args: list[str]) -> str:
+        abspath = path.join(path.dirname(path.abspath(__file__)), script.value)
+        command = ["python", abspath] + args
+        return sp.list2cmdline(command)
+
+
+class Compiler:
+    clang_executable_path = "clang"
+    system_include_dirs = [
+        "C:/Users/ZhengyangZhao/msys64/mingw64/include/c++/v1",
+        "C:/Users/ZhengyangZhao/msys64/mingw64/lib/clang/18/include",
     ]
-    self.system_link_dirs = [
-      'C:/Users/18389/msys2/mingw64/lib',
+    system_link_dirs = [
+        "C:/Users/18389/msys2/mingw64/lib",
     ]
-    self.system_link_libs = [
-      'c++',
+    system_link_libs = [
+        "c++",
     ]
-    self.header_unit_fix_flag = ['-fretain-comments-from-system-headers']
 
-    # if current_flag != None:
-    #   self.current_flag = current_flag
-    # else:
-    self.current_flag = [
-      self.clang_executable_path,
-      '-std=c++23', 
-      '-fexperimental-library', 
-      '-nostdinc++', 
-      '-nostdlib++', 
-      '-Wno-unused-command-line-argument',
-      # for a deprecation bug occured in clang18 with std module: 
-      # https://github.com/llvm/llvm-project/issues/75057
-      '-Wno-deprecated-declarations', 
-      '-g']
-  
-  def get_current_flag(self):
-    return self.current_flag
-  def add_include_dirs(self, include_dirs):
-    for system_include in self.system_include_dirs:
-      self.current_flag += ['-isystem', system_include]
-    self.current_flag += list(map(lambda x: '-I'+x, include_dirs))
-  
-  def get_header_precompile(self, input, output):
-    return self.current_flag + self.header_unit_fix_flag+\
-      ['-fmodule-header', '-xc++-header', input, '-o', output]
-  
-  def add_header_pcm(self, header_pcms):
-    self.current_flag += ['-Wno-experimental-header-units'] + self.header_unit_fix_flag +\
-      list(map(lambda x: f'-fmodule-file={x}', header_pcms))
-  
-  def add_module_pcm_dir(self, module_pcm_dir):
-    self.current_flag += [f'-fprebuilt-module-path={module_pcm_dir}']
-  
-  def get_precompile(self, input, output):
-    return self.current_flag + ['--precompile', input, '-o', output]
-  
-  def get_compile(self, input, output):
-    return self.current_flag + ['-c', input, '-o', output]
-  
-  def get_link(self, objs, link_dirs, link_libs, output, target_type: TargetType):
-    return self.current_flag + objs +\
-      (['-shared'] if target_type == TargetType.DYNAMIC_LIBRARY else [])+\
-      ['-L'+dir for dir in link_dirs + self.system_link_dirs]+\
-      ['-l'+lib for lib in link_libs + self.system_link_libs]+\
-      ['-o', output]
+    current_flag = [
+        clang_executable_path,
+        "-std=c++23",
+        "-fexperimental-library",
+        "-nostdinc++",
+        "-nostdlib++",
+        "-Wno-unused-command-line-argument",
+        # for a deprecation bug occured in clang18 with std module:
+        # https://github.com/llvm/llvm-project/issues/75057
+        "-Wno-deprecated-declarations",
+        "-Wno-experimental-header-units",
+        "-g",
+    ]
 
-flag = Flags()
+    @staticmethod
+    def precompile(
+        include_dirs: list[str], config: str | None, input: str, output: str
+    ):
+        return sp.list2cmdline(
+            Compiler.current_flag
+            + ([] if config is None else ["--config", config])
+            + ["-fprebuilt-module-path=" + PathCtx.get_dir(Workspace.pcm)]
+            + ["-isystem" + x for x in Compiler.system_include_dirs]
+            + ["-I" + x for x in include_dirs]
+            + ["--precompile", input, "-o", output]
+        )
 
-class Resources:
-  def __init__(self):
-    self.config_filename = 'resource.yml'
-    self.type_sub_dir = 'sub_dir'
-    self.type_source = 'source'
-    self.type_include_dir = 'include_dir'
-    self.type_header_unit = 'header_unit'
-    self.type_lib_file = 'lib'
-    self.type_dylib_file = 'dylib'
-    self.type_shader = 'shader'
+    @staticmethod
+    def compile(include_dirs: list[str], config: str | None, input: str, output: str):
+        return sp.list2cmdline(
+            Compiler.current_flag
+            + ([] if config is None else ["--config", config])
+            + ["-fprebuilt-module-path=" + PathCtx.get_dir(Workspace.pcm)]
+            + ["-isystem" + x for x in Compiler.system_include_dirs]
+            + ["-I" + x for x in include_dirs]
+            + ["-c", input, "-o", output]
+        )
 
-rsc = Resources()
+    @staticmethod
+    def header_precompile(include_dirs: list[str], input: str, output: str):
+        return sp.list2cmdline(
+            Compiler.current_flag
+            + ["-I" + x for x in include_dirs]
+            + ["-fmodule-header", "-xc++-header"]
+            + [input, "-o", output]
+        )
 
-class Ninja:
-  def __init__(self):
-    self.precompile_header_rule = 'precompile_header'
-    self.header_unit_phony = 'header_unit'
-    self.dyndep_generator_rule = 'module_dep_scan'
-    self.precompile_rule = 'precompile'
-    self.compile_rule = 'compile'
-    self.link_rule = 'link'
-    self.copy_rule = 'copy'
-    self.shader_code_rule = 'shader_code_generate'
-    self.shader_code_total_rule = 'shader_code_total_generate'
+    @staticmethod
+    def link(link_files: list[str], inputs: list[str], output: str):
+        link_dirs = list(set([path.dirname(file) for file in link_files]))
+        link_libs = []
+        for file in link_files:
+            filename = path.basename(file)
+            if filename.startswith("lib") and filename.endswith(".a"):
+                link_libs.append(filename[3:-2])
+            elif filename.endswith(".lib") or filename.endswith(".dll"):
+                link_libs.append(filename[:-4])
+        return (
+            Compiler.current_flag
+            + inputs
+            + ["-L" + dir for dir in link_dirs + Compiler.system_link_dirs]
+            + ["-l" + lib for lib in link_libs + Compiler.system_link_libs]
+            + ["-o", output]
+        )
 
-  def execute(self, ninja_file, extra = '', stdout = None):
-    return sp.run(f'ninja -C {ospath.dirname(ninja_file)} -f {ospath.basename(ninja_file)} {extra}', stdout=stdout)
-  
-  def module_phony(self, module_name):
-    return ospath.join('mod', module_name)
+    @staticmethod
+    def obj_file(file: str):
+        return path.join(
+            PathCtx.get_dir(Workspace.obj), PathCtx.rel_root_path(file) + ".o"
+        )
 
-ninja = Ninja()
+    @staticmethod
+    def pcm_file(module: str):
+        return path.join(
+            PathCtx.get_dir(Workspace.pcm), module.replace(":", "-") + ".pcm"
+        )
+
+    @staticmethod
+    def header_pcm_file(file: str):
+        return path.join(PathCtx.get_dir(Workspace.hpcm), path.basename(file) + ".pcm")
+
+    @staticmethod
+    def target_file(target: str):
+        return path.join(PathCtx.get_dir(Workspace.out), target + ".exe")
+
+    @staticmethod
+    def dynamic_dir(file: str):
+        return path.join(PathCtx.get_dir(Workspace.out), path.basename(file))
+
+
+class DepCtx:
+    @staticmethod
+    def dyndep_file(file: str):
+        return path.join(
+            PathCtx.get_dir(Workspace.dep_scan),
+            PathCtx.rel_root_path(file) + ".dd",
+        )
+
+    @staticmethod
+    def header_dep_config_file(file: str):
+        return path.join(
+            PathCtx.get_dir(Workspace.dep_scan),
+            PathCtx.rel_root_path(file) + ".cfg",
+        )
+
+    @staticmethod
+    def module_dep_file(file: str):
+        return path.join(
+            PathCtx.get_dir(Workspace.dep_scan),
+            PathCtx.rel_root_path(file) + ".deps",
+        )
+
+    @staticmethod
+    def complete_dyndep_module_file(module: str):
+        return path.join(
+            PathCtx.get_dir(Workspace.complete_dyndep), "module", f"{module}.dd"
+        )
+
+    @staticmethod
+    def complete_dyndep_source_file(file: str):
+        return path.join(
+            PathCtx.get_dir(Workspace.complete_dyndep),
+            "source",
+            PathCtx.rel_root_path(f"{file}.dd"),
+        )

@@ -7,7 +7,7 @@ import render.vertex;
 import render.vk.presentation;
 import render.vk.swapchain;
 
-import "vulkan_config.h";
+import <vulkan_config.h>;
 
 namespace rd {
 

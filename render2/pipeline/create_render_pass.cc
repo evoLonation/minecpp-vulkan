@@ -1,6 +1,6 @@
 module render.vk.render_pass;
 
-import "vulkan_config.h";
+import <vulkan_config.h>;
 import render.vk.resource;
 import render.vk.device;
 import render.vk.sync;

@@ -2,7 +2,7 @@ export module render.vk.swapchain;
 import std;
 import toy;
 
-import "vulkan_config.h";
+import <vulkan_config.h>;
 
 import render.vk.tracker;
 import render.vk.device;

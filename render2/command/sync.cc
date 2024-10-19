@@ -1,6 +1,6 @@
 module render.vk.sync;
 
-import "vulkan_config.h";
+import <vulkan_config.h>;
 import render.vk.tool;
 import render.vk.device;
 

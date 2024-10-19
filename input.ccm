@@ -2,7 +2,7 @@ export module input;
 
 import glfw;
 
-import "glfw_config.h";
+import <glfw_config.h>;
 
 import std;
 import toy;

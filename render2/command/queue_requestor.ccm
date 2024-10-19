@@ -1,6 +1,6 @@
 export module render.vk.queue_requestor;
 
-import "vulkan_config.h";
+import <vulkan_config.h>;
 import render.vk.tool;
 import render.vk.surface;
 import render.vk.device;

@@ -1,10 +1,10 @@
 export module render.vk.surface;
 
-import "vulkan_config.h";
+import <vulkan_config.h>;
 import render.vk.resource;
 import render.vk.tool;
 
-import "glfw_config.h";
+import <glfw_config.h>;
 import glfw;
 
 import std;

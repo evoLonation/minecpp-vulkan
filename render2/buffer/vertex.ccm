@@ -1,6 +1,6 @@
 export module render.vertex;
 
-import "vulkan_config.h";
+import <vulkan_config.h>;
 import render.vk.device;
 import render.vk.buffer;
 import render.vk.sync;

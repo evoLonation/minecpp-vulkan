@@ -7,7 +7,7 @@ import render.vk.resource;
 import render.vk.tool;
 import render.vk.device;
 
-import "vulkan_config.h";
+import <vulkan_config.h>;
 
 export namespace rd::vk {
 

@@ -3,7 +3,7 @@ export module render.vk.buffer;
 import std;
 import toy;
 
-import "vulkan_config.h";
+import <vulkan_config.h>;
 import render.vk.resource;
 import render.vk.memory;
 

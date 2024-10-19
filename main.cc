@@ -2,8 +2,8 @@ import toy;
 // import application;
 import std;
 
-import "vulkan_config.h";
-import "glfw_config.h";
+import <vulkan_config.h>;
+import <glfw_config.h>;
 import render.vk.instance;
 import render.vk.device;
 import render.vk.surface;

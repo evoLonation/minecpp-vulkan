@@ -1,3 +1,5 @@
-source:
-- glm/glm.cppm
-- std/std.cppm
+module:
+- glm/glm.cppm:
+    provide: glm
+- std/std.cppm:
+    provide: std

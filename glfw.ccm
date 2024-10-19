@@ -1,6 +1,6 @@
 export module glfw;
 
-import "glfw_config.h";
+import <glfw_config.h>;
 import toy;
 import std;
 

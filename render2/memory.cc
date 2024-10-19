@@ -3,7 +3,7 @@ module render.vk.memory;
 import std;
 import toy;
 
-import "vulkan_config.h";
+import <vulkan_config.h>;
 import render.vk.tool;
 import render.vk.resource;
 import render.vk.device;

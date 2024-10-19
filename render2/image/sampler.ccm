@@ -1,6 +1,6 @@
 export module render.sampler;
 
-import "vulkan_config.h";
+import <vulkan_config.h>;
 import render.vk.resource;
 import render.vk.device;
 import render.vk.image;

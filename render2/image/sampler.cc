@@ -1,10 +1,10 @@
 module render.sampler;
 
-import "vulkan_config.h";
+import <vulkan_config.h>;
 import render.vk.sync;
 import render.vk.executor;
 
-import "stb_image.h";
+import <stb_image.h>;
 
 namespace rd {
 

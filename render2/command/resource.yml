@@ -1,7 +1,13 @@
-source:
-- sync.ccm
-- sync.cc
-- queue_requestor.ccm
-- tracker.ccm
-- tracker.cc
-- executor.ccm
+module:
+- sync.ccm:
+    provide: render.vk.sync
+- sync.cc:
+    implement: render.vk.sync
+- queue_requestor.ccm:
+    provide: render.vk.queue_requestor
+- tracker.ccm:
+    provide: render.vk.tracker
+- tracker.cc:
+    implement: render.vk.tracker
+- executor.ccm:
+    provide: render.vk.executor
