@@ -1,16 +1,18 @@
 # generate dyndep, output is a module A phony, inputs are all module phony whose dependent on A
 import argparse
 
-from public import NinjaCtx, PathCtx
+from public import NinjaCtx, Root
 
 parser = argparse.ArgumentParser()
 parser.add_argument("root_dir", type=str)
 parser.add_argument("phony", type=str, help="the phony target name")
-parser.add_argument("--module", type=str, help="the module name if resource is a module", required=False)
+parser.add_argument(
+    "--module", type=str, help="the module name if resource is a module", required=False
+)
 parser.add_argument("inputs", type=str, nargs="+", help="all module dep file path")
 parser.add_argument("output", type=str, help="the dyndep file path")
 args = parser.parse_args()
-PathCtx.set_root_dir(args.root_dir)
+Root.set_dir(args.root_dir)
 
 dep_modules = []
 for input in args.inputs:

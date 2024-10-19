@@ -1,27 +1,14 @@
 import argparse
-from dataclasses import dataclass, field, fields
-import inspect
-import os
-from types import NoneType
-from dacite import from_dict
-import dacite
-from enum import Enum
 import os.path as path
-from typing import Annotated, Any, Callable, Literal, ParamSpec, TypeVar, get_type_hints
-import yaml
 from cache import cached
-import shader_gen
-import ninja_syntax as ninja
-import pickle
 import subprocess as sp
-from public import Compiler, DepCtx, PathCtx, NinjaCtx, Script, Workspace
+from public import Compiler, DepCtx, Root, NinjaCtx, Script, Workspace
 from resources import (
     get_file_resources,
     Module,
     Source,
     IncludeDir,
     HeaderUnit,
-    LibFile,
     DylibFile,
     Shader,
     Test,
@@ -47,8 +34,7 @@ def build_gen_shader(resources: list[Shader]) -> list[Module]:
         for shader in resources:
             gen_files.append(
                 path.join(
-                    PathCtx.get_dir(Workspace.gen_shader),
-                    PathCtx.rel_root_path(shader.file) + ".ccm",
+                    Workspace.gen_shader.get_dir(), Root.relpath(shader.file) + ".ccm"
                 )
             )
             module_names.append(f"render.vk.shader_code.{path.basename(shader.file)}")
@@ -74,9 +60,7 @@ def build_gen_shader(resources: list[Shader]) -> list[Module]:
             command=command,
             description="SHADERCODE total generate $out",
         )
-        total_output = path.join(
-            PathCtx.get_dir(Workspace.gen_shader), "shader_code.cc"
-        )
+        total_output = path.join(Workspace.gen_shader.get_dir(), "shader_code.cc")
         total_module_name = "render.vk.shader_code"
         ninja_writer.build(
             rule=NinjaCtx.Rule.shader_code_total,
@@ -136,7 +120,7 @@ def build_dep_scan(
             ["-c", "$in"]
             + ["$module_arg"]
             + ["--includes", *[x.file for x in includes]]
-            + ["--root_dir", PathCtx.root_dir],
+            + ["--root_dir", Root.dir],
         )
         writer.rule(
             name=NinjaCtx.Rule.dep_scan,
@@ -249,8 +233,7 @@ def build_complete_dep(
         writer.rule(
             name=NinjaCtx.Rule.complete_dyndep,
             command=Script.get_command(
-                Script.complete_dyndep,
-                [PathCtx.root_dir, "$phony", "$module", "$in", "$out"],
+                Script.complete_dyndep, [Root.dir, "$phony", "$module", "$in", "$out"]
             ),
         )
         for module, files in module_map.items():
@@ -297,10 +280,7 @@ def build_target(
     with NinjaCtx.open_ninja(NinjaCtx.Task.target) as writer:
         writer.rule(
             name=NinjaCtx.Rule.link,
-            command=Script.get_command(
-                Script.link,
-                [PathCtx.root_dir, "$input", "$out"],
-            ),
+            command=Script.get_command(Script.link, [Root.dir, "$input", "$out"]),
         )
         writer.rule(
             name=NinjaCtx.Rule.copy,
@@ -351,7 +331,7 @@ def generate_compile_commands(cache_dep_files: list[str] = []):
         f"-t compdb {NinjaCtx.Rule.precompile} {NinjaCtx.Rule.compile}",
         stdout=sp.PIPE,
     )
-    with open(path.join(PathCtx.root_dir, "compile_commands.json"), "wb") as f:
+    with open(path.join(Root.dir, "compile_commands.json"), "wb") as f:
         f.write(result.stdout)
 
 
@@ -359,8 +339,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root_dir", type=str, dest="root_dir", default="./")
     args = parser.parse_args()
-    PathCtx.set_root_dir(args.root_dir)
-    PathCtx.mkdirs()
+    Root.set_dir(args.root_dir)
+    Workspace.mkdirs()
 
     resources = get_file_resources()
     # print(f"resources: {resources}")

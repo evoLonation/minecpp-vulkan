@@ -5,8 +5,7 @@ import subprocess as sp
 import argparse
 import json
 import tempfile
-from public import Compiler, DepCtx, PathCtx, NinjaCtx, Workspace
-import msvcrt
+from public import Compiler, DepCtx, Root, NinjaCtx
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -31,7 +30,7 @@ parser.add_argument("--root_dir", type=str, dest="root_dir", required=True)
 args = parser.parse_args()
 if args.provide and args.implement:
     raise RuntimeError("provide and implement cannot be specified at the same time")
-PathCtx.set_root_dir(args.root_dir)
+Root.set_dir(args.root_dir)
 
 is_module = bool(args.provide) or bool(args.implement)
 

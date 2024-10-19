@@ -4,7 +4,7 @@ import os
 import pickle
 from typing import Any, Callable, ParamSpec, TypeVar, get_type_hints
 import subprocess as sp
-from public import NinjaCtx, PathCtx, Workspace
+from public import NinjaCtx, Root, Workspace
 
 
 Param = ParamSpec("Param")
@@ -16,7 +16,7 @@ class CacheCtx:
         self.name = name
 
     def cache_dir(self):
-        return path.join(PathCtx.get_dir(Workspace.cache), self.name)
+        return path.join(Workspace.cache.get_dir(), self.name)
 
     def ninja_file(self):
         return path.join(self.cache_dir(), "build.ninja")

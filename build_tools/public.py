@@ -16,32 +16,32 @@ class Workspace(Enum):
     gen_test = path.join(gen, "test")
     obj = path.join(build, "obj")
     pcm = path.join(build, "pcm")
+    pcm_clangd = path.join(build, "pcm_clangd")
     hpcm = path.join(build, "hpcm")
     out = path.join(build, "out")
     dep_scan = path.join(build, "dep_scan")
     cache = path.join(build, "cache")
     complete_dyndep = path.join(build, "complete_dyndep")
 
-
-class PathCtx:
-    root_dir = path.abspath("./")
-
-    @staticmethod
-    def set_root_dir(root_dir: str):
-        PathCtx.root_dir = path.abspath(root_dir)
-
-    @staticmethod
-    def rel_root_path(file: str):
-        return path.relpath(file, PathCtx.root_dir)
-
-    @staticmethod
-    def get_dir(workspace: Workspace):
-        return path.join(PathCtx.root_dir, workspace.value)
+    def get_dir(self):
+        return path.join(Root.dir, self.value)
 
     @staticmethod
     def mkdirs():
         for workspace in Workspace:
-            os.makedirs(PathCtx.get_dir(workspace), exist_ok=True)
+            os.makedirs(workspace.get_dir(), exist_ok=True)
+
+
+class Root:
+    dir = path.abspath("./")
+
+    @staticmethod
+    def set_dir(root_dir: str):
+        Root.dir = path.abspath(root_dir)
+
+    @staticmethod
+    def relpath(file: str):
+        return path.relpath(file, Root.dir)
 
 
 class NinjaCtx:
@@ -76,7 +76,7 @@ class NinjaCtx:
 
         @staticmethod
         def complete_dep_source(file: str):
-            return path.join("source", PathCtx.rel_root_path(file))
+            return path.join("source", Root.relpath(file))
 
     class Task(Enum):
         total = "build.ninja"
@@ -90,7 +90,7 @@ class NinjaCtx:
 
     @staticmethod
     def get_file(task: Task):
-        return path.join(PathCtx.get_dir(Workspace.ninja), task.value)
+        return path.join(Workspace.ninja.get_dir(), task.value)
 
     @staticmethod
     def execute(task_or_file: Task | str, extra="", stdout=None, check=True):
@@ -163,7 +163,7 @@ class Compiler:
         return sp.list2cmdline(
             Compiler.current_flag
             + ([] if config is None else ["--config", config])
-            + ["-fprebuilt-module-path=" + PathCtx.get_dir(Workspace.pcm)]
+            + ["-fprebuilt-module-path=" + Workspace.pcm.get_dir()]
             + ["-isystem" + x for x in Compiler.system_include_dirs]
             + ["-I" + x for x in include_dirs]
             + ["--precompile", input, "-o", output]
@@ -174,7 +174,7 @@ class Compiler:
         return sp.list2cmdline(
             Compiler.current_flag
             + ([] if config is None else ["--config", config])
-            + ["-fprebuilt-module-path=" + PathCtx.get_dir(Workspace.pcm)]
+            + ["-fprebuilt-module-path=" + Workspace.pcm.get_dir()]
             + ["-isystem" + x for x in Compiler.system_include_dirs]
             + ["-I" + x for x in include_dirs]
             + ["-c", input, "-o", output]
@@ -209,61 +209,44 @@ class Compiler:
 
     @staticmethod
     def obj_file(file: str):
-        return path.join(
-            PathCtx.get_dir(Workspace.obj), PathCtx.rel_root_path(file) + ".o"
-        )
+        return path.join(Workspace.obj.get_dir(), Root.relpath(file) + ".o")
 
     @staticmethod
     def pcm_file(module: str):
-        return path.join(
-            PathCtx.get_dir(Workspace.pcm), module.replace(":", "-") + ".pcm"
-        )
+        return path.join(Workspace.pcm.get_dir(), module.replace(":", "-") + ".pcm")
 
     @staticmethod
     def header_pcm_file(file: str):
-        return path.join(PathCtx.get_dir(Workspace.hpcm), path.basename(file) + ".pcm")
+        return path.join(Workspace.hpcm.get_dir(), path.basename(file) + ".pcm")
 
     @staticmethod
     def target_file(target: str):
-        return path.join(PathCtx.get_dir(Workspace.out), target + ".exe")
+        return path.join(Workspace.out.get_dir(), target + ".exe")
 
     @staticmethod
     def dynamic_dir(file: str):
-        return path.join(PathCtx.get_dir(Workspace.out), path.basename(file))
+        return path.join(Workspace.out.get_dir(), path.basename(file))
 
 
 class DepCtx:
     @staticmethod
     def dyndep_file(file: str):
-        return path.join(
-            PathCtx.get_dir(Workspace.dep_scan),
-            PathCtx.rel_root_path(file) + ".dd",
-        )
+        return path.join(Workspace.dep_scan.get_dir(), Root.relpath(file) + ".dd")
 
     @staticmethod
     def header_dep_config_file(file: str):
-        return path.join(
-            PathCtx.get_dir(Workspace.dep_scan),
-            PathCtx.rel_root_path(file) + ".cfg",
-        )
+        return path.join(Workspace.dep_scan.get_dir(), Root.relpath(file) + ".cfg")
 
     @staticmethod
     def module_dep_file(file: str):
-        return path.join(
-            PathCtx.get_dir(Workspace.dep_scan),
-            PathCtx.rel_root_path(file) + ".deps",
-        )
+        return path.join(Workspace.dep_scan.get_dir(), Root.relpath(file) + ".deps")
 
     @staticmethod
     def complete_dyndep_module_file(module: str):
-        return path.join(
-            PathCtx.get_dir(Workspace.complete_dyndep), "module", f"{module}.dd"
-        )
+        return path.join(Workspace.complete_dyndep.get_dir(), "module", f"{module}.dd")
 
     @staticmethod
     def complete_dyndep_source_file(file: str):
         return path.join(
-            PathCtx.get_dir(Workspace.complete_dyndep),
-            "source",
-            PathCtx.rel_root_path(f"{file}.dd"),
+            Workspace.complete_dyndep.get_dir(), "source", Root.relpath(f"{file}.dd")
         )

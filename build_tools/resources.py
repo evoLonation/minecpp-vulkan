@@ -7,7 +7,7 @@ from dacite import from_dict
 import dacite
 import yaml
 from cache import CacheCtx, cached
-from public import PathCtx
+from public import Root
 
 
 @dataclass
@@ -116,7 +116,7 @@ def get_file_resources(cache_dep_files: list[str] = []) -> Resources:
     # all resource files
     resource_files = []
     # 记录要递归处理的目录的绝对路径
-    dir_stack = [PathCtx.root_dir]
+    dir_stack = [Root.dir]
     while len(dir_stack) != 0:
         current_dir = dir_stack.pop()
         resource_file = path.join(current_dir, "resource.yml")

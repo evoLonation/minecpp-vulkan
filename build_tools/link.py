@@ -1,13 +1,13 @@
 import argparse
 import subprocess as sp
-from public import Compiler, DepCtx, PathCtx
+from public import Compiler, DepCtx, Root
 
 parser = argparse.ArgumentParser()
 parser.add_argument("root_dir", type=str)
 parser.add_argument("input", type=str, help="the target source file")
 parser.add_argument("output", type=str, help="the target file")
 args = parser.parse_args()
-PathCtx.set_root_dir(args.root_dir)
+Root.set_dir(args.root_dir)
 
 from resources import load_resources
 
@@ -17,6 +17,7 @@ def get_dep_modules(file):
         modules = [line.strip() for line in f.readlines()]
         # print(f"the dep modules of {file}: {modules}")
         return modules
+
 
 resources = load_resources()
 
