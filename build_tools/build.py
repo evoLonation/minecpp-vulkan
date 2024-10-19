@@ -2,7 +2,21 @@ import argparse
 import os.path as path
 from cache import cached
 import subprocess as sp
-from public import Compiler, DepCtx, Root, NinjaCtx, Script, Workspace
+from public import (
+    Compiler,
+    DepCtx,
+    HeaderNinja,
+    NinjaFile,
+    Root,
+    Script,
+    Workspace,
+    ShaderGenNinja,
+    CompileNinja,
+    DepScanNinja,
+    CompleteDepNinja,
+    TargetNinja,
+    TestGenNinja,
+)
 from resources import (
     get_file_resources,
     Module,
@@ -19,13 +33,14 @@ from resources import (
 
 @cached("build_gen_shader")
 def build_gen_shader(resources: list[Shader]) -> list[Module]:
-    with NinjaCtx.open_ninja(NinjaCtx.Task.shader_gen) as ninja_writer:
+    Rule = ShaderGenNinja.Rule
+    with ShaderGenNinja.open() as ninja_writer:
         command = Script.get_command(
             Script.shader_gen,
             ["single", "$in", "$module", "$out"],
         )
         ninja_writer.rule(
-            name=NinjaCtx.Rule.shader_code,
+            name=Rule.shader_code,
             command=command,
             description="SHADERCODE single generate $out",
         )
@@ -40,7 +55,7 @@ def build_gen_shader(resources: list[Shader]) -> list[Module]:
             module_names.append(f"render.vk.shader_code.{path.basename(shader.file)}")
         for shader, output, module in zip(resources, gen_files, module_names):
             ninja_writer.build(
-                rule=NinjaCtx.Rule.shader_code,
+                rule=Rule.shader_code,
                 outputs=output,
                 inputs=shader.file,
                 variables={"module": module},
@@ -56,14 +71,14 @@ def build_gen_shader(resources: list[Shader]) -> list[Module]:
         )
         # 生成 total shader_code
         ninja_writer.rule(
-            name=NinjaCtx.Rule.shader_code_total,
+            name=Rule.shader_code_total,
             command=command,
             description="SHADERCODE total generate $out",
         )
         total_output = path.join(Workspace.gen_shader.get_dir(), "shader_code.cc")
         total_module_name = "render.vk.shader_code"
         ninja_writer.build(
-            rule=NinjaCtx.Rule.shader_code_total,
+            rule=Rule.shader_code_total,
             outputs=total_output,
             variables={
                 "module": total_module_name,
@@ -76,7 +91,7 @@ def build_gen_shader(resources: list[Shader]) -> list[Module]:
 
 @cached("build_gen_test")
 def build_gen_test(resources: list[Test]) -> list[Target]:
-    with NinjaCtx.open_ninja(NinjaCtx.Task.test_gen) as writer:
+    with TestGenNinja.open() as writer:
         pass
     return []
 
@@ -85,26 +100,20 @@ def build_gen_test(resources: list[Test]) -> list[Target]:
 def build_precompile_headers(
     header_units: list[HeaderUnit], include_dirs: list[IncludeDir]
 ):
-    with NinjaCtx.open_ninja(NinjaCtx.Task.header_precompile) as writer:
+    Rule = HeaderNinja.Rule
+    Phony = HeaderNinja.Phony
+    with HeaderNinja.open() as writer:
         writer.rule(
-            NinjaCtx.Rule.precompile_header,
+            Rule.precompile,
             Compiler.header_precompile([x.file for x in include_dirs], "$in", "$out"),
             description=f"HEADERUNIT PRECOMPILE $out",
         )
         header_pcm_outputs = []
         for header_unit in header_units:
             output = Compiler.header_pcm_file(header_unit.file)
-            writer.build(
-                outputs=output,
-                rule=NinjaCtx.Rule.precompile_header,
-                inputs=header_unit.file,
-            )
+            writer.build(outputs=output, rule=Rule.precompile, inputs=header_unit.file)
             header_pcm_outputs.append(output)
-        writer.build(
-            outputs=NinjaCtx.Phony.header_unit,
-            rule="phony",
-            inputs=header_pcm_outputs,
-        )
+        writer.build(outputs=Phony.header_unit, rule="phony", inputs=header_pcm_outputs)
 
 
 @cached("build_dep_scan")
@@ -114,7 +123,9 @@ def build_dep_scan(
     targets: list[Target],
     includes: list[IncludeDir],
 ):
-    with NinjaCtx.open_ninja(NinjaCtx.Task.dep_scan) as writer:
+    Rule = DepScanNinja.Rule
+    Phony = DepScanNinja.Phony
+    with DepScanNinja.open() as writer:
         command = Script.get_command(
             Script.dep_scan,
             ["-c", "$in"]
@@ -123,7 +134,7 @@ def build_dep_scan(
             + ["--root_dir", Root.dir],
         )
         writer.rule(
-            name=NinjaCtx.Rule.dep_scan,
+            name=Rule.dep_scan,
             command=command,
             description=f"Dependency scan $out",
         )
@@ -135,7 +146,7 @@ def build_dep_scan(
                     DepCtx.header_dep_config_file(file),
                     DepCtx.module_dep_file(file),
                 ],
-                rule=NinjaCtx.Rule.dep_scan,
+                rule=Rule.dep_scan,
                 inputs=file,
                 variables={"module_arg": module_arg},
             )
@@ -157,15 +168,17 @@ def build_compile(
     targets: list[Target],
     includes: list[IncludeDir],
 ):
-    with NinjaCtx.open_ninja(NinjaCtx.Task.compile) as writer:
+    Rule = CompileNinja.Rule
+    Phony = CompileNinja.Phony
+    with CompileNinja.open() as writer:
         writer.rule(
-            name=NinjaCtx.Rule.precompile,
+            name=Rule.precompile,
             command=Compiler.precompile(
                 [x.file for x in includes], "$config", "$in", "$out"
             ),
         )
         writer.rule(
-            name=NinjaCtx.Rule.compile,
+            name=Rule.compile,
             command=Compiler.compile(
                 [x.file for x in includes], "$config", "$in", "$out"
             ),
@@ -185,35 +198,29 @@ def build_compile(
 
         for source in sources:
             build(
-                NinjaCtx.Rule.compile,
-                source.file,
-                source.file,
-                Compiler.obj_file(source.file),
+                Rule.compile, source.file, source.file, Compiler.obj_file(source.file)
             )
         for target in targets:
             build(
-                NinjaCtx.Rule.compile,
-                target.file,
-                target.file,
-                Compiler.obj_file(target.file),
+                Rule.compile, target.file, target.file, Compiler.obj_file(target.file)
             )
         for module in modules:
             if module.provide != None:
                 build(
-                    NinjaCtx.Rule.precompile,
+                    Rule.precompile,
                     module.file,
                     module.file,
                     Compiler.pcm_file(module.provide),
                 )
                 build(
-                    NinjaCtx.Rule.compile,
+                    Rule.compile,
                     module.file,
                     Compiler.pcm_file(module.provide),
                     Compiler.obj_file(module.file),
                 )
             else:
                 build(
-                    NinjaCtx.Rule.compile,
+                    Rule.compile,
                     module.file,
                     module.file,
                     Compiler.obj_file(module.file),
@@ -229,16 +236,19 @@ def build_complete_dep(
     for module in modules:
         module_name = module.implement if module.provide is None else module.provide
         module_map.setdefault(str(module_name), []).append(module.file)
-    with NinjaCtx.open_ninja(NinjaCtx.Task.complete_dep) as writer:
+
+    Rule = CompleteDepNinja.Rule
+    Phony = CompleteDepNinja.Phony
+    with CompleteDepNinja.open() as writer:
         writer.rule(
-            name=NinjaCtx.Rule.complete_dyndep,
+            name=Rule.complete_dyndep,
             command=Script.get_command(
                 Script.complete_dyndep, [Root.dir, "$phony", "$module", "$in", "$out"]
             ),
         )
         for module, files in module_map.items():
             writer.build(
-                outputs=NinjaCtx.Phony.complete_dep_module(module),
+                outputs=Phony.module(module),
                 rule="phony",
                 inputs=[Compiler.obj_file(file) for file in files],
                 order_only=DepCtx.complete_dyndep_module_file(module),
@@ -246,17 +256,17 @@ def build_complete_dep(
             )
             writer.build(
                 outputs=DepCtx.complete_dyndep_module_file(module),
-                rule=NinjaCtx.Rule.complete_dyndep,
+                rule=Rule.complete_dyndep,
                 inputs=[DepCtx.module_dep_file(file) for file in files],
                 variables={
                     "module": f"--module {module}",
-                    "phony": NinjaCtx.Phony.complete_dep_module(module),
+                    "phony": Phony.module(module),
                 },
             )
         for source in [*sources, *targets]:
             file = source.file
             writer.build(
-                outputs=NinjaCtx.Phony.complete_dep_source(file),
+                outputs=Phony.source(file),
                 rule="phony",
                 inputs=Compiler.obj_file(file),
                 order_only=DepCtx.complete_dyndep_source_file(file),
@@ -264,12 +274,9 @@ def build_complete_dep(
             )
             writer.build(
                 outputs=DepCtx.complete_dyndep_source_file(file),
-                rule=NinjaCtx.Rule.complete_dyndep,
+                rule=Rule.complete_dyndep,
                 inputs=DepCtx.module_dep_file(file),
-                variables={
-                    "module": "",
-                    "phony": NinjaCtx.Phony.complete_dep_source(file),
-                },
+                variables={"module": "", "phony": Phony.source(file)},
             )
 
 
@@ -277,22 +284,24 @@ def build_complete_dep(
 def build_target(
     targets: list[Target], sources: list[Source], dynamic_libs: list[DylibFile]
 ):
-    with NinjaCtx.open_ninja(NinjaCtx.Task.target) as writer:
+    Rule = TargetNinja.Rule
+    Phony = TargetNinja.Phony
+    with TargetNinja.open() as writer:
         writer.rule(
-            name=NinjaCtx.Rule.link,
+            name=Rule.link,
             command=Script.get_command(Script.link, [Root.dir, "$input", "$out"]),
         )
         writer.rule(
-            name=NinjaCtx.Rule.copy,
+            name=Rule.copy,
             command="cmd.exe /c copy /Y $in $out  > NUL",
             description="COPY dynamic library $out",
         )
         for target in targets:
             writer.build(
                 outputs=Compiler.target_file(target.name),
-                rule=NinjaCtx.Rule.link,
+                rule=Rule.link,
                 implicit=[
-                    NinjaCtx.Phony.complete_dep_source(source.file)
+                    CompleteDepNinja.Phony.source(source.file)
                     for source in sources + [target]
                 ],
                 variables={"input": target.file},
@@ -300,11 +309,11 @@ def build_target(
             for dylib in dynamic_libs:
                 writer.build(
                     outputs=Compiler.dynamic_dir(dylib.file),
-                    rule=NinjaCtx.Rule.copy,
+                    rule=Rule.copy,
                     inputs=dylib.file,
                 )
             writer.build(
-                outputs=NinjaCtx.Phony.target(target.name),
+                outputs=Phony.target(target.name),
                 rule="phony",
                 inputs=[Compiler.target_file(target.name)]
                 + [Compiler.dynamic_dir(dylib.file) for dylib in dynamic_libs],
@@ -313,26 +322,27 @@ def build_target(
 
 @cached("build_total")
 def build_total():
-    with NinjaCtx.open_ninja(NinjaCtx.Task.total) as writer:
-        writer.subninja(NinjaCtx.Task.dep_scan.value)
-        writer.subninja(NinjaCtx.Task.header_precompile.value)
-        writer.subninja(NinjaCtx.Task.compile.value)
-        writer.subninja(NinjaCtx.Task.complete_dep.value)
-        writer.subninja(NinjaCtx.Task.target.value)
-        writer.subninja(NinjaCtx.Task.shader_gen.value)
-        writer.subninja(NinjaCtx.Task.test_gen.value)
+    with NinjaFile.open() as writer:
+        writer.subninja(HeaderNinja.get_file())
+        writer.subninja(DepScanNinja.get_file())
+        writer.subninja(CompileNinja.get_file())
+        writer.subninja(CompleteDepNinja.get_file())
+        writer.subninja(TargetNinja.get_file())
+        writer.subninja(ShaderGenNinja.get_file())
+        writer.subninja(TestGenNinja.get_file())
 
 
 @cached("generate_compile_commands")
 def generate_compile_commands(cache_dep_files: list[str] = []):
-    cache_dep_files.append(NinjaCtx.get_file(NinjaCtx.Task.compile))
-    result = NinjaCtx.execute(
-        NinjaCtx.Task.compile,
-        f"-t compdb {NinjaCtx.Rule.precompile} {NinjaCtx.Rule.compile}",
-        stdout=sp.PIPE,
-    )
-    with open(path.join(Root.dir, "compile_commands.json"), "wb") as f:
-        f.write(result.stdout)
+    # cache_dep_files.append(NinjaCtx.get_file(NinjaCtx.Task.compile))
+    # result = NinjaCtx.execute(
+    #     NinjaCtx.Task.compile,
+    #     f"-t compdb {NinjaCtx.Rule.precompile} {NinjaCtx.Rule.compile}",
+    #     stdout=sp.PIPE,
+    # )
+    # with open(path.join(Root.dir, "compile_commands.json"), "wb") as f:
+    #     f.write(result.stdout)
+    pass
 
 
 def main():

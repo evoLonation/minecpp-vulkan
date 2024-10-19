@@ -4,7 +4,7 @@ import os
 import pickle
 from typing import Any, Callable, ParamSpec, TypeVar, get_type_hints
 import subprocess as sp
-from public import NinjaCtx, Root, Workspace
+from public import NinjaFile, Root, Workspace
 
 
 Param = ParamSpec("Param")
@@ -15,11 +15,13 @@ class CacheCtx:
     def __init__(self, name: str):
         self.name = name
 
+        class Ninja(NinjaFile):
+            work_dir = self.cache_dir()
+
+        self.Ninja = Ninja
+
     def cache_dir(self):
         return path.join(Workspace.cache.get_dir(), self.name)
-
-    def ninja_file(self):
-        return path.join(self.cache_dir(), "build.ninja")
 
     def param_file(self):
         return path.join(self.cache_dir(), "cache_param")
@@ -31,9 +33,6 @@ class CacheCtx:
 # return a decorator that can avoid calls of the function if the dep_files or params is not change
 # only not cache return value (just return None) when return type hint is NoneType (or empty) and cache_return is False
 def cached(name: str):
-    ctx = CacheCtx(name)
-    os.makedirs(ctx.cache_dir(), exist_ok=True)
-
     def decorator(func: Callable[Param, RetType]) -> Callable[Param, RetType]:
         need_dep_file = False
         need_cache_param = False
@@ -54,7 +53,18 @@ def cached(name: str):
         prepare()
         # print(f"need_dep_file: {need_dep_file}, need_cache_param: {need_cache_param}")
 
+        first_init = True
+
+        def init_ctx() -> CacheCtx:
+            ctx = CacheCtx(name)
+            nonlocal first_init
+            if first_init:
+                first_init = False
+                os.makedirs(ctx.cache_dir(), exist_ok=True)
+            return ctx
+
         def wrapper(*args, **kwargs) -> Any:
+            ctx = init_ctx()
             # print(f"args: {args}, kwargs: {kwargs}")
             mixed_params = inspect.signature(func).bind(*args, **kwargs).arguments
             # print(f"mixed_params: {mixed_params}")
@@ -68,8 +78,8 @@ def cached(name: str):
                 param_cached = True
             dep_file_cached = False
             if need_dep_file:
-                if path.exists(ctx.ninja_file()):
-                    result = NinjaCtx.execute(ctx.ninja_file(), stdout=sp.PIPE)
+                if path.exists(ctx.Ninja.get_path()):
+                    result = ctx.Ninja.execute(stdout=sp.PIPE)
                     dep_file_cached = (
                         result.stdout.decode("utf-8")
                         .rstrip()
@@ -93,7 +103,7 @@ def cached(name: str):
             pickle.dump(result, open(ctx.ret_file(), "wb"))
             pickle.dump(mixed_params, open(ctx.param_file(), "wb"))
             if need_dep_file:
-                with NinjaCtx.open_ninja(ctx.ninja_file()) as writer:
+                with ctx.Ninja.open() as writer:
                     writer.rule(
                         "changed",
                         command='cmd.exe /c echo "changed"',
@@ -104,7 +114,7 @@ def cached(name: str):
                         rule="changed",
                         inputs=[path.abspath(file) for file in cache_dep_files],
                     )
-                NinjaCtx.execute(ctx.ninja_file(), stdout=sp.PIPE)
+                ctx.Ninja.execute(stdout=sp.PIPE)
             return result
 
         return wrapper

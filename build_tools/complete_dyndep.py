@@ -1,7 +1,7 @@
 # generate dyndep, output is a module A phony, inputs are all module phony whose dependent on A
 import argparse
 
-from public import NinjaCtx, Root
+from public import CompleteDepNinja, Root, open_ninja
 
 parser = argparse.ArgumentParser()
 parser.add_argument("root_dir", type=str)
@@ -21,10 +21,10 @@ for input in args.inputs:
             dep_modules.append(line.strip())
 if args.module != None:
     dep_modules = set(dep_modules) - set([args.module])
-with NinjaCtx.open_ninja(args.output) as writer:
+with open_ninja(args.output) as writer:
     writer.variable("ninja_dyndep_version", "1")
     writer.build(
         outputs=args.phony,
         rule="dyndep",
-        implicit=[NinjaCtx.Phony.complete_dep_module(module) for module in dep_modules],
+        implicit=[CompleteDepNinja.Phony.module(module) for module in dep_modules],
     )

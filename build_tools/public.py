@@ -1,4 +1,5 @@
-from enum import Enum
+from contextlib import contextmanager
+from enum import Enum, auto
 import inspect
 from os import path
 import os
@@ -44,73 +45,109 @@ class Root:
         return path.relpath(file, Root.dir)
 
 
-class NinjaCtx:
-    class WriterContextManager(ninja.Writer):
-        def __enter__(self):
-            return self
+@contextmanager
+def open_ninja(file: str):
+    writer = ninja.Writer(open(file, "wt"))
+    yield writer
+    writer.close()
 
-        def __exit__(self, exc_type, exc_value, traceback):
-            self.close()
+
+class NinjaFile:
+    task = "build"
+    work_dir: str | None = None
+
+    @classmethod
+    def get_file(cls):
+        return cls.task + ".ninja"
+
+    @classmethod
+    def get_path(cls):
+        if cls.work_dir is None:
+            return path.join(Workspace.ninja.get_dir(), cls.get_file())
+        else:
+            return path.join(cls.work_dir, cls.get_file())
+
+    @classmethod
+    def open(cls):
+        return open_ninja(cls.get_path())
+
+    @classmethod
+    def execute(cls, extra: str = "", stdout=None, check=True):
+        file = cls.get_path()
+        command = f"ninja -C {path.dirname(file)} -f {path.basename(file)} {extra}"
+        return sp.run(command, stdout=stdout, check=check)
+
+
+class HeaderNinja(NinjaFile):
+    task = "header"
 
     class Rule:
-        precompile_header = "precompile_header"
-        dep_scan = "dep_scan"
         precompile = "precompile"
-        compile = "compile"
-        link = "link"
-        copy = "copy"
-        shader_code = "shader_code_generate"
-        shader_code_total = "shader_code_total_generate"
-        complete_dyndep = "complete_dyndep"
 
     class Phony:
         header_unit = "header_unit"
 
+
+class DepScanNinja(NinjaFile):
+    task = "dep_scan"
+
+    class Rule:
+        dep_scan = "dep_scan"
+
+    class Phony:
+        dep_scan = "dep_scan"
+
+
+class CompileNinja(NinjaFile):
+    task = "compile"
+
+    class Rule:
+        precompile = "precompile"
+        compile = "compile"
+
+    class Phony:
+        all_pcm = "all_pcm"
+
+
+class CompleteDepNinja(NinjaFile):
+    task = "complete_dep"
+
+    class Rule:
+        complete_dyndep = "complete_dyndep"
+
+    class Phony:
+        @staticmethod
+        def module(name: str):
+            return f"module/{name}"
+
+        @staticmethod
+        def source(file: str):
+            return path.join("source", Root.relpath(file))
+
+
+class TargetNinja(NinjaFile):
+    task = "target"
+
+    class Rule:
+        link = "link"
+        copy = "copy"
+
+    class Phony:
         @staticmethod
         def target(name: str):
             return f"target/{name}"
 
-        @staticmethod
-        def complete_dep_module(name: str):
-            return f"module/{name}"
 
-        @staticmethod
-        def complete_dep_source(file: str):
-            return path.join("source", Root.relpath(file))
+class ShaderGenNinja(NinjaFile):
+    task = "shader_gen"
 
-    class Task(Enum):
-        total = "build.ninja"
-        compile = "compile.ninja"
-        header_precompile = "header_precompile.ninja"
-        dep_scan = "dep_scan.ninja"
-        complete_dep = "complete_dep.ninja"
-        target = "target.ninja"
-        shader_gen = "shader_gen.ninja"
-        test_gen = "test_gen.ninja"
+    class Rule:
+        shader_code = "shader_code_generate"
+        shader_code_total = "shader_code_total_generate"
 
-    @staticmethod
-    def get_file(task: Task):
-        return path.join(Workspace.ninja.get_dir(), task.value)
 
-    @staticmethod
-    def execute(task_or_file: Task | str, extra="", stdout=None, check=True):
-        if isinstance(task_or_file, NinjaCtx.Task):
-            file = NinjaCtx.get_file(task_or_file)
-        else:
-            file = task_or_file
-        return sp.run(
-            f"ninja -C {path.dirname(file)} -f {path.basename(file)} {extra}",
-            stdout=stdout,
-            check=check,
-        )
-
-    @staticmethod
-    def open_ninja(task_or_file: Task | str):
-        if isinstance(task_or_file, NinjaCtx.Task):
-            file = NinjaCtx.get_file(task_or_file)
-        else:
-            file = task_or_file
-        return NinjaCtx.WriterContextManager(open(file, "wt"))
+class TestGenNinja(NinjaFile):
+    task = "test_gen"
 
 
 class Script(Enum):

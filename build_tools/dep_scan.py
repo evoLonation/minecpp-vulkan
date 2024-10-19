@@ -5,7 +5,7 @@ import subprocess as sp
 import argparse
 import json
 import tempfile
-from public import Compiler, DepCtx, Root, NinjaCtx
+from public import Compiler, DepCtx, Root, open_ninja
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -106,7 +106,7 @@ with open(DepCtx.header_dep_config_file(args.source), "wt") as f:
     )
 
 
-with NinjaCtx.open_ninja(DepCtx.dyndep_file(args.source)) as ninja_writer:
+with open_ninja(DepCtx.dyndep_file(args.source)) as ninja_writer:
     ninja_writer.variable("ninja_dyndep_version", "1")
 
     def build_dyndep(output):
