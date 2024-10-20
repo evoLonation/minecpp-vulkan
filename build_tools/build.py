@@ -1,5 +1,6 @@
 import argparse
 import os.path as path
+from clangd import update
 from cache import cached
 import subprocess as sp
 from public import (
@@ -352,41 +353,14 @@ def build_total():
         writer.subninja(TestGenNinja.get_file())
 
 
-@cached("generate_compile_commands")
-def build_compile_commands(
-    modules: list[Module],
-    sources: list[Source],
-    targets: list[Target],
-    includes: list[IncludeDir],
-):
-    Ninja = CompileCommandNinja
-    Rule = Ninja.Rule
-    with Ninja.open() as writer:
-        writer.rule(
-            name=Rule.compile_command,
-            command=Compiler.compile(
-                [x.file for x in includes],
-                "$config",
-                "$in",
-                "$out",
-                Workspace.pcm_clangd.get_dir(),
-            ),
-        )
-        for source in sources + targets + modules:
-            writer.build(
-                outputs=Compiler.obj_file(source.file),
-                rule=Rule.compile_command,
-                inputs=source.file,
-                variables={"config": DepCtx.header_dep_config_file(source.file)},
-            )
-    result = Ninja.execute(f"-t compdb {Rule.compile_command}", stdout=sp.PIPE)
-    with open(path.join(Root.dir, "compile_commands.json"), "wb") as f:
-        f.write(result.stdout)
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root_dir", type=str, dest="root_dir", default="./")
+    parser.add_argument(
+        "--clangd",
+        action="store_true",
+        help="provide compile_commands.json and pcm/headerpcm files for clangd",
+    )
     args = parser.parse_args()
     Root.set_dir(args.root_dir)
     Workspace.mkdirs()
@@ -405,13 +379,17 @@ def main():
     build_compile(
         resources.modules, resources.sources, resources.targets, resources.include_dirs
     )
-    build_compile_commands(
-        resources.modules, resources.sources, resources.targets, resources.include_dirs
-    )
     build_complete_dep(resources.modules, resources.sources, resources.targets)
     build_target(resources.targets, resources.sources, resources.dylib_files)
-
     build_total()
+
+    if args.clangd:
+        update(
+            resources.modules,
+            resources.sources,
+            resources.targets,
+            resources.include_dirs,
+        )
 
 
 if __name__ == "__main__":

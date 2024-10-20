@@ -6,6 +6,7 @@ import os
 import os.path as path
 import subprocess as sp
 from typing import overload
+import uuid
 import ninja_syntax as ninja
 
 
@@ -73,9 +74,13 @@ class NinjaFile:
 
     @classmethod
     def execute(cls, extra: str = "", stdout=None, check=True):
+        return sp.run(cls.get_command(extra), stdout=stdout, check=check)
+
+    @classmethod
+    def get_command(cls, extra: str = ""):
         file = cls.get_path()
         command = f"ninja -C {path.dirname(file)} -f {path.basename(file)} {extra}"
-        return sp.run(command, stdout=stdout, check=check)
+        return command
 
 
 class HeaderNinja(NinjaFile):
@@ -262,8 +267,32 @@ class Compiler:
         return path.join(Workspace.obj.get_dir(), Root.relpath(file) + ".o")
 
     @staticmethod
-    def pcm_file(module: str):
-        return path.join(Workspace.pcm.get_dir(), module.replace(":", "-") + ".pcm")
+    def pcm_file(module: str, dir: str | None = None):
+        dir = dir if dir is not None else Workspace.pcm.get_dir()
+        return path.join(dir, module.replace(":", "-") + ".pcm")
+
+    @staticmethod
+    def pcm_module(file: str):
+        return path.basename(file).replace(".pcm", "").replace("-", ":")
+
+    @staticmethod
+    def pcm_clangd_dir(uid: str | None = None):
+        uid = uid if uid is not None else Compiler.current_clangd_uid()
+        return path.join(Workspace.pcm_clangd.get_dir(), uid)
+
+    # @staticmethod
+    # def pcm_clangd_file(pcm_path: str, uid: str):
+    #     return path.join(Compiler.pcm_clangd_dir(uid), path.basename(pcm_path))
+
+    @staticmethod
+    def current_clangd_uid():
+        files = os.listdir(Workspace.pcm_clangd.get_dir())
+        if len(files) == 0:
+            uid = str(uuid.uuid4())
+            os.makedirs(Compiler.pcm_clangd_dir(uid))
+            return uid
+        assert len(files) == 1
+        return files[0]
 
     @staticmethod
     def header_pcm_file(file: str):
