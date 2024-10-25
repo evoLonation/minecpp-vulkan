@@ -1,10 +1,10 @@
 import argparse
 import os.path as path
-from clangd import build_compile_commands, update_clangd_pcms
+from clangd import get_compile_commands_content, update, write_compile_commands_json
 from cache import cached
 import subprocess as sp
 from public import (
-    CompileCommandNinja,
+    ClangdPcmNinja,
     Compiler,
     DepCtx,
     HeaderNinja,
@@ -33,7 +33,7 @@ from resources import (
 )
 
 
-@cached("build_gen_shader")
+@cached
 def build_gen_shader(resources: list[Shader]) -> list[Module]:
     Rule = ShaderGenNinja.Rule
     with ShaderGenNinja.open() as ninja_writer:
@@ -91,14 +91,14 @@ def build_gen_shader(resources: list[Shader]) -> list[Module]:
     return module_resources
 
 
-@cached("build_gen_test")
+@cached
 def build_gen_test(resources: list[Test]) -> list[Target]:
     with TestGenNinja.open() as writer:
         pass
     return []
 
 
-@cached("build_precompile_headers")
+@cached
 def build_precompile_headers(
     header_units: list[HeaderUnit], include_dirs: list[IncludeDir]
 ):
@@ -118,7 +118,7 @@ def build_precompile_headers(
         writer.build(outputs=Phony.header_unit, rule="phony", inputs=header_pcm_outputs)
 
 
-@cached("build_dep_scan")
+@cached
 def build_dep_scan(
     modules: list[Module],
     sources: list[Source],
@@ -249,7 +249,7 @@ def build_compile(
 
 
 # a module phony A will build all relative files needed by module A (whole dependency tree)
-@cached("build_complete_dep")
+@cached
 def build_complete_dep(
     modules: list[Module], sources: list[Source], targets: list[Target]
 ):
@@ -301,7 +301,7 @@ def build_complete_dep(
             )
 
 
-@cached("build_target")
+@cached
 def build_target(
     targets: list[Target], sources: list[Source], dynamic_libs: list[DylibFile]
 ):
@@ -341,7 +341,7 @@ def build_target(
             )
 
 
-@cached("build_total")
+@cached
 def build_total():
     with NinjaFile.open() as writer:
         writer.subninja(HeaderNinja.get_file())
@@ -384,7 +384,7 @@ def build_ninja():
     build_total()
 
     if args.clangd:
-        update_clangd_pcms(
+        update(
             resources.header_units,
             resources.modules,
             resources.sources,
@@ -394,12 +394,13 @@ def build_ninja():
     else:
         print("execute dep_scan...")
         NinjaFile.execute(DepScanNinja.Phony.dep_scan)
-        build_compile_commands(
-            resources.modules,
-            resources.sources,
-            resources.targets,
-            resources.include_dirs,
-            uid=Compiler.current_clangd_uid(),
+        write_compile_commands_json(
+            get_compile_commands_content(
+                resources.modules,
+                resources.sources,
+                resources.targets,
+                resources.include_dirs,
+            )
         )
 
 

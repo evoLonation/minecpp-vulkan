@@ -4,6 +4,7 @@ import inspect
 from os import path
 import os
 import os.path as path
+import re
 import subprocess as sp
 from typing import overload
 import uuid
@@ -82,6 +83,31 @@ class NinjaFile:
         command = f"ninja -C {path.dirname(file)} -f {path.basename(file)} {extra}"
         return command
 
+    @classmethod
+    def dry_run(cls, target: str):
+        result = cls.execute(f"{target} -n", stdout=sp.PIPE).stdout.decode("utf-8")
+        lines = [x.strip() for x in result.split("\n")]
+        if lines[-1] == "":
+            lines = lines[:-1]
+        assert lines[0].startswith("ninja: Entering directory")
+        if lines[1].startswith("ninja: no work to do."):
+            return []
+        pattern = re.compile(r"\[(\d+)/(\d+)\]")
+        outputs = []
+        target_n = None
+        for i, line in enumerate(lines[1:]):
+            match = re.search(pattern, line)
+            assert match is not None, f"line: {line}"
+            assert match.start() == 0
+            if target_n is None:
+                target_n = int(match.group(2))
+            else:
+                assert target_n == int(match.group(2))
+            assert int(match.group(1)) == i + 1
+            outputs.append(line[match.end() :])
+        assert target_n == len(outputs)
+        return outputs
+
 
 class HeaderNinja(NinjaFile):
     task = "header"
@@ -155,6 +181,16 @@ class TestGenNinja(NinjaFile):
     task = "test_gen"
 
 
+class ClangdPcmNinja(NinjaFile):
+    task = "clangd_pcm"
+
+    class Rule:
+        copy = "copy"
+
+    class Phony:
+        all = "all"
+
+
 class CompileCommandNinja(NinjaFile):
     task = "compile_command"
 
@@ -199,6 +235,8 @@ class Compiler:
         # for a deprecation bug occured in clang18 with std module:
         # https://github.com/llvm/llvm-project/issues/75057
         "-Wno-deprecated-declarations",
+        # suppress error from clangd, must here, can not append in back
+        "-fretain-comments-from-system-headers",
         "-Wno-experimental-header-units",
         "-g",
     ]
@@ -235,7 +273,7 @@ class Compiler:
             + ["-fmodule-header", "-xc++-header"]
             + [input, "-o", output]
         )
-    
+
     @staticmethod
     def link(link_files: list[str], inputs: list[str], output: str):
         link_dirs = list(set([path.dirname(file) for file in link_files]))
@@ -253,19 +291,12 @@ class Compiler:
             + ["-l" + lib for lib in link_libs + Compiler.system_link_libs]
             + ["-o", output]
         )
-    
+
     @staticmethod
-    def compile_clangd(
-        include_dirs: list[str],
-        extra: str,
-        input: str,
-        output: str,
-        uid: str | None,
-    ):
+    def compile_clangd(include_dirs: list[str], extra: str, input: str, output: str):
         return sp.list2cmdline(
             Compiler.base_flag
-            + ["-fretain-comments-from-system-headers"]  # suppress error from clangd
-            + ["-fprebuilt-module-path=" + Compiler.pcm_clangd_dir(uid)]
+            + ["-fprebuilt-module-path=" + Compiler.pcm_clangd_dir()]
             + ["-isystem" + x for x in Compiler.system_include_dirs]
             + ["-I" + x for x in include_dirs]
             + [extra]
@@ -314,71 +345,67 @@ class Compiler:
         return path.join(Workspace.out.get_dir(), path.basename(file))
 
     @staticmethod
-    def pcm_clangd_dir(uid: str | None = None):
-        uid = uid if uid is not None else Compiler.current_clangd_uid()
-        return path.join(Workspace.clangd.get_dir(), uid, "pcm")
+    def pcm_clangd_dir():
+        return path.join(Workspace.clangd.get_dir(), "pcm")
 
     @staticmethod
-    def hpcm_clangd_dir(uid: str | None = None):
-        uid = uid if uid is not None else Compiler.current_clangd_uid()
-        return path.join(Workspace.clangd.get_dir(), uid, "hpcm")
+    def hpcm_clangd_dir():
+        return path.join(Workspace.clangd.get_dir(), "hpcm")
 
     @staticmethod
-    def pcm_clangd_file(module: str, uid: str | None = None):
-        return path.join(
-            Compiler.pcm_clangd_dir(uid), module.replace(":", "-") + ".pcm"
-        )
+    def pcm_clangd_file(module: str):
+        return path.join(Compiler.pcm_clangd_dir(), module.replace(":", "-") + ".pcm")
 
     @staticmethod
-    def hpcm_clangd_file(file: str, uid: str | None = None):
-        return path.join(Compiler.hpcm_clangd_dir(uid), path.basename(file) + ".pcm")
+    def hpcm_clangd_file(file: str):
+        return path.join(Compiler.hpcm_clangd_dir(), path.basename(file) + ".pcm")
 
     @staticmethod
-    def to_clangd(pcm_file: str, uid: str | None = None) -> str:
+    def to_clangd(pcm_file: str) -> str:
         if path.normpath(path.dirname(pcm_file)) == path.normpath(
             Workspace.hpcm.get_dir()
         ):
-            return path.join(Compiler.hpcm_clangd_dir(uid), path.basename(pcm_file))
+            return path.join(Compiler.hpcm_clangd_dir(), path.basename(pcm_file))
         elif path.normpath(path.dirname(pcm_file)) == path.normpath(
             Workspace.pcm.get_dir()
         ):
-            return path.join(Compiler.pcm_clangd_dir(uid), path.basename(pcm_file))
+            return path.join(Compiler.pcm_clangd_dir(), path.basename(pcm_file))
         else:
             assert False
 
-    @staticmethod
-    def from_clangd(pcm_file: str) -> str:
-        if path.normpath(path.dirname(pcm_file)) == path.normpath(
-            Compiler.hpcm_clangd_dir()
-        ):
-            return path.join(Workspace.hpcm.get_dir(), path.basename(pcm_file))
-        elif path.normpath(path.dirname(pcm_file)) == path.normpath(
-            Compiler.pcm_clangd_dir()
-        ):
-            return path.join(Workspace.pcm.get_dir(), path.basename(pcm_file))
-        else:
-            assert False
+    # @staticmethod
+    # def from_clangd(pcm_file: str) -> str:
+    #     if path.normpath(path.dirname(pcm_file)) == path.normpath(
+    #         Compiler.hpcm_clangd_dir()
+    #     ):
+    #         return path.join(Workspace.hpcm.get_dir(), path.basename(pcm_file))
+    #     elif path.normpath(path.dirname(pcm_file)) == path.normpath(
+    #         Compiler.pcm_clangd_dir()
+    #     ):
+    #         return path.join(Workspace.pcm.get_dir(), path.basename(pcm_file))
+    #     else:
+    #         assert False
 
-    @staticmethod
-    def current_clangd_uid():
-        files = os.listdir(Workspace.clangd.get_dir())
-        if len(files) == 0:
-            uid = str(uuid.uuid4())
-            os.makedirs(Compiler.pcm_clangd_dir(uid))
-            os.makedirs(path.join(Compiler.pcm_clangd_dir(uid), "pcm"))
-            os.makedirs(path.join(Compiler.pcm_clangd_dir(uid), "hpcm"))
-            return uid
-        assert len(files) == 1
-        return files[0]
+    # @staticmethod
+    # def current_clangd_uid():
+    #     files = os.listdir(Workspace.clangd.get_dir())
+    #     if len(files) == 0:
+    #         uid = str(uuid.uuid4())
+    #         os.makedirs(Compiler.pcm_clangd_dir(uid))
+    #         os.makedirs(path.join(Compiler.pcm_clangd_dir(uid), "pcm"))
+    #         os.makedirs(path.join(Compiler.pcm_clangd_dir(uid), "hpcm"))
+    #         return uid
+    #     assert len(files) == 1
+    #     return files[0]
 
-    @staticmethod
-    def change_clangd_uid(uid: str):
-        old_uid = Compiler.current_clangd_uid()
-        assert old_uid != uid
-        os.rename(
-            path.join(Workspace.clangd.get_dir(), old_uid),
-            path.join(Workspace.clangd.get_dir(), uid),
-        )
+    # @staticmethod
+    # def change_clangd_uid(uid: str):
+    #     old_uid = Compiler.current_clangd_uid()
+    #     assert old_uid != uid
+    #     os.rename(
+    #         path.join(Workspace.clangd.get_dir(), old_uid),
+    #         path.join(Workspace.clangd.get_dir(), uid),
+    #     )
 
 
 class DepCtx:

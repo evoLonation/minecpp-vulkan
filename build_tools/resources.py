@@ -109,7 +109,7 @@ class Resources:
         return str(self.__dict__)
 
 
-@cached("get_file_resources")
+@cached
 def get_file_resources(cache_dep_files: list[str] = []) -> Resources:
     resources_dict = Resources()
 
@@ -195,7 +195,7 @@ def get_file_resources(cache_dep_files: list[str] = []) -> Resources:
     return resources_dict
 
 
-@cached("save_resources")
+@cached
 def save_resources(resources: Resources):
     pass
 
