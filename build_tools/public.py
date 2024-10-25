@@ -19,7 +19,6 @@ class Workspace(Enum):
     gen_test = path.join(gen, "test")
     obj = path.join(build, "obj")
     pcm = path.join(build, "pcm")
-    clangd = path.join(build, "clangd")
     hpcm = path.join(build, "hpcm")
     out = path.join(build, "out")
     dep_scan = path.join(build, "dep_scan")
@@ -84,8 +83,8 @@ class NinjaFile:
         return command
 
     @classmethod
-    def dry_run(cls, target: str):
-        result = cls.execute(f"{target} -n", stdout=sp.PIPE).stdout.decode("utf-8")
+    def dry_run(cls, targets: str):
+        result = cls.execute(f"{targets} -n", stdout=sp.PIPE).stdout.decode("utf-8")
         lines = [x.strip() for x in result.split("\n")]
         if lines[-1] == "":
             lines = lines[:-1]
@@ -134,6 +133,7 @@ class CompileNinja(NinjaFile):
 
     class Rule:
         precompile = "precompile"
+        compile_pcm = "compile_pcm"
         compile = "compile"
 
     class Phony:
@@ -179,23 +179,6 @@ class ShaderGenNinja(NinjaFile):
 
 class TestGenNinja(NinjaFile):
     task = "test_gen"
-
-
-class ClangdPcmNinja(NinjaFile):
-    task = "clangd_pcm"
-
-    class Rule:
-        copy = "copy"
-
-    class Phony:
-        all = "all"
-
-
-class CompileCommandNinja(NinjaFile):
-    task = "compile_command"
-
-    class Rule:
-        compile_command = "compile_command"
 
 
 class Script(Enum):
@@ -293,17 +276,6 @@ class Compiler:
         )
 
     @staticmethod
-    def compile_clangd(include_dirs: list[str], extra: str, input: str, output: str):
-        return sp.list2cmdline(
-            Compiler.base_flag
-            + ["-fprebuilt-module-path=" + Compiler.pcm_clangd_dir()]
-            + ["-isystem" + x for x in Compiler.system_include_dirs]
-            + ["-I" + x for x in include_dirs]
-            + [extra]
-            + ["-c", input, "-o", output]
-        )
-
-    @staticmethod
     def hpcm_flag(hpcm_files: list[str], in_config: bool = False) -> str:
         if in_config:
             return "\n".join(
@@ -311,18 +283,6 @@ class Compiler:
             )
         else:
             return sp.list2cmdline(["-fmodule-file=" + x for x in hpcm_files])
-
-    @staticmethod
-    def extract_hpcm_from_config(config_content: str) -> list[str]:
-        headers = []
-        for line in config_content.split("\n"):
-            line = line.strip()
-            if line == "":
-                break
-            assert line.startswith("-fmodule-file=")
-            header = line[len("-fmodule-file=") :].replace("\\\\", "\\")
-            headers.append(header)
-        return headers
 
     @staticmethod
     def obj_file(file: str):
@@ -343,69 +303,6 @@ class Compiler:
     @staticmethod
     def dynamic_dest(file: str):
         return path.join(Workspace.out.get_dir(), path.basename(file))
-
-    @staticmethod
-    def pcm_clangd_dir():
-        return path.join(Workspace.clangd.get_dir(), "pcm")
-
-    @staticmethod
-    def hpcm_clangd_dir():
-        return path.join(Workspace.clangd.get_dir(), "hpcm")
-
-    @staticmethod
-    def pcm_clangd_file(module: str):
-        return path.join(Compiler.pcm_clangd_dir(), module.replace(":", "-") + ".pcm")
-
-    @staticmethod
-    def hpcm_clangd_file(file: str):
-        return path.join(Compiler.hpcm_clangd_dir(), path.basename(file) + ".pcm")
-
-    @staticmethod
-    def to_clangd(pcm_file: str) -> str:
-        if path.normpath(path.dirname(pcm_file)) == path.normpath(
-            Workspace.hpcm.get_dir()
-        ):
-            return path.join(Compiler.hpcm_clangd_dir(), path.basename(pcm_file))
-        elif path.normpath(path.dirname(pcm_file)) == path.normpath(
-            Workspace.pcm.get_dir()
-        ):
-            return path.join(Compiler.pcm_clangd_dir(), path.basename(pcm_file))
-        else:
-            assert False
-
-    # @staticmethod
-    # def from_clangd(pcm_file: str) -> str:
-    #     if path.normpath(path.dirname(pcm_file)) == path.normpath(
-    #         Compiler.hpcm_clangd_dir()
-    #     ):
-    #         return path.join(Workspace.hpcm.get_dir(), path.basename(pcm_file))
-    #     elif path.normpath(path.dirname(pcm_file)) == path.normpath(
-    #         Compiler.pcm_clangd_dir()
-    #     ):
-    #         return path.join(Workspace.pcm.get_dir(), path.basename(pcm_file))
-    #     else:
-    #         assert False
-
-    # @staticmethod
-    # def current_clangd_uid():
-    #     files = os.listdir(Workspace.clangd.get_dir())
-    #     if len(files) == 0:
-    #         uid = str(uuid.uuid4())
-    #         os.makedirs(Compiler.pcm_clangd_dir(uid))
-    #         os.makedirs(path.join(Compiler.pcm_clangd_dir(uid), "pcm"))
-    #         os.makedirs(path.join(Compiler.pcm_clangd_dir(uid), "hpcm"))
-    #         return uid
-    #     assert len(files) == 1
-    #     return files[0]
-
-    # @staticmethod
-    # def change_clangd_uid(uid: str):
-    #     old_uid = Compiler.current_clangd_uid()
-    #     assert old_uid != uid
-    #     os.rename(
-    #         path.join(Workspace.clangd.get_dir(), old_uid),
-    #         path.join(Workspace.clangd.get_dir(), uid),
-    #     )
 
 
 class DepCtx:

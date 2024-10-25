@@ -4,7 +4,6 @@ from clangd import get_compile_commands_content, update, write_compile_commands_
 from cache import cached
 import subprocess as sp
 from public import (
-    ClangdPcmNinja,
     Compiler,
     DepCtx,
     HeaderNinja,
@@ -138,7 +137,9 @@ def build_dep_scan(
         writer.rule(
             name=Rule.dep_scan,
             command=command,
-            description=f"Dependency scan $in",
+            description=f"DEPENDENCY SCAN $in",
+            # if output is not change, it will still update dependency state (looks like output is change)
+            restat=True,
         )
 
         def build_ninja(file: str, module_arg: str):
@@ -193,6 +194,13 @@ def build_compile(
             ),
             description=f"COMPILE $out",
         )
+        writer.rule(
+            name=Rule.compile_pcm,
+            command=Compiler.compile(
+                [x.file for x in includes], "$config", "$in", "$out"
+            ),
+            description=f"COMPILE PCM $out",
+        )
 
         def build(rule: str, source: str, input: str, output: str):
             writer.build(
@@ -223,7 +231,7 @@ def build_compile(
                     Compiler.pcm_file(module.provide),
                 )
                 build(
-                    Rule.compile,
+                    Rule.compile_pcm,
                     module.file,
                     Compiler.pcm_file(module.provide),
                     Compiler.obj_file(module.file),
@@ -384,24 +392,9 @@ def build_ninja():
     build_total()
 
     if args.clangd:
-        update(
-            resources.header_units,
-            resources.modules,
-            resources.sources,
-            resources.targets,
-            resources.include_dirs,
-        )
+        update()
     else:
-        print("execute dep_scan...")
-        NinjaFile.execute(DepScanNinja.Phony.dep_scan)
-        write_compile_commands_json(
-            get_compile_commands_content(
-                resources.modules,
-                resources.sources,
-                resources.targets,
-                resources.include_dirs,
-            )
-        )
+        write_compile_commands_json(get_compile_commands_content())
 
 
 if __name__ == "__main__":
