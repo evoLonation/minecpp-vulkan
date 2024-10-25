@@ -18,7 +18,7 @@ class Workspace(Enum):
     gen_test = path.join(gen, "test")
     obj = path.join(build, "obj")
     pcm = path.join(build, "pcm")
-    pcm_clangd = path.join(build, "pcm_clangd")
+    clangd = path.join(build, "clangd")
     hpcm = path.join(build, "hpcm")
     out = path.join(build, "out")
     dep_scan = path.join(build, "dep_scan")
@@ -189,7 +189,7 @@ class Compiler:
         "c++",
     ]
 
-    current_flag = [
+    base_flag = [
         clang_executable_path,
         "-std=c++23",
         "-fexperimental-library",
@@ -200,8 +200,6 @@ class Compiler:
         # https://github.com/llvm/llvm-project/issues/75057
         "-Wno-deprecated-declarations",
         "-Wno-experimental-header-units",
-        # suppress error from clangd
-        "-fretain-comments-from-system-headers",
         "-g",
     ]
 
@@ -210,7 +208,7 @@ class Compiler:
         include_dirs: list[str], config: str | None, input: str, output: str
     ):
         return sp.list2cmdline(
-            Compiler.current_flag
+            Compiler.base_flag
             + ([] if config is None else ["--config", config])
             + ["-fprebuilt-module-path=" + Workspace.pcm.get_dir()]
             + ["-isystem" + x for x in Compiler.system_include_dirs]
@@ -219,17 +217,11 @@ class Compiler:
         )
 
     @staticmethod
-    def compile(
-        include_dirs: list[str],
-        config: str | None,
-        input: str,
-        output: str,
-        pcm_dir: str = Workspace.pcm.get_dir(),
-    ):
+    def compile(include_dirs: list[str], config: str | None, input: str, output: str):
         return sp.list2cmdline(
-            Compiler.current_flag
+            Compiler.base_flag
             + ([] if config is None else ["--config", config])
-            + ["-fprebuilt-module-path=" + pcm_dir]
+            + ["-fprebuilt-module-path=" + Workspace.pcm.get_dir()]
             + ["-isystem" + x for x in Compiler.system_include_dirs]
             + ["-I" + x for x in include_dirs]
             + ["-c", input, "-o", output]
@@ -238,12 +230,12 @@ class Compiler:
     @staticmethod
     def header_precompile(include_dirs: list[str], input: str, output: str):
         return sp.list2cmdline(
-            Compiler.current_flag
+            Compiler.base_flag
             + ["-I" + x for x in include_dirs]
             + ["-fmodule-header", "-xc++-header"]
             + [input, "-o", output]
         )
-
+    
     @staticmethod
     def link(link_files: list[str], inputs: list[str], output: str):
         link_dirs = list(set([path.dirname(file) for file in link_files]))
@@ -255,47 +247,62 @@ class Compiler:
             elif filename.endswith(".lib") or filename.endswith(".dll"):
                 link_libs.append(filename[:-4])
         return (
-            Compiler.current_flag
+            Compiler.base_flag
             + inputs
             + ["-L" + dir for dir in link_dirs + Compiler.system_link_dirs]
             + ["-l" + lib for lib in link_libs + Compiler.system_link_libs]
             + ["-o", output]
         )
+    
+    @staticmethod
+    def compile_clangd(
+        include_dirs: list[str],
+        extra: str,
+        input: str,
+        output: str,
+        uid: str | None,
+    ):
+        return sp.list2cmdline(
+            Compiler.base_flag
+            + ["-fretain-comments-from-system-headers"]  # suppress error from clangd
+            + ["-fprebuilt-module-path=" + Compiler.pcm_clangd_dir(uid)]
+            + ["-isystem" + x for x in Compiler.system_include_dirs]
+            + ["-I" + x for x in include_dirs]
+            + [extra]
+            + ["-c", input, "-o", output]
+        )
+
+    @staticmethod
+    def hpcm_flag(hpcm_files: list[str], in_config: bool = False) -> str:
+        if in_config:
+            return "\n".join(
+                ["-fmodule-file=" + x.replace("\\", "\\\\") for x in hpcm_files]
+            )
+        else:
+            return sp.list2cmdline(["-fmodule-file=" + x for x in hpcm_files])
+
+    @staticmethod
+    def extract_hpcm_from_config(config_content: str) -> list[str]:
+        headers = []
+        for line in config_content.split("\n"):
+            line = line.strip()
+            if line == "":
+                break
+            assert line.startswith("-fmodule-file=")
+            header = line[len("-fmodule-file=") :].replace("\\\\", "\\")
+            headers.append(header)
+        return headers
 
     @staticmethod
     def obj_file(file: str):
         return path.join(Workspace.obj.get_dir(), Root.relpath(file) + ".o")
 
     @staticmethod
-    def pcm_file(module: str, dir: str | None = None):
-        dir = dir if dir is not None else Workspace.pcm.get_dir()
-        return path.join(dir, module.replace(":", "-") + ".pcm")
+    def pcm_file(module: str):
+        return path.join(Workspace.pcm.get_dir(), module.replace(":", "-") + ".pcm")
 
     @staticmethod
-    def pcm_module(file: str):
-        return path.basename(file).replace(".pcm", "").replace("-", ":")
-
-    @staticmethod
-    def pcm_clangd_dir(uid: str | None = None):
-        uid = uid if uid is not None else Compiler.current_clangd_uid()
-        return path.join(Workspace.pcm_clangd.get_dir(), uid)
-
-    # @staticmethod
-    # def pcm_clangd_file(pcm_path: str, uid: str):
-    #     return path.join(Compiler.pcm_clangd_dir(uid), path.basename(pcm_path))
-
-    @staticmethod
-    def current_clangd_uid():
-        files = os.listdir(Workspace.pcm_clangd.get_dir())
-        if len(files) == 0:
-            uid = str(uuid.uuid4())
-            os.makedirs(Compiler.pcm_clangd_dir(uid))
-            return uid
-        assert len(files) == 1
-        return files[0]
-
-    @staticmethod
-    def header_pcm_file(file: str):
+    def hpcm_file(file: str):
         return path.join(Workspace.hpcm.get_dir(), path.basename(file) + ".pcm")
 
     @staticmethod
@@ -303,8 +310,75 @@ class Compiler:
         return path.join(Workspace.out.get_dir(), target + ".exe")
 
     @staticmethod
-    def dynamic_dir(file: str):
+    def dynamic_dest(file: str):
         return path.join(Workspace.out.get_dir(), path.basename(file))
+
+    @staticmethod
+    def pcm_clangd_dir(uid: str | None = None):
+        uid = uid if uid is not None else Compiler.current_clangd_uid()
+        return path.join(Workspace.clangd.get_dir(), uid, "pcm")
+
+    @staticmethod
+    def hpcm_clangd_dir(uid: str | None = None):
+        uid = uid if uid is not None else Compiler.current_clangd_uid()
+        return path.join(Workspace.clangd.get_dir(), uid, "hpcm")
+
+    @staticmethod
+    def pcm_clangd_file(module: str, uid: str | None = None):
+        return path.join(
+            Compiler.pcm_clangd_dir(uid), module.replace(":", "-") + ".pcm"
+        )
+
+    @staticmethod
+    def hpcm_clangd_file(file: str, uid: str | None = None):
+        return path.join(Compiler.hpcm_clangd_dir(uid), path.basename(file) + ".pcm")
+
+    @staticmethod
+    def to_clangd(pcm_file: str, uid: str | None = None) -> str:
+        if path.normpath(path.dirname(pcm_file)) == path.normpath(
+            Workspace.hpcm.get_dir()
+        ):
+            return path.join(Compiler.hpcm_clangd_dir(uid), path.basename(pcm_file))
+        elif path.normpath(path.dirname(pcm_file)) == path.normpath(
+            Workspace.pcm.get_dir()
+        ):
+            return path.join(Compiler.pcm_clangd_dir(uid), path.basename(pcm_file))
+        else:
+            assert False
+
+    @staticmethod
+    def from_clangd(pcm_file: str) -> str:
+        if path.normpath(path.dirname(pcm_file)) == path.normpath(
+            Compiler.hpcm_clangd_dir()
+        ):
+            return path.join(Workspace.hpcm.get_dir(), path.basename(pcm_file))
+        elif path.normpath(path.dirname(pcm_file)) == path.normpath(
+            Compiler.pcm_clangd_dir()
+        ):
+            return path.join(Workspace.pcm.get_dir(), path.basename(pcm_file))
+        else:
+            assert False
+
+    @staticmethod
+    def current_clangd_uid():
+        files = os.listdir(Workspace.clangd.get_dir())
+        if len(files) == 0:
+            uid = str(uuid.uuid4())
+            os.makedirs(Compiler.pcm_clangd_dir(uid))
+            os.makedirs(path.join(Compiler.pcm_clangd_dir(uid), "pcm"))
+            os.makedirs(path.join(Compiler.pcm_clangd_dir(uid), "hpcm"))
+            return uid
+        assert len(files) == 1
+        return files[0]
+
+    @staticmethod
+    def change_clangd_uid(uid: str):
+        old_uid = Compiler.current_clangd_uid()
+        assert old_uid != uid
+        os.rename(
+            path.join(Workspace.clangd.get_dir(), old_uid),
+            path.join(Workspace.clangd.get_dir(), uid),
+        )
 
 
 class DepCtx:

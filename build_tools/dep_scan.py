@@ -91,20 +91,24 @@ if args.implement:
 
 required_modules = list(map(lambda x: x["logical-name"], rule.get("requires", [])))
 
-with open(DepCtx.module_dep_file(args.source), "wt") as f:
-    f.write("\n".join(required_modules))
+
+def write_file_if_changed(file: str, content: str):
+    old_content = None
+    if path.exists(file):
+        with open(file, "rt") as f:
+            old_content = f.read()
+    if old_content != content:
+        with open(file, "wt") as f:
+            f.write(content)
+
+
+write_file_if_changed(DepCtx.module_dep_file(args.source), "\n".join(required_modules))
 
 # write header config file
-with open(DepCtx.header_dep_config_file(args.source), "wt") as f:
-    f.write(
-        "\n".join(
-            [
-                "-fmodule-file=" + Compiler.header_pcm_file(x).replace("\\", "\\\\")
-                for x in includes
-            ]
-        )
-    )
-
+write_file_if_changed(
+    DepCtx.header_dep_config_file(args.source),
+    Compiler.hpcm_flag([Compiler.hpcm_file(x) for x in includes], in_config=True),
+)
 
 with open_ninja(DepCtx.dyndep_file(args.source)) as ninja_writer:
     ninja_writer.variable("ninja_dyndep_version", "1")
@@ -114,7 +118,7 @@ with open_ninja(DepCtx.dyndep_file(args.source)) as ninja_writer:
             outputs=output,
             rule="dyndep",
             implicit=[Compiler.pcm_file(module) for module in required_modules]
-            + [Compiler.header_pcm_file(include) for include in includes],
+            + [Compiler.hpcm_file(include) for include in includes],
         )
 
     build_dyndep(Compiler.obj_file(args.source))

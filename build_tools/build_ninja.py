@@ -1,6 +1,6 @@
 import argparse
 import os.path as path
-from clangd import update
+from clangd import build_compile_commands, update_clangd_pcms
 from cache import cached
 import subprocess as sp
 from public import (
@@ -112,7 +112,7 @@ def build_precompile_headers(
         )
         header_pcm_outputs = []
         for header_unit in header_units:
-            output = Compiler.header_pcm_file(header_unit.file)
+            output = Compiler.hpcm_file(header_unit.file)
             writer.build(outputs=output, rule=Rule.precompile, inputs=header_unit.file)
             header_pcm_outputs.append(output)
         writer.build(outputs=Phony.header_unit, rule="phony", inputs=header_pcm_outputs)
@@ -329,7 +329,7 @@ def build_target(
             )
             for dylib in dynamic_libs:
                 writer.build(
-                    outputs=Compiler.dynamic_dir(dylib.file),
+                    outputs=Compiler.dynamic_dest(dylib.file),
                     rule=Rule.copy,
                     inputs=dylib.file,
                 )
@@ -337,7 +337,7 @@ def build_target(
                 outputs=Phony.target(target.name),
                 rule="phony",
                 inputs=[Compiler.target_file(target.name)]
-                + [Compiler.dynamic_dir(dylib.file) for dylib in dynamic_libs],
+                + [Compiler.dynamic_dest(dylib.file) for dylib in dynamic_libs],
             )
 
 
@@ -353,7 +353,7 @@ def build_total():
         writer.subninja(TestGenNinja.get_file())
 
 
-def main():
+def build_ninja():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root_dir", type=str, dest="root_dir", default="./")
     parser.add_argument(
@@ -384,13 +384,24 @@ def main():
     build_total()
 
     if args.clangd:
-        update(
+        update_clangd_pcms(
+            resources.header_units,
             resources.modules,
             resources.sources,
             resources.targets,
             resources.include_dirs,
         )
+    else:
+        print("execute dep_scan...")
+        NinjaFile.execute(DepScanNinja.Phony.dep_scan)
+        build_compile_commands(
+            resources.modules,
+            resources.sources,
+            resources.targets,
+            resources.include_dirs,
+            uid=Compiler.current_clangd_uid(),
+        )
 
 
 if __name__ == "__main__":
-    main()
+    build_ninja()

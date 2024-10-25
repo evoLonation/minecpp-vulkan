@@ -1,10 +1,16 @@
+from dataclasses import dataclass
+import json
 from os import path
 import os
+import re
 import shutil
+import threading
+from typing import Literal, cast
 import uuid
 from cache import cached
 from public import (
     CompileCommandNinja,
+    HeaderNinja,
     CompileNinja,
     Compiler,
     DepCtx,
@@ -13,203 +19,309 @@ from public import (
     Root,
     Workspace,
 )
-from resources import IncludeDir, Module, Source, Target
+from resources import HeaderUnit, IncludeDir, Module, Source, Target
 import subprocess as sp
 
 
-def kill_process_by_name(process_name):
+def kill_process_by_name(process_name: str):
     try:
-        # 使用 taskkill 命令通过进程名称终止所有匹配的进程
         sp.run(["taskkill", "/f", "/im", process_name], check=True)
         print(f"Process {process_name} terminated.")
     except sp.CalledProcessError as e:
         print(f"Failed to terminate process {process_name}: {e}")
 
 
-# todo: execute dep scan and get header units to add in compile command
+# need dep scan first
 @cached("build_compile_commands")
 def build_compile_commands(
-    uid: str,
     modules: list[Module],
     sources: list[Source],
     targets: list[Target],
     includes: list[IncludeDir],
+    uid: str,
+    cache_dep_files: list[str] = [],
 ):
     Ninja = CompileCommandNinja
     Rule = Ninja.Rule
     with Ninja.open() as writer:
         writer.rule(
             name=Rule.compile_command,
-            command=Compiler.compile(
-                [x.file for x in includes],
-                "$config",
-                "$in",
-                "$out",
-                path.join(Workspace.pcm_clangd.get_dir(), uid),
+            command=Compiler.compile_clangd(
+                [x.file for x in includes], "$extra", "$in", "$out", uid
             ),
         )
         for source in sources + targets + modules:
+            config_file = DepCtx.header_dep_config_file(source.file)
+            cache_dep_files.append(config_file)
+            with open(config_file, "rt") as f:
+                extra = Compiler.hpcm_flag(
+                    Compiler.extract_hpcm_from_config(f.read()), False
+                )
             writer.build(
                 outputs=Compiler.obj_file(source.file),
                 rule=Rule.compile_command,
                 inputs=source.file,
-                variables={"config": DepCtx.header_dep_config_file(source.file)},
+                variables={"extra": extra},
             )
     result = Ninja.execute(f"-t compdb {Rule.compile_command}", stdout=sp.PIPE)
     with open(path.join(Root.dir, "compile_commands.json"), "wb") as f:
         f.write(result.stdout)
 
 
-def update(
-    modules: list[Module],
-    sources: list[Source],
-    targets: list[Target],
-    includes: list[IncludeDir],
-):
-    print("execute dep_scan...")
-    NinjaFile.execute(DepScanNinja.Phony.dep_scan, stdout=sp.DEVNULL)
+def dry_run(target: str) -> list[str]:
+    result = NinjaFile.execute(f"{target} -n", stdout=sp.PIPE).stdout.decode("utf-8")
+    lines = [x.strip() for x in result.split("\n")]
+    if lines[-1] == "":
+        lines = lines[:-1]
+    assert lines[0].startswith("ninja: Entering directory")
+    if lines[1].startswith("ninja: no work to do."):
+        return []
+    pattern = re.compile(r"\[(\d+)/(\d+)\]")
+    outputs = []
+    target_n = None
+    for i, line in enumerate(lines[1:]):
+        match = re.search(pattern, line)
+        assert match is not None, f"line: {line}"
+        assert match.start() == 0
+        if target_n is None:
+            target_n = int(match.group(2))
+        else:
+            assert target_n == int(match.group(2))
+        assert int(match.group(1)) == i + 1
+        outputs.append(line[match.end() :])
+    assert target_n == len(outputs)
+    return outputs
 
-    old_uid = Compiler.current_clangd_uid()
 
-    def get_invalid_pcm() -> list[str]:
-        print("execute precompile dry run...")
-        result = NinjaFile.execute(
-            f"{CompileNinja.Phony.pcm} -n", stdout=sp.PIPE
-        ).stdout.decode("utf-8")
-        lines = iter([x.strip() for x in result.split("\n")])
-        assert next(lines).startswith("ninja: Entering directory")
-        need_removes = []
-        for line in lines:
-            if line.find("PRECOMPILE ") < 0:
-                break
-            pcm_file = line[line.find("PRECOMPILE") + len("PRECOMPILE") :].strip()
-            clangd_file = Compiler.pcm_file(
-                Compiler.pcm_module(pcm_file), dir=Compiler.pcm_clangd_dir(uid=old_uid)
-            )
-            need_removes.append(clangd_file)
-        return need_removes
+def get_dry_run_outputs(target: str, prefix: str) -> list[str]:
+    outputs = []
+    for output in dry_run(target):
+        output = output.strip()
+        assert output.startswith(prefix), f"output: {output}, prefix: {prefix}"
+        output = output[len(prefix) :].strip()
+        outputs.append(output)
+    return outputs
 
-    all_pcms = [
-        Compiler.pcm_file(module.provide, dir=Compiler.pcm_clangd_dir(uid=old_uid))
-        for module in modules
-        if module.provide is not None
-    ]
-    invalid_pcms = get_invalid_pcm()
+
+def get_valid_and_invalid_pcms(
+    type: Literal["hpcm", "pcm"], resources: list[Module] | list[HeaderUnit]
+) -> tuple[list[str], list[str]]:
+    if type == "hpcm":
+        all_pcms = [
+            Compiler.hpcm_file(x.file) for x in cast(list[HeaderUnit], resources)
+        ]
+        invalid_pcms = get_dry_run_outputs(
+            HeaderNinja.Phony.header_unit, "HEADERUNIT PRECOMPILE"
+        )
+    elif type == "pcm":
+        all_pcms = [
+            Compiler.pcm_file(x.provide)
+            for x in cast(list[Module], resources)
+            if x.provide is not None
+        ]
+        invalid_pcms = get_dry_run_outputs(CompileNinja.Phony.pcm, "PRECOMPILE")
+    # invalid_pcms = [Compiler.to_clangd(x) for x in invalid_pcms]
     valid_pcms = list(set(all_pcms) - set(invalid_pcms))
+    return valid_pcms, invalid_pcms
 
-    print("copy valid pcm files...")
-    for pcm in valid_pcms:
-        origin = Compiler.pcm_file(Compiler.pcm_module(pcm))
-        assert path.exists(origin)
-        if not path.exists(pcm):
-            shutil.copy(origin, pcm)
-            print(f"copy {origin} to {pcm}")
 
-    if len(invalid_pcms) == 0:
-        print("no need to update invalid pcms, done.")
-        return
-    need_remove_pcms = [x for x in invalid_pcms if path.exists(x)]
-    need_rename = len(need_remove_pcms) != 0
-    uid = ""
-    if need_rename:
-        print("change clangd pcm directory...")
-        uid = str(uuid.uuid4())
-        build_compile_commands(uid, modules, sources, targets, includes)
-        kill_process_by_name("clangd.exe")
-        print("remove invalid pcm files...")
-        for pcm in need_remove_pcms:
-            try:
-                os.remove(pcm)
-                print(f"remove {pcm}")
-            except Exception as e:
-                e.add_note(f"failed to remove {pcm}")
-                raise
-    else:
-        print("no need to delete invalid pcms, not rename")
+def copy_pcm_to_clangd(pcm_files: list[str]):
+    for src in pcm_files:
+        dst = Compiler.to_clangd(src)
+        assert path.exists(src)
+        if not path.exists(dst):
+            shutil.copy(src, dst)
+            print(f"  copy {src} to {dst}")
 
-    print("execute precompile...")
-    command = NinjaFile.get_command(f"{CompileNinja.Phony.pcm} -k 0")
-    process = sp.Popen(
-        command,
-        stdout=sp.PIPE,
-        stderr=sp.PIPE,
-        text=True,
-        bufsize=1,
-        universal_newlines=True,
-    )
 
-    def get_line():
+def get_invalid_clangd_pcm(invalid_pcms: list[str]):
+    return [y for y in [Compiler.to_clangd(x) for x in invalid_pcms] if path.exists(y)]
+
+
+def remove_invalid_pcm(invalid_clangd_pcms: list[str]):
+    for pcm in invalid_clangd_pcms:
+        try:
+            os.remove(pcm)
+            print(f"remove {pcm}")
+        except Exception as e:
+            e.add_note(f"failed to remove {pcm}")
+            raise
+
+
+def execute_command(command: str) -> list[str]:
+    process = sp.Popen(command, stdout=sp.PIPE, stderr=sp.PIPE, text=True, bufsize=1)
+    outputs = []
+
+    def read_output():
         assert process.stdout is not None
-        line = process.stdout.readline()
-        if line == "" and process.poll() is not None:
-            return None
-        # print(line)
-        return line
+        for line in process.stdout:
+            print(line, end="")
+            cast(list, outputs).append(line)
 
-    assert str(get_line()).strip().startswith("ninja: Entering directory")
+    output_thread = threading.Thread(target=read_output)
+    output_thread.start()
+    process.wait()
+    output_thread.join()
+    return outputs
+
+
+@dataclass
+class PrecompileResult:
+    outputs: list[str]
+    normal_msgs: dict[str, str]
+    error_msgs: dict[str, str]
+
+
+def execute_precompile(type: Literal["hpcm", "pcm"]) -> PrecompileResult:
+    command = NinjaFile.get_command(
+        f"{CompileNinja.Phony.pcm if type == 'pcm' else HeaderNinja.Phony.header_unit} -k 0"
+    )
+    lines = execute_command(command)
+    assert lines[0].strip().startswith("ninja: Entering directory")
+    if lines[1].startswith("ninja: no work to do."):
+        return PrecompileResult([], {}, {})
     # maybe:
     # PRECOMPILE xxx
     # normal output
     # PRECOMPILE xxx
     # FAILED: xxx
-    last_pcm_file: str = ""
+    outputs: list[str] = []
+    last_output: str = ""
     error_msg: str | None = None
     normal_msg: str = ""
     error_dict: dict[str, str] = {}
+    normal_dict: dict[str, str] = {}
 
-    def try_copy():
+    def save_current():
         nonlocal error_msg
+        nonlocal normal_msg
         if error_msg is not None:
-            error_dict[last_pcm_file] = error_msg
+            error_dict[last_output] = error_msg
             error_msg = None
-        elif last_pcm_file != "":
-            nonlocal normal_msg
+        elif last_output != "":
             if normal_msg != "":
-                print(normal_msg)
+                normal_dict[last_output] = normal_msg
                 normal_msg = ""
-            assert path.exists(last_pcm_file)
-            clangd_file = Compiler.pcm_file(
-                Compiler.pcm_module(last_pcm_file), Compiler.pcm_clangd_dir(uid=old_uid)
-            )
-            assert not path.exists(clangd_file)
-            shutil.copy(last_pcm_file, clangd_file)
-            print(f"copy {last_pcm_file} to {clangd_file}")
+            assert path.exists(last_output)
+            outputs.append(last_output)
 
-    while True:
-        line = get_line()
-        if line is None:
-            try_copy()
-            break
-        elif line.find("] PRECOMPILE ") >= 0:
-            try_copy()
-            last_pcm_file = line[line.find("PRECOMPILE") + len("PRECOMPILE") :].strip()
+    pattern = (
+        re.compile(r"\[\d+/\d+\] PRECOMPILE (\S+)")
+        if type == "pcm"
+        else re.compile(r"\[\d+/\d+\] HEADERUNIT PRECOMPILE (\S+)")
+    )
+    for line in lines[1:]:
+        match = pattern.match(line)
+        if match is not None:
+            save_current()
+            last_output = match.group(1)
         elif line.startswith("FAILED: "):
-            assert path.normpath(last_pcm_file) == path.normpath(
+            assert path.normpath(last_output) == path.normpath(
                 line[len("FAILED: ") :].strip()
             )
             error_msg = ""
-        elif (
-            line.strip()
-            == "ninja: build stopped: cannot make progress due to previous errors."
+        elif line.startswith(
+            "ninja: build stopped: cannot make progress due to previous errors."
         ):
-            try_copy()
+            assert error_msg is not None
             break
         else:
             if error_msg is not None:
                 error_msg += line
             else:
                 normal_msg += line
-    if process.stderr is not None:
-        stderr = process.stderr.read()
-        if len(stderr) != 0:
-            print(f"ninja stderr:\n {stderr}")
-    if len(error_dict) != 0:
-        print("occurred errors:")
-        for k, v in error_dict.items():
-            print(f"{k}: \n{v}")
+    save_current()
+    return PrecompileResult(outputs, normal_dict, error_dict)
+
+
+def update_clangd_pcms(
+    headers: list[HeaderUnit],
+    modules: list[Module],
+    sources: list[Source],
+    targets: list[Target],
+    includes: list[IncludeDir],
+):
+    print("execute dep_scan...")
+    NinjaFile.execute(DepScanNinja.Phony.dep_scan)
+
+    # now is in build dir
+    valid_hpcms, invalid_hpcms = get_valid_and_invalid_pcms("hpcm", headers)
+    print("execute header precompile...")
+    hpcm_res = execute_precompile("hpcm")
+    print("normal messages:")
+    for k, v in hpcm_res.normal_msgs.items():
+        print(f"{k}:\n{v}")
+    print("error messages:")
+    for k, v in hpcm_res.error_msgs.items():
+        print(f"{k}:\n{v}")
+    valid_pcms, invalid_pcms = get_valid_and_invalid_pcms("pcm", modules)
+    print("execute pcm precompile...")
+    pcm_res = execute_precompile("pcm")
+    print("normal messages:")
+    for k, v in pcm_res.normal_msgs.items():
+        print(f"{k}:\n{v}")
+    print("error messages:")
+    for k, v in pcm_res.error_msgs.items():
+        print(f"{k}:\n{v}")
+
+    print(f"copy valid pcm files...")
+    copy_pcm_to_clangd(valid_hpcms)
+    print(f"copy valid hpcm files...")
+    copy_pcm_to_clangd(valid_pcms)
+
+    if len(invalid_hpcms) == 0 and len(invalid_pcms) == 0:
+        print("no need to update invalid pcms, done.")
+        # update header deps
+        build_compile_commands(
+            modules, sources, targets, includes, uid=Compiler.current_clangd_uid()
+        )
+        return
+
+    # now is in clangd dir
+    invalid_hpcms = get_invalid_clangd_pcm(invalid_hpcms)
+    invalid_pcms = get_invalid_clangd_pcm(invalid_pcms)
+
+    need_rename = len(invalid_hpcms) != 0 or len(invalid_pcms) != 0
+    uid = ""
+
+    if need_rename:
+        print(
+            "need remove invalid pcm files in changd dir, so rebuild compile_commands with new uid..."
+        )
+        uid = str(uuid.uuid4())
+        build_compile_commands(modules, sources, targets, includes, uid)
+        kill_process_by_name("clangd.exe")
+        print("remove invalid hpcm files...")
+        remove_invalid_pcm(invalid_hpcms)
+        print("remove invalid pcm files...")
+        remove_invalid_pcm(invalid_pcms)
+    else:
+        print("no need to remove invalid pcm files...")
+        # update header deps
+        build_compile_commands(
+            modules, sources, targets, includes, uid=Compiler.current_clangd_uid()
+        )
+
+    # print("execute header precompile...")
+    # res = execute_precompile("hpcm")
+    # print("normal messages:")
+    # for k, v in res.normal_msgs.items():
+    #     print(f"{k}:\n{v}")
+    # print("error messages:")
+    # for k, v in res.error_msgs.items():
+    #     print(f"{k}:\n{v}")
+    copy_pcm_to_clangd(hpcm_res.outputs)
+
+    # print("execute pcm precompile...")
+    # res = execute_precompile("pcm")
+    # print("normal messages:")
+    # for k, v in res.normal_msgs.items():
+    #     print(f"{k}:\n{v}")
+    # print("error messages:")
+    # for k, v in res.error_msgs.items():
+    #     print(f"{k}:\n{v}")
+    copy_pcm_to_clangd(pcm_res.outputs)
+
     if need_rename:
         assert uid != ""
-        assert not path.exists(Compiler.pcm_clangd_dir(uid=uid))
-        shutil.move(
-            Compiler.pcm_clangd_dir(uid=old_uid), Compiler.pcm_clangd_dir(uid=uid)
-        )
+        Compiler.change_clangd_uid(uid)
