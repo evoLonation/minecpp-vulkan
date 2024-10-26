@@ -1,3 +1,4 @@
+import functools
 import inspect
 from os import path
 import os
@@ -12,8 +13,8 @@ RetType = TypeVar("RetType")
 
 
 class CacheCtx:
-    def __init__(self, name: str):
-        self.name = name
+    def __init__(self, func: Callable):
+        self.name = f"{func.__module__}.{func.__qualname__}"
 
         class Ninja(NinjaFile):
             work_dir = self.cache_dir()
@@ -35,7 +36,6 @@ class CacheCtx:
 def cached(func: Callable[Param, RetType]) -> Callable[Param, RetType]:
     need_dep_file = False
     need_cache_param = False
-    name = f"{func.__module__}.{func.__qualname__}"
 
     def prepare():
         nonlocal need_dep_file
@@ -56,13 +56,13 @@ def cached(func: Callable[Param, RetType]) -> Callable[Param, RetType]:
     first_init = True
 
     def init_ctx() -> CacheCtx:
-        ctx = CacheCtx(name)
+        ctx = CacheCtx(func)
         nonlocal first_init
         if first_init:
             first_init = False
             os.makedirs(ctx.cache_dir(), exist_ok=True)
         return ctx
-
+    @functools.wraps(func)
     def wrapper(*args, **kwargs) -> Any:
         ctx = init_ctx()
         # print(f"args: {args}, kwargs: {kwargs}")
@@ -91,7 +91,7 @@ def cached(func: Callable[Param, RetType]) -> Callable[Param, RetType]:
             not need_dep_file and not need_cache_param
         )
         if cached:
-            print(f"cache hit: {name}")
+            print(f"cache hit: {ctx.name}")
             return pickle.load(open(ctx.ret_file(), "rb"))
 
         cache_dep_files = []

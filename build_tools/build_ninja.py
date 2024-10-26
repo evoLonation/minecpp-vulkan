@@ -43,10 +43,11 @@ def build_gen_shader(resources: list[Shader]) -> list[Module]:
         ninja_writer.rule(
             name=Rule.shader_code,
             command=command,
-            description="SHADERCODE single generate $out",
+            description="SHADERCODE SINGLE GEN $out",
         )
         gen_files = []
         module_names = []
+        shader_names = []
         for shader in resources:
             gen_files.append(
                 path.join(
@@ -54,6 +55,7 @@ def build_gen_shader(resources: list[Shader]) -> list[Module]:
                 )
             )
             module_names.append(f"render.vk.shader_code.{path.basename(shader.file)}")
+            shader_names.append(path.basename(shader.file))
         for shader, output, module in zip(resources, gen_files, module_names):
             ninja_writer.build(
                 rule=Rule.shader_code,
@@ -68,13 +70,13 @@ def build_gen_shader(resources: list[Shader]) -> list[Module]:
 
         command = Script.get_command(
             Script.shader_gen,
-            ["total", "$module", "$modules", "$out"],
+            ["total", "$module", "$out", "--modules", "$modules", "--names", "$names"],
         )
         # 生成 total shader_code
         ninja_writer.rule(
             name=Rule.shader_code_total,
             command=command,
-            description="SHADERCODE total generate $out",
+            description="SHADERCODE TOTAL GEN $out",
         )
         total_output = path.join(Workspace.gen_shader.get_dir(), "shader_code.cc")
         total_module_name = "render.vk.shader_code"
@@ -84,6 +86,7 @@ def build_gen_shader(resources: list[Shader]) -> list[Module]:
             variables={
                 "module": total_module_name,
                 "modules": " ".join([x for x in module_names]),
+                "names": " ".join([x for x in shader_names]),
             },
         )
         module_resources.append(Module(file=total_output, implement=total_module_name))
@@ -274,6 +277,7 @@ def build_complete_dep(
             command=Script.get_command(
                 Script.complete_dyndep, [Root.dir, "$phony", "$module", "$in", "$out"]
             ),
+            description="COMPLETE DYNDEP $out",
         )
         for module, files in module_map.items():
             writer.build(
@@ -319,11 +323,12 @@ def build_target(
         writer.rule(
             name=Rule.link,
             command=Script.get_command(Script.link, [Root.dir, "$input", "$out"]),
+            description="LINK $out",
         )
         writer.rule(
             name=Rule.copy,
             command="cmd.exe /c copy /Y $in $out  > NUL",
-            description="COPY dynamic library $out",
+            description="COPY DYLIB $out",
         )
         for target in targets:
             writer.build(
@@ -362,17 +367,6 @@ def build_total():
 
 
 def build_ninja():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--root_dir", type=str, dest="root_dir", default="./")
-    parser.add_argument(
-        "--clangd",
-        action="store_true",
-        help="provide compile_commands.json and pcm/headerpcm files for clangd",
-    )
-    args = parser.parse_args()
-    Root.set_dir(args.root_dir)
-    Workspace.mkdirs()
-
     resources = get_file_resources()
     # print(f"resources: {resources}")
 
@@ -391,11 +385,22 @@ def build_ninja():
     build_target(resources.targets, resources.sources, resources.dylib_files)
     build_total()
 
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root_dir", type=str, dest="root_dir", default="./")
+    parser.add_argument(
+        "--clangd",
+        action="store_true",
+        help="provide compile_commands.json and pcm/headerpcm files for clangd",
+    )
+    args = parser.parse_args()
+    Root.set_dir(args.root_dir)
+    Workspace.mkdirs()
+
+    build_ninja()
+
     if args.clangd:
         update()
     else:
         write_compile_commands_json(get_compile_commands_content())
-
-
-if __name__ == "__main__":
-    build_ninja()

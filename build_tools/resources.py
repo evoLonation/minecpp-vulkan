@@ -201,4 +201,4 @@ def save_resources(resources: Resources):
 
 
 def load_resources() -> Resources:
-    return pickle.load(open(CacheCtx("save_resources").param_file(), "rb"))["resources"]
+    return pickle.load(open(CacheCtx(save_resources.__wrapped__).param_file(), "rb"))["resources"]  # type: ignore

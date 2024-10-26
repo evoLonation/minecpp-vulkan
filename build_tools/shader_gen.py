@@ -16,17 +16,18 @@ if __name__ == "__main__":
 
     total_parser = sub_parsers.add_parser("total")
     total_parser.add_argument("module", type=str)
-    total_parser.add_argument("modules", type=str, nargs="+")
     total_parser.add_argument("output", type=str)
+    total_parser.add_argument("--modules", type=str, nargs="+", required=True)
+    total_parser.add_argument("--names", type=str, nargs="+", help="shader names in map", required=True)
 
     args = parser.parse_args()
 
     if args.task == "total":
         import_decl = ""
         pair_decl = ""
-        for module in args.modules:
+        for module, name in zip(args.modules, args.names):
             import_decl += f"import {module};\n"
-            pair_decl += f'{{"{module}", std::as_bytes(std::span{{{module2namespace(module)}::shader_code_data}})}},\n'
+            pair_decl += f'{{"{name}", std::as_bytes(std::span{{{module2namespace(module)}::shader_code_data}})}},\n'
         code = f"""module {args.module};
             import std;
             {import_decl}
