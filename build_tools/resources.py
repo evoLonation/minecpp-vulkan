@@ -1,8 +1,7 @@
 from dataclasses import dataclass, field, fields
-from enum import Enum
 from os import path
 import pickle
-from typing import Any, Literal
+from typing import Any
 from dacite import from_dict
 import dacite
 import yaml
@@ -13,6 +12,36 @@ from public import Root
 @dataclass
 class Resource:
     file: str
+
+    __auto_match_name: str | None = field(init=False, default=None)
+
+    @classmethod
+    def get_auto_match_name(cls):
+        if cls.__auto_match_name is not None:
+            return cls.__auto_match_name
+        members = [x for x in fields(cls) if x.init]
+        if len(members) == 2:
+            cls.__auto_match_name = next(
+                filter(lambda x: x.name != fields(Resource)[0].name, members)
+            ).name
+        else:
+            cls.__auto_match_name = ""
+        return cls.__auto_match_name
+
+    @classmethod
+    def create(cls, args):
+        if isinstance(args, dict):
+            if len(args.items()) == 1:
+                k, v = list(args.items())[0]
+                if cls.get_auto_match_name() != "":
+                    args = {"file": k, cls.get_auto_match_name(): v}
+                else:
+                    args = {"file": k, **v}
+        elif isinstance(args, str):
+            args = {"file": args}
+        else:
+            raise RuntimeError(f"unknown args type {type(args)}")
+        return from_dict(cls, args, dacite.Config(strict=True))
 
 
 @dataclass
@@ -129,23 +158,8 @@ def get_file_resources(cache_dep_files: list[str] = []) -> Resources:
             for resource_type, resources in config_content.items():
                 try:
                     Type = resource_name_map[resource_type]
-                    members = fields(Type)
-                    auto_match_name = None
-                    if len(members) == 2:
-                        auto_match_name = next(
-                            filter(
-                                lambda x: x.name != fields(Resource)[0].name, members
-                            )
-                        ).name
 
-                    def add_resource(args_dict: dict):
-                        if "auto_match" in args_dict:
-                            value = args_dict.pop("auto_match")
-                            args_dict[auto_match_name] = value
-                        resource = from_dict(
-                            Type, args_dict, dacite.Config(strict=True)
-                        )
-                        assert isinstance(resource, Resource)
+                    def add_resource(resource: Resource):
                         resource.file = path.abspath(
                             path.join(current_dir, resource.file)
                         )
@@ -159,39 +173,18 @@ def get_file_resources(cache_dep_files: list[str] = []) -> Resources:
 
                     if isinstance(resources, list):
                         for resource_ in resources:
-                            if isinstance(resource_, str):
-                                add_resource({"file": resource_})
-                            elif isinstance(resource_, dict):
-                                if len(resource_) == 1:
-                                    for key in resource_.keys():
-                                        file = key
-                                    assert isinstance(file, str)  # type: ignore
-                                    if isinstance(resource_[file], dict):
-                                        add_resource({"file": file, **resource_[file]})
-                                    else:
-                                        add_resource(
-                                            {
-                                                "file": file,
-                                                "auto_match": resource_[file],
-                                            }
-                                        )
-                                else:
-                                    add_resource(resource_)
-                            else:
-                                raise RuntimeError(f"invalid resource: {resource_}")
+                            add_resource(Type.create(resource_))
                     elif isinstance(resources, dict):
-                        for resource_name, resource_info in resources.items():
-                            assert isinstance(resource_info, dict)
-                            add_resource({"file": resource_name, **resource_info})
+                        for k, v in resources.items():
+                            add_resource(Type.create({k: v}))
                     else:
                         raise RuntimeError(f"invalid resources: {resources}")
                 except Exception as e:
-                    raise RuntimeError(
-                        e,
-                        f"when handling {resource_file}, resource_type {resource_type}",
+                    e.add_note(
+                        f"when handling {resource_file}, resource_type {resource_type}"
                     )
+                    raise
     cache_dep_files.extend(resource_files)
-
     return resources_dict
 
 
