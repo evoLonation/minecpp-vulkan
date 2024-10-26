@@ -1,13 +1,12 @@
 import argparse
 import os.path as path
-from clangd import get_compile_commands_content, update, write_compile_commands_json
 from cache import cached
-import subprocess as sp
 from public import (
     Compiler,
     DepCtx,
     HeaderNinja,
     NinjaFile,
+    RemoveInvalidNinja,
     Root,
     Script,
     Workspace,
@@ -102,7 +101,7 @@ def build_gen_test(resources: list[Test]) -> list[Target]:
 
 @cached
 def build_precompile_headers(
-    header_units: list[HeaderUnit], include_dirs: list[IncludeDir]
+    header_units: list[HeaderUnit], include_dirs: list[IncludeDir], clangd: bool
 ):
     Rule = HeaderNinja.Rule
     Phony = HeaderNinja.Phony
@@ -115,7 +114,12 @@ def build_precompile_headers(
         header_pcm_outputs = []
         for header_unit in header_units:
             output = Compiler.hpcm_file(header_unit.file)
-            writer.build(outputs=output, rule=Rule.precompile, inputs=header_unit.file)
+            writer.build(
+                outputs=output,
+                rule=Rule.precompile,
+                inputs=header_unit.file,
+                order_only=[RemoveInvalidNinja.get_output()] if clangd else [],
+            )
             header_pcm_outputs.append(output)
         writer.build(outputs=Phony.header_unit, rule="phony", inputs=header_pcm_outputs)
 
@@ -179,6 +183,7 @@ def build_compile(
     sources: list[Source],
     targets: list[Target],
     includes: list[IncludeDir],
+    clangd: bool,
 ):
     Rule = CompileNinja.Rule
     Phony = CompileNinja.Phony
@@ -205,12 +210,15 @@ def build_compile(
             description=f"COMPILE PCM $out",
         )
 
-        def build(rule: str, source: str, input: str, output: str):
+        def build(
+            rule: str, source: str, input: str, output: str, output_pcm: bool = False
+        ):
             writer.build(
                 outputs=output,
                 rule=rule,
                 inputs=input,
-                order_only=DepCtx.dyndep_file(source),
+                order_only=[DepCtx.dyndep_file(source)]
+                + ([RemoveInvalidNinja.get_output()] if clangd and output_pcm else []),
                 variables={
                     "dyndep": DepCtx.dyndep_file(source),
                     "config": DepCtx.header_dep_config_file(source),
@@ -232,6 +240,7 @@ def build_compile(
                     module.file,
                     module.file,
                     Compiler.pcm_file(module.provide),
+                    True,
                 )
                 build(
                     Rule.compile_pcm,
@@ -256,6 +265,27 @@ def build_compile(
                 )
                 for module in modules
             ],
+        )
+
+
+@cached
+def build_remove_invalid():
+    Ninja = RemoveInvalidNinja
+    Rule = Ninja.Rule
+    with Ninja.open() as writer:
+        writer.rule(
+            name=Rule.remove_invalid,
+            command=Script.get_command(
+                Script.clangd_remove_invaid, ["$root_dir", "$out"]
+            ),
+            description=f"REMOVE INVALID PCM FILES",
+        )
+        writer.build(
+            outputs=Ninja.get_output(),
+            rule=Rule.remove_invalid,
+            inputs=[],
+            implicit=[DepScanNinja.Phony.dep_scan],
+            variables={"root_dir": Root.dir},
         )
 
 
@@ -355,7 +385,7 @@ def build_target(
 
 
 @cached
-def build_total():
+def build_total(clangd: bool):
     with NinjaFile.open() as writer:
         writer.subninja(HeaderNinja.get_file())
         writer.subninja(DepScanNinja.get_file())
@@ -364,9 +394,11 @@ def build_total():
         writer.subninja(TargetNinja.get_file())
         writer.subninja(ShaderGenNinja.get_file())
         writer.subninja(TestGenNinja.get_file())
+        if clangd:
+            writer.subninja(RemoveInvalidNinja.get_file())
 
 
-def build_ninja():
+def build_ninja(clangd: bool):
     resources = get_file_resources()
     # print(f"resources: {resources}")
 
@@ -374,16 +406,22 @@ def build_ninja():
     resources.targets.extend(build_gen_test(resources.tests))
     save_resources(resources)
 
-    build_precompile_headers(resources.header_units, resources.include_dirs)
+    build_precompile_headers(resources.header_units, resources.include_dirs, clangd)
     build_dep_scan(
         resources.modules, resources.sources, resources.targets, resources.include_dirs
     )
     build_compile(
-        resources.modules, resources.sources, resources.targets, resources.include_dirs
+        resources.modules,
+        resources.sources,
+        resources.targets,
+        resources.include_dirs,
+        clangd,
     )
     build_complete_dep(resources.modules, resources.sources, resources.targets)
     build_target(resources.targets, resources.sources, resources.dylib_files)
-    build_total()
+    if clangd:
+        build_remove_invalid()
+    build_total(clangd)
 
 
 if __name__ == "__main__":
@@ -392,15 +430,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--clangd",
         action="store_true",
-        help="provide compile_commands.json and pcm/headerpcm files for clangd",
+        help="provide compile_commands.json for clangd and remove invalid pcms before build pcms to ensure clangd not crash",
     )
     args = parser.parse_args()
     Root.set_dir(args.root_dir)
     Workspace.mkdirs()
 
-    build_ninja()
-
-    if args.clangd:
-        update()
-    else:
-        write_compile_commands_json(get_compile_commands_content())
+    build_ninja(args.clangd)

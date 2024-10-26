@@ -169,6 +169,17 @@ class TargetNinja(NinjaFile):
             return f"target/{name}"
 
 
+class RemoveInvalidNinja(NinjaFile):
+    task = "remove_invalid"
+
+    class Rule:
+        remove_invalid = "remove_invalid"
+
+    @staticmethod
+    def get_output():
+        return path.join(Workspace.build.get_dir(), "remove_invalid")
+
+
 class ShaderGenNinja(NinjaFile):
     task = "shader_gen"
 
@@ -187,6 +198,7 @@ class Script(Enum):
     shader_gen = "shader_gen.py"
     test_gen = "test_gen.py"
     complete_dyndep = "complete_dyndep.py"
+    clangd_remove_invaid = "clangd_remove_invalid.py"
 
     @staticmethod
     def get_command(script: "Script", args: list[str]) -> str:
@@ -320,7 +332,11 @@ class DepCtx:
 
     @staticmethod
     def complete_dyndep_module_file(module: str):
-        return path.join(Workspace.complete_dyndep.get_dir(), "module", f"{module}.dd")
+        return path.join(
+            Workspace.complete_dyndep.get_dir(),
+            "module",
+            f"{module.replace(':', '-')}.dd",
+        )
 
     @staticmethod
     def complete_dyndep_source_file(file: str):

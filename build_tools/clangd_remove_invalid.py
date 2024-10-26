@@ -1,14 +1,15 @@
+import argparse
 from dataclasses import dataclass
 from os import path
 import os
 import re
 import threading
+import time
 from typing import cast
 from cache import cached
 from public import (
     HeaderNinja,
     CompileNinja,
-    DepScanNinja,
     NinjaFile,
     Root,
 )
@@ -31,11 +32,15 @@ def get_compile_commands_content() -> bytes:
     return result.stdout
 
 
+def get_compile_commands_json_path() -> str:
+    return path.join(Root.dir, "compile_commands.json")
+
+
 @cached
 def write_compile_commands_json(content: str | bytes):
     if isinstance(content, str):
         content = content.encode("utf-8")
-    with open(path.join(Root.dir, "compile_commands.json"), "wb") as f:
+    with open(get_compile_commands_json_path(), "wb") as f:
         f.write(content)
 
 
@@ -134,39 +139,41 @@ def execute_precompile() -> PrecompileResult:
     return PrecompileResult(outputs, normal_dict, error_dict)
 
 
-def update():
-    print("execute dep_scan...")
-    # if dry run need dyndep but not exist, it will occur error
-    NinjaFile.execute(DepScanNinja.Phony.dep_scan)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("root_dir", type=str)
+    parser.add_argument("output", type=str)
+    args = parser.parse_args()
+    Root.set_dir(args.root_dir)
 
     print("dry run precompile pcms...")
     invalid_pcms = dry_run_precompile()
     need_remove_pcms = [x for x in invalid_pcms if path.exists(x)]
     need_remove = len(need_remove_pcms) > 0
     if need_remove:
-        print(
-            "need remove invalid pcm files in changd dir, so rebuild compile_commands with empty..."
-        )
+        print("rebuild compile_commands with empty...")
         write_compile_commands_json("[]")
         kill_process_by_name("clangd.exe")
         print("remove invalid pcm files...")
         for pcm in need_remove_pcms:
-            try:
-                os.remove(pcm)
-                print(f"remove {pcm}")
-            except Exception as e:
-                e.add_note(f"failed to remove {pcm}")
-                raise
+            retry = 0
+            last_e = None
+            while retry < 3:
+                try:
+                    os.remove(pcm)
+                    print(f"remove {pcm}")
+                    break
+                except PermissionError as e:
+                    last_e = e
+                    retry += 1
+                    time.sleep(0.5)
+                    print(f"  retry {retry} times...")
+            if retry == 3:
+                assert last_e
+                last_e.add_note(f"failed to remove {pcm}")
+                raise last_e
+        write_compile_commands_json(get_compile_commands_content())
     else:
         print("no need to remove invalid pcm files...")
-
-    print("execute precompile pcms...")
-    res = execute_precompile()
-    print("normal messages:")
-    for k, v in res.normal_msgs.items():
-        print(f"{k}:\n{v}")
-    print("error messages:")
-    for k, v in res.error_msgs.items():
-        print(f"{k}:\n{v}")
-
-    write_compile_commands_json(get_compile_commands_content())
+    with open(args.output, "wt") as f:
+        f.write("")
