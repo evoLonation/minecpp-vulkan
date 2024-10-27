@@ -29,7 +29,9 @@ def rename_resource(old_path: str, new_path: str):
                 assert len(renameds) == 1
                 assert renamed is None
                 renamed = renameds[0]
-        assert renamed is not None, f"resource not found: {old_path}"
+        if renamed is None:
+            print(f"resource not found in config file, do nothing: {old_path}")
+            return
         renamed.file = path.basename(new_path)
         old_resources.to_file(old_config_file)
         return
@@ -43,6 +45,9 @@ def rename_resource(old_path: str, new_path: str):
             assert len(moveds) == 1
             assert moved is None
             moved = moveds[0]
+    if moved is None:
+        print(f"resource not found in config file, do nothing: {old_path}")
+        return
 
     assert moved is not None, f"resource not found: {old_path}"
 
@@ -69,7 +74,8 @@ def delete_resource(file: str):
             moved = True
 
     if not moved:
-        raise RuntimeError(f"resource not found: {file}")
+        print(f"resource not found in config file, do nothing: {file}")
+        return
 
     resources.to_file(config_file)
 

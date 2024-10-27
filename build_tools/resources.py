@@ -197,6 +197,8 @@ class Resources:
             for k, v in self.get_all_resources().items()
             if len(v) != 0
         }
+        if len(obj_dict) == 0:
+            return ""
         return yaml.dump(obj_dict)
 
     def to_file(self, file: str):

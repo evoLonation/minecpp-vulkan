@@ -1,40 +1,21 @@
-sub_dir:
+include_dir:
 - include
-- third_party
-# - vulkan
-# - render
-- toy
-- render2
-- shader
-# - components
-source:
-- header_impl.cc
-target:
-- main.cc: hello_vulkan
 module:
 - glfw.ccm:
     provide: glfw
 - model.ccm:
     provide: model
-# - gui.ccm
 - transform.ccm:
     provide: transform
-# - control.ccm
-# - axis.ccm
-# - action.ccm
-# - application.ccm
-# - application.cc
 - input.ccm:
     provide: input
-include_dir:
+source:
+- header_impl.cc
+sub_dir:
 - include
-
-# for test toy
-# sub_dir:
-# - include
-# - third_party
-# - toy
-# source:
-# - test.cc
-# include_dir:
-# - include
+- third_party
+- toy
+- render2
+- shader
+target:
+- main.cc: hello_vulkan
