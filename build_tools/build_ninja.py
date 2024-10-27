@@ -1,6 +1,6 @@
 import argparse
 import os.path as path
-from cache import cached
+from cache import cached, enable_avoid_call, set_enable_avoid_call
 from public import (
     Compiler,
     DepCtx,
@@ -432,7 +432,13 @@ if __name__ == "__main__":
         action="store_true",
         help="provide compile_commands.json for clangd and remove invalid pcms before build pcms to ensure clangd not crash",
     )
+    parser.add_argument("--disable-cache", action="store_true")
     args = parser.parse_args()
+    
+    args.clangd = True
+    # args.disable_cache = True
+
+    set_enable_avoid_call(not args.disable_cache)
     Root.set_dir(args.root_dir)
     Workspace.mkdirs()
 

@@ -11,6 +11,11 @@ from public import NinjaFile, Root, Workspace
 Param = ParamSpec("Param")
 RetType = TypeVar("RetType")
 
+enable_avoid_call: bool = True
+
+def set_enable_avoid_call(enable: bool):
+    global enable_avoid_call
+    enable_avoid_call = enable
 
 class CacheCtx:
     def __init__(self, func: Callable):
@@ -90,7 +95,7 @@ def cached(func: Callable[Param, RetType]) -> Callable[Param, RetType]:
         cached = (param_cached and dep_file_cached) or (
             not need_dep_file and not need_cache_param
         )
-        if cached:
+        if cached and enable_avoid_call:
             print(f"cache hit: {ctx.name}")
             return pickle.load(open(ctx.ret_file(), "rb"))
 
