@@ -1,5 +1,6 @@
 from dataclasses import asdict, dataclass, field, fields
 from os import path
+from pathlib import Path
 import pickle
 from typing import Any, Callable, ClassVar, Type, get_args
 from dacite import from_dict
@@ -72,8 +73,22 @@ class SubDir(Resource):
 
 
 @dataclass
+class Target(Resource):
+    name: str
+
+
+@dataclass
 class Source(Resource):
-    pass
+    # the target cc file abspath list (if None, applied to all cc files)
+    targets: list[str] | None = None
+    macros: list[tuple[str, str]] = field(default_factory=list)
+
+    def needed_by(self, target: str | Target) -> bool:
+        if self.targets is None:
+            return True
+        return [path.normpath(x) for x in self.targets].count(
+            path.normpath(target if isinstance(target, str) else target.file)
+        ) > 0
 
 
 @dataclass
@@ -103,12 +118,8 @@ class Shader(Resource):
 
 @dataclass
 class Test(Resource):
-    pass
-
-
-@dataclass
-class Target(Resource):
-    name: str
+    def get_id(self):
+        return "_".join(Path(path.splitext(Root.relpath(self.file))[0]).parts)
 
 
 str2resource: dict[str, Any] = {

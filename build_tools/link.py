@@ -33,7 +33,11 @@ for module in resources.modules:
 # print(f"implement_module_map: {implement_module_map}")
 
 obj_files = []
-dep_modules_stack = get_dep_modules(args.input)
+
+sources = [source for source in resources.sources if source.needed_by(args.input)]
+obj_files.extend(Compiler.obj_file(source.file) for source in sources)
+
+dep_modules_stack = list(set(module for source in sources for module in get_dep_modules(source.file)))
 found_modules: set[str] = set(dep_modules_stack)
 while len(dep_modules_stack) > 0:
     # print(f"dep_modules: {dep_modules}")
@@ -48,9 +52,6 @@ while len(dep_modules_stack) > 0:
     new_modules -= found_modules
     found_modules |= new_modules
     dep_modules_stack.extend(new_modules)
-
-obj_files.extend(Compiler.obj_file(source.file) for source in resources.sources)
-obj_files.append(Compiler.obj_file(args.input))
 # print("obj_files:")
 # print("\n".join(obj_files))
 # for obj_file in obj_files:

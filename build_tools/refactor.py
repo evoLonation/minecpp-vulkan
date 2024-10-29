@@ -1,24 +1,31 @@
 from os import path
+from build_ninja import build_ninja
+from clangd_remove_invalid import (
+    get_compile_commands_content,
+    write_compile_commands_json,
+)
 from public import Root
 from resources import Module, Resources, get_config_file, touch_config_file
 import argparse
 
 
-def add_module_interface(file: str, module: str):
+def add_module_interface(file: str, module: str) -> bool:
     config_file = touch_config_file(path.dirname(file))
     resources = Resources.from_file(config_file)
     resources.modules.append(Module(file=path.basename(file), provide=module))
     resources.to_file(config_file)
+    return True
 
 
-def add_module_implement(file: str, module: str):
+def add_module_implement(file: str, module: str) -> bool:
     config_file = touch_config_file(path.dirname(file))
     resources = Resources.from_file(config_file)
     resources.modules.append(Module(file=path.basename(file), implement=module))
     resources.to_file(config_file)
+    return True
 
 
-def rename_resource(old_path: str, new_path: str):
+def rename_resource(old_path: str, new_path: str) -> bool:
     old_config_file = get_config_file(path.dirname(old_path))
     old_resources = Resources.from_file(old_config_file)
     if path.normpath(path.dirname(old_path)) == path.normpath(path.dirname(new_path)):
@@ -31,10 +38,10 @@ def rename_resource(old_path: str, new_path: str):
                 renamed = renameds[0]
         if renamed is None:
             print(f"resource not found in config file, do nothing: {old_path}")
-            return
+            return False
         renamed.file = path.basename(new_path)
         old_resources.to_file(old_config_file)
-        return
+        return True
     moved = None
     for rs in old_resources.get_all_resources().values():
         moveds = [r for r in rs if r.file == path.basename(old_path)]
@@ -47,7 +54,7 @@ def rename_resource(old_path: str, new_path: str):
             moved = moveds[0]
     if moved is None:
         print(f"resource not found in config file, do nothing: {old_path}")
-        return
+        return False
 
     assert moved is not None, f"resource not found: {old_path}"
 
@@ -59,9 +66,10 @@ def rename_resource(old_path: str, new_path: str):
 
     old_resources.to_file(old_config_file)
     new_resources.to_file(new_config_file)
+    return True
 
 
-def delete_resource(file: str):
+def delete_resource(file: str) -> bool:
     config_file = get_config_file(path.dirname(file))
     resources = Resources.from_file(config_file)
     moved = False
@@ -75,9 +83,10 @@ def delete_resource(file: str):
 
     if not moved:
         print(f"resource not found in config file, do nothing: {file}")
-        return
+        return False
 
     resources.to_file(config_file)
+    return True
 
 
 if __name__ == "__main__":
@@ -118,11 +127,15 @@ if __name__ == "__main__":
 
     Root.set_dir(args.root_dir)
 
+    success = False
     if args.task == "add_interface":
-        add_module_interface(args.file, args.module_name)
+        success = add_module_interface(args.file, args.module_name)
     elif args.task == "add_impl":
-        add_module_implement(args.file, args.module_name)
+        success = add_module_implement(args.file, args.module_name)
     elif args.task == "rename":
-        rename_resource(args.old_path, args.new_path)
+        success = rename_resource(args.old_path, args.new_path)
     elif args.task == "delete":
-        delete_resource(args.file)
+        success = delete_resource(args.file)
+    if success:
+        build_ninja(True)
+        write_compile_commands_json(get_compile_commands_content())

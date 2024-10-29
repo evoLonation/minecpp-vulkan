@@ -191,6 +191,9 @@ class ShaderGenNinja(NinjaFile):
 class TestGenNinja(NinjaFile):
     task = "test_gen"
 
+    class Rule:
+        test_main = "test_main_generate"
+
 
 class Script(Enum):
     dep_scan = "dep_scan.py"
@@ -250,15 +253,26 @@ class Compiler:
         )
 
     @staticmethod
-    def compile(include_dirs: list[str], config: str | None, input: str, output: str):
+    def compile(
+        include_dirs: list[str],
+        config: str | None,
+        input: str,
+        output: str,
+        extra: str = "",
+    ):
         return sp.list2cmdline(
             Compiler.base_flag
             + ([] if config is None else ["--config", config])
+            + ([extra] if extra else [])
             + ["-fprebuilt-module-path=" + Workspace.pcm.get_dir()]
             + ["-isystem" + x for x in Compiler.system_include_dirs]
             + ["-I" + x for x in include_dirs]
             + ["-c", input, "-o", output]
         )
+
+    @staticmethod
+    def get_macro_flag(macros: list[tuple[str, str]]):
+        return [f"-D{x}={y}" for x, y in macros]
 
     @staticmethod
     def header_precompile(include_dirs: list[str], input: str, output: str):

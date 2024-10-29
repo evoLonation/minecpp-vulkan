@@ -1,6 +1,10 @@
 import argparse
 import os.path as path
-from cache import cached, enable_avoid_call, set_enable_avoid_call
+from clangd_remove_invalid import (
+    get_compile_commands_content,
+    write_compile_commands_json,
+)
+from cache import cached, set_enable_avoid_call
 from public import (
     Compiler,
     DepCtx,
@@ -29,6 +33,10 @@ from resources import (
     Target,
     save_resources,
 )
+
+
+def get_target_sources(targets: list[Target]) -> list[Source]:
+    return [Source(file=target.file, targets=[target.file]) for target in targets]
 
 
 @cached
@@ -93,10 +101,31 @@ def build_gen_shader(resources: list[Shader]) -> list[Module]:
 
 
 @cached
-def build_gen_test(resources: list[Test]) -> list[Target]:
+def build_gen_test(resources: list[Test]) -> tuple[list[Source], list[Target]]:
+    sources = []
+    targets = []
     with TestGenNinja.open() as writer:
-        pass
-    return []
+        writer.rule(
+            name=TestGenNinja.Rule.test_main,
+            command=Script.get_command(Script.test_gen, ["$ids", "$out"]),
+            description="TEST MAIN GEN $out",
+        )
+        for test in resources:
+            output = path.join(Workspace.gen_test.get_dir(), test.get_id() + ".cc")
+            writer.build(
+                outputs=output,
+                rule=TestGenNinja.Rule.test_main,
+                variables={"ids": test.get_id()},
+            )
+            targets.append(Target(file=output, name=test.get_id()))
+            sources.append(
+                Source(
+                    file=test.file,
+                    targets=[output],
+                    macros=[("TEST_IDENTITY", test.get_id())],
+                )
+            )
+    return sources, targets
 
 
 @cached
@@ -128,7 +157,6 @@ def build_precompile_headers(
 def build_dep_scan(
     modules: list[Module],
     sources: list[Source],
-    targets: list[Target],
     includes: list[IncludeDir],
 ):
     Rule = DepScanNinja.Rule
@@ -163,8 +191,6 @@ def build_dep_scan(
 
         for source in sources:
             build_ninja(source.file, "")
-        for target in targets:
-            build_ninja(target.file, "")
         for module in modules:
             if module.implement != None:
                 build_ninja(module.file, f"--implement {module.implement}")
@@ -174,14 +200,13 @@ def build_dep_scan(
         writer.build(
             outputs=Phony.dep_scan,
             rule="phony",
-            inputs=[DepCtx.dyndep_file(x.file) for x in sources + targets + modules],
+            inputs=[DepCtx.dyndep_file(x.file) for x in sources + modules],
         )
 
 
 def build_compile(
     modules: list[Module],
     sources: list[Source],
-    targets: list[Target],
     includes: list[IncludeDir],
     clangd: bool,
 ):
@@ -198,20 +223,25 @@ def build_compile(
         writer.rule(
             name=Rule.compile,
             command=Compiler.compile(
-                [x.file for x in includes], "$config", "$in", "$out"
+                [x.file for x in includes], "$config", "$in", "$out", "$extra"
             ),
-            description=f"COMPILE $out",
+            description=f"COMPILE SOURCE $out",
         )
         writer.rule(
             name=Rule.compile_pcm,
             command=Compiler.compile(
                 [x.file for x in includes], "$config", "$in", "$out"
             ),
-            description=f"COMPILE PCM $out",
+            description=f"COMPILE MODULE $out",
         )
 
         def build(
-            rule: str, source: str, input: str, output: str, output_pcm: bool = False
+            rule: str,
+            source: str,
+            input: str,
+            output: str,
+            output_pcm: bool = False,
+            macros: list[tuple[str, str]] = [],
         ):
             writer.build(
                 outputs=output,
@@ -222,16 +252,21 @@ def build_compile(
                 variables={
                     "dyndep": DepCtx.dyndep_file(source),
                     "config": DepCtx.header_dep_config_file(source),
+                    **(
+                        {"extra": Compiler.get_macro_flag(macros)}
+                        if len(macros) > 0
+                        else {}
+                    ),
                 },
             )
 
         for source in sources:
             build(
-                Rule.compile, source.file, source.file, Compiler.obj_file(source.file)
-            )
-        for target in targets:
-            build(
-                Rule.compile, target.file, target.file, Compiler.obj_file(target.file)
+                Rule.compile,
+                source.file,
+                source.file,
+                Compiler.obj_file(source.file),
+                macros=source.macros,
             )
         for module in modules:
             if module.provide != None:
@@ -291,9 +326,7 @@ def build_remove_invalid():
 
 # a module phony A will build all relative files needed by module A (whole dependency tree)
 @cached
-def build_complete_dep(
-    modules: list[Module], sources: list[Source], targets: list[Target]
-):
+def build_complete_dep(modules: list[Module], sources: list[Source]):
     module_map: dict[str, list[str]] = {}
     for module in modules:
         module_name = module.implement if module.provide is None else module.provide
@@ -326,7 +359,7 @@ def build_complete_dep(
                     "phony": Phony.module(module),
                 },
             )
-        for source in [*sources, *targets]:
+        for source in sources:
             file = source.file
             writer.build(
                 outputs=Phony.source(file),
@@ -360,22 +393,23 @@ def build_target(
             command="cmd.exe /c copy /Y $in $out  > NUL",
             description="COPY DYLIB $out",
         )
+        for dylib in dynamic_libs:
+            writer.build(
+                outputs=Compiler.dynamic_dest(dylib.file),
+                rule=Rule.copy,
+                inputs=dylib.file,
+            )
         for target in targets:
             writer.build(
                 outputs=Compiler.target_file(target.name),
                 rule=Rule.link,
                 implicit=[
                     CompleteDepNinja.Phony.source(source.file)
-                    for source in sources + [target]
+                    for source in sources
+                    if source.needed_by(target)
                 ],
                 variables={"input": target.file},
             )
-            for dylib in dynamic_libs:
-                writer.build(
-                    outputs=Compiler.dynamic_dest(dylib.file),
-                    rule=Rule.copy,
-                    inputs=dylib.file,
-                )
             writer.build(
                 outputs=Phony.target(target.name),
                 rule="phony",
@@ -403,21 +437,16 @@ def build_ninja(clangd: bool):
     # print(f"resources: {resources}")
 
     resources.modules.extend(build_gen_shader(resources.shaders))
-    resources.targets.extend(build_gen_test(resources.tests))
+    test_sources, test_targets = build_gen_test(resources.tests)
+    resources.sources.extend(test_sources)
+    resources.targets.extend(test_targets)
+    resources.sources.extend(get_target_sources(resources.targets))
     save_resources(resources)
 
     build_precompile_headers(resources.header_units, resources.include_dirs, clangd)
-    build_dep_scan(
-        resources.modules, resources.sources, resources.targets, resources.include_dirs
-    )
-    build_compile(
-        resources.modules,
-        resources.sources,
-        resources.targets,
-        resources.include_dirs,
-        clangd,
-    )
-    build_complete_dep(resources.modules, resources.sources, resources.targets)
+    build_dep_scan(resources.modules, resources.sources, resources.include_dirs)
+    build_compile(resources.modules, resources.sources, resources.include_dirs, clangd)
+    build_complete_dep(resources.modules, resources.sources)
     build_target(resources.targets, resources.sources, resources.dylib_files)
     if clangd:
         build_remove_invalid()
@@ -434,7 +463,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--disable-cache", action="store_true")
     args = parser.parse_args()
-    
+
     args.clangd = True
     # args.disable_cache = True
 
@@ -443,3 +472,6 @@ if __name__ == "__main__":
     Workspace.mkdirs()
 
     build_ninja(args.clangd)
+
+    if args.clangd:
+        write_compile_commands_json(get_compile_commands_content())
