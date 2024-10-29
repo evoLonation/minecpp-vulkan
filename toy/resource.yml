@@ -11,7 +11,6 @@ module:
     provide: toy.ranges
 - ranges_base.ccm:
     provide: toy.ranges:base
-# - ranges_any_view.ccm
 - helper.ccm:
     provide: toy.helper
 - coroutine.ccm:
@@ -20,3 +19,5 @@ module:
     provide: toy.enums
 - json.ccm:
     provide: toy.json
+test:
+- test.cc

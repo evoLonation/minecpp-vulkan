@@ -6,5 +6,6 @@
    ],
    "files.associations": {
       "*.ccm": "cpp"
-   }
+   },
+   "python.analysis.typeCheckingMode": "standard"
 }

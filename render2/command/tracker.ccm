@@ -161,20 +161,16 @@ auto CommonBarrierTracker<IsImage>::generateRecorder(
     }
   }
   if constexpr (false) {
-    toy::debugf(toy::NoLocation{}, "{} Barrier Info:", IsImage ? "Image" : "Buffer");
-    toy::debugf(
-      toy::NoLocation{}, "  Vk{}: {}", IsImage ? "Image" : "Buffer", reinterpret_cast<void*>(handle)
-    );
+    toy::debugf({}, "{} Barrier Info:", IsImage ? "Image" : "Buffer");
+    toy::debugf({}, "  Vk{}: {}", IsImage ? "Image" : "Buffer", reinterpret_cast<void*>(handle));
     if (needFamilyTransfer(family)) {
-      toy::debugf(
-        toy::NoLocation{}, "  Generate 2 barriers for family transfer: {} -> {}", _family, family
-      );
+      toy::debugf({}, "  Generate 2 barriers for family transfer: {} -> {}", _family, family);
     }
-    toy::debugf(toy::NoLocation{}, "  src scope: {}", scope2Str(src_scope));
-    toy::debugf(toy::NoLocation{}, "  dst scope: {}", scope2Str(dst_scope));
+    toy::debugf({}, "  src scope: {}", scope2Str(src_scope));
+    toy::debugf({}, "  dst scope: {}", scope2Str(dst_scope));
     if constexpr (IsImage) {
       toy::debugf(
-        toy::NoLocation{},
+        {},
         "  layout transition: {} -> {}",
         refl::imageLayout(ImageAdditionalInfo::_layout),
         refl::imageLayout(layout)

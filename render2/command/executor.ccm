@@ -189,9 +189,9 @@ class Waitable {
 public:
   Waitable(
     CommandBufferRecyclable                                                cmdbuf,
-    std::unordered_map<VkPipelineStageFlags2, TimelineSemaphoreRecyclable> _stage_semas
+    std::unordered_map<VkPipelineStageFlags2, TimelineSemaphoreRecyclable> stage_semas
   )
-    : _stage_semas(std::move(_stage_semas)), _cmdbuf(std::move(cmdbuf)) {}
+    : _stage_semas(std::move(stage_semas)), _cmdbuf(std::move(cmdbuf)) {}
 
   auto wait(
     VkPipelineStageFlags2 stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
@@ -210,6 +210,10 @@ public:
     auto& sema = _stage_semas.at(stage);
     return { sema, sema.getNewestValue() };
   }
+  Waitable(const Waitable&) noexcept = delete;
+  Waitable(Waitable&&) noexcept = default;
+  auto operator=(const Waitable&) noexcept -> Waitable& = delete;
+  auto operator=(Waitable&&) noexcept -> Waitable& = default;
 
 private:
   CommandBufferRecyclable                                                _cmdbuf;

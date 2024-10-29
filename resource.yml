@@ -1,5 +1,6 @@
 include_dir:
 - include
+- toy
 module:
 - glfw.ccm:
     provide: glfw

@@ -59,7 +59,7 @@ auto Presentation::prepare() -> std::optional<Context> {
 
   auto previous_layout = ctx.tracker.getNowLayout();
   // submit barrier(s) to wait _acquire_ctx.available_sema
-  // toy::debugf(toy::NoLocation{}, "prepare(): will call syncScope");
+  // toy::debugf({}, "prepare(): will call syncScope");
   auto barrier = ctx.tracker.syncScope(
     Scope{ .stage_mask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT },
     _present_executor->getFamily(),

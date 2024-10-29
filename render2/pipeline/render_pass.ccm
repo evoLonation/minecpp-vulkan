@@ -314,7 +314,7 @@ void RenderPass::syncAttachments(
   auto& graphics_executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::GRAPHICS];
   for (auto [index, info, tracker] :
        views::zip(views::iota(0u, _attachment_syncs.size()), _attachment_syncs, trackers)) {
-    // toy::debugf(toy::NoLocation{}, "syncAttachments: will call syncScope at attachment {}", index);
+    // toy::debugf({}, "syncAttachments: will call syncScope at attachment {}", index);
     auto sync = tracker->syncScope(
       Scope{ .stage_mask = info.initial_stage }, graphics_executor.getFamily(), info.initial_layout
     );

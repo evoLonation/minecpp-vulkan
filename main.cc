@@ -249,7 +249,7 @@ int main() {
         }
       } else {
         auto& context = res.value();
-        auto  recorder = render_pass[0].recorder = [&](rd::vk::Pipeline::Recorder& recorder) {
+        render_pass[0].recorder = [&](rd::vk::Pipeline::Recorder& recorder) {
           recorder.init();
           recorder.vertex_buffer = vertex_buffer;
           recorder.index_buffer = index_buffer;

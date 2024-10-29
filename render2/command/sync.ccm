@@ -419,7 +419,7 @@ void recordImageBarrier(
 ) {
   if constexpr (false) {
     toy::debugf(
-      toy::NoLocation{},
+      {},
       "record image barrier:\n  image = {},\n  layout = {} -> {},\n  scope = {} -> {},\n  family = "
       "{} -> {}",
       reinterpret_cast<void*>(image),

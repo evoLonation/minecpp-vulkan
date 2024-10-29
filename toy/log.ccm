@@ -1,5 +1,7 @@
 export module toy.log;
 
+import toy.trait;
+
 import std;
 
 export namespace toy {
@@ -36,10 +38,11 @@ auto formatSourceLocation(const std::source_location& location) -> std::string {
   //   location.column(),
   //   location.function_name()
   // );
-  return std::format("{}:{}:{}", location.file_name(), location.line(), location.column());
+  namespace fs = std::filesystem;
+  return std::format(
+    "{}:{}:{}", fs::relative(location.file_name()).string(), location.line(), location.column()
+  );
 }
-
-struct NoLocation {};
 
 template <typename... Args>
 struct BasicFormatWithLocation {
@@ -56,42 +59,55 @@ template <typename... Args>
 using FormatWithLocation = BasicFormatWithLocation<std::type_identity_t<Args>...>;
 
 template <typename... Args>
-void debugf(FormatWithLocation<Args...> fmt_location, Args&&... args) {
-  auto& [fmt, location] = fmt_location;
+void debugf(
+  std::optional<std::source_location> tag, std::format_string<Args...> fmt, Args&&... args
+) {
   if constexpr (enable_debug) {
-    std::println(
-      "{}: {}", formatSourceLocation(location), std::format(fmt, std::forward<Args>(args)...)
-    );
+    if (tag) {
+      std::println(
+        "{}: {}", formatSourceLocation(tag.value()), std::format(fmt, std::forward<Args>(args)...)
+      );
+    } else {
+      std::println(fmt, std::forward<Args>(args)...);
+    }
   }
 }
+
 template <typename... Args>
-void debugf(NoLocation tag, std::format_string<Args...> fmt, Args&&... args) {
+void debugf(FormatWithLocation<Args...> fmt_location, Args&&... args) {
+  auto& [fmt, location] = fmt_location;
+  debugf(location, fmt, std::forward<Args>(args)...);
+}
+
+template <typename Arg>
+void debug(std::optional<std::source_location> tag, Arg&& arg) {
+  debugf(tag, "{}", std::forward<Arg>(arg));
+}
+
+template <typename Arg>
+void debug(Arg&& arg, std::source_location location = std::source_location::current()) {
+  debug(location, std::forward<Arg>(arg));
+}
+
+template <typename... Args>
+auto checkf(
+  std::optional<std::source_location> tag,
+  bool                                condition,
+  std::format_string<Args...>         fmt,
+  Args&&... args
+) -> bool {
   if constexpr (enable_debug) {
-    std::println(fmt, std::forward<Args>(args)...);
+    if (!condition) {
+      debugf(tag, std::move(fmt), std::forward<Args>(args)...);
+    }
   }
+  return condition;
 }
 
 template <typename... Args>
 auto checkf(bool condition, FormatWithLocation<Args...> fmt_location, Args&&... args) -> bool {
   auto& [fmt, location] = fmt_location;
-  if constexpr (enable_debug) {
-    if (!condition) {
-      std::println(
-        "{}: {}", formatSourceLocation(location), std::format(fmt, std::forward<Args>(args)...)
-      );
-    }
-  }
-  return condition;
-}
-template <typename... Args>
-auto checkf(NoLocation tag, bool condition, std::format_string<Args...> fmt, Args&&... args)
-  -> bool {
-  if constexpr (enable_debug) {
-    if (!condition) {
-      std::println(fmt, std::forward<Args>(args)...);
-    }
-  }
-  return condition;
+  return checkf(location, condition, fmt, std::forward<Args>(args)...);
 }
 
 template <typename... Args>
@@ -112,20 +128,6 @@ struct debugs {
 template <typename... Args>
 debugs(Args&&... args) -> debugs<Args...>;
 
-template <typename Arg>
-void debug(Arg&& arg, std::source_location location = std::source_location::current()) {
-  if constexpr (enable_debug) {
-    std::println("{}: {}", formatSourceLocation(location), std::forward<Arg>(arg));
-  }
-}
-
-template <typename Arg>
-void debug(NoLocation tag, Arg&& arg) {
-  if constexpr (enable_debug) {
-    std::println("{}", std::forward<Arg>(arg));
-  }
-}
-
 template <typename... Args>
 [[noreturn]] void throwf(FormatWithLocation<Args...> fmt_location, Args&&... args) {
   auto& [fmt, location] = fmt_location;
@@ -144,13 +146,30 @@ void throwf(First condition, FormatWithLocation<Args...> fmt_location, Args&&...
   }
 }
 
-void test() {
-  constexpr auto location = std::source_location::current();
-  constexpr auto func = location.function_name();
-  // debugf(NoLocation{}, "{}", "no location");
-  debugs("{}", "with location");
-  throwf("asdfads{}", "");
-  throwf(true, "");
+namespace macro {
+template <typename... Args>
+auto getTuple(Args&&... args) -> std::tuple<Args&&...> {
+  return std::tuple<Args&&...>{ std::forward<Args>(args)... };
 }
+
+template <typename... Args>
+auto nameTupleFormat(std::string_view names, std::tuple<Args...> args) -> std::string {
+  auto splited_names = //
+    names | views::split(',') | views::transform([&](auto str) {
+      // trim left
+      // if trim right, need construct a string
+      // std::isspace has 2 overload, so can not directly pass to drop_while
+      auto view = str | views::drop_while([](char c) { return std::isspace(c); });
+      return std::string_view{ view.begin(), view.end() };
+    });
+  auto iter = splited_names.begin();
+  auto str = std::string{};
+  toy::templateForEach<sizeof...(Args)>([&]<size_t index>() {
+    str += std::format("\"{}\": {}, ", *iter++, std::get<index>(args));
+  });
+  return str;
+}
+
+} // namespace macro
 
 } // namespace toy
