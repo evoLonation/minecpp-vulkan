@@ -129,21 +129,42 @@ template <typename... Args>
 debugs(Args&&... args) -> debugs<Args...>;
 
 template <typename... Args>
+[[noreturn]] void throwf(
+  std::optional<std::source_location> tag, std::format_string<Args...> fmt, Args&&... args
+) {
+  auto msg = std::format(std::move(fmt), std::forward<Args>(args)...);
+  if (tag) {
+    throw std::runtime_error{
+      std::format("{}: {}", formatSourceLocation(tag.value()), std::move(msg))
+    };
+  } else {
+    throw std::runtime_error{ std::move(msg) };
+  }
+}
+
+template <typename Condition, typename... Args>
+  requires std::same_as<std::decay_t<Condition>, bool>
+void throwf(
+  std::optional<std::source_location> tag,
+  Condition                           condition,
+  std::format_string<Args...>         fmt,
+  Args&&... args
+) {
+  if (!condition) {
+    throwf(tag, std::move(fmt), std::forward<Args>(args)...);
+  }
+}
+
+template <typename... Args>
 [[noreturn]] void throwf(FormatWithLocation<Args...> fmt_location, Args&&... args) {
   auto& [fmt, location] = fmt_location;
-  throw std::runtime_error{ std::format(
-    "{}: {}", formatSourceLocation(location), std::format(fmt, std::forward<Args>(args)...)
-  ) };
+  throwf(location, fmt, std::forward<Args>(args)...);
 }
 template <typename First, typename... Args>
   requires std::same_as<std::decay_t<First>, bool>
 void throwf(First condition, FormatWithLocation<Args...> fmt_location, Args&&... args) {
   auto& [fmt, location] = fmt_location;
-  if (!condition) {
-    throw std::runtime_error{ std::format(
-      "{}: {}", formatSourceLocation(location), std::format(fmt, std::forward<Args>(args)...)
-    ) };
-  }
+  throwf(location, condition, std::move(fmt), std::forward<Args>(args)...);
 }
 
 namespace macro {
