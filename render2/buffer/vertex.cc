@@ -25,64 +25,34 @@ auto vk::device_checkers::vertex(vk::DeviceCapabilityBuilder& builder) -> bool {
 }
 
 DeviceLocalBuffer::DeviceLocalBuffer(
-  VkBufferUsageFlags usage, vk::Scope dst_scope, std::span<const std::byte> buffer_data
-) {
-  auto& ctx = vk::Device::getInstance();
-
-  auto buffer_size = (uint32)buffer_data.size();
-  _staging_buffer = { buffer_data };
-
-  vk::Buffer::operator=({
-    buffer_size,
+  VkBufferUsageFlags usage, std::span<const std::byte> buffer_data
+): vk::Buffer{
+    buffer_data.size(),
     usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-  });
-  _tracker = { get() };
+  }, _staging_buffer{buffer_data} {
 
   auto& copy_executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::TRANSFER];
-  auto& graphcis_executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::GRAPHICS];
 
-  _tracker.setNewScope(
+  getTracker().setNewScope(
     vk::Scope{
       .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
       .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
     },
     copy_executor.getFamily()
   );
-  auto barrier = _tracker.syncScope(dst_scope, graphcis_executor.getFamily());
-  auto& [release, acquire, _] = std::get<vk::FamilyTransferRecorder>(barrier);
 
   auto copy_recorder = [&](VkCommandBuffer cmdbuf) {
-    vk::recordCopyBuffer(cmdbuf, _staging_buffer, *this, buffer_size);
-    release(cmdbuf);
+    vk::recordCopyBuffer(cmdbuf, _staging_buffer, *this, buffer_data.size());
   };
-  auto waitable = copy_executor.submit(copy_recorder);
-  graphcis_executor.submit(vk::CommandBatch{
-    .recorder = std::move(acquire),
-    .waits = { { &waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
-  });
+  copy_executor.submit(copy_recorder);
 }
 
 VertexBuffer::VertexBuffer(std::span<const std::byte> vertex_data, VertexInfo vertex_info)
-  : DeviceLocalBuffer(
-      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-      vk::Scope{
-        .stage_mask = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
-        .access_mask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
-      },
-      vertex_data
-    ),
-    _vertex_info(vertex_info) {}
+  : DeviceLocalBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, vertex_data), _vertex_info(vertex_info) {}
 
 IndexBuffer::IndexBuffer(std::span<const uint16_t> indices)
-  : DeviceLocalBuffer(
-      VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-      vk::Scope{
-        .stage_mask = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
-        .access_mask = VK_ACCESS_INDEX_READ_BIT,
-      },
-      std::as_bytes(indices)
-    ),
+  : DeviceLocalBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, std::as_bytes(indices)),
     _index_number(indices.size()) {}
 
 } // namespace rd

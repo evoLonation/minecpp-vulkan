@@ -16,15 +16,14 @@ struct MipRange {
 
 auto getSubresourceRange(VkImageAspectFlags aspect, MipRange mip_range) -> VkImageSubresourceRange;
 
-auto getSubresourceLayers(VkImageAspectFlags aspect, uint32 mip_level)
-  -> VkImageSubresourceLayers;
+auto getSubresourceLayers(VkImageAspectFlags aspect, uint32 mip_level) -> VkImageSubresourceLayers;
 
 auto createImage(
   VkFormat              format,
-  uint32              width,
-  uint32              height,
+  uint32                width,
+  uint32                height,
   VkImageUsageFlags     usage,
-  uint32              mip_levels,
+  uint32                mip_levels,
   VkSampleCountFlagBits sample_count
 ) -> rs::Image;
 
@@ -36,11 +35,11 @@ public:
   Image() = default;
   Image(
     VkFormat              format,
-    uint32              width,
-    uint32              height,
+    uint32                width,
+    uint32                height,
     VkImageUsageFlags     usage,
     VkImageAspectFlags    aspect,
-    uint32              mip_levels,
+    uint32                mip_levels,
     VkSampleCountFlagBits sample_count
   );
   auto        image_view() const -> VkImageView { return _image_view; }
@@ -59,16 +58,16 @@ void copyBufferToImage(
   VkBuffer              buffer,
   VkImage               image,
   VkImageAspectFlagBits aspect,
-  uint32              width,
-  uint32              height,
-  uint32              mip_level
+  uint32                width,
+  uint32                height,
+  uint32                mip_level
 );
 
 struct ImageBlit {
   VkImage               image;
   VkImageAspectFlagBits aspect;
   VkImageLayout         layout;
-  uint32              mip_level;
+  uint32                mip_level;
   VkExtent2D            extent;
 };
 

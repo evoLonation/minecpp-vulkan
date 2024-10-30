@@ -6,12 +6,13 @@ import toy;
 import <vulkan_config.h>;
 import render.vk.resource;
 import render.vk.memory;
+import render.vk.image2;
+import render.vk.descriptor;
 
 export namespace rd::vk {
 
-class Buffer : public rs::Buffer {
+class Buffer : public rs::Buffer, public BufferManager {
 public:
-  Buffer() = default;
   Buffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage, VkMemoryPropertyFlags property_flags);
   auto memory() const -> VkDeviceMemory { return _memory; }
 
@@ -21,7 +22,6 @@ private:
 
 class HostVisibleBuffer : public Buffer {
 public:
-  HostVisibleBuffer() = default;
   HostVisibleBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage)
     : Buffer(buffer_size, usage, HostVisibleMemory::propreties), _memory(Buffer::memory()) {}
   HostVisibleBuffer(std::span<const std::byte> buffer_data, VkBufferUsageFlags usage)
@@ -37,7 +37,6 @@ private:
 
 class StagingBuffer : public HostVisibleBuffer {
 public:
-  StagingBuffer() = default;
   StagingBuffer(VkDeviceSize buffer_size)
     : HostVisibleBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT) {}
   StagingBuffer(std::span<const std::byte> buffer_data)
@@ -47,7 +46,7 @@ public:
 template <typename DataType>
   requires std::is_trivially_copyable_v<DataType>
 // using DataType = float;
-class UniformBuffer : public HostVisibleBuffer {
+class UniformBuffer : public HostVisibleBuffer, public DescriptorResource {
 public:
   UniformBuffer() = default;
   UniformBuffer(DataType& data)
@@ -64,6 +63,15 @@ public:
       memory().fill(cached_bytes);
     }
   }
+
+  auto getInfo() -> ResourceInfo override {
+    return VkDescriptorBufferInfo{
+      .buffer = get(),
+      .offset = 0,
+      .range = VK_WHOLE_SIZE,
+    };
+  }
+  auto getTracker() -> Tracker override { return &HostVisibleBuffer::getTracker(); }
 
 private:
   DataType  _cache_data;

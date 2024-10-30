@@ -11,7 +11,9 @@ import render.vk.resource;
 import render.vk.executor;
 import render.vk.queue_requestor;
 import render.vk.image;
-import render.vk.render_pass;
+import render.vk.render_pass2;
+import render.vk.image2;
+import render.vk.descriptor;
 import render.vk.buffer;
 import render.vk.presentation;
 import render.context;
@@ -48,81 +50,72 @@ int main() {
     auto& swapchain = presentation.getSwapchain();
     toy::throwf(swapchain.isValid(), "the swapchain is not valid");
 
-    auto render_pass_info = rd::vk::RenderPassInfo{
-      .attachments = {
-        rd::vk::AttachmentInfo{
-          .format = swapchain.getFormat(),
-          .sample_count = sample_count,
-          .keep_old_content = false,
-          .keep_new_content = false,
-        },
-        rd::vk::AttachmentInfo{
-          .format = swapchain.getFormat(),
-          .sample_count = VK_SAMPLE_COUNT_1_BIT,
-          .keep_old_content = false,
-          .keep_new_content = true,
-        },
-        rd::vk::AttachmentInfo{
-          .format = depth_format,
-          // .sample_count = VK_SAMPLE_COUNT_1_BIT,
-          .sample_count = sample_count,
-          .keep_old_content = false,
-          .keep_new_content = false,
-        },
+    using BindingInfo = rd::vk::DescriptorSetLayout::BindingInfo;
+    auto dset_pool_model = rd::vk::DescriptorPool{ std::vector{ BindingInfo{
+      .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+      .stage = VK_SHADER_STAGE_VERTEX_BIT,
+      .count = 1,
+    } } };
+    auto dset_pool_camera = rd::vk::DescriptorPool{ std::vector{
+      BindingInfo{
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .count = 1,
       },
-      .subpasses = {
-        rd::vk::SubpassInfo{
-          .colors = {0},
-          .inputs = {},
-          .multi_sample = {{
-            .resolves = {1},
-            .sample_count = sample_count,
-          }},
-          .depst_info = {{
-            .attachment = 2,
-            .depth_option = {
-              .compare_op = VK_COMPARE_OP_LESS,
-              .overwrite = false,
-            },
-          }},
-          .vertex_shader_name = "hello.vert",
-          .frag_shader_name = "hello.frag",
-          .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-          .vertex_info = model::Vertex::getVertexInfo(),
-          .descriptor_sets = {
-            rd::vk::DescriptorSetInfo{
-              .descriptors = {
-                rd::vk::DescriptorInfo{
-                  .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                  .stage = VK_SHADER_STAGE_VERTEX_BIT,
-                  .count = 1,
-                },
-              },
-            },
-            rd::vk::DescriptorSetInfo{
-              .descriptors = {
-                rd::vk::DescriptorInfo{
-                  .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                  .stage = VK_SHADER_STAGE_VERTEX_BIT,
-                  .count = 1,
-                },
-                rd::vk::DescriptorInfo{
-                  .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                  .stage = VK_SHADER_STAGE_VERTEX_BIT,
-                  .count = 1,
-                },
-              },
-            },
-            rd::vk::DescriptorSetInfo{
-              .descriptors = {rd::vk::DescriptorInfo{
-                  .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                  .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-                  .count = 1,
-              }},
-            },
+      BindingInfo{
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .count = 1,
+      },
+    } };
+    auto dset_pool_texture = rd::vk::DescriptorPool{ std::vector{ BindingInfo{
+      .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+      .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+      .count = 1,
+    } } };
+
+    auto attachment_infos = std::vector<rd::vk::AttachmentInfo>{
+      rd::vk::AttachmentInfo{
+        .format = swapchain.getFormat(),
+        .sample_count = sample_count,
+        .keep_old_content = false,
+        .keep_new_content = false,
+      },
+      rd::vk::AttachmentInfo{
+        .format = swapchain.getFormat(),
+        .sample_count = VK_SAMPLE_COUNT_1_BIT,
+        .keep_old_content = false,
+        .keep_new_content = true,
+      },
+      rd::vk::AttachmentInfo{
+        .format = depth_format,
+        // .sample_count = VK_SAMPLE_COUNT_1_BIT,
+        .sample_count = sample_count,
+        .keep_old_content = false,
+        .keep_new_content = false,
+      },
+    };
+    auto subpass_infos = std::vector<rd::vk::SubpassPipelineInfo>{
+      rd::vk::SubpassPipelineInfo{
+        .colors = {0},
+        .inputs = {},
+        .multi_sample = {{
+          .resolves = {1},
+          .sample_count = sample_count,
+        }},
+        .depst = {{
+          .attachment = 2,
+          .depth_option = {
+            .compare_op = VK_COMPARE_OP_LESS,
+            .overwrite = false,
           },
-        },
-      },
+        }},
+        .vertex_shader_name = "hello.vert",
+        .frag_shader_name = "hello.frag",
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .vertex_info = model::Vertex::getVertexInfo(),
+        .dset_layouts = { dset_pool_model, dset_pool_camera, dset_pool_texture },
+      }
     };
 
     auto model_data = trans::model::create(glm::vec3{ 0.0f, 0.0f, 0.0f });
@@ -135,49 +128,26 @@ int main() {
       .height = swapchain.getExtent().height,
     });
     auto proj_uniform = rd::vk::UniformBuffer{ proj_data };
-    auto sampled_texture =
-      rd::SampledTexture{ "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT };
+    auto sampled_texture = rd::SampledTexture::create(
+      "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+    );
     auto [vertexes, indices] = model::getModelInfo("model/viking_room.obj");
     auto vertex_buffer = rd::VertexBuffer{ vertexes };
     auto index_buffer = rd::IndexBuffer{ indices };
 
-    auto render_pass = rd::vk::RenderPass{ render_pass_info };
-    auto dset_pool = rd::vk::DescriptorPool{
-      3,
-      std::vector{
-        VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 },
-        VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
-      }
-    };
-    auto dset_model = rd::vk::DescriptorSet{ dset_pool, render_pass[0], 0 };
-    dset_model[0] = model_uniform;
-    auto dset_camera = rd::vk::DescriptorSet{ dset_pool, render_pass[0], 1 };
-    dset_camera[0] = view_uniform;
-    dset_camera[1] = proj_uniform;
-    auto dset_texture = rd::vk::DescriptorSet{ dset_pool, render_pass[0], 2 };
-    dset_texture[0] = sampled_texture;
+    auto render_pass = rd::vk::RenderPassManager{ attachment_infos, subpass_infos };
+    auto dset_model = rd::vk::ResourceSet{ &dset_pool_model, { &model_uniform } };
+    auto dset_camera = rd::vk::ResourceSet{ &dset_pool_camera, { &view_uniform, &proj_uniform } };
+    auto dset_texture = rd::vk::ResourceSet{ &dset_pool_texture, { &sampled_texture } };
 
     struct FramebufferResource {
-      rd::vk::Image                    sample_image;
-      rd::vk::ImageBarrierTracker      sample_image_tracker;
-      rd::vk::Image                    depth_image;
-      rd::vk::ImageBarrierTracker      depth_image_tracker;
-      std::vector<rd::vk::Framebuffer> framebuffers;
-
-      auto operator=(FramebufferResource&& other) = delete;
-
-      void clear() {
-        depth_image_tracker = {};
-        sample_image_tracker = {};
-        framebuffers.clear();
-        depth_image = {};
-        sample_image = {};
-      }
-      ~FramebufferResource() { clear(); }
+      rd::vk::Image        sample_image;
+      rd::vk::ImageManager sample_image_manager;
+      rd::vk::Image        depth_image;
+      rd::vk::ImageManager depth_image_manager;
     };
-    auto framebuffer_resource = FramebufferResource{};
     auto createFramebuffers = [&]() {
-      framebuffer_resource.sample_image = rd::vk::Image{
+      auto sample_image = rd::vk::Image{
         swapchain.getFormat(),
         swapchain.getExtent().width,
         swapchain.getExtent().height,
@@ -186,11 +156,9 @@ int main() {
         1,
         sample_count,
       };
-      framebuffer_resource.sample_image_tracker = rd::vk::ImageBarrierTracker{
-        framebuffer_resource.sample_image,
-        rd::vk::getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, { 0, 1 }),
-      };
-      framebuffer_resource.depth_image = rd::vk::Image{
+      auto sample_image_manager =
+        rd::vk::ImageManager{ sample_image, sample_image.image_view(), VK_IMAGE_ASPECT_COLOR_BIT };
+      auto depth_image = rd::vk::Image{
         depth_format,
         swapchain.getExtent().width,
         swapchain.getExtent().height,
@@ -199,25 +167,16 @@ int main() {
         1,
         sample_count,
       };
-      framebuffer_resource.depth_image_tracker = rd::vk::ImageBarrierTracker{
-        framebuffer_resource.depth_image,
-        rd::vk::getSubresourceRange(VK_IMAGE_ASPECT_DEPTH_BIT, { 0, 1 }),
+      auto depth_image_manager =
+        rd::vk::ImageManager{ depth_image, depth_image.image_view(), VK_IMAGE_ASPECT_DEPTH_BIT };
+      return FramebufferResource{
+        .sample_image = std::move(sample_image),
+        .sample_image_manager = std::move(sample_image_manager),
+        .depth_image = std::move(depth_image),
+        .depth_image_manager = std::move(depth_image_manager),
       };
-      framebuffer_resource.framebuffers = //
-        swapchain.getImageViews() | views::transform([&](VkImageView image_view) {
-          return rd::vk::Framebuffer{
-            render_pass,
-            swapchain.getExtent(),
-            std::array{
-              framebuffer_resource.sample_image.image_view(),
-              image_view,
-              framebuffer_resource.depth_image.image_view(),
-            },
-          };
-        }) |
-        ranges::to<std::vector>();
     };
-    createFramebuffers();
+    auto framebuffers = createFramebuffers();
 
     auto createResource = [&]() {
       proj_data = trans::proj::perspective({
@@ -225,10 +184,10 @@ int main() {
         .height = swapchain.getExtent().height,
       });
       proj_uniform.update();
-      createFramebuffers();
+      framebuffers = createFramebuffers();
     };
 
-    auto clear_values = std::array{
+    auto clear_values = std::vector{
       VkClearValue{ .color = { .float32 = { 0.5f, 0.5f, 0.5f, 1.0f } } },
       VkClearValue{ .color = { .float32 = { 1.0f, 1.0f, 1.0f, 1.0f } } },
       VkClearValue{ .depthStencil = { .depth = 1.0f, } },
@@ -243,44 +202,26 @@ int main() {
         for (auto& image : presentation.getImages()) {
           image.waitIdle();
         }
-        framebuffer_resource.clear();
+        // framebuffer_resource.clear();
         if (presentation.recreate()) {
           createResource();
         }
       } else {
         auto& context = res.value();
-        render_pass[0].recorder = [&](rd::vk::Pipeline::Recorder& recorder) {
-          recorder.init();
-          recorder.vertex_buffer = vertex_buffer;
-          recorder.index_buffer = index_buffer;
-          recorder.descriptor_set[0] = dset_model;
-          recorder.descriptor_set[1] = dset_camera;
-          recorder.descriptor_set[2] = dset_texture;
-          recorder.draw();
-        };
-        render_pass.syncAttachments(
-          std::array{
-            &framebuffer_resource.sample_image_tracker,
-            context.tracker,
-            &framebuffer_resource.depth_image_tracker,
-          },
-          VK_NULL_HANDLE
-        );
-        auto& graphics_executor =
-          rd::vk::CommandExecutorManager::getInstance()[rd::vk::FamilyType::GRAPHICS];
-        graphics_executor.submit([&](auto cmdbuf) {
-          render_pass.recordDraw(
-            cmdbuf, framebuffer_resource.framebuffers[context.image_index], clear_values
-          );
+        render_pass.setRecorder(0, [&](rd::vk::PipelineDrawer drawer) {
+          drawer.bindVertexBuffer(&vertex_buffer);
+          drawer.bindIndexBuffer(&index_buffer);
+          drawer.bindResourceSet(0, &dset_model);
+          drawer.bindResourceSet(1, &dset_camera);
+          drawer.bindResourceSet(2, &dset_texture);
+          drawer.draw();
         });
-        render_pass.updateAttachmentsScope(
-          std::array{
-            &framebuffer_resource.sample_image_tracker,
-            context.tracker,
-            &framebuffer_resource.depth_image_tracker,
-          },
-          graphics_executor.getFamily()
-        );
+        auto attachments = std::array{
+          &framebuffers.sample_image_manager,
+          context.image_manager,
+          &framebuffers.depth_image_manager,
+        };
+        render_pass.recordDraw(attachments, clear_values, swapchain.getExtent());
 
         count++;
         if (count % 1000 == 0) {

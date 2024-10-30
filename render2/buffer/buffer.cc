@@ -16,8 +16,8 @@ auto createBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage) -> rs::Buf
 
 Buffer::Buffer(
   VkDeviceSize buffer_size, VkBufferUsageFlags usage, VkMemoryPropertyFlags property_flags
-) {
-  rs::Buffer::operator=(createBuffer(buffer_size, usage));
+)
+  : rs::Buffer{ createBuffer(buffer_size, usage) }, BufferManager{ this->get() } {
   _memory = { get(), property_flags };
 }
 

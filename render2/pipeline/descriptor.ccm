@@ -3,6 +3,9 @@ import std;
 import toy;
 
 import render.vk.resource;
+import render.vk.executor;
+import render.vk.device;
+import render.vk.tracker;
 
 import <vulkan_config.h>;
 
@@ -38,22 +41,59 @@ private:
   std::vector<BindingInfo> _infos;
 };
 
-class DescriptorPool {
+/**
+ * @brief when consumed by some batch, need add the waitable to dset and call waitIdle to
+ * wait all batches to execution done
+ * note: can not destruct when has valid handle, need recycled by pool
+ *
+ * @param waitable
+ * @return auto
+ */
+class DescriptorSet : public rs::DescriptorSet {
 public:
-  DescriptorPool(DescriptorSetLayout& layout)
-    : DescriptorPool{
-        layout.get(),
-        layout.getInfo() | views::transform([](auto info) {
-          return VkDescriptorPoolSize{
-            .type = info.type,
-            .descriptorCount = info.count,
-          };
-        }) |
-          ranges::to<std::vector>(),
-      } {}
+  DescriptorSet(rs::DescriptorSet dset, DescriptorSetLayout* layout)
+    : rs::DescriptorSet{ std::move(dset) }, _layout{ layout } {}
 
-  DescriptorPool(VkDescriptorSetLayout layout, std::vector<VkDescriptorPoolSize> pool_sizes) {
-    _pool_sizes = std::move(pool_sizes);
+  void addWaitable(std::shared_ptr<Waitable> waitable) {
+    removeIdles();
+    _waitables.push_back(std::move(waitable));
+  }
+  void waitIdle() {
+    for (auto& w : _waitables) {
+      w->wait(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    }
+    _waitables.clear();
+  }
+  auto isIdle() -> bool {
+    removeIdles();
+    return _waitables.empty();
+  }
+
+  auto getInfo() -> std::span<DescriptorSetLayout::BindingInfo const> { return _layout->getInfo(); }
+
+private:
+  DescriptorSetLayout* _layout;
+
+  std::vector<std::shared_ptr<Waitable>> _waitables;
+
+  void removeIdles() {
+    auto new_end = std::remove_if(_waitables.begin(), _waitables.end(), [](auto& w) {
+      return w->wait(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0);
+    });
+    _waitables.erase(new_end, _waitables.end());
+  }
+};
+
+class DescriptorPool : public DescriptorSetLayout {
+public:
+  DescriptorPool(std::vector<BindingInfo> infos) : DescriptorSetLayout(std::move(infos)) {
+    _pool_sizes = getInfo() | views::transform([](auto info) {
+                    return VkDescriptorPoolSize{
+                      .type = info.type,
+                      .descriptorCount = info.count,
+                    };
+                  }) |
+                  ranges::to<std::vector>();
     for (auto& pool_size : _pool_sizes) {
       pool_size.descriptorCount *= _allocate_count;
     }
@@ -63,26 +103,25 @@ public:
       .poolSizeCount = static_cast<uint32>(_pool_sizes.size()),
       .pPoolSizes = _pool_sizes.data(),
     };
-    _dset_layouts.append_range(views::repeat(layout) | views::take(_allocate_count));
+    _dset_layouts.append_range(views::repeat(get()) | views::take(_allocate_count));
   }
-  auto allocate() -> rs::DescriptorSet {
-    tryShrink();
-    if (_pool_counts.end()->first == 0) {
+  auto allocate() -> DescriptorSet {
+    if (_pool_counts.empty() || _pool_counts.begin()->first == 0) {
+      workingToIdle();
+    } else {
+      tryShrink();
+    }
+    if (_pool_counts.empty() || _pool_counts.begin()->first == 0) {
       expand();
     }
-    auto  pool_handle = _pool_counts.extract(--_pool_counts.end()).value().second;
+    auto  pool_handle = _pool_counts.extract(_pool_counts.begin()).value().second;
     auto& dsets = _resources.at(pool_handle).second;
     auto  dset = dsets.exit();
     _pool_counts.emplace(dsets.size(), dsets.getPool());
-    return dset;
+    return { std::move(dset), this };
   }
 
-  void recycle(rs::DescriptorSet dset) {
-    auto& dsets = _resources.at(dset.getPool()).second;
-    _pool_counts.extract(std::pair{ dsets.size(), dsets.getPool() });
-    dsets.join(std::move(dset));
-    _pool_counts.emplace(dsets.size(), dsets.getPool());
-  }
+  void recycle(DescriptorSet dset) { _working_resources.push_back(std::move(dset)); }
 
   DescriptorPool(const DescriptorPool&) noexcept = delete;
   DescriptorPool(DescriptorPool&&) noexcept = delete;
@@ -90,14 +129,18 @@ public:
   auto operator=(DescriptorPool&&) noexcept -> DescriptorPool& = delete;
 
 private:
-  std::set<std::pair<size_t, VkDescriptorPool>> _pool_counts;
+  std::set<std::pair<size_t, VkDescriptorPool>, std::greater<>> _pool_counts;
   using PoolResource = std::pair<rs::DescriptorPool, rs::DescriptorSets>;
   std::unordered_map<VkDescriptorPool, PoolResource> _resources;
+  std::vector<DescriptorSet>                         _working_resources;
 
-  VkDescriptorPoolCreateInfo         _pool_info;
+  // used for create resources
+  VkDescriptorPoolCreateInfo _pool_info;
+  // all the same
   std::vector<VkDescriptorSetLayout> _dset_layouts;
   std::vector<VkDescriptorPoolSize>  _pool_sizes;
-  static constexpr auto              _allocate_count = 5;
+
+  static constexpr auto _allocate_count = 5;
 
   void expand() {
     auto pool = rs::DescriptorPool{ _pool_info };
@@ -107,8 +150,9 @@ private:
       .descriptorSetCount = static_cast<uint32_t>(_dset_layouts.size()),
       .pSetLayouts = _dset_layouts.data(),
     } };
-    _pool_counts.emplace(_allocate_count, pool);
-    _resources.emplace(pool, std::pair{ std::move(pool), std::move(dsets) });
+    auto handle = pool.get();
+    _pool_counts.emplace(_allocate_count, handle);
+    _resources.emplace(handle, std::pair{ std::move(pool), std::move(dsets) });
   }
 
   void tryShrink() {
@@ -123,37 +167,151 @@ private:
       iter = _pool_counts.erase(iter);
     }
   }
+
+  void workingToIdle() {
+    auto new_end =
+      std::remove_if(_working_resources.begin(), _working_resources.end(), [](auto& dset) {
+        return dset.isIdle();
+      });
+    for (auto& dset : ranges::subrange{ new_end, _working_resources.end() }) {
+      auto& dsets = _resources.at(dset.getPool()).second;
+      _pool_counts.extract(std::pair{ dsets.size(), dsets.getPool() });
+      dsets.join(std::move(dset));
+      _pool_counts.emplace(dsets.size(), dsets.getPool());
+    }
+    _working_resources.erase(new_end, _working_resources.end());
+  }
 };
 
-struct Descriptor {};
+// class DescriptorManager {
+// public:
+//   using BindingInfo = DescriptorSetLayout::BindingInfo;
+//   DescriptorManager(std::vector<BindingInfo> infos)
+//     : _layout{ std::move(infos) }, _pool{ _layout } {}
 
-class DescriptorSet {
+//   auto getLayoutInfo() -> std::span<BindingInfo const> { return _layout.getInfo(); }
+//   auto getPool() -> DescriptorPool& { return _pool; }
+//   DescriptorManager(const DescriptorManager&) noexcept = delete;
+//   DescriptorManager(DescriptorManager&&) noexcept = delete;
+//   auto operator=(const DescriptorManager&) noexcept -> DescriptorManager& = delete;
+//   auto operator=(DescriptorManager&&) noexcept -> DescriptorManager& = delete;
+
+// private:
+//   DescriptorSetLayout _layout;
+//   DescriptorPool      _pool;
+// };
+
+class DescriptorSetRecyclable : public DescriptorSet {
 public:
-  DescriptorSet(DescriptorPool* pool) {
-    _pool = pool;
-    _dset = pool->allocate();
+  DescriptorSetRecyclable(DescriptorPool* pool) : DescriptorSet{ pool->allocate() }, _pool(pool) {}
+  ~DescriptorSetRecyclable() { recycle(); }
+  DescriptorSetRecyclable(DescriptorSetRecyclable&&) noexcept = default;
+  auto operator=(DescriptorSetRecyclable&& a) noexcept -> DescriptorSetRecyclable& {
+    recycle();
+    DescriptorSet::operator=(std::move(a));
+    _pool = a._pool;
+    return *this;
   }
-  ~DescriptorSet() {
-    if (_dset.get()) {
-      _pool->recycle(std::move(_dset));
-    }
-  }
-
-  class Updater {
-  public:
-    void operator=(Descriptor desp);
-    void operator=(std::initializer_list<Descriptor> desp) { *this = { desp, Descriptor{} }; }
-    void operator=(
-      std::initializer_list<std::variant<std::initializer_list<Descriptor>, Descriptor>> desp
-    );
-  };
-
-  auto operator[](size_t index) -> Updater;
-  auto operator[](size_t index, size_t offset) -> Updater;
 
 private:
-  rs::DescriptorSet _dset;
-  DescriptorPool*   _pool;
+  void recycle() {
+    if (get()) {
+      _pool->recycle(std::move(*this));
+    }
+  }
+  DescriptorPool* _pool;
 };
+
+struct DescriptorResource {
+  using ResourceInfo = std::variant<VkDescriptorImageInfo, VkDescriptorBufferInfo>;
+  virtual auto getInfo() -> ResourceInfo = 0;
+  using Tracker = std::variant<ImageBarrierTracker*, BufferBarrierTracker*>;
+  virtual auto getTracker() -> Tracker = 0;
+};
+
+struct ResourceBinding {
+  ResourceBinding(std::initializer_list<DescriptorResource*> resources) : resources{ resources } {}
+  ResourceBinding(DescriptorResource* resource) : resources{ resource } {}
+  std::vector<DescriptorResource*> resources;
+};
+
+class ResourceSet : public DescriptorSetRecyclable {
+public:
+  ResourceSet(DescriptorPool* pool, std::initializer_list<ResourceBinding> bindings)
+    : DescriptorSetRecyclable(pool) {
+    auto write_infos = std::vector<VkWriteDescriptorSet>{};
+    auto all_image_infos = std::vector<std::vector<VkDescriptorImageInfo>>{};
+    auto all_buffer_infos = std::vector<std::vector<VkDescriptorBufferInfo>>{};
+    for (auto [binding_i, binding] : bindings | toy::enumerate) {
+      for (auto [array_i, resource] : binding.resources | toy::enumerate) {
+        _resources.push_back({ binding_i, array_i, resource });
+      }
+      auto resource_infos = binding.resources |
+                            views::transform([](auto* resource) { return resource->getInfo(); }) |
+                            ranges::to<std::vector>();
+      auto write_info = VkWriteDescriptorSet{
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = get(),
+        .dstBinding = binding_i,
+        // 数组起始索引
+        .dstArrayElement = 0,
+        .descriptorCount = static_cast<uint32>(resource_infos.size()),
+        .descriptorType = pool->getInfo()[binding_i].type,
+      };
+      if (ranges::all_of(resource_infos, [](auto& info) {
+            return std::holds_alternative<VkDescriptorImageInfo>(info);
+          })) {
+        all_image_infos.push_back(
+          resource_infos |
+          views::transform([](auto& info) { return std::get<VkDescriptorImageInfo>(info); }) |
+          ranges::to<std::vector>()
+        );
+        write_info.pImageInfo = all_image_infos.back().data();
+      } else if (ranges::all_of(resource_infos, [](auto& info) {
+                   return std::holds_alternative<VkDescriptorBufferInfo>(info);
+                 })) {
+        all_buffer_infos.push_back(
+          resource_infos |
+          views::transform([](auto& info) { return std::get<VkDescriptorBufferInfo>(info); }) |
+          ranges::to<std::vector>()
+        );
+        write_info.pBufferInfo = all_buffer_infos.back().data();
+      } else {
+        toy::throwf("different resource type in same binding");
+      }
+      write_infos.push_back(write_info);
+    }
+    vkUpdateDescriptorSets(
+      Device::getInstance(), write_infos.size(), write_infos.data(), 0, nullptr
+    );
+  }
+  struct ResourceInfo {
+    uint32              binding_i;
+    uint32              array_i;
+    DescriptorResource* resource;
+  };
+  auto getResources() const -> std::span<ResourceInfo const> { return _resources; }
+
+private:
+  std::vector<ResourceInfo> _resources;
+};
+
+// struct SampledTexture : DescriptorResource {
+//   auto getInfo() -> std::variant<VkDescriptorImageInfo, VkDescriptorBufferInfo> override {
+//     return VkDescriptorImageInfo{};
+//   }
+// };
+
+// class DescriptorUpdater {
+// public:
+//   DescriptorUpdater(std::initializer_list<ResourceBinding> bindings) : _bindings{ bindings } {}
+//   std::vector<ResourceBinding> _bindings;
+// };
+
+// void test() {
+//   auto a = SampledTexture{};
+//   auto b = ResourceBinding{ &a, &a };
+//   auto c = DescriptorUpdater{ b, &a, { &a, &a } };
+// }
 
 } // namespace rd::vk

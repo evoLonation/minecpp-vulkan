@@ -11,9 +11,9 @@ export namespace rd::vk {
 
 using BarrierRecorder = std::function<void(VkCommandBuffer)>;
 struct FamilyTransferRecorder {
-  std::function<void(VkCommandBuffer)> release;
-  std::function<void(VkCommandBuffer)> acquire;
-  uint32                               release_family;
+  std::function<void(VkCommandBuffer)>   release;
+  std::function<CommandBatch(Waitable*)> acquire_getter;
+  uint32                                 release_family;
 };
 
 struct ImageAdditionalInfo {
@@ -47,6 +47,7 @@ public:
     }
   }
   auto valid() -> bool { return _handle.get() != nullptr; }
+  // todo: syncScope maybe return empty when: multi reads and has no any writes before
   /**
    * @brief Sync the new scope to old scope(s)
    * For read scope, it will generate a dependency between last write scope
@@ -144,9 +145,17 @@ auto CommonBarrierTracker<IsImage>::generateRecorder(
           [handle, release_scopes, families, subresource, layouts](VkCommandBuffer cmdbuf) {
             recordImageBarrier(cmdbuf, handle, subresource, layouts, release_scopes, families);
           },
-        .acquire =
-          [handle, acquire_scopes, families, subresource, layouts](VkCommandBuffer cmdbuf) {
-            recordImageBarrier(cmdbuf, handle, subresource, layouts, acquire_scopes, families);
+        .acquire_getter =
+          [handle, acquire_scopes, families, subresource, layouts](Waitable* waitable) {
+            return CommandBatch{
+              .recorder =
+                [=](VkCommandBuffer cmdbuf) {
+                  recordImageBarrier(
+                    cmdbuf, handle, subresource, layouts, acquire_scopes, families
+                  );
+                },
+              .waits = { { waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
+            };
           },
         .release_family = _family,
       };
@@ -154,8 +163,14 @@ auto CommonBarrierTracker<IsImage>::generateRecorder(
       recorder = FamilyTransferRecorder{
         .release = [handle, release_scopes, families](VkCommandBuffer cmdbuf
                    ) { recordBufferBarrier(cmdbuf, handle, release_scopes, families); },
-        .acquire = [handle, acquire_scopes, families](VkCommandBuffer cmdbuf
-                   ) { recordBufferBarrier(cmdbuf, handle, acquire_scopes, families); },
+        .acquire_getter =
+          [handle, acquire_scopes, families](Waitable* waitable) {
+            return CommandBatch{
+              .recorder = [=](VkCommandBuffer cmdbuf
+                          ) { recordBufferBarrier(cmdbuf, handle, acquire_scopes, families); },
+              .waits = { { waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
+            };
+          },
         .release_family = _family,
       };
     }

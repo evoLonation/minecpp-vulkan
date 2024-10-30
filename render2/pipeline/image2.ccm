@@ -1,0 +1,41 @@
+export module render.vk.image2;
+
+import std;
+import toy;
+import render.vk.image;
+import render.vk.resource;
+import render.vk.tracker;
+
+import <vulkan_config.h>;
+
+export namespace rd::vk {
+
+class ImageManager {
+public:
+  ImageManager(VkImage image, VkImageView image_view, VkImageAspectFlags aspect)
+    : _image(image), _image_view(image_view),
+      _tracker(image, getSubresourceRange(aspect, MipRange{ 0, 1 })) {}
+
+  auto getImage() -> VkImage { return _image; }
+  auto getImageView() -> VkImageView { return _image_view; }
+  auto getTracker() -> ImageBarrierTracker& { return _tracker; }
+
+private:
+  VkImage             _image;
+  VkImageView         _image_view;
+  ImageBarrierTracker _tracker;
+};
+
+class BufferManager {
+public:
+  BufferManager(VkBuffer buffer) : _buffer(buffer), _tracker(buffer) {}
+
+  auto getBuffer() -> VkBuffer { return _buffer; }
+  auto getTracker() -> BufferBarrierTracker& { return _tracker; }
+
+private:
+  VkBuffer             _buffer;
+  BufferBarrierTracker _tracker;
+};
+
+} // namespace rd::vk

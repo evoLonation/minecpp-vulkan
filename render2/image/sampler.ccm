@@ -5,26 +5,44 @@ import render.vk.resource;
 import render.vk.device;
 import render.vk.image;
 import render.vk.buffer;
+import render.vk.descriptor;
+import render.vk.tracker;
 
 import std;
 import toy;
 
 export namespace rd {
 
-class SampledTexture {
+class SampledTexture : public vk::DescriptorResource {
 public:
-  SampledTexture() = default;
-  SampledTexture(const std::string& path, bool mipmap, VkPipelineStageFlagBits use_stage);
+  static auto create(const std::string& path, bool mipmap, VkPipelineStageFlagBits use_stage)
+    -> SampledTexture;
+  SampledTexture(
+    vk::StagingBuffer staging_buffer,
+    vk::Image         image,
+    vk::rs::Sampler   sampler,
+    vk::MipRange      mip_range
+  );
   auto image() const -> VkImage { return _image; }
   auto image_view() const -> VkImageView { return _image.image_view(); }
   auto sampler() const -> VkSampler { return _sampler; }
   auto getLayout() const -> VkImageLayout { return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; }
 
+  auto getInfo() -> ResourceInfo override {
+    return VkDescriptorImageInfo{
+      .sampler = sampler(),
+      .imageView = image_view(),
+      .imageLayout = getLayout(),
+    };
+  }
+  auto getTracker() -> Tracker override { return &_tracker; }
+
 private:
   vk::StagingBuffer _staging_buffer;
 
-  vk::Image       _image;
-  vk::rs::Sampler _sampler;
+  vk::Image               _image;
+  vk::ImageBarrierTracker _tracker;
+  vk::rs::Sampler         _sampler;
 
 private:
   static std::vector<VkFormat> _formats;

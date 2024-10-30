@@ -51,9 +51,8 @@ auto createSampler(float max_anisotropy) -> vk::rs::Sampler {
 
 decltype(SampledTexture::_formats) SampledTexture::_formats = { VK_FORMAT_R8G8B8A8_SRGB };
 
-SampledTexture::SampledTexture(
-  const std::string& path, bool mipmap, VkPipelineStageFlagBits use_stage
-) {
+auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStageFlagBits use_stage)
+  -> SampledTexture {
   auto& ctx = vk::Device::getInstance();
 
   // todo: just execute once in whole program
@@ -70,7 +69,7 @@ SampledTexture::SampledTexture(
   auto image_data = std::as_bytes(std::span{ pixels, image_size });
   toy::debugf("image {} info: width {}, height {}", path.data(), width, height);
 
-  _staging_buffer = { image_data };
+  auto staging_buffer = vk::StagingBuffer{ image_data };
 
   stbi_image_free(pixels);
 
@@ -86,11 +85,13 @@ SampledTexture::SampledTexture(
     mip_range.count = mip_levels;
   }
 
-  _image = vk::Image{
+  auto image = vk::Image{
     _formats[0], width, height, _usage, _aspect, mip_levels, VK_SAMPLE_COUNT_1_BIT,
   };
 
-  _sampler = createSampler(_max_anisotropy);
+  auto sampler = createSampler(_max_anisotropy);
+  auto texture =
+    SampledTexture{ std::move(staging_buffer), std::move(image), std::move(sampler), mip_range };
   auto& copy_executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::TRANSFER];
   auto& graphics_executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::GRAPHICS];
   auto  family_transfer =
@@ -99,7 +100,7 @@ SampledTexture::SampledTexture(
   auto recorder_copy = [&](VkCommandBuffer cmdbuf) {
     vk::recordImageBarrier(
       cmdbuf,
-      _image,
+      texture._image,
       vk::getSubresourceRange(_aspect, mip_range),
       { VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL },
       {
@@ -114,11 +115,13 @@ SampledTexture::SampledTexture(
       {}
     );
 
-    vk::copyBufferToImage(cmdbuf, _staging_buffer, _image, _aspect, width, height, 0);
+    vk::copyBufferToImage(
+      cmdbuf, texture._staging_buffer, texture._image, _aspect, width, height, 0
+    );
 
     vk::recordImageBarrier(
       cmdbuf,
-      _image,
+      texture._image,
       vk::getSubresourceRange(_aspect, mip_range),
       {
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -135,7 +138,7 @@ SampledTexture::SampledTexture(
   auto recorder_blit = [&](VkCommandBuffer cmdbuf) {
     vk::recordImageBarrier(
         cmdbuf,
-        _image,
+        texture._image,
         vk::getSubresourceRange(_aspect, mip_range),
         {
           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -155,7 +158,7 @@ SampledTexture::SampledTexture(
       for (auto dst_mip_level : views::iota(1u, mip_extents.size())) {
         vk::recordImageBarrier(
           cmdbuf,
-          _image,
+          texture._image,
           vk::getSubresourceRange(
             _aspect, vk::MipRange{ .base_level = dst_mip_level - 1, .count = 1 }
           ),
@@ -173,14 +176,14 @@ SampledTexture::SampledTexture(
         vk::blitImage(
           cmdbuf,
           vk::ImageBlit{
-            .image = _image,
+            .image = texture._image,
             .aspect = _aspect,
             .layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             .mip_level = dst_mip_level - 1,
             .extent = mip_extents[dst_mip_level - 1],
           },
           vk::ImageBlit{
-            .image = _image,
+            .image = texture._image,
             .aspect = _aspect,
             .layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             .mip_level = dst_mip_level,
@@ -190,7 +193,7 @@ SampledTexture::SampledTexture(
       }
       vk::recordImageBarrier(
         cmdbuf,
-        _image,
+        texture._image,
         vk::getSubresourceRange(_aspect, { .base_level = mip_levels - 1, .count = 1 }),
         { VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
         { vk::Scope{
@@ -205,7 +208,7 @@ SampledTexture::SampledTexture(
       );
       vk::recordImageBarrier(
         cmdbuf,
-        _image,
+        texture._image,
         vk::getSubresourceRange(_aspect, { .base_level = 0, .count = mip_levels - 1 }),
         { VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
         { vk::Scope{
@@ -222,12 +225,27 @@ SampledTexture::SampledTexture(
   };
 
   auto waitable = copy_executor.submit(recorder_copy);
-  auto fence = graphics_executor.submit(vk::CommandBatch{
+  graphics_executor.submit(vk::CommandBatch{
     .recorder = recorder_blit,
     .waits = { { &waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
   });
-  // todo: no need to wait, sync with sema
-  fence.wait(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+  texture._tracker.setNewScope(
+    vk::Scope{
+      .stage_mask = use_stage,
+      .access_mask = VK_ACCESS_SHADER_READ_BIT,
+    },
+    family_transfer.dst_family,
+    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+  );
+  return texture;
 }
+
+SampledTexture::SampledTexture(
+  vk::StagingBuffer staging_buffer, vk::Image image, vk::rs::Sampler sampler, vk::MipRange mip_range
+
+)
+  : _staging_buffer(std::move(staging_buffer)), _image(std::move(image)),
+    _tracker(_image, vk::getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, mip_range)),
+    _sampler(std::move(sampler)) {}
 
 }; // namespace rd

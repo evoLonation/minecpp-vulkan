@@ -121,15 +121,10 @@ private:
 
 class DeviceLocalBuffer : public vk::Buffer {
 private:
-  vk::StagingBuffer        _staging_buffer;
-  vk::BufferBarrierTracker _tracker;
+  vk::StagingBuffer _staging_buffer;
 
 public:
-  DeviceLocalBuffer() = default;
-
-  DeviceLocalBuffer(
-    VkBufferUsageFlags usage, vk::Scope dst_scope, std::span<const std::byte> buffer_data
-  );
+  DeviceLocalBuffer(VkBufferUsageFlags usage, std::span<const std::byte> buffer_data);
 };
 
 export class VertexBuffer : public DeviceLocalBuffer {
@@ -137,7 +132,6 @@ private:
   VertexInfo _vertex_info;
 
 public:
-  VertexBuffer() = default;
   template <ranges::contiguous_range R>
   VertexBuffer(R&& range) : VertexBuffer{ std::span<const ranges::range_value_t<R>>{ range } } {}
   template <toy::InstantiationOf<Vertex> VertexT>
@@ -159,7 +153,6 @@ private:
   int _index_number;
 
 public:
-  IndexBuffer() = default;
   IndexBuffer(std::span<const uint16_t> indices);
 
   auto getIndexNumber() -> uint32 { return _index_number; }

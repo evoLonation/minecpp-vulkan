@@ -11,3 +11,13 @@ module:
     provide: render.vk.shader_code
 - descriptor.ccm:
     provide: render.vk.descriptor
+- descriptor.cc:
+    implement: render.vk.descriptor
+- render_pass2.ccm:
+    provide: render.vk.render_pass2
+- pipeline.ccm:
+    provide: render.vk.pipeline
+- render_pass2.cc:
+    implement: render.vk.render_pass2
+- image2.ccm:
+    provide: render.vk.image2

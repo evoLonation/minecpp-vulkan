@@ -13,6 +13,7 @@ import render.vk.image;
 import render.vk.executor;
 import render.vk.reflections;
 import render.vk.swapchain;
+import render.vk.image2;
 
 export namespace rd::vk {
 
@@ -22,10 +23,8 @@ public:
   ~Presentation();
 
   struct Context {
-    uint32               image_index;
-    VkImage              image;
-    VkImageView          image_view;
-    ImageBarrierTracker* tracker;
+    uint32        image_index;
+    ImageManager* image_manager;
   };
   auto prepare() -> std::optional<Context>;
 
@@ -91,17 +90,15 @@ public:
    *  2) the image that need_release is false has present done. so just need call vkrelease for
    * images that need_release is true
    */
-  struct ImageContext {
+  struct ImageContext : public ImageManager {
     friend Presentation;
 
   private:
-    VkImage             image;
-    VkImageView         image_view;
-    ImageBarrierTracker tracker;
-    rs::Semaphore       present_wait_sema;
-    Fence               present_signal_fence;
-    bool                fence_waitable;
-    bool                need_release;
+    rs::Semaphore present_wait_sema;
+    Fence         present_signal_fence;
+    bool          fence_waitable;
+    bool          need_release;
+    bool          moved;
     ImageContext(VkImage image, VkImageView image_view);
 
   public:
@@ -114,8 +111,6 @@ public:
 
   public:
     void waitIdle(uint64 nano_timeout = std::numeric_limits<uint64>::max());
-    auto getImage() -> VkImage { return image; }
-    auto getImageView() -> VkImageView { return image_view; }
   };
 
 private:

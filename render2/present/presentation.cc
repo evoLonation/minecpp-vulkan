@@ -57,10 +57,10 @@ auto Presentation::prepare() -> std::optional<Context> {
   auto  image = _swapchain.getImages()[image_index];
   auto  image_view = _swapchain.getImageViews()[image_index].get();
 
-  auto previous_layout = ctx.tracker.getNowLayout();
+  auto previous_layout = ctx.getTracker().getNowLayout();
   // submit barrier(s) to wait _acquire_ctx.available_sema
   // toy::debugf({}, "prepare(): will call syncScope");
-  auto barrier = ctx.tracker.syncScope(
+  auto barrier = ctx.getTracker().syncScope(
     Scope{ .stage_mask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT },
     _present_executor->getFamily(),
     VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
@@ -78,19 +78,12 @@ auto Presentation::prepare() -> std::optional<Context> {
     };
     auto& release_executor = CommandExecutorManager::getInstance()[recorder->release_family];
     auto  waitable = release_executor.submit(release_batch);
-
-    auto acquire_batch = CommandBatch{
-      .recorder = std::move(recorder->acquire),
-      .waits = { { &waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
-    };
-    _present_executor->submit(acquire_batch);
+    _present_executor->submit(recorder->acquire_getter(&waitable));
   }
   if (result == VK_SUCCESS) {
     return Context{
       .image_index = image_index,
-      .image = image,
-      .image_view = image_view,
-      .tracker = &ctx.tracker,
+      .image_manager = &ctx,
     };
   } else {
     _need_recreate = true;
@@ -133,7 +126,7 @@ auto Presentation::present(uint32 image_index) -> bool {
     ctx.present_signal_fence.wait(true);
     ctx.fence_waitable = false;
   }
-  auto barrier = ctx.tracker.syncScope(
+  auto barrier = ctx.getTracker().syncScope(
     Scope{ .stage_mask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT },
     _present_executor->getFamily(),
     VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
@@ -151,9 +144,10 @@ auto Presentation::present(uint32 image_index) -> bool {
     };
     auto waitable = release_executor.submit(release_batch);
 
+    auto acquire_batch_ = recorder->acquire_getter(&waitable);
     auto acquire_batch = RawSignalCommandBatch{
-      .recorder = std::move(recorder->acquire),
-      .waits = { { &waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
+      .recorder = std::move(acquire_batch_.recorder),
+      .waits = std::move(acquire_batch_.waits),
       .signals = { { wait_sema, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
     };
     _present_executor->submit(acquire_batch);
@@ -192,31 +186,30 @@ auto Presentation::recreate() -> bool {
 }
 
 Presentation::ImageContext::ImageContext(VkImage image, VkImageView image_view)
-  : image(image), image_view(image_view),
-    tracker{ image, getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, MipRange{ 0, 1 }) },
+  : ImageManager{ image, image_view, VK_IMAGE_ASPECT_COLOR_BIT },
     present_wait_sema(createSemaphore()), //
     present_signal_fence{ false },        //
-    fence_waitable(false), need_release(false) {}
+    fence_waitable(false), need_release(false), moved(false) {}
 
 Presentation::ImageContext::~ImageContext() {
-  if (image) {
+  if (!moved) {
     toy::debugf("error: must not destory using destructor, use destroy() instead");
   }
 }
 
 Presentation::ImageContext::ImageContext(ImageContext&& a)
-  : image(std::move(a.image)), tracker(std::move(a.tracker)),
-    present_wait_sema(std::move(a.present_wait_sema)),
+  : ImageManager(std::move(a)), present_wait_sema(std::move(a.present_wait_sema)),
     present_signal_fence(std::move(a.present_signal_fence)),
-    fence_waitable(std::move(a.fence_waitable)), need_release(std::move(a.need_release)) {
-  a.image = VK_NULL_HANDLE;
+    fence_waitable(std::move(a.fence_waitable)), need_release(std::move(a.need_release)),
+    moved(false) {
+  a.moved = true;
 }
 
 void Presentation::ImageContext::waitIdle(uint64 nano_timeout) {
   if (fence_waitable) {
     present_signal_fence.wait(false, nano_timeout);
   }
-  tracker.waitIdle(nano_timeout);
+  getTracker().waitIdle(nano_timeout);
 }
 
 void Presentation::ImageContext::destroy(
@@ -228,7 +221,7 @@ void Presentation::ImageContext::destroy(
     if (ctx.need_release) {
       need_release.push_back(index);
     }
-    ctx.image = VK_NULL_HANDLE;
+    ctx.moved = true;
   }
   if (!need_release.empty()) {
     auto release_info = VkReleaseSwapchainImagesInfoEXT{
