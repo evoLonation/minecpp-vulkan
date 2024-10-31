@@ -192,44 +192,38 @@ private:
   TimelineSemaphore _sema;
 };
 
-class TimelineSemaphorePool {
+class TimelineSemaphorePool
+  : public toy::ObjectPoolHelper<TimelineSemaphorePool, IncrementalSemaphore> {
 public:
-  TimelineSemaphorePool() { _idle_semas.resize(10); }
-  auto allocate() -> IncrementalSemaphore {
-    if (_idle_semas.empty()) {
-      workingToIdle();
-    } else {
-      tryShrink();
-    }
-    if (_idle_semas.empty()) {
-      auto ret = IncrementalSemaphore{};
-      ret.pendingNewSignal();
-    }
+  using Base = toy::ObjectPoolHelper<TimelineSemaphorePool, IncrementalSemaphore>;
+  friend Base;
+
+  TimelineSemaphorePool() : Base{} { _idle_semas.resize(10); }
+
+  void recycle(IncrementalSemaphore s) { _working_semas.push_back(std::move(s)); }
+
+  UNCOPYABLE_MOVEABLE(TimelineSemaphorePool);
+
+private:
+  std::vector<IncrementalSemaphore> _idle_semas;
+  std::list<IncrementalSemaphore>   _working_semas;
+
+  void expand() { _idle_semas.push_back(IncrementalSemaphore{}); }
+  auto isEmpty() -> bool { return _idle_semas.empty(); }
+  auto extract() -> IncrementalSemaphore {
     auto ret = std::move(_idle_semas.back());
     ret.pendingNewSignal();
     _idle_semas.pop_back();
     return ret;
   }
-
-  void recycle(IncrementalSemaphore s) { _working_semas.push_back(std::move(s)); }
-
   void tryShrink() {
-    auto shrink_size = 20;
+    auto shrink_size = 5;
+    toy::debugf("shrink {} -> {}", _idle_semas.size(), shrink_size);
     if (_idle_semas.size() <= shrink_size) {
       return;
     }
-    toy::debugf("shrink {} -> {}", _idle_semas.size(), shrink_size);
     _idle_semas.erase(_idle_semas.begin() + shrink_size, _idle_semas.end());
   }
-
-  TimelineSemaphorePool(const TimelineSemaphorePool&) noexcept = delete;
-  TimelineSemaphorePool(TimelineSemaphorePool&&) noexcept = delete;
-  auto operator=(const TimelineSemaphorePool&) noexcept -> TimelineSemaphorePool& = delete;
-  auto operator=(TimelineSemaphorePool&&) noexcept -> TimelineSemaphorePool& = delete;
-
-private:
-  std::vector<IncrementalSemaphore> _idle_semas;
-  std::list<IncrementalSemaphore>   _working_semas;
 
   void workingToIdle() {
     for (auto iter = _working_semas.begin(); iter != _working_semas.end();) {
@@ -246,31 +240,7 @@ private:
 /**
  * @brief if constructed, must used (submit signal) before destroy
  */
-class DisposableSemaphore : public IncrementalSemaphore {
-public:
-  DisposableSemaphore(TimelineSemaphorePool* pool)
-    : IncrementalSemaphore(pool->allocate()), _pool(pool) {}
-
-  ~DisposableSemaphore() { recycle(); }
-  DisposableSemaphore(DisposableSemaphore&& a) noexcept = default;
-  auto operator=(DisposableSemaphore&& a) noexcept -> DisposableSemaphore& {
-    recycle();
-    IncrementalSemaphore::operator=(std::move(a));
-    _pool = a._pool;
-    return *this;
-  }
-
-private:
-  using IncrementalSemaphore::pendingNewSignal; // hide
-private:
-  TimelineSemaphorePool* _pool;
-
-  void recycle() {
-    if (valid()) {
-      _pool->recycle(std::move(*this));
-    }
-  }
-};
+using DisposableSemaphore = toy::RecyclableObject<TimelineSemaphorePool, IncrementalSemaphore>;
 
 auto createSemaphore() -> rs::Semaphore;
 

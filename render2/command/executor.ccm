@@ -49,13 +49,17 @@ public:
   }
   auto getSema() -> IncrementalSemaphore& { return _sema; }
 
+  auto valid() const -> bool { return get(); }
+
 private:
   IncrementalSemaphore _sema;
 };
 
-class CommandBufferPool {
+class CommandBufferPool : public toy::ObjectPoolHelper<CommandBufferPool, CommandBuffer> {
 public:
-  CommandBufferPool(uint32 family_index) {
+  using Base = toy::ObjectPoolHelper<CommandBufferPool, CommandBuffer>;
+  friend Base;
+  CommandBufferPool(uint32 family_index) : Base{} {
     _pool = rs::CommandPool{ VkCommandPoolCreateInfo{
       .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
       // VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT：允许重置单个command
@@ -66,27 +70,10 @@ public:
       .queueFamilyIndex = family_index,
     } };
   }
-  auto allocate() -> CommandBuffer {
-    if (_idle_cmdbufs.size() == 0) {
-      workingToIdle();
-    } else {
-      tryShrink();
-    }
-    if (_idle_cmdbufs.size() == 0) {
-      expand();
-    }
-    auto ret = std::move(_idle_cmdbufs.back());
-    ret.getSema().pendingNewSignal();
-    _idle_cmdbufs.pop_back();
-    return ret;
-  }
 
   void recycle(CommandBuffer cmdbuf) { _working_cmdbufs.push_back(std::move(cmdbuf)); }
 
-  CommandBufferPool(const CommandBufferPool&) noexcept = delete;
-  CommandBufferPool(CommandBufferPool&&) noexcept = delete;
-  auto operator=(const CommandBufferPool&) noexcept -> CommandBufferPool& = delete;
-  auto operator=(CommandBufferPool&&) noexcept -> CommandBufferPool& = delete;
+  UNCOPYABLE_MOVEABLE(CommandBufferPool);
 
 private:
   rs::CommandPool            _pool;
@@ -131,42 +118,21 @@ private:
     rs::CommandBuffers::join(range);
     _idle_cmdbufs.erase(_idle_cmdbufs.begin() + shrink_size, _idle_cmdbufs.end());
   }
+
+  auto extract() -> CommandBuffer {
+    auto ret = std::move(_idle_cmdbufs.back());
+    ret.getSema().pendingNewSignal();
+    _idle_cmdbufs.pop_back();
+    return ret;
+  }
+
+  auto isEmpty() -> bool { return _idle_cmdbufs.empty(); }
 };
 
 /**
  * @brief if constructed, must used (submit cmdbuf and signal) before destroy
  */
-class DisposableCmdbuf : public CommandBuffer {
-public:
-  DisposableCmdbuf(CommandBufferPool* pool) : CommandBuffer(pool->allocate()), _pool(pool) {}
-  ~DisposableCmdbuf() { recycle(); }
-  DisposableCmdbuf(DisposableCmdbuf&&) noexcept = default;
-
-  auto operator=(DisposableCmdbuf&& a) noexcept -> DisposableCmdbuf& {
-    recycle();
-    CommandBuffer::operator=(std::move(a));
-    _pool = a._pool;
-    return *this;
-  }
-
-private:
-  CommandBufferPool* _pool;
-
-  void recycle() {
-    if (get()) {
-      _pool->recycle(std::move(*this));
-    }
-  }
-};
-
-// struct WaitInfo {
-//   VkPipelineStageFlags stage_mask;
-//   TimelineSemaphore    sema;
-// };
-// struct SignalInfo {
-//   VkPipelineStageFlags stage_mask;
-//   TimelineSemaphore    sema;
-// };
+using DisposableCmdbuf = toy::RecyclableObject<CommandBufferPool, CommandBuffer>;
 
 /**
  * @brief Have ownership of cmdbuf will be submitted to and semaphores will be signaled by

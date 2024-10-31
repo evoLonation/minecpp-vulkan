@@ -79,7 +79,7 @@ if "provides" in rule:
 
 if provide != args.provide:
     raise RuntimeError(
-        f'The provided module searched is not match with config ("{provide}" vs "{args.provide}"'
+        f'The provided module searched is not match with config ("{provide}" vs "{args.provide}")'
     )
 implement = None
 if args.implement:

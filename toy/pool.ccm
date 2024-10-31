@@ -1,0 +1,76 @@
+module;
+#include <toy.h>
+export module toy.pool;
+
+import std;
+
+export namespace toy {
+
+template <typename P, typename T>
+concept PoolLike = requires(P p, T t) {
+  { p.allocate() } -> std::same_as<T>;
+  p.recycle(std::move(t));
+};
+
+template <typename Derived, typename T>
+class ObjectPoolHelper {
+public:
+  template <typename = void>
+    requires requires(T t, Derived d) {
+      d.workingToIdle();
+      d.tryShrink();
+      d.expand();
+      { d.isEmpty() } -> std::same_as<bool>;
+      { d.extract() } -> std::same_as<T>;
+      d.recycle(std::move(t));
+    }
+  ObjectPoolHelper() {}
+
+  auto allocate() -> T {
+    if (self().isEmpty()) {
+      self().workingToIdle();
+    } else {
+      self().tryShrink();
+    }
+    if (self().isEmpty()) {
+      self().expand();
+    }
+    return self().extract();
+  }
+
+private:
+  auto self() -> Derived& { return static_cast<Derived&>(*this); }
+
+public:
+  ONLY_MOVEABLE(ObjectPoolHelper);
+};
+
+template <typename P, typename T>
+  requires PoolLike<P, T> && requires(T t) {
+    { t.valid() } -> std::same_as<bool>;
+  }
+class RecyclableObject : public T {
+public:
+  RecyclableObject(P* pool) : T{ pool->allocate() }, _pool(pool) {}
+  ~RecyclableObject() { recycle(); }
+  RecyclableObject(const RecyclableObject&) noexcept = delete;
+  RecyclableObject(RecyclableObject&&) noexcept = default;
+  auto operator=(const RecyclableObject&) noexcept -> RecyclableObject& = delete;
+  auto operator=(RecyclableObject&& a) noexcept -> RecyclableObject& {
+    recycle();
+    T::operator=(std::move(a));
+    _pool = a->_pool;
+    return *this;
+  }
+
+private:
+  void recycle() {
+    if (T::valid()) {
+      _pool->recycle(std::move(static_cast<T&>(*this)));
+    }
+  }
+
+  P* _pool;
+};
+
+} // namespace toy

@@ -19,5 +19,7 @@ module:
     provide: toy.enums
 - json.ccm:
     provide: toy.json
+- pool.ccm:
+    provide: toy.pool
 test:
 - test.cc
