@@ -1,19 +1,14 @@
-sub_dir:
+include_dir:
 - base
-- context
-- command
-- buffer
-- image
-- pipeline
-- present
 module:
-- memory.ccm:
-    provide: render.vk.memory
-- memory.cc:
-    implement: render.vk.memory
 - context.ccm:
     provide: render.context
 - context.cc:
     implement: render.context
-include_dir:
+sub_dir:
 - base
+- context
+- command
+- pipeline
+- present
+- resource

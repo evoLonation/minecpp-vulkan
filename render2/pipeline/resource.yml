@@ -11,5 +11,3 @@ module:
     provide: render.vk.pipeline
 - render_pass.cc:
     implement: render.vk.render_pass2
-- image2.ccm:
-    provide: render.vk.image2

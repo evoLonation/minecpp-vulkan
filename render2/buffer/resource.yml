@@ -1,9 +1,0 @@
-module:
-- buffer.ccm:
-    provide: render.vk.buffer
-- buffer.cc:
-    implement: render.vk.buffer
-- vertex.ccm:
-    provide: render.vertex
-- vertex.cc:
-    implement: render.vertex

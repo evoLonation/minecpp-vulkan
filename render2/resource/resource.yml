@@ -1,0 +1,23 @@
+module:
+- memory.ccm:
+    provide: render.vk.memory
+- memory.cc:
+    implement: render.vk.memory
+- buffer.ccm:
+    provide: render.vk.buffer
+- buffer.cc:
+    implement: render.vk.buffer
+- vertex.cc:
+    implement: render.vertex
+- vertex.ccm:
+    provide: render.vertex
+- image.cc:
+    implement: render.vk.image
+- image.ccm:
+    provide: render.vk.image
+- sampler.cc:
+    implement: render.sampler
+- sampler.ccm:
+    provide: render.sampler
+- image2.ccm:
+    provide: render.vk.image2

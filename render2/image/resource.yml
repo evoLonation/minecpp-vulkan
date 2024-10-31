@@ -1,9 +1,0 @@
-module:
-- image.ccm:
-    provide: render.vk.image
-- image.cc:
-    implement: render.vk.image
-- sampler.ccm:
-    provide: render.sampler
-- sampler.cc:
-    implement: render.sampler
