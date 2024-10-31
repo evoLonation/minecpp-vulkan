@@ -11,9 +11,9 @@ import render.vk.tracker;
 import render.vk.executor;
 import render.vk.descriptor;
 import render.vk.pipeline;
+import render.vk.image;
 import render.vertex;
 import render.sampler;
-import render.vk.image2;
 
 import std;
 import toy;
@@ -222,8 +222,8 @@ public:
     }
   }
 
-  auto getVertexBuffers() -> std::span<BufferManager* const> { return _vertex_buffers; }
-  auto getIndexBuffers() -> std::span<BufferManager* const> { return _index_buffers; }
+  auto getVertexBuffers() -> std::span<Buffer* const> { return _vertex_buffers; }
+  auto getIndexBuffers() -> std::span<Buffer* const> { return _index_buffers; }
   auto getResourceSets() -> std::span<ResourceSet* const> { return _resource_sets; }
 
 private:
@@ -249,9 +249,9 @@ private:
 
   ExecuteType _execute_type;
 
-  std::vector<BufferManager*> _vertex_buffers;
-  std::vector<BufferManager*> _index_buffers;
-  std::vector<ResourceSet*>   _resource_sets;
+  std::vector<Buffer*>      _vertex_buffers;
+  std::vector<Buffer*>      _index_buffers;
+  std::vector<ResourceSet*> _resource_sets;
 };
 
 using PipelineDrawRecorder = std::function<void(PipelineDrawer)>;
@@ -383,10 +383,12 @@ public:
       }
       for (auto* resource_set : drawer.getResourceSets()) {
         for (auto resource : resource_set->getResources()) {
-          auto tracker = resource.resource->getTracker();
+          auto ctx = resource.resource->getDescriptorContext();
           auto type = resource_set->getInfo()[resource.binding_i].type;
           auto shader_stage = resource_set->getInfo()[resource.binding_i].stage;
-          if (auto* image_tracker = std::get_if<ImageBarrierTracker*>(&tracker)) {
+          using ImageContext = DescriptorResource::ImageContext;
+          using BufferContext = DescriptorResource::BufferContext;
+          if (auto* image_ctx = std::get_if<ImageContext>(&ctx)) {
             auto stage = [&]() -> VkPipelineStageFlags {
               switch (shader_stage) {
               case VK_SHADER_STAGE_FRAGMENT_BIT:
@@ -412,9 +414,9 @@ public:
               }
             }();
             addSync(
-              (*image_tracker)->syncScope(Scope{ stage, access }, executor.getFamily(), layout)
+              image_ctx->tracker->syncScope(Scope{ stage, access }, executor.getFamily(), layout)
             );
-          } else if (auto* buffer_tracker = std::get_if<BufferBarrierTracker*>(&tracker)) {
+          } else if (auto* buffer_ctx = std::get_if<BufferContext>(&ctx)) {
             auto stage = [&]() -> VkPipelineStageFlags {
               switch (shader_stage) {
               case VK_SHADER_STAGE_FRAGMENT_BIT:
@@ -433,7 +435,7 @@ public:
                 toy::throwf("unsupported descriptor type");
               }
             }();
-            addSync((*buffer_tracker)->syncScope(Scope{ stage, access }, executor.getFamily()));
+            addSync(buffer_ctx->tracker->syncScope(Scope{ stage, access }, executor.getFamily()));
           }
         }
       }

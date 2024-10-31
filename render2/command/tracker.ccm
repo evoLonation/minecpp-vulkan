@@ -367,7 +367,7 @@ public:
     return _base.syncScope(scope, family, {});
   }
   void setNewScope(Scope scope, uint32 family) { _base.setNewScope(scope, family, {}); }
-
+  void clearScope() { _base.clearScope(); }
   void waitIdle(uint64 nano_timeout = std::numeric_limits<uint64>::max()) {
     _base.waitIdle(nano_timeout);
   }
@@ -392,6 +392,7 @@ public:
   void setNewScope(Scope scope, uint32 family, VkImageLayout layout) {
     _base.setNewScope(scope, family, layout);
   }
+  void clearScope() { _base.clearScope(); }
   void waitIdle(uint64 nano_timeout = std::numeric_limits<uint64>::max()) {
     _base.waitIdle(nano_timeout);
   }

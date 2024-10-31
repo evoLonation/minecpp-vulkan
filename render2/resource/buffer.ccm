@@ -6,76 +6,95 @@ import toy;
 import <vulkan_config.h>;
 import render.vk.resource;
 import render.vk.memory;
-import render.vk.image2;
+import render.vk.tracker;
 import render.vk.descriptor;
 
 export namespace rd::vk {
 
-class Buffer : public rs::Buffer, public BufferManager {
+auto createBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage) -> rs::Buffer;
+
+class Buffer : public rs::Buffer {
 public:
-  Buffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage, VkMemoryPropertyFlags property_flags);
-  auto memory() const -> VkDeviceMemory { return _memory; }
+  Buffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage, VkMemoryPropertyFlags property_flags)
+    : rs::Buffer{ createBuffer(buffer_size, usage) }, _memory{ get(), property_flags },
+      _tracker{ get() } {}
+  auto getMemory() const -> VkDeviceMemory { return _memory; }
+  auto getTracker() -> BufferBarrierTracker& { return _tracker; }
 
 private:
-  Memory _memory;
+  Memory               _memory;
+  BufferBarrierTracker _tracker;
 };
 
-class HostVisibleBuffer : public Buffer {
+class HostBuffer : public Buffer {
 public:
-  HostVisibleBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage)
-    : Buffer(buffer_size, usage, HostVisibleMemory::propreties), _memory(Buffer::memory()) {}
-  HostVisibleBuffer(std::span<const std::byte> buffer_data, VkBufferUsageFlags usage)
-    : HostVisibleBuffer(buffer_data.size(), usage) {
-    memory().fill(buffer_data);
+  HostBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage)
+    : Buffer(buffer_size, usage, HostMemoryManager::propreties), _memory(Buffer::getMemory()) {}
+  HostBuffer(std::span<std::byte const> buffer_data, VkBufferUsageFlags usage)
+    : HostBuffer(buffer_data.size(), usage) {
+    getMemory().fill(buffer_data);
   }
-  auto memory() -> HostVisibleMemory& { return _memory; }
-  auto operator->() -> HostVisibleMemory& { return _memory; }
+  auto getMemory() -> HostMemoryManager& { return _memory; }
 
 private:
-  HostVisibleMemory _memory;
+  HostMemoryManager _memory;
 };
 
-class StagingBuffer : public HostVisibleBuffer {
+class StagingBuffer : public HostBuffer {
 public:
   StagingBuffer(VkDeviceSize buffer_size)
-    : HostVisibleBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT) {}
-  StagingBuffer(std::span<const std::byte> buffer_data)
-    : HostVisibleBuffer(buffer_data, VK_BUFFER_USAGE_TRANSFER_SRC_BIT) {}
+    : HostBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT) {}
+  StagingBuffer(std::span<std::byte const> buffer_data)
+    : HostBuffer(buffer_data, VK_BUFFER_USAGE_TRANSFER_SRC_BIT) {}
 };
 
 template <typename DataType>
   requires std::is_trivially_copyable_v<DataType>
 // using DataType = float;
-class UniformBuffer : public HostVisibleBuffer, public DescriptorResource {
+class UniformBuffer : public HostBuffer, public DescriptorResource {
 public:
   UniformBuffer() = default;
   UniformBuffer(DataType& data)
-    : HostVisibleBuffer(
+    : HostBuffer(
         std::as_bytes(std::span<DataType>{ &data, 1 }), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
       ),
       _cache_data(data), _p_data(&data) {}
 
   void update() {
+    getTracker().waitIdle();
     auto now_bytes = std::as_bytes(std::span<DataType>{ _p_data, 1 });
     auto cached_bytes = std::as_writable_bytes(std::span<DataType>{ &_cache_data, 1 });
     if (ranges::mismatch(now_bytes, cached_bytes).in1 != now_bytes.end()) {
       std::copy(now_bytes.begin(), now_bytes.end(), cached_bytes.begin());
-      memory().fill(cached_bytes);
+      getMemory().fill(cached_bytes);
     }
+    getTracker().clearScope();
   }
 
-  auto getInfo() -> ResourceInfo override {
-    return VkDescriptorBufferInfo{
-      .buffer = get(),
-      .offset = 0,
-      .range = VK_WHOLE_SIZE,
+  auto getDescriptorContext() -> Context override {
+    return BufferContext{
+      .dscriptor_info =
+        VkDescriptorBufferInfo{
+          .buffer = get(),
+          .offset = 0,
+          .range = VK_WHOLE_SIZE,
+        },
+      .tracker = &getTracker(),
     };
   }
-  auto getTracker() -> Tracker override { return &HostVisibleBuffer::getTracker(); }
 
 private:
   DataType  _cache_data;
   DataType* _p_data;
+};
+
+class DeviceLocalBuffer : public vk::Buffer {
+public:
+  DeviceLocalBuffer(std::span<std::byte const> buffer_data, VkBufferUsageFlags usage);
+
+private:
+  // todo: destroy after transfer
+  vk::StagingBuffer _staging_buffer;
 };
 
 void recordCopyBuffer(

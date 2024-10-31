@@ -102,5 +102,19 @@ auto result(VkResult result) -> std::string_view {
   }
 }
 
+auto sampleCount(VkSampleCountFlagBits sample_count) -> std::string_view {
+  switch (sample_count) {
+    CASE(VK_SAMPLE_COUNT_1_BIT);
+    CASE(VK_SAMPLE_COUNT_2_BIT);
+    CASE(VK_SAMPLE_COUNT_4_BIT);
+    CASE(VK_SAMPLE_COUNT_8_BIT);
+    CASE(VK_SAMPLE_COUNT_16_BIT);
+    CASE(VK_SAMPLE_COUNT_32_BIT);
+    CASE(VK_SAMPLE_COUNT_64_BIT);
+  default:
+    toy::throwf("unknown VkSampleCountFlagBits: {}", static_cast<size_t>(sample_count));
+  }
+}
+
 #undef CASE
 } // namespace rd::vk::refl

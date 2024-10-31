@@ -119,18 +119,7 @@ private:
   }();
 };
 
-class DeviceLocalBuffer : public vk::Buffer {
-private:
-  vk::StagingBuffer _staging_buffer;
-
-public:
-  DeviceLocalBuffer(VkBufferUsageFlags usage, std::span<const std::byte> buffer_data);
-};
-
-export class VertexBuffer : public DeviceLocalBuffer {
-private:
-  VertexInfo _vertex_info;
-
+export class VertexBuffer : public vk::DeviceLocalBuffer {
 public:
   template <ranges::contiguous_range R>
   VertexBuffer(R&& range) : VertexBuffer{ std::span<const ranges::range_value_t<R>>{ range } } {}
@@ -142,20 +131,24 @@ public:
   auto getVertexInfo() const -> VertexInfo { return _vertex_info; }
 
 private:
-  VertexBuffer(std::span<const std::byte> vertex_data, VertexInfo vertex_info);
+  VertexInfo _vertex_info;
+
+  VertexBuffer(std::span<const std::byte> vertex_data, VertexInfo vertex_info)
+    : vk::DeviceLocalBuffer(vertex_data, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT),
+      _vertex_info(vertex_info) {}
 };
 
-export class IndexBuffer : public DeviceLocalBuffer {
+export class IndexBuffer : public vk::DeviceLocalBuffer {
 public:
+  IndexBuffer(std::span<const uint16_t> indices)
+    : vk::DeviceLocalBuffer(std::as_bytes(indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT),
+      _index_number(indices.size()) {}
+
+  auto getIndexNumber() -> uint32 { return _index_number; }
   auto getIndexType() -> VkIndexType { return VK_INDEX_TYPE_UINT16; }
 
 private:
   int _index_number;
-
-public:
-  IndexBuffer(std::span<const uint16_t> indices);
-
-  auto getIndexNumber() -> uint32 { return _index_number; }
 };
 
 } // namespace rd

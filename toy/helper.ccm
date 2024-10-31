@@ -11,6 +11,9 @@ struct OverloadLambda : public Lambdas... {
   using Lambdas::operator()...;
 };
 
+template <typename P>
+using ptr_manager = std::unique_ptr<std::remove_pointer_t<P>, decltype([](auto) {})>;
+
 /**
  * @brief 需要主动构造，可含有参数，若在构造前调用getInstance()会抛异常
  * @tparam T

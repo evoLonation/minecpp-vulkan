@@ -1,3 +1,5 @@
+module;
+#include <toy.h>
 export module render.vk.reflections;
 
 import std;
@@ -16,11 +18,19 @@ auto format(VkFormat format) -> std::string_view;
 
 auto result(VkResult result) -> std::string_view;
 
+auto sampleCount(VkSampleCountFlagBits sample_count) -> std::string_view;
+
 template <typename Resource>
 consteval auto resource() -> std::string_view;
 
-#undef CASE
 } // namespace rd::vk::refl
+
+CUSTOM_FORMATTER(VkImageLayout, [](auto e) { return std::string{ rd::vk::refl::imageLayout(e) }; });
+CUSTOM_FORMATTER(VkFormat, [](auto e) { return std::string{ rd::vk::refl::format(e) }; });
+CUSTOM_FORMATTER(VkResult, [](auto e) { return std::string{ rd::vk::refl::result(e) }; });
+CUSTOM_FORMATTER(VkSampleCountFlagBits, [](auto e) {
+  return std::string{ rd::vk::refl::sampleCount(e) };
+});
 
 namespace rd::vk::refl {
 

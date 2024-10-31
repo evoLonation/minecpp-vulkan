@@ -19,5 +19,3 @@ module:
     implement: render.sampler
 - sampler.ccm:
     provide: render.sampler
-- image2.ccm:
-    provide: render.vk.image2

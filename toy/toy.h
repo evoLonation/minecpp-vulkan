@@ -33,4 +33,17 @@
   UNCOPYABLE(type)                                                                                 \
   UNMOVEABLE(type)
 
+#define CUSTOM_FORMATTER(type, func)                                                               \
+  export template <>                                                                               \
+  class std::formatter<type> : public std::formatter<std::string> {                                \
+  public:                                                                                          \
+    template <typename FormatContext, typename... Args>                                            \
+    auto format(const type& e, FormatContext& ctx) const {                                         \
+      return std::formatter<std::string>::format(formatString(e), ctx);                            \
+    }                                                                                              \
+                                                                                                   \
+  private:                                                                                         \
+    auto formatString(const type& e) const -> std::string { return func(e); }                      \
+  };
+
 #endif

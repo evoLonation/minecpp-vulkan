@@ -176,7 +176,9 @@ auto Presentation::recreate() -> bool {
 }
 
 Presentation::ImageContext::ImageContext(VkImage image, VkImageView image_view)
-  : ImageManager{ image, image_view, VK_IMAGE_ASPECT_COLOR_BIT },
+  : ImageManager{ image,
+                  image_view,
+                  getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, MipRange{ 0, 1 }) },
     present_wait_sema(createSemaphore()), //
     present_signal_fence{ false },        //
     fence_waitable(false), need_release(false), moved(false) {}

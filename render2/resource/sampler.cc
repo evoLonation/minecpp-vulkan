@@ -100,7 +100,7 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
   auto recorder_copy = [&](VkCommandBuffer cmdbuf) {
     vk::recordImageBarrier(
       cmdbuf,
-      texture._image,
+      texture._image.getImage(),
       vk::getSubresourceRange(_aspect, mip_range),
       { VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL },
       {
@@ -116,12 +116,12 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
     );
 
     vk::copyBufferToImage(
-      cmdbuf, texture._staging_buffer, texture._image, _aspect, width, height, 0
+      cmdbuf, texture._staging_buffer, texture._image.getImage(), _aspect, width, height, 0
     );
 
     vk::recordImageBarrier(
       cmdbuf,
-      texture._image,
+      texture._image.getImage(),
       vk::getSubresourceRange(_aspect, mip_range),
       {
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -138,7 +138,7 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
   auto recorder_blit = [&](VkCommandBuffer cmdbuf) {
     vk::recordImageBarrier(
         cmdbuf,
-        texture._image,
+        texture._image.getImage(),
         vk::getSubresourceRange(_aspect, mip_range),
         {
           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -158,7 +158,7 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
       for (auto dst_mip_level : views::iota(1u, mip_extents.size())) {
         vk::recordImageBarrier(
           cmdbuf,
-          texture._image,
+          texture._image.getImage(),
           vk::getSubresourceRange(
             _aspect, vk::MipRange{ .base_level = dst_mip_level - 1, .count = 1 }
           ),
@@ -176,14 +176,14 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
         vk::blitImage(
           cmdbuf,
           vk::ImageBlit{
-            .image = texture._image,
+            .image = texture._image.getImage(),
             .aspect = _aspect,
             .layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             .mip_level = dst_mip_level - 1,
             .extent = mip_extents[dst_mip_level - 1],
           },
           vk::ImageBlit{
-            .image = texture._image,
+            .image = texture._image.getImage(),
             .aspect = _aspect,
             .layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             .mip_level = dst_mip_level,
@@ -193,7 +193,7 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
       }
       vk::recordImageBarrier(
         cmdbuf,
-        texture._image,
+        texture._image.getImage(),
         vk::getSubresourceRange(_aspect, { .base_level = mip_levels - 1, .count = 1 }),
         { VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
         { vk::Scope{
@@ -208,7 +208,7 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
       );
       vk::recordImageBarrier(
         cmdbuf,
-        texture._image,
+        texture._image.getImage(),
         vk::getSubresourceRange(_aspect, { .base_level = 0, .count = mip_levels - 1 }),
         { VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
         { vk::Scope{
@@ -229,7 +229,7 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
     .recorder = recorder_blit,
     .waits = { { &waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
   });
-  texture._tracker.setNewScope(
+  texture.getImage().getTracker().setNewScope(
     vk::Scope{
       .stage_mask = use_stage,
       .access_mask = VK_ACCESS_SHADER_READ_BIT,
@@ -239,13 +239,5 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
   );
   return texture;
 }
-
-SampledTexture::SampledTexture(
-  vk::StagingBuffer staging_buffer, vk::Image image, vk::rs::Sampler sampler, vk::MipRange mip_range
-
-)
-  : _staging_buffer(std::move(staging_buffer)), _image(std::move(image)),
-    _tracker(_image, vk::getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, mip_range)),
-    _sampler(std::move(sampler)) {}
 
 }; // namespace rd

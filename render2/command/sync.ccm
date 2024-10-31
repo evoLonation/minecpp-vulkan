@@ -496,14 +496,4 @@ void recordImageBarrier(
 
 } // namespace rd::vk
 
-export template <>
-class std::formatter<rd::vk::Scope> : public std::formatter<std::string> {
-public:
-  template <typename FormatContext, typename... Args>
-  auto format(const rd::vk::Scope& e, FormatContext& ctx) const {
-    return std::formatter<std::string>::format(formatString(e), ctx);
-  }
-
-private:
-  auto formatString(const rd::vk::Scope& e) const -> std::string { return rd::vk::scope2Str(e); }
-};
+CUSTOM_FORMATTER(rd::vk::Scope, scope2Str);

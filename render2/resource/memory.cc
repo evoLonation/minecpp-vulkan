@@ -41,7 +41,7 @@ Memory::Memory(VkImage image, VkMemoryPropertyFlags property_flags)
 Memory::Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property_flags) {
   auto& device = Device::getInstance();
 
-  auto     memory_properties = device.getPdevice().getMemoryProperties();
+  auto   memory_properties = device.getPdevice().getMemoryProperties();
   uint32 memory_type_index;
   if (auto optional = toy::findIf(
         std::span(memory_properties.memoryTypes, memory_properties.memoryTypeCount) |
@@ -65,36 +65,24 @@ Memory::Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property
   rs::Memory::operator=(allocate_info);
 }
 
-HostVisibleMemory::HostVisibleMemory(HostVisibleMemory&& e) noexcept {
-  _data = e._data;
-  _memory = e._memory;
-  e._data = nullptr;
-}
-
-auto HostVisibleMemory::operator=(HostVisibleMemory&& e) noexcept -> HostVisibleMemory& {
-  unmap();
-  _data = e._data;
-  _memory = e._memory;
-  e._data = nullptr;
-  return *this;
-}
-
-auto HostVisibleMemory::data() -> void* {
-  if (_data == nullptr) {
+auto HostMemoryManager::data() -> void* {
+  if (!_data.get()) {
+    void* data;
     checkVkResult(
-      vkMapMemory(Device::getInstance(), _memory, 0, VK_WHOLE_SIZE, 0, &_data), "map memory"
+      vkMapMemory(Device::getInstance(), _memory.get(), 0, VK_WHOLE_SIZE, 0, &data), "map memory"
     );
+    _data.reset(data);
   }
-  return _data;
+  return _data.get();
 }
-void HostVisibleMemory::fill(std::span<const std::byte> buffer_data) {
+void HostMemoryManager::fill(std::span<const std::byte> buffer_data) {
   auto buffer_size = buffer_data.size();
   std::copy(buffer_data.begin(), buffer_data.end(), reinterpret_cast<std::byte*>(data()));
 }
 
-void HostVisibleMemory::unmap() {
-  if (_data != nullptr) {
-    vkUnmapMemory(Device::getInstance(), _memory);
+void HostMemoryManager::unmap() {
+  if (_data.get()) {
+    vkUnmapMemory(Device::getInstance(), _memory.get());
   }
 }
 

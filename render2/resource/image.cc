@@ -15,8 +15,7 @@ auto getSubresourceRange(VkImageAspectFlags aspect, MipRange mip_range) -> VkIma
   };
 }
 
-auto getSubresourceLayers(VkImageAspectFlags aspect, uint32 mip_level)
-  -> VkImageSubresourceLayers {
+auto getSubresourceLayers(VkImageAspectFlags aspect, uint32 mip_level) -> VkImageSubresourceLayers {
   return {
     .aspectMask = aspect,
     .mipLevel = mip_level,
@@ -27,10 +26,10 @@ auto getSubresourceLayers(VkImageAspectFlags aspect, uint32 mip_level)
 
 auto createImage(
   VkFormat              format,
-  uint32              width,
-  uint32              height,
+  uint32                width,
+  uint32                height,
   VkImageUsageFlags     usage,
-  uint32              mip_levels,
+  uint32                mip_levels,
   VkSampleCountFlagBits sample_count
 ) -> rs::Image {
   // if use for staging image, combine use:
@@ -95,46 +94,17 @@ auto createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect, 
   return { create_info };
 }
 
-Image::Image(
-  VkFormat              format,
-  uint32              width,
-  uint32              height,
-  VkImageUsageFlags     usage,
-  VkImageAspectFlags    aspect,
-  uint32              mip_levels,
-  VkSampleCountFlagBits sample_count
-)
-  : rs::Image(createImage(
-      format,
-      width,
-      height,
-      usage,
-      mip_levels,
-      [&]() {
-        toy::throwf(
-          (getAvailableSampleCounts() & sample_count) > 0,
-          "the sample count {} is not supported",
-          uint32(sample_count)
-        );
-        return sample_count;
-      }()
-    )),
-    _memory(get(), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
-    _image_view(createImageView(get(), format, aspect, mip_levels)) {}
-auto Image::getAvailableSampleCounts() -> VkSampleCountFlags {
-  if (_sample_counts == 0) {
-    auto& properties = Device::getInstance().getPdevice().getProperties();
-    _sample_counts = properties.limits.framebufferColorSampleCounts &
-                     properties.limits.framebufferDepthSampleCounts &
-                     properties.limits.framebufferStencilSampleCounts &
-                     properties.limits.framebufferNoAttachmentsSampleCounts &
-                     properties.limits.sampledImageColorSampleCounts &
-                     properties.limits.sampledImageIntegerSampleCounts &
-                     properties.limits.sampledImageDepthSampleCounts &
-                     properties.limits.sampledImageStencilSampleCounts &
-                     properties.limits.storageImageSampleCounts;
-  }
-  return _sample_counts;
+ImageContext::ImageContext() {
+  auto& properties = Device::getInstance().getPdevice().getProperties();
+  _available_sample_counts = properties.limits.framebufferColorSampleCounts &
+                             properties.limits.framebufferDepthSampleCounts &
+                             properties.limits.framebufferStencilSampleCounts &
+                             properties.limits.framebufferNoAttachmentsSampleCounts &
+                             properties.limits.sampledImageColorSampleCounts &
+                             properties.limits.sampledImageIntegerSampleCounts &
+                             properties.limits.sampledImageDepthSampleCounts &
+                             properties.limits.sampledImageStencilSampleCounts &
+                             properties.limits.storageImageSampleCounts;
 }
 
 void copyBufferToImage(
@@ -142,9 +112,9 @@ void copyBufferToImage(
   VkBuffer              buffer,
   VkImage               image,
   VkImageAspectFlagBits aspect,
-  uint32              width,
-  uint32              height,
-  uint32              mip_level
+  uint32                width,
+  uint32                height,
+  uint32                mip_level
 ) {
   auto image_copy = VkBufferImageCopy{
     .bufferOffset = 0,

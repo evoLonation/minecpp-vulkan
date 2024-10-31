@@ -22,29 +22,32 @@ public:
   Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property_flags);
 };
 
-class HostVisibleMemory {
+class HostMemoryManager {
 public:
-  HostVisibleMemory() = default;
-  HostVisibleMemory(VkDeviceMemory memory) : _memory(memory) {}
-  HostVisibleMemory(const HostVisibleMemory&) noexcept = delete;
-  HostVisibleMemory(HostVisibleMemory&&) noexcept;
-  auto operator=(const HostVisibleMemory&) noexcept -> HostVisibleMemory& = delete;
-  auto operator=(HostVisibleMemory&&) noexcept -> HostVisibleMemory&;
+  HostMemoryManager() = default;
+  HostMemoryManager(VkDeviceMemory memory) : _memory(memory) {}
 
   auto data() -> void*;
   void fill(std::span<const std::byte> buffer_data);
-  ~HostVisibleMemory() { unmap(); }
+  ~HostMemoryManager() { unmap(); }
 
   static constexpr auto propreties =
     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+  HostMemoryManager(HostMemoryManager&&) noexcept = default;
+  auto operator=(HostMemoryManager&& a) noexcept -> HostMemoryManager& {
+    unmap();
+    _data = std::move(a._data);
+    _memory = std::move(a._memory);
+    return *this;
+  }
 
 private:
   void unmap();
 
 private:
-  VkDeviceMemory _memory = nullptr;
-
-  void* _data = nullptr;
+  toy::ptr_manager<void*>          _data;
+  toy::ptr_manager<VkDeviceMemory> _memory;
 };
 
 } // namespace rd::vk

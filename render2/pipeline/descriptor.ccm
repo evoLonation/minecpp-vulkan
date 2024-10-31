@@ -189,10 +189,16 @@ private:
 };
 
 struct DescriptorResource {
-  using ResourceInfo = std::variant<VkDescriptorImageInfo, VkDescriptorBufferInfo>;
-  virtual auto getInfo() -> ResourceInfo = 0;
-  using Tracker = std::variant<ImageBarrierTracker*, BufferBarrierTracker*>;
-  virtual auto getTracker() -> Tracker = 0;
+  struct ImageContext {
+    VkDescriptorImageInfo dscriptor_info;
+    ImageBarrierTracker*  tracker;
+  };
+  struct BufferContext {
+    VkDescriptorBufferInfo dscriptor_info;
+    BufferBarrierTracker*  tracker;
+  };
+  using Context = std::variant<BufferContext, ImageContext>;
+  virtual auto getDescriptorContext() -> Context = 0;
 };
 
 struct ResourceBinding {
@@ -215,36 +221,39 @@ public:
       for (auto [array_i, resource] : binding.resources | toy::enumerate) {
         _resources.push_back({ binding_i, array_i, resource });
       }
-      auto resource_infos = binding.resources |
-                            views::transform([](auto* resource) { return resource->getInfo(); }) |
-                            ranges::to<std::vector>();
+      auto resource_ctxs = std::vector<DescriptorResource::Context>{};
+      for (auto* r : binding.resources) {
+        resource_ctxs.push_back(r->getDescriptorContext());
+      }
       auto write_info = VkWriteDescriptorSet{
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
         .dstSet = get(),
         .dstBinding = binding_i,
         // 数组起始索引
         .dstArrayElement = 0,
-        .descriptorCount = static_cast<uint32>(resource_infos.size()),
+        .descriptorCount = static_cast<uint32>(resource_ctxs.size()),
         .descriptorType = pool->getInfo()[binding_i].type,
       };
-      if (ranges::all_of(resource_infos, [](auto& info) {
-            return std::holds_alternative<VkDescriptorImageInfo>(info);
+      using BufferContext = DescriptorResource::BufferContext;
+      using ImageContext = DescriptorResource::ImageContext;
+      if (ranges::all_of(resource_ctxs, [](auto& x) {
+            return std::holds_alternative<BufferContext>(x);
           })) {
-        all_image_infos.push_back(
-          resource_infos |
-          views::transform([](auto& info) { return std::get<VkDescriptorImageInfo>(info); }) |
-          ranges::to<std::vector>()
-        );
-        write_info.pImageInfo = all_image_infos.back().data();
-      } else if (ranges::all_of(resource_infos, [](auto& info) {
-                   return std::holds_alternative<VkDescriptorBufferInfo>(info);
+        auto buffer_infos = std::vector<VkDescriptorBufferInfo>{};
+        for (auto& ctx : resource_ctxs) {
+          buffer_infos.push_back(std::get<BufferContext>(ctx).dscriptor_info);
+        }
+        write_info.pBufferInfo = buffer_infos.data();
+        all_buffer_infos.push_back(std::move(buffer_infos));
+      } else if (ranges::all_of(resource_ctxs, [](auto& x) {
+                   return std::holds_alternative<ImageContext>(x);
                  })) {
-        all_buffer_infos.push_back(
-          resource_infos |
-          views::transform([](auto& info) { return std::get<VkDescriptorBufferInfo>(info); }) |
-          ranges::to<std::vector>()
-        );
-        write_info.pBufferInfo = all_buffer_infos.back().data();
+        auto image_infos = std::vector<VkDescriptorImageInfo>{};
+        for (auto& ctx : resource_ctxs) {
+          image_infos.push_back(std::get<ImageContext>(ctx).dscriptor_info);
+        }
+        write_info.pImageInfo = image_infos.data();
+        all_image_infos.push_back(std::move(image_infos));
       } else {
         toy::throwf("different resource type in same binding");
       }

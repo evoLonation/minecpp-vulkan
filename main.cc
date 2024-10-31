@@ -1,3 +1,4 @@
+#include <toy.h>
 import toy;
 // import application;
 import std;
@@ -12,7 +13,6 @@ import render.vk.executor;
 import render.vk.queue_requestor;
 import render.vk.image;
 import render.vk.render_pass2;
-import render.vk.image2;
 import render.vk.descriptor;
 import render.vk.buffer;
 import render.vk.presentation;
@@ -41,10 +41,7 @@ int main() {
 
     auto depth_format = VK_FORMAT_D32_SFLOAT;
     auto sample_count = VK_SAMPLE_COUNT_8_BIT;
-    toy::throwf(
-      (rd::vk::Image::getAvailableSampleCounts() & sample_count) > 0,
-      "the sample count is not available"
-    );
+    TOY_ASSERT((rd::vk::ImageContext::getInstance().getAvailableSampleCounts() & sample_count) > 0);
 
     auto  presentation = rd::vk::Presentation{ ctx._surface->get() };
     auto& swapchain = presentation.getSwapchain();
@@ -141,10 +138,8 @@ int main() {
     auto dset_texture = rd::vk::ResourceSet{ &dset_pool_texture, { &sampled_texture } };
 
     struct FramebufferResource {
-      rd::vk::Image        sample_image;
-      rd::vk::ImageManager sample_image_manager;
-      rd::vk::Image        depth_image;
-      rd::vk::ImageManager depth_image_manager;
+      rd::vk::Image sample_image;
+      rd::vk::Image depth_image;
     };
     auto createFramebuffers = [&]() {
       auto sample_image = rd::vk::Image{
@@ -156,8 +151,6 @@ int main() {
         1,
         sample_count,
       };
-      auto sample_image_manager =
-        rd::vk::ImageManager{ sample_image, sample_image.image_view(), VK_IMAGE_ASPECT_COLOR_BIT };
       auto depth_image = rd::vk::Image{
         depth_format,
         swapchain.getExtent().width,
@@ -167,13 +160,9 @@ int main() {
         1,
         sample_count,
       };
-      auto depth_image_manager =
-        rd::vk::ImageManager{ depth_image, depth_image.image_view(), VK_IMAGE_ASPECT_DEPTH_BIT };
       return FramebufferResource{
         .sample_image = std::move(sample_image),
-        .sample_image_manager = std::move(sample_image_manager),
         .depth_image = std::move(depth_image),
-        .depth_image_manager = std::move(depth_image_manager),
       };
     };
     auto framebuffers = createFramebuffers();
@@ -216,10 +205,10 @@ int main() {
           drawer.bindResourceSet(2, &dset_texture);
           drawer.draw();
         });
-        auto attachments = std::array{
-          &framebuffers.sample_image_manager,
+        auto attachments = std::array<rd::vk::ImageManager*, 3>{
+          &framebuffers.sample_image,
           context.image_manager,
-          &framebuffers.depth_image_manager,
+          &framebuffers.depth_image,
         };
         render_pass.recordDraw(attachments, clear_values, swapchain.getExtent());
 

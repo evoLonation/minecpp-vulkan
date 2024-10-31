@@ -13,7 +13,6 @@ import render.vk.image;
 import render.vk.executor;
 import render.vk.reflections;
 import render.vk.swapchain;
-import render.vk.image2;
 
 export namespace rd::vk {
 

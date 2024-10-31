@@ -58,6 +58,7 @@ Context::Context(const std::string& app_name, uint32 width, uint32 height) {
   family_info[1] = { PRESENT, family_counts[1] };
   family_info[2] = { TRANSFER, family_counts[2] };
   _command_executor_manager.reset(new CommandExecutorManager{ family_info });
+  _image_context.reset(new ImageContext{});
 }
 
 } // namespace rd

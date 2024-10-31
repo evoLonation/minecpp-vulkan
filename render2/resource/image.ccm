@@ -1,3 +1,5 @@
+module;
+#include <toy.h>
 export module render.vk.image;
 
 import std;
@@ -6,6 +8,7 @@ import toy;
 import <vulkan_config.h>;
 import render.vk.resource;
 import render.vk.memory;
+import render.vk.tracker;
 
 export namespace rd::vk {
 
@@ -30,9 +33,66 @@ auto createImage(
 auto createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect, uint32 mip_levels)
   -> rs::ImageView;
 
-struct Image : public rs::Image {
+class ImageContext : public toy::ProactiveSingleton<ImageContext> {
 public:
-  Image() = default;
+  ImageContext();
+  auto getAvailableSampleCounts() -> VkSampleCountFlags { return _available_sample_counts; }
+
+private:
+  VkSampleCountFlags _available_sample_counts;
+};
+
+class ImageManager {
+public:
+  ImageManager(VkImage image, VkImageView image_view, VkImageSubresourceRange sub_range)
+    : _image(image), _image_view(image_view), _tracker(image, sub_range) {}
+
+  auto getImage() -> VkImage { return _image; }
+  auto getImageView() -> VkImageView { return _image_view; }
+  auto getTracker() -> ImageBarrierTracker& { return _tracker; }
+
+private:
+  VkImage             _image;
+  VkImageView         _image_view;
+  ImageBarrierTracker _tracker;
+};
+
+struct ImageResource {
+public:
+  ImageResource(
+    VkFormat              format,
+    uint32                width,
+    uint32                height,
+    VkImageUsageFlags     usage,
+    VkImageAspectFlags    aspect,
+    uint32                mip_levels,
+    VkSampleCountFlagBits sample_count
+  )
+    : _image(createImage(
+        format,
+        width,
+        height,
+        usage,
+        mip_levels,
+        [&]() {
+          TOY_ASSERT(
+            (ImageContext::getInstance().getAvailableSampleCounts() & sample_count) > 0,
+            sample_count
+          );
+          return sample_count;
+        }()
+      )),
+      _memory(_image, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+      _image_view(createImageView(_image, format, aspect, mip_levels)) {}
+
+protected:
+  rs::Image     _image;
+  Memory        _memory;
+  rs::ImageView _image_view;
+};
+
+struct Image : public ImageResource, public ImageManager {
+public:
   Image(
     VkFormat              format,
     uint32                width,
@@ -41,16 +101,13 @@ public:
     VkImageAspectFlags    aspect,
     uint32                mip_levels,
     VkSampleCountFlagBits sample_count
-  );
-  auto        image_view() const -> VkImageView { return _image_view; }
-  static auto getAvailableSampleCounts() -> VkSampleCountFlags;
-
-private:
-  Memory        _memory;
-  rs::ImageView _image_view;
-
-private:
-  static inline auto _sample_counts = VkSampleCountFlags{};
+  )
+    : ImageResource(format, width, height, usage, aspect, mip_levels, sample_count),
+      ImageManager(
+        ImageResource::_image,
+        ImageResource::_image_view,
+        getSubresourceRange(aspect, MipRange{ 0, 1 })
+      ) {}
 };
 
 void copyBufferToImage(
