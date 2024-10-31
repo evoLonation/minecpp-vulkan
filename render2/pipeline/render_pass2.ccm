@@ -345,14 +345,13 @@ public:
     }
     auto batches = std::vector<CommandBatch>{};
     auto waitables_keep_lifetime = std::list<Waitable>{};
-    auto addSync = [&](std::variant<BarrierRecorder, FamilyTransferRecorder> sync) {
-      if (auto* barrier = std::get_if<BarrierRecorder>(&sync)) {
-        batches.push_back(CommandBatch{ std::move(*barrier) });
-      } else if (auto* barrier = std::get_if<FamilyTransferRecorder>(&sync)) {
-        auto& release_executor = vk::CommandExecutorManager::getInstance()[barrier->release_family];
-        auto  waitable = release_executor.submit(barrier->release);
+    auto addSync = [&](SyncContext sync) {
+      if (auto* ctx = std::get_if<BarrierRecorder>(&sync)) {
+        batches.push_back(CommandBatch{ std::move(*ctx) });
+      } else if (auto* ctx = std::get_if<FamilyTransferRecorder>(&sync)) {
+        auto waitable = ctx->executeRelease();
         waitables_keep_lifetime.push_back(std::move(waitable));
-        batches.push_back(barrier->acquire_getter(&waitables_keep_lifetime.back()));
+        batches.push_back(ctx->toAcquireBatch(&waitables_keep_lifetime.back()));
       }
     };
     for (auto [image, info] : views::zip(images, getSyncInfos())) {

@@ -1,3 +1,5 @@
+module;
+#include <toy.h>
 export module render.vk.tracker;
 import std;
 import toy;
@@ -11,10 +13,32 @@ export namespace rd::vk {
 
 using BarrierRecorder = std::function<void(VkCommandBuffer)>;
 struct FamilyTransferRecorder {
-  std::function<void(VkCommandBuffer)>   release;
-  std::function<CommandBatch(Waitable*)> acquire_getter;
-  uint32                                 release_family;
+  std::function<void(VkCommandBuffer)> release;
+  std::function<void(VkCommandBuffer)> acquire;
+  // std::function<CommandBatch(Waitable*)> acquire_getter;
+  uint32 release_family;
+
+  void fillAcquireBatch(auto& batch, Waitable* waitable) {
+    batch.recorder = acquire;
+    batch.waits = { { waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } };
+  }
+  auto toAcquireBatch(Waitable* waitable) -> CommandBatch {
+    auto batch = CommandBatch{};
+    fillAcquireBatch(batch, waitable);
+    return batch;
+  }
+  auto executeRelease(auto batch = CommandBatch{}) -> Waitable {
+    auto& release_executor = CommandExecutorManager::getInstance()[release_family];
+    batch.recorder = std::move(release);
+    return release_executor.submit(batch);
+  }
+  auto executeRelease() -> Waitable {
+    auto& release_executor = CommandExecutorManager::getInstance()[release_family];
+    return release_executor.submit(release);
+  }
 };
+
+using SyncContext = std::variant<std::monostate, BarrierRecorder, FamilyTransferRecorder>;
 
 struct ImageAdditionalInfo {
   // if old reads exist, then layout is for old reads;
@@ -38,9 +62,7 @@ private:
 public:
   CommonBarrierTracker() = default;
   CommonBarrierTracker(VkHandle handle, VkImageSubresourceRange subresource_range)
-    : _handle(handle), _last_write_scope(), _last_read_stages(), _family() {
-    // the resource first is not owned by any family
-    _family = std::numeric_limits<uint32>::max();
+    : _handle(handle), _last_write_scope(), _last_read_stages(), _family(_undefined_family) {
     if constexpr (IsImage) {
       ImageAdditionalInfo::_layout = VK_IMAGE_LAYOUT_UNDEFINED;
       ImageAdditionalInfo::_subresource_range = subresource_range;
@@ -58,10 +80,9 @@ public:
    * @param scope
    * @param family
    * @param layout
-   * @return std::variant<BarrierRecorder, FamilyTransferRecorder>
+   * @return SyncContext
    */
-  auto syncScope(Scope scope, uint32 family, VkImageLayout layout)
-    -> std::variant<BarrierRecorder, FamilyTransferRecorder>;
+  auto syncScope(Scope scope, uint32 family, VkImageLayout layout) -> SyncContext;
 
   /**
    * @brief Set the last scope of the dependency chain, generally call after the resource's scope
@@ -72,7 +93,27 @@ public:
    */
   void setNewScope(Scope scope, uint32 family, VkImageLayout layout);
 
-  auto getNowScope() -> Scope;
+  void clearScope() {
+    _last_read_stages = 0;
+    _last_write_scope = Scope{};
+  }
+
+  /**
+   * @brief get the scope that need sync with (if exist)
+   * if has reads, return all reads, else return old write
+   */
+  auto getNeedSync() -> std::optional<Scope> {
+    auto scope = Scope{};
+    if (_last_read_stages != 0) {
+      return Scope{
+        .stage_mask = _last_read_stages,
+      };
+    } else if (_last_write_scope.stage_mask != 0) {
+      return _last_write_scope;
+    } else {
+      return std::nullopt;
+    }
+  }
 
   auto getNowFamily() -> uint32 { return _family; }
 
@@ -97,8 +138,11 @@ private:
   VkPipelineStageFlags2 _last_read_stages;
   uint32                _family;
 
+  // the resource first is not owned by any family
+  static constexpr auto _undefined_family = std::numeric_limits<uint32>::max();
+
   auto needFamilyTransfer(uint32 family) -> bool {
-    return _family != family && _family != std::numeric_limits<uint32>::max();
+    return _family != family && _family != _undefined_family;
   }
 
   auto needLayoutTransition(VkImageLayout layout) -> bool {
@@ -145,17 +189,9 @@ auto CommonBarrierTracker<IsImage>::generateRecorder(
           [handle, release_scopes, families, subresource, layouts](VkCommandBuffer cmdbuf) {
             recordImageBarrier(cmdbuf, handle, subresource, layouts, release_scopes, families);
           },
-        .acquire_getter =
-          [handle, acquire_scopes, families, subresource, layouts](Waitable* waitable) {
-            return CommandBatch{
-              .recorder =
-                [=](VkCommandBuffer cmdbuf) {
-                  recordImageBarrier(
-                    cmdbuf, handle, subresource, layouts, acquire_scopes, families
-                  );
-                },
-              .waits = { { waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
-            };
+        .acquire =
+          [handle, acquire_scopes, families, subresource, layouts](VkCommandBuffer cmdbuf) {
+            recordImageBarrier(cmdbuf, handle, subresource, layouts, acquire_scopes, families);
           },
         .release_family = _family,
       };
@@ -163,14 +199,8 @@ auto CommonBarrierTracker<IsImage>::generateRecorder(
       recorder = FamilyTransferRecorder{
         .release = [handle, release_scopes, families](VkCommandBuffer cmdbuf
                    ) { recordBufferBarrier(cmdbuf, handle, release_scopes, families); },
-        .acquire_getter =
-          [handle, acquire_scopes, families](Waitable* waitable) {
-            return CommandBatch{
-              .recorder = [=](VkCommandBuffer cmdbuf
-                          ) { recordBufferBarrier(cmdbuf, handle, acquire_scopes, families); },
-              .waits = { { waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
-            };
-          },
+        .acquire = [handle, acquire_scopes, families](VkCommandBuffer cmdbuf
+                   ) { recordBufferBarrier(cmdbuf, handle, acquire_scopes, families); },
         .release_family = _family,
       };
     }
@@ -181,8 +211,8 @@ auto CommonBarrierTracker<IsImage>::generateRecorder(
     if (needFamilyTransfer(family)) {
       toy::debugf({}, "  Generate 2 barriers for family transfer: {} -> {}", _family, family);
     }
-    toy::debugf({}, "  src scope: {}", scope2Str(src_scope));
-    toy::debugf({}, "  dst scope: {}", scope2Str(dst_scope));
+    toy::debug({}, NAME_TUPLE_STRING(src_scope));
+    toy::debug({}, NAME_TUPLE_STRING(dst_scope));
     if constexpr (IsImage) {
       toy::debugf(
         {},
@@ -197,20 +227,22 @@ auto CommonBarrierTracker<IsImage>::generateRecorder(
 
 template <bool IsImage>
 auto CommonBarrierTracker<IsImage>::syncScope(Scope scope, uint32 family, VkImageLayout layout)
-  -> std::variant<BarrierRecorder, FamilyTransferRecorder> {
-  toy::throwf(scope.stage_mask != 0, "dst stage of STAGE_NONE in barrier is meaningless");
+  -> SyncContext {
+  TOY_ASSERT(scope.stage_mask != VK_PIPELINE_STAGE_NONE, "meaningless");
   if constexpr (IsImage) {
-    toy::throwf(layout != VK_IMAGE_LAYOUT_UNDEFINED, "layout cannot be VK_IMAGE_LAYOUT_UNDEFINED");
+    TOY_ASSERT(layout != VK_IMAGE_LAYOUT_UNDEFINED);
   }
   auto type = checkAccessType(scope.access_mask);
   using enum AccessType;
-  auto recorder = std::variant<BarrierRecorder, FamilyTransferRecorder>{};
+  auto recorder = SyncContext{};
   auto generateRecorder = [&](Scope src_scope) {
-    recorder = this->generateRecorder(src_scope, scope, family, layout);
+    std::visit(
+      [&](auto&& ret) { recorder = ret; }, this->generateRecorder(src_scope, scope, family, layout)
+    );
   };
-
   // if old reads exist, sync to all old reads, else sync to old write (no matter empty or not)
-  auto syncWithAll = [&]() { generateRecorder(getNowScope()); };
+  auto need_sync = getNeedSync().has_value();
+  auto syncWithAll = [&]() { generateRecorder(getNeedSync() ? getNeedSync().value() : Scope{}); };
   auto syncWithWrite = [&]() { generateRecorder(_last_write_scope); };
   auto clearOldScopes = [&]() {
     _last_write_scope = Scope{};
@@ -224,14 +256,18 @@ auto CommonBarrierTracker<IsImage>::syncScope(Scope scope, uint32 family, VkImag
       _last_read_stages |= scope.stage_mask;
     }
   };
-  // special case
-  if (needFamilyTransfer(family) || needLayoutTransition(layout) || type == WRITE) {
+  if (needFamilyTransfer(family) || needLayoutTransition(layout) || (type == WRITE && need_sync)) {
+    // special case
     syncWithAll();
     clearOldScopes();
     updateScopes();
-  } else {
-    // only if type == READ
+  } else if (type == READ && need_sync) {
+    TOY_ASSERT(type == READ);
     syncWithWrite();
+    updateScopes();
+  } else {
+    TOY_ASSERT(need_sync);
+    toy::debugf("no need to sync: {}", NAME_TUPLE_STRING(scope));
     updateScopes();
   }
   _family = family;
@@ -243,29 +279,16 @@ auto CommonBarrierTracker<IsImage>::syncScope(Scope scope, uint32 family, VkImag
 
 template <bool IsImage>
 void CommonBarrierTracker<IsImage>::setNewScope(Scope scope, uint32 family, VkImageLayout layout) {
-  toy::throwf(scope.stage_mask != 0, "setNewScope: stage of STAGE_NONE is meaningless");
+  TOY_ASSERT(scope.stage_mask != VK_PIPELINE_STAGE_NONE);
   // No matter what type of scope it is, just assign to write scope, so that we can ensure next
   // syncScope call can sync with it
   _last_read_stages = 0;
   _last_write_scope = scope;
+  _last_write_scope.access_mask = extractWriteAccess(_last_write_scope.access_mask);
   _family = family;
   if constexpr (IsImage) {
     ImageAdditionalInfo::_layout = layout;
   }
-}
-
-template <bool IsImage>
-auto CommonBarrierTracker<IsImage>::getNowScope() -> Scope {
-  auto scope = Scope{};
-  if (_last_read_stages != 0) {
-    scope = Scope{
-      .stage_mask = _last_read_stages,
-      .access_mask = VK_ACCESS_NONE,
-    };
-  } else {
-    scope = _last_write_scope;
-  }
-  return scope;
 }
 
 template <bool IsImage>
@@ -293,9 +316,13 @@ public:
    */
   void waitIdle(uint64 nano_timeout = std::numeric_limits<uint64>::max());
 
-  auto setNewScope(Scope scope, uint32 family, VkImageLayout layout) {
+  void setNewScope(Scope scope, uint32 family, VkImageLayout layout) {
     _idle = false;
     this->CommonBarrierTracker<IsImage>::setNewScope(scope, family, layout);
+  }
+  void clearScope() {
+    _idle = true;
+    this->CommonBarrierTracker<IsImage>::clearScope();
   }
   auto syncScope(Scope scope, uint32 family, VkImageLayout layout) {
     _idle = false;
@@ -311,16 +338,17 @@ void CommonWaitableTracker<IsImage>::waitIdle(uint64 nano_timeout) {
   if (_idle) {
     return;
   }
+  auto src_scope = this->getNeedSync();
+  TOY_ASSERT(src_scope);
   auto layout = VK_IMAGE_LAYOUT_UNDEFINED;
   if constexpr (IsImage) {
     layout = this->getNowLayout();
   }
-  auto src_scope = this->getNowScope();
   auto dst_scope = Scope{
     .stage_mask = VK_PIPELINE_STAGE_NONE,
     .access_mask = VK_ACCESS_NONE,
   };
-  auto  ret = this->generateRecorder(src_scope, dst_scope, this->getNowFamily(), layout);
+  auto  ret = this->generateRecorder(src_scope.value(), dst_scope, this->getNowFamily(), layout);
   auto& barrier = std::get<BarrierRecorder>(ret);
   auto& executor = CommandExecutorManager::getInstance()[this->getNowFamily()];
   executor.submit(barrier).wait(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, nano_timeout);
@@ -336,8 +364,7 @@ public:
   BufferBarrierTracker(VkBuffer buffer) : _base(buffer, {}) {}
 
   auto valid() -> bool { return _base.valid(); }
-  auto syncScope(Scope scope, uint32 family)
-    -> std::variant<BarrierRecorder, FamilyTransferRecorder> {
+  auto syncScope(Scope scope, uint32 family) -> SyncContext {
     return _base.syncScope(scope, family, {});
   }
   void setNewScope(Scope scope, uint32 family) { _base.setNewScope(scope, family, {}); }
@@ -346,7 +373,7 @@ public:
     _base.waitIdle(nano_timeout);
   }
 
-  auto getNowScope() -> Scope { return _base.getNowScope(); }
+  auto getNeedSync() -> std::optional<Scope> { return _base.getNeedSync(); }
   auto getNowFamily() -> uint32 { return _base.getNowFamily(); }
 
 private:
@@ -360,8 +387,7 @@ public:
     : _base(image, subresource_range) {}
 
   auto valid() -> bool { return _base.valid(); }
-  auto syncScope(Scope scope, uint32 family, VkImageLayout layout)
-    -> std::variant<BarrierRecorder, FamilyTransferRecorder> {
+  auto syncScope(Scope scope, uint32 family, VkImageLayout layout) -> SyncContext {
     return _base.syncScope(scope, family, layout);
   }
   void setNewScope(Scope scope, uint32 family, VkImageLayout layout) {
@@ -371,7 +397,7 @@ public:
     _base.waitIdle(nano_timeout);
   }
 
-  auto getNowScope() -> Scope { return _base.getNowScope(); }
+  auto getNeedSync() -> std::optional<Scope> { return _base.getNeedSync(); }
   auto getNowFamily() -> uint32 { return _base.getNowFamily(); }
   auto getSubresourceRange() -> VkImageSubresourceRange { return _base.getSubresourceRange(); }
   auto getNowLayout() -> VkImageLayout { return _base.getNowLayout(); }
