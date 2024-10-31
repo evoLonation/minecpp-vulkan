@@ -6,6 +6,7 @@ import render.vk.resource;
 import render.vk.executor;
 import render.vk.device;
 import render.vk.tracker;
+import render.vk.sync;
 
 import <vulkan_config.h>;
 
@@ -58,17 +59,22 @@ public:
     removeIdles();
     _waitables.push_back(std::move(waitable));
   }
-  void waitIdle() {
-    for (auto& w : _waitables) {
-      w->wait(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+  auto waitIdle(uint64 nano_timeout = TimelineSemaphore::max_timeout) -> bool {
+    auto res = Waitable::wait(
+      _waitables | views::transform([](auto& w) {
+        return std::pair{ w.get(), VkPipelineStageFlags2{ VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } };
+      }) |
+        ranges::to<std::vector>(),
+      false,
+      nano_timeout
+    );
+    if (res) {
+      _waitables.clear();
+    } else {
+      removeIdles();
     }
-    _waitables.clear();
+    return res;
   }
-  auto isIdle() -> bool {
-    removeIdles();
-    return _waitables.empty();
-  }
-
   auto getInfo() -> std::span<DescriptorSetLayout::BindingInfo const> { return _layout->getInfo(); }
 
 private:
@@ -171,7 +177,7 @@ private:
   void workingToIdle() {
     auto new_end =
       std::remove_if(_working_resources.begin(), _working_resources.end(), [](auto& dset) {
-        return dset.isIdle();
+        return dset.waitIdle(0);
       });
     for (auto& dset : ranges::subrange{ new_end, _working_resources.end() }) {
       auto& dsets = _resources.at(dset.getPool()).second;

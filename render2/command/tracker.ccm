@@ -69,7 +69,6 @@ public:
     }
   }
   auto valid() -> bool { return _handle.get() != nullptr; }
-  // todo: syncScope maybe return empty when: multi reads and has no any writes before
   /**
    * @brief Sync the new scope to old scope(s)
    * For read scope, it will generate a dependency between last write scope

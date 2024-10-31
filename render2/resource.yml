@@ -15,3 +15,5 @@ module:
     provide: render.context
 - context.cc:
     implement: render.context
+include_dir:
+- base

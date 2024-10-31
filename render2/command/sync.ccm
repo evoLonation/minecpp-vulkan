@@ -1,3 +1,6 @@
+module;
+#include <toy.h>
+#include <vulkan_tool.h>
 export module render.vk.sync;
 
 import <vulkan_config.h>;
@@ -25,6 +28,12 @@ auto sync(DeviceCapabilityBuilder& builder) -> bool {
 
 } // namespace device_checkers
 
+/**
+ * @brief
+ * 1. can execute wait and signal operation on host
+ * 2. manager host and device counter value state
+ * note: must call @ref pendingDeviceSignal when submit device signal operation
+ */
 class TimelineSemaphore : public rs::Semaphore {
 public:
   TimelineSemaphore(uint64 initial_value = 0) {
@@ -38,35 +47,20 @@ public:
       .pNext = &type_info,
     };
     rs::Semaphore::operator=(create_info);
-    _newest_value = initial_value;
-  }
-  ~TimelineSemaphore() {
-    if (get()) {
-      waitIdle();
-    }
-  }
-  TimelineSemaphore(const TimelineSemaphore&) noexcept = delete;
-  TimelineSemaphore(TimelineSemaphore&&) noexcept = default;
-  auto operator=(const TimelineSemaphore&) noexcept -> TimelineSemaphore& = delete;
-  auto operator=(TimelineSemaphore&&) noexcept -> TimelineSemaphore& = default;
-  auto getValue() const -> uint64 {
-    uint64 value;
-    checkVkResult(vkGetSemaphoreCounterValue(Device::getInstance().get(), get(), &value), "");
-    return value;
+    _host_signal_value = initial_value;
+    _device_signal_value = initial_value;
   }
 
-  auto wait(uint64 value, uint64 nano_timeout = std::numeric_limits<uint64>::max()) -> bool {
-    return wait(
-      std::array{ std::pair<TimelineSemaphore&, uint64>{ *this, value } }, false, nano_timeout
-    );
+  auto wait(uint64 value, uint64 nano_timeout = max_timeout) -> bool {
+    return wait(std::array{ std::pair{ this, value } }, false, nano_timeout);
   }
 
   static auto wait(
-    std::span<std::pair<TimelineSemaphore&, uint64> const> semaphores,
+    std::span<std::pair<TimelineSemaphore*, uint64> const> semaphores,
     bool                                                   any = false,
-    uint64 nano_timeout = std::numeric_limits<uint64>::max()
+    uint64                                                 nano_timeout = max_timeout
   ) -> bool {
-    auto handles = semaphores | views::transform([](auto& s) { return s.first.get(); }) |
+    auto handles = semaphores | views::transform([](auto& s) { return s.first->get(); }) |
                    ranges::to<std::vector>();
     auto values =
       semaphores | views::transform([](auto& s) { return s.second; }) | ranges::to<std::vector>();
@@ -77,16 +71,10 @@ public:
       .pSemaphores = handles.data(),
       .pValues = values.data(),
     };
-    auto res = checkVkResult(
-      vkWaitSemaphores(Device::getInstance(), &wait_info, nano_timeout),
-      "wait semaphore",
-      { VK_SUCCESS, VK_TIMEOUT }
+    auto res = CHECK_VK_RESULT(
+      vkWaitSemaphores(Device::getInstance(), &wait_info, nano_timeout), { VK_SUCCESS, VK_TIMEOUT }
     );
-    if (res == VK_SUCCESS) {
-      return true;
-    } else {
-      return false;
-    }
+    return res == VK_SUCCESS;
   }
 
   void signal(uint64 value) {
@@ -95,53 +83,135 @@ public:
       .semaphore = get(),
       .value = value,
     };
-    checkVkResult(vkSignalSemaphore(Device::getInstance(), &signal_info), "signal semaphore");
-    _newest_value = value;
+    CHECK_VK_RESULT(vkSignalSemaphore(Device::getInstance(), &signal_info));
+    _host_signal_value = value;
+  }
+
+  auto getCurrentValue() const -> uint64 {
+    uint64 value;
+    CHECK_VK_RESULT(vkGetSemaphoreCounterValue(Device::getInstance().get(), get(), &value));
+    TOY_ASSERT(value <= getBiggestSignalValue());
+    return value;
   }
 
   /**
-   * @brief Update the newest and biggest signaled value (no matter pending or not)
-   *
-   * @param value must bigger than the return value of getNewestValue
+   * @brief must call it when submit device signal operation
    */
-  void updateValue(uint64 value) {
-    if (value <= _newest_value) {
-      toy::throwf(
-        "TimelineSemaphore::updateValue: value must bigger than the return value of getNewestValue"
-      );
+  void pendingDeviceSignal(uint64 value) {
+    TOY_ASSERT(value > _host_signal_value);
+    if (value > _device_signal_value) {
+      _device_signal_value = value;
     }
-    _newest_value = value;
+    _device_signal_value = value;
   }
-  auto getNewestValue() const -> uint64 { return _newest_value; }
+  auto getBiggestSignalValue() const -> uint64 {
+    return std::max(_device_signal_value, _host_signal_value);
+  }
 
-  auto increaseValue() -> uint64 { return ++_newest_value; }
+  static auto waitIdle(
+    std::span<TimelineSemaphore* const> semaphores,
+    bool                                any = false,
+    uint64                              nano_timeout = max_timeout
+  ) -> bool {
+    return wait(
+      semaphores |
+        views::transform([](auto& s) { return std::pair{ s, s->getBiggestSignalValue() }; }) |
+        ranges::to<std::vector>(),
+      any,
+      nano_timeout
+    );
+  }
 
-  auto waitIdle(uint64 nano_timeout = std::numeric_limits<uint64>::max()) -> bool {
-    return wait(getNewestValue(), nano_timeout);
+  auto waitIdle(uint64 nano_timeout = max_timeout) -> bool {
+    return wait(getBiggestSignalValue(), nano_timeout);
+  }
+
+  ~TimelineSemaphore() { beforeDestroy(); }
+  TimelineSemaphore(const TimelineSemaphore&) noexcept = delete;
+  TimelineSemaphore(TimelineSemaphore&&) noexcept = default;
+  auto operator=(const TimelineSemaphore&) noexcept -> TimelineSemaphore& = delete;
+  auto operator=(TimelineSemaphore&& e) noexcept -> TimelineSemaphore& {
+    beforeDestroy();
+    rs::Semaphore::operator=(std::move(e));
+    _host_signal_value = e._host_signal_value;
+    _device_signal_value = e._device_signal_value;
+    return *this;
   }
 
 private:
-  uint64 _newest_value;
+  void beforeDestroy() {
+    if (get()) {
+      waitIdle();
+    }
+  }
+
+  uint64 _host_signal_value;
+  uint64 _device_signal_value;
+
+public:
+  static constexpr auto max_timeout = std::numeric_limits<uint64>::max();
+};
+
+/**
+ * @brief created a semaphore that track device signal operation
+ * after call @ref pendingNewSignal, must submit a device signal before next pendingNewSignal or
+ * destroy
+ */
+class IncrementalSemaphore {
+public:
+  IncrementalSemaphore() : _sema(TimelineSemaphore{}) {}
+
+  auto getDeviceSyncInfo() -> std::pair<VkSemaphore, uint64> {
+    return { _sema.get(), _sema.getBiggestSignalValue() };
+  }
+  auto wait(uint64 nano_timeout = TimelineSemaphore::max_timeout) -> bool {
+    return _sema.waitIdle(nano_timeout);
+  }
+
+  static auto wait(
+    std::span<IncrementalSemaphore* const> semaphores,
+    bool                                   any = false,
+    uint64                                 nano_timeout = TimelineSemaphore::max_timeout
+  ) -> bool {
+    return TimelineSemaphore::waitIdle(
+      semaphores | views::transform([](auto& s) { return &s->_sema; }) | ranges::to<std::vector>(),
+      any,
+      nano_timeout
+    );
+  }
+
+  void pendingNewSignal() {
+    TOY_ASSERT(wait(0));
+    TOY_ASSERT(_sema.getCurrentValue() == _sema.getBiggestSignalValue());
+    _sema.pendingDeviceSignal(_sema.getBiggestSignalValue() + 1);
+  }
+
+  auto valid() const -> bool { return _sema.get(); }
+
+private:
+  TimelineSemaphore _sema;
 };
 
 class TimelineSemaphorePool {
 public:
   TimelineSemaphorePool() { _idle_semas.resize(10); }
-  auto allocate() -> TimelineSemaphore {
+  auto allocate() -> IncrementalSemaphore {
     if (_idle_semas.empty()) {
       workingToIdle();
     } else {
       tryShrink();
     }
     if (_idle_semas.empty()) {
-      return TimelineSemaphore{};
+      auto ret = IncrementalSemaphore{};
+      ret.pendingNewSignal();
     }
     auto ret = std::move(_idle_semas.back());
+    ret.pendingNewSignal();
     _idle_semas.pop_back();
     return ret;
   }
 
-  void recycle(TimelineSemaphore s) { _working_semas.push_back(std::move(s)); }
+  void recycle(IncrementalSemaphore s) { _working_semas.push_back(std::move(s)); }
 
   void tryShrink() {
     auto shrink_size = 20;
@@ -158,12 +228,12 @@ public:
   auto operator=(TimelineSemaphorePool&&) noexcept -> TimelineSemaphorePool& = delete;
 
 private:
-  std::vector<TimelineSemaphore> _idle_semas;
-  std::list<TimelineSemaphore>   _working_semas;
+  std::vector<IncrementalSemaphore> _idle_semas;
+  std::list<IncrementalSemaphore>   _working_semas;
 
   void workingToIdle() {
     for (auto iter = _working_semas.begin(); iter != _working_semas.end();) {
-      if (iter->waitIdle(0)) {
+      if (iter->wait(0)) {
         _idle_semas.push_back(std::move(*iter));
         iter = _working_semas.erase(iter);
       } else {
@@ -173,25 +243,30 @@ private:
   }
 };
 
-class TimelineSemaphoreRecyclable : public TimelineSemaphore {
+/**
+ * @brief if constructed, must used (submit signal) before destroy
+ */
+class DisposableSemaphore : public IncrementalSemaphore {
 public:
-  TimelineSemaphoreRecyclable(TimelineSemaphorePool* pool)
-    : TimelineSemaphore(pool->allocate()), _pool(pool) {}
+  DisposableSemaphore(TimelineSemaphorePool* pool)
+    : IncrementalSemaphore(pool->allocate()), _pool(pool) {}
 
-  ~TimelineSemaphoreRecyclable() { recycle(); }
-  TimelineSemaphoreRecyclable(TimelineSemaphoreRecyclable&& a) noexcept = default;
-  auto operator=(TimelineSemaphoreRecyclable&& a) noexcept -> TimelineSemaphoreRecyclable& {
+  ~DisposableSemaphore() { recycle(); }
+  DisposableSemaphore(DisposableSemaphore&& a) noexcept = default;
+  auto operator=(DisposableSemaphore&& a) noexcept -> DisposableSemaphore& {
     recycle();
-    TimelineSemaphore::operator=(std::move(a));
+    IncrementalSemaphore::operator=(std::move(a));
     _pool = a._pool;
     return *this;
   }
 
 private:
+  using IncrementalSemaphore::pendingNewSignal; // hide
+private:
   TimelineSemaphorePool* _pool;
 
   void recycle() {
-    if (get()) {
+    if (valid()) {
       _pool->recycle(std::move(*this));
     }
   }
