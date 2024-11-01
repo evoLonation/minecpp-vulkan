@@ -28,6 +28,8 @@ auto sync(DeviceCapabilityBuilder& builder) -> bool {
 
 } // namespace device_checkers
 
+constexpr auto max_timeout = std::numeric_limits<uint64>::max();
+
 /**
  * @brief
  * 1. can execute wait and signal operation on host
@@ -142,9 +144,6 @@ private:
 
   uint64 _host_signal_value;
   uint64 _device_signal_value;
-
-public:
-  static constexpr auto max_timeout = std::numeric_limits<uint64>::max();
 };
 
 /**
@@ -159,14 +158,12 @@ public:
   auto getDeviceSyncInfo() -> std::pair<VkSemaphore, uint64> {
     return { _sema.get(), _sema.getBiggestSignalValue() };
   }
-  auto wait(uint64 nano_timeout = TimelineSemaphore::max_timeout) -> bool {
-    return _sema.waitIdle(nano_timeout);
-  }
+  auto wait(uint64 nano_timeout = max_timeout) -> bool { return _sema.waitIdle(nano_timeout); }
 
   static auto wait(
     std::span<IncrementalSemaphore* const> semaphores,
     bool                                   any = false,
-    uint64                                 nano_timeout = TimelineSemaphore::max_timeout
+    uint64                                 nano_timeout = max_timeout
   ) -> bool {
     return TimelineSemaphore::waitIdle(
       semaphores | views::transform([](auto& s) { return &s->_sema; }) | ranges::to<std::vector>(),
@@ -246,7 +243,7 @@ public:
   /**
    * @brief wait to signaled state
    */
-  void wait(bool reset, uint64_t timeout = std::numeric_limits<uint64_t>::max());
+  void wait(bool reset, uint64_t timeout = max_timeout);
   void reset();
   auto isSignaled() -> bool;
 };

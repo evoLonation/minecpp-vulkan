@@ -304,7 +304,7 @@ public:
    * will not influence the state of resource last scope
    * even though we submit a barrier, since the barrier sync nothing dst, we can just ignore it
    */
-  void waitIdle(uint64 nano_timeout = std::numeric_limits<uint64>::max());
+  void waitIdle(uint64 nano_timeout = max_timeout);
 
   void setNewScope(Scope scope, uint32 family, VkImageLayout layout) {
     _idle = false;
@@ -366,9 +366,7 @@ public:
   }
   void setNewScope(Scope scope, uint32 family) { _base.setNewScope(scope, family, {}); }
   void clearScope() { _base.clearScope(); }
-  void waitIdle(uint64 nano_timeout = std::numeric_limits<uint64>::max()) {
-    _base.waitIdle(nano_timeout);
-  }
+  void waitIdle(uint64 nano_timeout = max_timeout) { _base.waitIdle(nano_timeout); }
 
   auto getNeedSync() -> std::optional<Scope> { return _base.getNeedSync(); }
   auto getNowFamily() -> uint32 { return _base.getNowFamily(); }
@@ -391,9 +389,7 @@ public:
     _base.setNewScope(scope, family, layout);
   }
   void clearScope() { _base.clearScope(); }
-  void waitIdle(uint64 nano_timeout = std::numeric_limits<uint64>::max()) {
-    _base.waitIdle(nano_timeout);
-  }
+  void waitIdle(uint64 nano_timeout = max_timeout) { _base.waitIdle(nano_timeout); }
 
   auto getNeedSync() -> std::optional<Scope> { return _base.getNeedSync(); }
   auto getNowFamily() -> uint32 { return _base.getNowFamily(); }

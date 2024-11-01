@@ -23,7 +23,7 @@ auto Presentation::acquireNextImage() -> std::pair<uint32, VkResult> {
   auto   result = vkAcquireNextImageKHR(
     Device::getInstance(),
     _swapchain,
-    std::numeric_limits<uint64_t>::max(),
+    max_timeout,
     _acquire_ctx.available_sema,
     _acquire_ctx.available_fence,
     &image_index

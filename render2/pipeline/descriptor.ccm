@@ -61,7 +61,7 @@ public:
     removeIdles();
     _waitables.push_back(std::move(waitable));
   }
-  auto waitIdle(uint64 nano_timeout = TimelineSemaphore::max_timeout) -> bool {
+  auto waitIdle(uint64 nano_timeout = max_timeout) -> bool {
     auto res = Waitable::wait(
       _waitables | views::transform([](auto& w) {
         return std::pair{ w.get(), VkPipelineStageFlags2{ VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } };

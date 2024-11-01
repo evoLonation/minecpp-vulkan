@@ -150,7 +150,7 @@ public:
 
   auto wait(
     VkPipelineStageFlags2 stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-    uint64                nano_timeout = TimelineSemaphore::max_timeout
+    uint64                nano_timeout = max_timeout
   ) -> bool {
     if (stage == VK_PIPELINE_STAGE_ALL_COMMANDS_BIT) {
       return _cmdbuf.getSema().wait(nano_timeout);
@@ -161,7 +161,7 @@ public:
   static auto wait(
     std::span<std::pair<Waitable*, VkPipelineStageFlags2> const> waits,
     bool                                                         any = false,
-    uint64 nano_timeout = TimelineSemaphore::max_timeout
+    uint64                                                       nano_timeout = max_timeout
   ) {
     auto semas = std::vector<IncrementalSemaphore*>{};
     for (auto& [waitable, stage] : waits) {
