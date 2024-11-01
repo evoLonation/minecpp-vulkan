@@ -52,7 +52,7 @@ private:
  * @param waitable
  * @return auto
  */
-class DescriptorSet : public rs::DescriptorSet {
+class DescriptorSet : toy::AutoMoveAssigner<DescriptorSet>, public rs::DescriptorSet {
 public:
   DescriptorSet(rs::DescriptorSet dset, DescriptorSetLayout* layout)
     : rs::DescriptorSet{ std::move(dset) }, _layout{ layout } {}
@@ -81,6 +81,9 @@ public:
 
   auto valid() const -> bool { return get(); }
 
+  ~DescriptorSet() { beforeDestroy(); }
+  DEFAULT_MOVEABLE(DescriptorSet);
+
 private:
   DescriptorSetLayout* _layout;
 
@@ -91,6 +94,13 @@ private:
       return w->wait(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0);
     });
     _waitables.erase(new_end, _waitables.end());
+  }
+
+  friend toy::AutoMoveAssigner<DescriptorSet>;
+  void beforeDestroy() {
+    if (valid()) {
+      waitIdle();
+    }
   }
 };
 

@@ -291,22 +291,13 @@ void CommonBarrierTracker<IsImage>::setNewScope(Scope scope, uint32 family, VkIm
 }
 
 template <bool IsImage>
-class CommonWaitableTracker : public CommonBarrierTracker<IsImage> {
+class CommonWaitableTracker : toy::AutoMoveAssigner<CommonWaitableTracker<IsImage>>,
+                              public CommonBarrierTracker<IsImage> {
 public:
   using CommonBarrierTracker<IsImage>::CommonBarrierTracker;
-  ~CommonWaitableTracker() {
-    if (this->valid()) {
-      this->waitIdle();
-    }
-  }
-  CommonWaitableTracker(CommonWaitableTracker&& a) noexcept = default;
-  auto operator=(CommonWaitableTracker&& a) noexcept -> CommonWaitableTracker& {
-    if (this->valid()) {
-      this->waitIdle();
-    }
-    this->CommonBarrierTracker<IsImage>::operator=(std::move(a));
-    return *this;
-  }
+
+  ~CommonWaitableTracker() { beforeDestroy(); }
+  DEFAULT_MOVEABLE(CommonWaitableTracker);
 
   /**
    * @brief submit a barrier to sync with previous scope and wait
@@ -330,6 +321,13 @@ public:
 
 private:
   bool _idle = true;
+
+  friend toy::AutoMoveAssigner<CommonWaitableTracker>;
+  void beforeDestroy() {
+    if (this->valid()) {
+      waitIdle();
+    }
+  }
 };
 
 template <bool IsImage>

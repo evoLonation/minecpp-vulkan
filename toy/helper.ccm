@@ -15,6 +15,29 @@ template <typename P>
 using ptr_manager = std::unique_ptr<std::remove_pointer_t<P>, decltype([](auto) {})>;
 
 /**
+ * @brief must place it to the first base class location
+ * @note reason: the auto generated move assigner operator will execute base class and members
+ * move assigner by declaration order
+ */
+template <typename Derived>
+class AutoMoveAssigner {
+public:
+  AutoMoveAssigner() = default;
+  AutoMoveAssigner& operator=(AutoMoveAssigner&& e) noexcept {
+    self().beforeDestroy();
+    return *this;
+  }
+  AutoMoveAssigner(AutoMoveAssigner&& e) noexcept = default;
+
+private:
+  template <typename = void>
+    requires requires(Derived d) { d.beforeDestroy(); }
+  auto self() -> Derived& {
+    return static_cast<Derived&>(*this);
+  }
+};
+
+/**
  * @brief 需要主动构造，可含有参数，若在构造前调用getInstance()会抛异常
  * @tparam T
  */

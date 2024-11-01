@@ -180,10 +180,9 @@ public:
     }
     return _stage_semas.at(stage).getDeviceSyncInfo();
   }
-  Waitable(const Waitable&) noexcept = delete;
-  Waitable(Waitable&&) noexcept = default;
-  auto operator=(const Waitable&) noexcept -> Waitable& = delete;
-  auto operator=(Waitable&&) noexcept -> Waitable& = default;
+
+  UNCOPYABLE(Waitable);
+  DEFAULT_MOVEABLE(Waitable);
 
 private:
   DisposableCmdbuf                                               _cmdbuf;
@@ -293,6 +292,8 @@ public:
 
   auto getFamily() const -> uint32 { return _family_index; }
   auto getQueue() const -> VkQueue { return _queue; }
+
+  UNCOPYABLE_MOVEABLE(CommandExecutor);
 
 private:
   struct SubmitInfo {

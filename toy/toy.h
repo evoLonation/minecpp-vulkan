@@ -33,6 +33,10 @@
   UNCOPYABLE(type)                                                                                 \
   UNMOVEABLE(type)
 
+#define DEFAULT_MOVEABLE(type)                                                                     \
+  type(type&&) noexcept = default;                                                                 \
+  auto operator=(type&&) noexcept -> type& = default;
+
 #define CUSTOM_FORMATTER(type, func)                                                               \
   export template <>                                                                               \
   class std::formatter<type> : public std::formatter<std::string> {                                \

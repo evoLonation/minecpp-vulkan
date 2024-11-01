@@ -34,7 +34,7 @@ auto sync(DeviceCapabilityBuilder& builder) -> bool {
  * 2. manager host and device counter value state
  * note: must call @ref pendingDeviceSignal when submit device signal operation
  */
-class TimelineSemaphore : public rs::Semaphore {
+class TimelineSemaphore : toy::AutoMoveAssigner<TimelineSemaphore>, public rs::Semaphore {
 public:
   TimelineSemaphore(uint64 initial_value = 0) {
     auto type_info = VkSemaphoreTypeCreateInfo{
@@ -127,18 +127,10 @@ public:
   }
 
   ~TimelineSemaphore() { beforeDestroy(); }
-  TimelineSemaphore(const TimelineSemaphore&) noexcept = delete;
-  TimelineSemaphore(TimelineSemaphore&&) noexcept = default;
-  auto operator=(const TimelineSemaphore&) noexcept -> TimelineSemaphore& = delete;
-  auto operator=(TimelineSemaphore&& e) noexcept -> TimelineSemaphore& {
-    beforeDestroy();
-    rs::Semaphore::operator=(std::move(e));
-    _host_signal_value = e._host_signal_value;
-    _device_signal_value = e._device_signal_value;
-    return *this;
-  }
+  DEFAULT_MOVEABLE(TimelineSemaphore);
 
 private:
+  friend toy::AutoMoveAssigner<TimelineSemaphore>;
   void beforeDestroy() {
     if (get()) {
       waitIdle();
