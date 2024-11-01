@@ -60,6 +60,9 @@ public:
     bool                                                   any = false,
     uint64                                                 nano_timeout = max_timeout
   ) -> bool {
+    if (semaphores.empty()) {
+      return true;
+    }
     auto handles = semaphores | views::transform([](auto& s) { return s.first->get(); }) |
                    ranges::to<std::vector>();
     auto values =

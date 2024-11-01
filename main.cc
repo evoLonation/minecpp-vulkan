@@ -15,6 +15,7 @@ import render.vk.image;
 import render.vk.render_pass2;
 import render.vk.descriptor;
 import render.vk.buffer;
+import render.vk.framebuffer;
 import render.vk.presentation;
 import render.context;
 import render.vk.sync;
@@ -138,26 +139,23 @@ int main() {
     auto dset_texture = rd::vk::ResourceSet{ &dset_pool_texture, { &sampled_texture } };
 
     struct FramebufferResource {
-      rd::vk::Image sample_image;
-      rd::vk::Image depth_image;
+      rd::vk::FrameImage sample_image;
+      rd::vk::FrameImage depth_image;
     };
+
     auto createFramebuffers = [&]() {
-      auto sample_image = rd::vk::Image{
+      auto sample_image = rd::vk::FrameImage{
         swapchain.getFormat(),
         swapchain.getExtent().width,
         swapchain.getExtent().height,
-        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-        VK_IMAGE_ASPECT_COLOR_BIT,
-        1,
+        rd::vk::FrameImage::Type::COLOR,
         sample_count,
       };
-      auto depth_image = rd::vk::Image{
+      auto depth_image = rd::vk::FrameImage{
         depth_format,
         swapchain.getExtent().width,
         swapchain.getExtent().height,
-        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-        VK_IMAGE_ASPECT_DEPTH_BIT,
-        1,
+        rd::vk::FrameImage::Type::DEPTH_STENCIL,
         sample_count,
       };
       return FramebufferResource{
@@ -188,11 +186,12 @@ int main() {
       auto res = presentation.prepare();
       // toy::debugf("res: {}", res.has_value());
       if (!res.has_value()) {
-        for (auto& image : presentation.getImages()) {
-          image.waitIdle();
-        }
+        // for (auto& image : presentation.getImages()) {
+        //   image.waitIdle();
+        // }
         // framebuffer_resource.clear();
         if (presentation.recreate()) {
+          toy::debugf("recreate success");
           createResource();
         }
       } else {
@@ -205,7 +204,7 @@ int main() {
           drawer.bindResourceSet(2, &dset_texture);
           drawer.draw();
         });
-        auto attachments = std::array<rd::vk::ImageManager*, 3>{
+        auto attachments = std::array<rd::vk::FrameImageManager*, 3>{
           &framebuffers.sample_image,
           context.image_manager,
           &framebuffers.depth_image,

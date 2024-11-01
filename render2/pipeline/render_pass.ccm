@@ -11,6 +11,7 @@ import render.vk.tracker;
 import render.vk.executor;
 import render.vk.descriptor;
 import render.vk.pipeline;
+import render.vk.framebuffer;
 import render.vk.image;
 import render.vertex;
 import render.sampler;
@@ -319,25 +320,10 @@ public:
     _recorders[index] = std::move(recorder);
   }
   void recordDraw(
-    std::span<ImageManager*> images, std::vector<VkClearValue> clear_values, VkExtent2D extent
+    std::span<FrameImageManager*> images, std::vector<VkClearValue> clear_values, VkExtent2D extent
   ) {
+    auto  framebuffer = FramebufferPool::getInstance().getFramebuffer(get(), images);
     auto& executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::GRAPHICS];
-    auto  image_views = std::vector<VkImageView>{};
-    for (auto* image : images) {
-      image_views.push_back(image->getImageView());
-    }
-    auto& framebuffer = //
-      _framebuffers.contains(image_views)
-        ? _framebuffers.at(image_views)
-        : _framebuffers[std::move(image_views)] = rs::Framebuffer{ VkFramebufferCreateInfo{
-            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .renderPass = get(),
-            .attachmentCount = static_cast<uint32>(image_views.size()),
-            .pAttachments = image_views.data(),
-            .width = extent.width,
-            .height = extent.height,
-            .layers = 1,
-          } };
 
     auto drawers = std::vector<PipelineDrawer>{};
     for (auto& info : getPipelines()) {
@@ -468,8 +454,6 @@ public:
 
 private:
   std::vector<PipelineDrawRecorder> _recorders;
-  // todo: manager framebuffer lifetime (now is only create, not destroy)
-  std::map<std::vector<VkImageView>, rs::Framebuffer> _framebuffers;
 };
 
 } // namespace rd::vk

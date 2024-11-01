@@ -169,51 +169,33 @@ auto Presentation::recreate() -> bool {
     return false;
   }
   for (auto [image, image_view] : views::zip(_swapchain.getImages(), _swapchain.getImageViews())) {
-    _image_ctxs.push_back(ImageContext{ image, image_view });
+    _image_ctxs.push_back(ImageContext{ image, image_view, _swapchain.getExtent() });
   }
   _need_recreate = false;
   return true;
 }
 
-Presentation::ImageContext::ImageContext(VkImage image, VkImageView image_view)
-  : ImageManager{ image,
-                  image_view,
-                  getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, MipRange{ 0, 1 }) },
-    present_wait_sema(createSemaphore()), //
-    present_signal_fence{ false },        //
-    fence_waitable(false), need_release(false), moved(false) {}
-
-Presentation::ImageContext::~ImageContext() {
-  if (!moved) {
-    toy::debugf("error: must not destory using destructor, use destroy() instead");
-  }
-}
-
-Presentation::ImageContext::ImageContext(ImageContext&& a)
-  : ImageManager(std::move(a)), present_wait_sema(std::move(a.present_wait_sema)),
-    present_signal_fence(std::move(a.present_signal_fence)),
-    fence_waitable(std::move(a.fence_waitable)), need_release(std::move(a.need_release)),
-    moved(false) {
-  a.moved = true;
-}
-
-void Presentation::ImageContext::waitIdle(uint64 nano_timeout) {
-  if (fence_waitable) {
-    present_signal_fence.wait(false, nano_timeout);
-  }
-  getTracker().waitIdle(nano_timeout);
-}
+Presentation::ImageContext::ImageContext(VkImage image, VkImageView image_view, VkExtent2D extent)
+  : FrameImageManager{ image,
+                       image_view,
+                       extent,
+                       getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, MipRange{ 0, 1 }) },
+    present_wait_sema(createSemaphore()), present_signal_fence{ false }, fence_waitable(false),
+    need_release(false) {}
 
 void Presentation::ImageContext::destroy(
   std::vector<ImageContext> image_ctxs, VkSwapchainKHR swapchain
 ) {
   auto need_release = std::vector<uint32>{};
   for (auto [index, ctx] : image_ctxs | toy::enumerate) {
-    ctx.waitIdle();
     if (ctx.need_release) {
       need_release.push_back(index);
     }
-    ctx.moved = true;
+    if (ctx.fence_waitable) {
+      ctx.present_signal_fence.wait(false);
+    }
+    // destroy the manager part
+    auto fordestroy_ = FrameImageManager{ std::move(ctx) };
   }
   if (!need_release.empty()) {
     auto release_info = VkReleaseSwapchainImagesInfoEXT{

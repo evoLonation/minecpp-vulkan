@@ -1,0 +1,153 @@
+module;
+#include <toy.h>
+export module render.vk.framebuffer;
+
+import <vulkan_config.h>;
+import render.vk.resource;
+import render.vk.image;
+
+import std;
+import toy;
+
+export namespace rd::vk {
+
+class FramebufferPool;
+
+class FrameImageManager : toy::AutoMoveAssigner<FrameImageManager>, public ImageManager {
+public:
+  FrameImageManager(
+    VkImage image, VkImageView image_view, VkExtent2D extent, VkImageSubresourceRange sub_range
+  )
+    : ImageManager(image, image_view, extent, sub_range) {}
+
+  ~FrameImageManager() { beforeDestroy(); }
+  DEFAULT_MOVEABLE(FrameImageManager);
+
+private:
+  friend toy::AutoMoveAssigner<FrameImageManager>;
+  void beforeDestroy();
+};
+
+// todo: make sure framebuffer is idle before destroy
+class FramebufferPool : public toy::ProactiveSingleton<FramebufferPool> {
+public:
+  FramebufferPool() = default;
+
+  auto getFramebuffer(VkRenderPass render_pass, std::span<FrameImageManager* const> images)
+    -> VkFramebuffer {
+    auto extent = images[0]->getExtent();
+    auto eq_extent = [](auto x, auto y) { return x.width == y.width && x.height == y.height; };
+    TOY_ASSERT(ranges::all_of(images, [&](auto x) { return eq_extent(x->getExtent(), extent); }));
+    auto image_views = std::vector<VkImageView>{};
+    for (auto* image : images) {
+      image_views.push_back(image->getImageView());
+    }
+    if (auto it = _image_views2framebuffer.find(image_views);
+        it != _image_views2framebuffer.end()) {
+      return it->second;
+    }
+    auto framebuffer = rs::Framebuffer{ VkFramebufferCreateInfo{
+      .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+      .renderPass = render_pass,
+      .attachmentCount = static_cast<uint32>(image_views.size()),
+      .pAttachments = image_views.data(),
+      .width = extent.width,
+      .height = extent.height,
+      .layers = 1,
+    } };
+    auto handle = framebuffer.get();
+    _framebuffers.emplace(handle, std::move(framebuffer));
+    for (auto image_view : image_views) {
+      _image_view2framebuffers[image_view].insert(handle);
+    }
+    auto image_views_ptr =
+      &_image_views2framebuffer.emplace(std::move(image_views), handle).first->first;
+    for (auto image_view : *image_views_ptr) {
+      _image_view2image_views[image_view].insert(image_views_ptr);
+    }
+    return handle;
+  }
+
+private:
+  // _image_views2framebuffer cannot be unordered map because:
+  // 1. key(std::vector<VkImageView>) is pointed by _image_view2image_views, so can not invalid
+  // 2. key(std::vector<VkImageView>) is not hashable
+  std::unordered_map<VkFramebuffer, rs::Framebuffer>                 _framebuffers;
+  std::map<std::vector<VkImageView>, VkFramebuffer>                  _image_views2framebuffer;
+  std::unordered_map<VkImageView, std::unordered_set<VkFramebuffer>> _image_view2framebuffers;
+  std::unordered_map<VkImageView, std::set<std::vector<VkImageView> const*>>
+    _image_view2image_views;
+
+  friend toy::ProactiveSingleton<FramebufferPool>;
+  friend FrameImageManager;
+
+  void destroyRelativeFramebuf(FrameImageManager& image) {
+    if (auto it = _image_view2framebuffers.find(image.getImageView());
+        it != _image_view2framebuffers.end()) {
+      auto framebuffers = _image_view2framebuffers.extract(it).mapped();
+      for (auto framebuffer : framebuffers) {
+        _framebuffers.erase(framebuffer);
+      }
+      auto node = _image_view2image_views.extract(image.getImageView());
+      TOY_ASSERT(!node.empty());
+      for (auto image_views : node.mapped()) {
+        _image_views2framebuffer.erase(*image_views);
+      }
+    }
+  }
+};
+
+void FrameImageManager::beforeDestroy() {
+  if (valid()) {
+    // todo: delete this line if framebuffer can manager destroy time itself
+    getTracker().waitIdle();
+    FramebufferPool::getInstance().destroyRelativeFramebuf(*this);
+  }
+}
+
+class FrameImage : public ImageResource, public FrameImageManager {
+public:
+  enum Type {
+    COLOR,
+    DEPTH_STENCIL,
+  };
+  static auto toAspect(Type type, VkFormat format) -> VkImageAspectFlags {
+    // todo: format
+    switch (type) {
+    case Type::COLOR:
+      return VK_IMAGE_ASPECT_COLOR_BIT;
+    case Type::DEPTH_STENCIL:
+      // return (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
+      return VK_IMAGE_ASPECT_DEPTH_BIT;
+    }
+  }
+
+  FrameImage& operator=(FrameImage&& e) noexcept {
+    FrameImageManager::operator=(std::move(e));
+    ImageResource::operator=(std::move(e));
+    return *this;
+  }
+  FrameImage(FrameImage&& e) noexcept = default;
+
+  FrameImage(
+    VkFormat format, uint32 width, uint32 height, Type type, VkSampleCountFlagBits sample_count
+  )
+    : ImageResource(
+        format,
+        width,
+        height,
+        type == COLOR ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+                      : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        toAspect(type, format),
+        1,
+        sample_count
+      ),
+      FrameImageManager(
+        ImageResource::_image,
+        ImageResource::_image_view,
+        VkExtent2D{ width, height },
+        getSubresourceRange(toAspect(type, format), MipRange{ 0, 1 })
+      ) {}
+};
+
+} // namespace rd::vk

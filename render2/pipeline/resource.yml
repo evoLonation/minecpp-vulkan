@@ -11,3 +11,5 @@ module:
     provide: render.vk.pipeline
 - render_pass.cc:
     implement: render.vk.render_pass2
+- framebuffer.ccm:
+    provide: render.vk.framebuffer

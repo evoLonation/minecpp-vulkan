@@ -1,3 +1,5 @@
+module;
+#include <toy.h>
 export module render.vk.presentation;
 import std;
 import toy;
@@ -12,6 +14,7 @@ import render.vk.sync;
 import render.vk.image;
 import render.vk.executor;
 import render.vk.reflections;
+import render.vk.framebuffer;
 import render.vk.swapchain;
 
 export namespace rd::vk {
@@ -22,8 +25,8 @@ public:
   ~Presentation();
 
   struct Context {
-    uint32        image_index;
-    ImageManager* image_manager;
+    uint32             image_index;
+    FrameImageManager* image_manager;
   };
   auto prepare() -> std::optional<Context>;
 
@@ -89,27 +92,18 @@ public:
    *  2) the image that need_release is false has present done. so just need call vkrelease for
    * images that need_release is true
    */
-  struct ImageContext : public ImageManager {
-    friend Presentation;
+  struct ImageContext : FrameImageManager {
+    ImageContext(VkImage image, VkImageView image_view, VkExtent2D extent);
+    ~ImageContext() {
+      TOY_ASSERT(!valid(), "must not destory using destructor, use destroy() instead");
+    }
+    ImageContext(ImageContext&& a) noexcept = default;
 
-  private:
+    static void   destroy(std::vector<ImageContext> image_ctxs, VkSwapchainKHR swapchain);
     rs::Semaphore present_wait_sema;
     Fence         present_signal_fence;
     bool          fence_waitable;
     bool          need_release;
-    bool          moved;
-    ImageContext(VkImage image, VkImageView image_view);
-
-  public:
-    /**
-     * @brief is not the correct way to destroy valid context, please use destroy()
-     */
-    ~ImageContext();
-    ImageContext(ImageContext&& a);
-    static void destroy(std::vector<ImageContext> image_ctxs, VkSwapchainKHR swapchain);
-
-  public:
-    void waitIdle(uint64 nano_timeout = std::numeric_limits<uint64>::max());
   };
 
 private:

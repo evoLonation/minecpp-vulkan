@@ -44,17 +44,22 @@ private:
 
 class ImageManager {
 public:
-  ImageManager(VkImage image, VkImageView image_view, VkImageSubresourceRange sub_range)
-    : _image(image), _image_view(image_view), _tracker(image, sub_range) {}
+  ImageManager(
+    VkImage image, VkImageView image_view, VkExtent2D extent, VkImageSubresourceRange sub_range
+  )
+    : _image(image), _image_view(image_view), _tracker(image, sub_range), _extent(extent) {}
 
   auto getImage() -> VkImage { return _image; }
   auto getImageView() -> VkImageView { return _image_view; }
   auto getTracker() -> ImageBarrierTracker& { return _tracker; }
+  auto getExtent() -> VkExtent2D { return _extent; }
+  auto valid() -> bool { return _tracker.valid(); }
 
 private:
   VkImage             _image;
   VkImageView         _image_view;
   ImageBarrierTracker _tracker;
+  VkExtent2D          _extent;
 };
 
 struct ImageResource {
@@ -106,6 +111,7 @@ public:
       ImageManager(
         ImageResource::_image,
         ImageResource::_image_view,
+        VkExtent2D{ width, height },
         getSubresourceRange(aspect, MipRange{ 0, 1 })
       ) {}
 };
