@@ -145,10 +145,10 @@ void blitImage(VkCommandBuffer cmdbuf, ImageBlit src, ImageBlit dst) {
   auto blit = VkImageBlit{
     .srcSubresource = getSubresourceLayers(src.aspect, src.mip_level),
     .srcOffsets = { VkOffset3D{ 0, 0, 0 },
-                    VkOffset3D{ (int32_t)src.extent.width, (int32_t)src.extent.height, 1 } },
+                    VkOffset3D{ (int32)src.extent.width, (int32)src.extent.height, 1 } },
     .dstSubresource = getSubresourceLayers(dst.aspect, dst.mip_level),
     .dstOffsets = { VkOffset3D{ 0, 0, 0 },
-                    VkOffset3D{ (int32_t)dst.extent.width, (int32_t)dst.extent.height, 1 } },
+                    VkOffset3D{ (int32)dst.extent.width, (int32)dst.extent.height, 1 } },
   };
   vkCmdBlitImage(cmdbuf, src.image, src.layout, dst.image, dst.layout, 1, &blit, VK_FILTER_LINEAR);
 }

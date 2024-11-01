@@ -162,7 +162,7 @@ private:
     auto dsets = rs::DescriptorSets{ VkDescriptorSetAllocateInfo{
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
       .descriptorPool = pool,
-      .descriptorSetCount = static_cast<uint32_t>(_dset_layouts.size()),
+      .descriptorSetCount = static_cast<uint32>(_dset_layouts.size()),
       .pSetLayouts = _dset_layouts.data(),
     } };
     auto handle = pool.get();

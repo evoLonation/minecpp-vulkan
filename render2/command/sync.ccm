@@ -243,7 +243,7 @@ public:
   /**
    * @brief wait to signaled state
    */
-  void wait(bool reset, uint64_t nano_timeout = max_timeout);
+  void wait(bool reset, uint64 nano_timeout = max_timeout);
   void reset();
   auto isSignaled() -> bool;
 };

@@ -264,11 +264,11 @@ public:
     auto [waitable, signal_infos] = getSignalInfos(std::move(cmdbuf), batch.signals);
     auto submit_info = VkSubmitInfo2{
       .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-      .waitSemaphoreInfoCount = static_cast<uint32_t>(wait_infos.size()),
+      .waitSemaphoreInfoCount = static_cast<uint32>(wait_infos.size()),
       .pWaitSemaphoreInfos = wait_infos.data(),
       .commandBufferInfoCount = 1,
       .pCommandBufferInfos = cmdbuf_info.get(),
-      .signalSemaphoreInfoCount = static_cast<uint32_t>(signal_infos.size()),
+      .signalSemaphoreInfoCount = static_cast<uint32>(signal_infos.size()),
       .pSignalSemaphoreInfos = signal_infos.data(),
     };
     checkVkResult(vkQueueSubmit2(_queue, 1, &submit_info, VK_NULL_HANDLE), "submit queue");
@@ -286,11 +286,11 @@ public:
     auto [waitable, signal_infos] = getSignalInfos(std::move(cmdbuf), batch.signals);
     auto submit_info = VkSubmitInfo2{
       .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-      .waitSemaphoreInfoCount = static_cast<uint32_t>(wait_infos.size()),
+      .waitSemaphoreInfoCount = static_cast<uint32>(wait_infos.size()),
       .pWaitSemaphoreInfos = wait_infos.data(),
       .commandBufferInfoCount = 1,
       .pCommandBufferInfos = cmdbuf_info.get(),
-      .signalSemaphoreInfoCount = static_cast<uint32_t>(signal_infos.size()),
+      .signalSemaphoreInfoCount = static_cast<uint32>(signal_infos.size()),
       .pSignalSemaphoreInfos = signal_infos.data(),
     };
     checkVkResult(vkQueueSubmit2(_queue, 1, &submit_info, VK_NULL_HANDLE), "submit queue");
@@ -386,11 +386,11 @@ private:
     auto [waitable, signal_infos] = getSignalInfos(std::move(cmdbuf), batch.signals);
     auto submit_info = VkSubmitInfo2{
       .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-      .waitSemaphoreInfoCount = static_cast<uint32_t>(wait_infos.size()),
+      .waitSemaphoreInfoCount = static_cast<uint32>(wait_infos.size()),
       .pWaitSemaphoreInfos = wait_infos.data(),
       .commandBufferInfoCount = 1,
       .pCommandBufferInfos = cmdbuf_info.get(),
-      .signalSemaphoreInfoCount = static_cast<uint32_t>(signal_infos.size()),
+      .signalSemaphoreInfoCount = static_cast<uint32>(signal_infos.size()),
       .pSignalSemaphoreInfos = signal_infos.data(),
     };
     return std::pair{

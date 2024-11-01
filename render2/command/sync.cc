@@ -22,7 +22,7 @@ Fence::Fence(bool signaled) {
   rs::Fence::operator=(create_info);
 }
 
-void Fence::wait(bool reset, uint64_t timeout) {
+void Fence::wait(bool reset, uint64 timeout) {
   auto handle = get();
   checkVkResult(
     vkWaitForFences(Device::getInstance(), 1, &handle, VK_TRUE, timeout), "wait fences"
