@@ -51,6 +51,13 @@ public:
 
   auto valid() const -> bool { return get(); }
 
+  CommandBuffer(CommandBuffer&&) noexcept = default;
+  auto operator=(CommandBuffer&&) noexcept -> CommandBuffer& {
+    _sema = std::move(_sema);
+    CommandBuffer::operator=(std::move(*this));
+    return *this;
+  }
+
 private:
   IncrementalSemaphore _sema;
 };
@@ -436,6 +443,8 @@ public:
   }
 
   auto operator[](EnumT family) -> CommandExecutor& { return operator[](family, 0); }
+
+  UNCOPYABLE_MOVEABLE(CommandExecutorManager);
 
 private:
   TimelineSemaphorePool                                   _sema_pool;

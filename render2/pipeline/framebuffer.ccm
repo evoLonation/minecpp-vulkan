@@ -28,10 +28,9 @@ private:
   void beforeDestroy();
 };
 
-// todo: make sure framebuffer is idle before destroy
 class FramebufferPool : public toy::ProactiveSingleton<FramebufferPool> {
 public:
-  FramebufferPool() = default;
+  FramebufferPool() : _use_counter(0) {}
 
   auto getFramebuffer(VkRenderPass render_pass, std::span<FrameImageManager* const> images)
     -> VkFramebuffer {
@@ -65,6 +64,17 @@ public:
     for (auto image_view : *image_views_ptr) {
       _image_view2image_views[image_view].insert(image_views_ptr);
     }
+    _framebuffer_use_queue.emplace(_use_counter++, image_views_ptr);
+    if (_framebuffer_use_queue.size() > _max_capacity) {
+      auto image_views_ptr = _framebuffer_use_queue.top().image_views;
+      _framebuffer_use_queue.pop();
+      auto framebuffer = _image_views2framebuffer.extract(*image_views_ptr).mapped();
+      _framebuffers.erase(framebuffer);
+      for (auto image_view : *image_views_ptr) {
+        _image_view2framebuffers[image_view].erase(framebuffer);
+        _image_view2image_views[image_view].erase(image_views_ptr);
+      }
+    }
     return handle;
   }
 
@@ -78,9 +88,25 @@ private:
   std::unordered_map<VkImageView, std::set<std::vector<VkImageView> const*>>
     _image_view2image_views;
 
+  // LRU: removed longest time unused framebuffer
+  struct ImageViewsCounter {
+    uint64                          counter;
+    std::vector<VkImageView> const* image_views;
+
+    friend auto operator<(const ImageViewsCounter& x, const ImageViewsCounter& y) -> bool {
+      return x.counter > y.counter;
+    }
+  };
+  std::priority_queue<ImageViewsCounter> _framebuffer_use_queue;
+  uint64                                 _use_counter;
+  static constexpr auto                  _max_capacity = 10;
+
   friend toy::ProactiveSingleton<FramebufferPool>;
   friend FrameImageManager;
 
+  /**
+   * @brief must ensure the relative framebuffer is already idle
+   */
   void destroyRelativeFramebuf(FrameImageManager& image) {
     if (auto it = _image_view2framebuffers.find(image.getImageView());
         it != _image_view2framebuffers.end()) {
@@ -99,7 +125,6 @@ private:
 
 void FrameImageManager::beforeDestroy() {
   if (valid()) {
-    // todo: delete this line if framebuffer can manager destroy time itself
     getTracker().waitIdle();
     FramebufferPool::getInstance().destroyRelativeFramebuf(*this);
   }
@@ -122,13 +147,6 @@ public:
     }
   }
 
-  FrameImage& operator=(FrameImage&& e) noexcept {
-    FrameImageManager::operator=(std::move(e));
-    ImageResource::operator=(std::move(e));
-    return *this;
-  }
-  FrameImage(FrameImage&& e) noexcept = default;
-
   FrameImage(
     VkFormat format, uint32 width, uint32 height, Type type, VkSampleCountFlagBits sample_count
   )
@@ -148,6 +166,13 @@ public:
         VkExtent2D{ width, height },
         getSubresourceRange(toAspect(type, format), MipRange{ 0, 1 })
       ) {}
+
+  FrameImage& operator=(FrameImage&& e) noexcept {
+    FrameImageManager::operator=(std::move(e));
+    ImageResource::operator=(std::move(e));
+    return *this;
+  }
+  FrameImage(FrameImage&& e) noexcept = default;
 };
 
 } // namespace rd::vk
