@@ -41,7 +41,7 @@ int main() {
     auto& input_processor = input::InputProcessor::getInstance();
 
     auto depth_format = VK_FORMAT_D32_SFLOAT;
-    auto sample_count = VK_SAMPLE_COUNT_8_BIT;
+    auto sample_count = VK_SAMPLE_COUNT_1_BIT;
     TOY_ASSERT((rd::vk::ImageContext::getInstance().getAvailableSampleCounts() & sample_count) > 0);
 
     auto  presentation = rd::vk::Presentation{ ctx._surface->get() };

@@ -168,6 +168,7 @@ void throwf(First condition, FormatWithLocation<Args...> fmt_location, Args&&...
 }
 
 namespace macro {
+
 template <typename... Args>
 auto getTuple(Args&&... args) -> std::tuple<Args&&...> {
   return std::tuple<Args&&...>{ std::forward<Args>(args)... };
@@ -189,6 +190,13 @@ auto nameTupleFormat(std::string_view names, std::tuple<Args...> args) -> std::s
     str += std::format("\"{}\": {}, ", *iter++, std::get<index>(args));
   });
   return str;
+}
+
+auto nextLineIfExist(std::string current_line, std::string_view next_line) -> std::string {
+  if (next_line.empty()) {
+    return current_line;
+  }
+  return std::format("{}\n  {}", current_line, next_line);
 }
 
 } // namespace macro

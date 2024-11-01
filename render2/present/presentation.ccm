@@ -98,6 +98,7 @@ public:
       TOY_ASSERT(!valid(), "must not destory using destructor, use destroy() instead");
     }
     ImageContext(ImageContext&& a) noexcept = default;
+    ImageContext& operator=(ImageContext&& a) noexcept = delete;
 
     static void   destroy(std::vector<ImageContext> image_ctxs, VkSwapchainKHR swapchain);
     rs::Semaphore present_wait_sema;

@@ -6,12 +6,15 @@
 #define TOY_ASSERT(condition, ...)                                                                 \
   toy::throwf(                                                                                     \
     static_cast<bool>(condition),                                                                  \
-    "assert error: {} ,\n  {}",                                                                    \
-    #condition,                                                                                    \
-    NAME_TUPLE_STRING(__VA_ARGS__)                                                                 \
+    "{}",                                                                                          \
+    toy::macro::nextLineIfExist("assert error: " #condition, NAME_TUPLE_STRING(__VA_ARGS__))       \
   )
 #define TOY_CHECK(condition, ...)                                                                  \
-  toy::checkf(condition, "check error: {} ,\n  {}", #condition, NAME_TUPLE_STRING(__VA_ARGS__))
+  toy::checkf(                                                                                     \
+    condition,                                                                                     \
+    "{}",                                                                                          \
+    toy::macro::nextLineIfExist("check error: " #condition, NAME_TUPLE_STRING(__VA_ARGS__))        \
+  )
 
 #define TOY_DEBUG(...) toy::debug(NAME_TUPLE_STRING(__VA_ARGS__))
 
