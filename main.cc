@@ -41,7 +41,7 @@ int main() {
     auto& input_processor = input::InputProcessor::getInstance();
 
     auto depth_format = VK_FORMAT_D32_SFLOAT;
-    auto sample_count = VK_SAMPLE_COUNT_1_BIT;
+    auto sample_count = VK_SAMPLE_COUNT_8_BIT;
     TOY_ASSERT((rd::vk::ImageContext::getInstance().getAvailableSampleCounts() & sample_count) > 0);
 
     auto  presentation = rd::vk::Presentation{ ctx._surface->get() };
@@ -184,12 +184,7 @@ int main() {
     while (!glfwWindowShouldClose(glfw::Window::getInstance())) {
       input_processor.processInput(16.6);
       auto res = presentation.prepare();
-      // toy::debugf("res: {}", res.has_value());
       if (!res.has_value()) {
-        // for (auto& image : presentation.getImages()) {
-        //   image.waitIdle();
-        // }
-        // framebuffer_resource.clear();
         if (presentation.recreate()) {
           toy::debugf("recreate success");
           createResource();

@@ -64,10 +64,12 @@ public:
     for (auto image_view : *image_views_ptr) {
       _image_view2image_views[image_view].insert(image_views_ptr);
     }
-    _framebuffer_use_queue.emplace(_use_counter++, image_views_ptr);
-    if (_framebuffer_use_queue.size() > _max_capacity) {
-      auto image_views_ptr = _framebuffer_use_queue.top().image_views;
-      _framebuffer_use_queue.pop();
+    _counter2image_views.emplace(_use_counter, image_views_ptr);
+    _image_views2counter.emplace(image_views_ptr, _use_counter);
+    _use_counter++;
+    if (_counter2image_views.size() > _max_capacity) {
+      auto image_views_ptr = _counter2image_views.extract(_counter2image_views.begin()).mapped();
+      _image_views2counter.erase(image_views_ptr);
       auto framebuffer = _image_views2framebuffer.extract(*image_views_ptr).mapped();
       _framebuffers.erase(framebuffer);
       for (auto image_view : *image_views_ptr) {
@@ -89,17 +91,11 @@ private:
     _image_view2image_views;
 
   // LRU: removed longest time unused framebuffer
-  struct ImageViewsCounter {
-    uint64                          counter;
-    std::vector<VkImageView> const* image_views;
+  std::map<uint64, std::vector<VkImageView> const*>           _counter2image_views;
+  std::unordered_map<std::vector<VkImageView> const*, uint64> _image_views2counter;
 
-    friend auto operator<(const ImageViewsCounter& x, const ImageViewsCounter& y) -> bool {
-      return x.counter > y.counter;
-    }
-  };
-  std::priority_queue<ImageViewsCounter> _framebuffer_use_queue;
-  uint64                                 _use_counter;
-  static constexpr auto                  _max_capacity = 10;
+  uint64                _use_counter;
+  static constexpr auto _max_capacity = 10;
 
   friend toy::ProactiveSingleton<FramebufferPool>;
   friend FrameImageManager;
@@ -118,6 +114,7 @@ private:
       TOY_ASSERT(!node.empty());
       for (auto image_views : node.mapped()) {
         _image_views2framebuffer.erase(*image_views);
+        _counter2image_views.erase(_image_views2counter.extract(image_views).mapped());
       }
     }
   }
@@ -129,6 +126,55 @@ void FrameImageManager::beforeDestroy() {
     FramebufferPool::getInstance().destroyRelativeFramebuf(*this);
   }
 }
+
+struct AttachmentFormat {
+  AttachmentFormat(VkFormat format) : _format(format) {
+    TOY_ASSERT(
+      ranges::contains(_color_formats, _format) ||     //
+        ranges::contains(_depth_formats, _format) ||   //
+        ranges::contains(_stencil_formats, _format) || //
+        ranges::contains(_depth_stencil_formats, _format),
+      "the format of attachment not support by renderpass"
+    );
+  }
+  enum FormatType {
+    COLOR = 1 << 0,
+    DEPTH = 1 << 1,
+    STENCIL = 1 << 2,
+    DEPTH_STENCIL = DEPTH | STENCIL,
+  };
+
+  auto getType() const -> FormatType {
+    if (ranges::find(_color_formats, _format) != _color_formats.end()) {
+      return FormatType::COLOR;
+    } else if (ranges::find(_depth_formats, _format) != _depth_formats.end()) {
+      return FormatType::DEPTH;
+    } else if (ranges::find(_stencil_formats, _format) != _stencil_formats.end()) {
+      return FormatType::STENCIL;
+    } else if (ranges::find(_depth_stencil_formats, _format) != _depth_stencil_formats.end()) {
+      return FormatType::DEPTH_STENCIL;
+    }
+    std::unreachable();
+  }
+  operator VkFormat() const { return _format; }
+
+private:
+  VkFormat _format;
+
+  static constexpr auto _color_formats = std::array{
+    VK_FORMAT_R8G8B8A8_SRGB,
+  };
+  static constexpr auto _depth_formats = std::array{
+    VK_FORMAT_D16_UNORM,
+    VK_FORMAT_D32_SFLOAT,
+  };
+  static constexpr auto _stencil_formats = std::array{
+    VK_FORMAT_S8_UINT,
+  };
+  static constexpr auto _depth_stencil_formats = std::array{
+    VK_FORMAT_D24_UNORM_S8_UINT,
+  };
+};
 
 class FrameImage : public ImageResource, public FrameImageManager {
 public:
@@ -148,7 +194,11 @@ public:
   }
 
   FrameImage(
-    VkFormat format, uint32 width, uint32 height, Type type, VkSampleCountFlagBits sample_count
+    AttachmentFormat      format,
+    uint32                width,
+    uint32                height,
+    Type                  type,
+    VkSampleCountFlagBits sample_count
   )
     : ImageResource(
         format,

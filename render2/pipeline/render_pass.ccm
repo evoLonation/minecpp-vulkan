@@ -21,55 +21,6 @@ import toy;
 
 export namespace rd::vk {
 
-struct AttachmentFormat {
-  AttachmentFormat(VkFormat format) : _format(format) {
-    toy::throwf(
-      ranges::find(_color_formats, _format) != _color_formats.end() ||
-        ranges::find(_depth_formats, _format) != _depth_formats.end() ||
-        ranges::find(_stencil_formats, _format) != _stencil_formats.end() ||
-        ranges::find(_depth_stencil_formats, _format) != _depth_stencil_formats.end(),
-      "the format of attachment not support by renderpass"
-    );
-  }
-  enum FormatType {
-    COLOR = 1 << 0,
-    DEPTH = 1 << 1,
-    STENCIL = 1 << 2,
-    DEPTH_STENCIL = DEPTH | STENCIL,
-  };
-
-  auto getType() const -> FormatType {
-    if (ranges::find(_color_formats, _format) != _color_formats.end()) {
-      return FormatType::COLOR;
-    } else if (ranges::find(_depth_formats, _format) != _depth_formats.end()) {
-      return FormatType::DEPTH;
-    } else if (ranges::find(_stencil_formats, _format) != _stencil_formats.end()) {
-      return FormatType::STENCIL;
-    } else if (ranges::find(_depth_stencil_formats, _format) != _depth_stencil_formats.end()) {
-      return FormatType::DEPTH_STENCIL;
-    }
-    std::unreachable();
-  }
-  operator VkFormat() const { return _format; }
-
-private:
-  VkFormat _format;
-
-  static constexpr auto _color_formats = std::array{
-    VK_FORMAT_R8G8B8A8_SRGB,
-  };
-  static constexpr auto _depth_formats = std::array{
-    VK_FORMAT_D16_UNORM,
-    VK_FORMAT_D32_SFLOAT,
-  };
-  static constexpr auto _stencil_formats = std::array{
-    VK_FORMAT_S8_UINT,
-  };
-  static constexpr auto _depth_stencil_formats = std::array{
-    VK_FORMAT_D24_UNORM_S8_UINT,
-  };
-};
-
 struct AttachmentInfo {
   AttachmentFormat      format;
   VkSampleCountFlagBits sample_count;
