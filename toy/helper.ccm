@@ -68,17 +68,10 @@ public:
     return *_instance_ptr;
   }
 
-  void setInvalid() { _instance_ptr = nullptr; }
-
-  // deleted copy semantic
   ProactiveSingleton& operator=(const ProactiveSingleton&) = delete;
   ProactiveSingleton(const ProactiveSingleton&) = delete;
-  // move semantic
-  ProactiveSingleton& operator=(ProactiveSingleton&&) {
-    _instance_ptr = &self();
-    return *this;
-  }
-  ProactiveSingleton(ProactiveSingleton&&) { _instance_ptr = &self(); }
+  ProactiveSingleton& operator=(ProactiveSingleton&&) = delete;
+  ProactiveSingleton(ProactiveSingleton&&) noexcept { _instance_ptr = &self(); }
 };
 
 template <typename T>

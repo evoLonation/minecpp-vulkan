@@ -62,11 +62,11 @@ private:
   IncrementalSemaphore _sema;
 };
 
-class CommandBufferPool : public toy::ObjectPoolHelper<CommandBufferPool, CommandBuffer> {
+class CommandBufferPool : public toy::ObjectPoolHelper<CommandBuffer> {
 public:
-  using Base = toy::ObjectPoolHelper<CommandBufferPool, CommandBuffer>;
+  using Base = toy::ObjectPoolHelper<CommandBuffer>;
   friend Base;
-  CommandBufferPool(uint32 family_index) : Base{} {
+  CommandBufferPool(uint32 family_index) {
     _pool = rs::CommandPool{ VkCommandPoolCreateInfo{
       .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
       // VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT：允许重置单个command

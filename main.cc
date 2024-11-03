@@ -31,9 +31,6 @@ import transform;
 int main() {
   try {
     json::test_json();
-    toy::test_EnumerateAdaptor();
-    toy::test_SortedRange();
-    toy::test_ChunkBy();
     toy::test_Generator::test();
     toy::test_EnumSet::test();
     trans::test_trans();

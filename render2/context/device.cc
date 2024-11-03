@@ -6,7 +6,7 @@ import toy;
 
 namespace rd::vk {
 
-Device::Device(std::span<DeviceCapabilityChecker> checkers) {
+auto Device::create(std::span<DeviceCapabilityChecker> checkers) -> Device {
   auto devices = getVkResources(vkEnumeratePhysicalDevices, rs::Instance::getInstance()) |
                  views::transform([](auto handle) { return PhysicalDevice{ handle }; }) |
                  ranges::to<std::vector>();
@@ -39,13 +39,9 @@ Device::Device(std::span<DeviceCapabilityChecker> checkers) {
                                        }));
 
   auto selected_device = std::pair<PhysicalDevice, std::vector<DeviceCapabilityBuilder>>{};
-  if (auto res = ranges::find_if(
-        supported_devices,
-        [](auto& pair) {
-          return pair.first.getProperties().deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
-        }
-      );
-      res != supported_devices.end()) {
+  if (auto res = toy::findIf(supported_devices, [](auto& pair) {
+        return pair.first.getProperties().deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+      })) {
     selected_device = *res;
   }
   selected_device = supported_devices[0];
@@ -124,10 +120,9 @@ Device::Device(std::span<DeviceCapabilityChecker> checkers) {
   // ppEnabledLayerNames createInfo.enabledLayerCount =
   // static_cast<uint32>(requiredLayers_.size());
   // createInfo.ppEnabledLayerNames = requiredLayers_.data();
-  rs::Device::setInvalid();
-  rs::Device::operator=({ selected_device.first.get(), create_info });
-  _features = enabled_features;
-  _pdevice = selected_device.first;
+  return Device{ rs::Device{ selected_device.first.get(), create_info },
+                 std::move(selected_device.first),
+                 enabled_features };
 }
 
 PhysicalDevice::PhysicalDevice(VkPhysicalDevice pdevice) {

@@ -99,8 +99,12 @@ private:
 
 using DeviceCapabilityChecker = std::function<bool(DeviceCapabilityBuilder& request)>;
 class Device : public rs::Device, public toy::ProactiveSingleton<Device> {
+private:
+  Device(rs::Device device, PhysicalDevice pdevice, VkPhysicalDeviceFeatures features)
+    : rs::Device{ std::move(device) }, _pdevice{ std::move(pdevice) }, _features{ features } {}
+
 public:
-  Device(std::span<DeviceCapabilityChecker> checkers);
+  static auto create(std::span<DeviceCapabilityChecker> checkers) -> Device;
 
   auto getPdevice() const { return _pdevice; }
   auto getEnabledFeatures() const -> const VkPhysicalDeviceFeatures& { return _features; }

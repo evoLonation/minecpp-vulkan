@@ -51,8 +51,7 @@ Memory::Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property
           return (requirements.memoryTypeBits & (1 << i)) &&
                  (memory_type.propertyFlags & property_flags) == property_flags;
         }
-      );
-      optional.has_value()) {
+      )) {
     memory_type_index = optional->first;
   } else {
     toy::throwf("can not find suitable memory type");

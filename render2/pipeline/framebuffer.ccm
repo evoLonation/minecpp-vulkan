@@ -145,13 +145,13 @@ struct AttachmentFormat {
   };
 
   auto getType() const -> FormatType {
-    if (ranges::find(_color_formats, _format) != _color_formats.end()) {
+    if (ranges::contains(_color_formats, _format)) {
       return FormatType::COLOR;
-    } else if (ranges::find(_depth_formats, _format) != _depth_formats.end()) {
+    } else if (ranges::contains(_depth_formats, _format)) {
       return FormatType::DEPTH;
-    } else if (ranges::find(_stencil_formats, _format) != _stencil_formats.end()) {
+    } else if (ranges::contains(_stencil_formats, _format)) {
       return FormatType::STENCIL;
-    } else if (ranges::find(_depth_stencil_formats, _format) != _depth_stencil_formats.end()) {
+    } else if (ranges::contains(_depth_stencil_formats, _format)) {
       return FormatType::DEPTH_STENCIL;
     }
     std::unreachable();

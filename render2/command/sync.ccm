@@ -184,13 +184,12 @@ private:
   TimelineSemaphore _sema;
 };
 
-class TimelineSemaphorePool
-  : public toy::ObjectPoolHelper<TimelineSemaphorePool, IncrementalSemaphore> {
+class TimelineSemaphorePool : public toy::ObjectPoolHelper<IncrementalSemaphore> {
 public:
-  using Base = toy::ObjectPoolHelper<TimelineSemaphorePool, IncrementalSemaphore>;
+  using Base = toy::ObjectPoolHelper<IncrementalSemaphore>;
   friend Base;
 
-  TimelineSemaphorePool() : Base{} { _idle_semas.resize(10); }
+  TimelineSemaphorePool() { _idle_semas.resize(10); }
 
   void recycle(IncrementalSemaphore s) { _working_semas.push_back(std::move(s)); }
 

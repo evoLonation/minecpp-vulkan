@@ -6,43 +6,40 @@ import std;
 
 export namespace toy {
 
+template <typename Derived, typename T>
+concept PoolBasic = requires(T t, Derived d) {
+  d.workingToIdle();
+  d.tryShrink();
+  d.expand();
+  { d.isEmpty() } -> std::same_as<bool>;
+  { d.extract() } -> std::same_as<T>;
+  d.recycle(std::move(t));
+};
+
+template <typename T>
+class ObjectPoolHelper {
+public:
+  ObjectPoolHelper() = default;
+
+  auto allocate(this PoolBasic<T> auto&& self) -> T {
+    if (self.isEmpty()) {
+      self.workingToIdle();
+    } else {
+      self.tryShrink();
+    }
+    if (self.isEmpty()) {
+      self.expand();
+    }
+    return self.extract();
+  }
+
+  ONLY_MOVEABLE(ObjectPoolHelper);
+};
+
 template <typename P, typename T>
 concept PoolLike = requires(P p, T t) {
   { p.allocate() } -> std::same_as<T>;
   p.recycle(std::move(t));
-};
-
-template <typename Derived, typename T>
-class ObjectPoolHelper {
-public:
-  template <typename = void>
-    requires requires(T t, Derived d) {
-      d.workingToIdle();
-      d.tryShrink();
-      d.expand();
-      { d.isEmpty() } -> std::same_as<bool>;
-      { d.extract() } -> std::same_as<T>;
-      d.recycle(std::move(t));
-    }
-  ObjectPoolHelper() {}
-
-  auto allocate() -> T {
-    if (self().isEmpty()) {
-      self().workingToIdle();
-    } else {
-      self().tryShrink();
-    }
-    if (self().isEmpty()) {
-      self().expand();
-    }
-    return self().extract();
-  }
-
-private:
-  auto self() -> Derived& { return static_cast<Derived&>(*this); }
-
-public:
-  ONLY_MOVEABLE(ObjectPoolHelper);
 };
 
 template <typename P, typename T>

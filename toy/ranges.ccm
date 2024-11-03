@@ -15,200 +15,224 @@ struct EnumerateAdaptor : AdaptorClosureHelper<EnumerateAdaptor> {
   }
 };
 
-template <
-  ranges::forward_range                                                              View,
-  std::indirect_binary_predicate<ranges::iterator_t<View>, ranges::iterator_t<View>> Pred>
-  requires ranges::view<View> && std::is_object_v<Pred>
-class ChunkByView : public ranges::view_interface<ChunkByView<View, Pred>> {
-private:
-  using Element = ranges::range_value_t<View>;
-  using BaseIterator = ranges::iterator_t<View>;
-  using SubRange = ranges::subrange<BaseIterator>;
-
-  View base_;
-  Pred pred_;
-
-public:
-  class Sentinel {};
-  class Iterator : public SelfOperatorHelper<Iterator> {
-    // 指向一个子范围（惰性的），当解引用时需要得到一个子范围（除非是end），自增操作需要寻找下一个子范围
-  private:
-    View*        base_;
-    BaseIterator left_;
-    BaseIterator right_;
-    Pred*        pred_;
-
-  public:
-    Iterator(View& base, Pred& pred)
-      : base_(&base), left_(base.begin()), right_(left_), pred_(&pred) {
-      selfIncrement();
-    }
-    Iterator() = default;
-
-    using difference_type = std::ptrdiff_t;
-    using value_type = SubRange;
-    using reference_type = value_type;
-
-  private:
-    friend SelfOperatorHelper<Iterator>;
-    auto selfIncrement() {
-      left_ = right_;
-      right_ =
-        ranges::adjacent_find(ranges::subrange(left_, base_->end()), [this](auto&& a, auto&& b) {
-          return !std::invoke(*pred_, std::forward<decltype(a)>(a), std::forward<decltype(b)>(b));
-        });
-      if (right_ != base_->end()) {
-        ++right_;
-      }
-    }
-    auto selfDecrement() {
-      right_ = left_;
-      left_ =
-        ranges::adjacent_find(
-          ranges::subrange(base_->begin(), left_) | views::reverse,
-          [this](auto&& a, auto&& b) {
-            return std::invoke(*pred_, std::forward<decltype(a)>(a), std::forward<decltype(b)>(b));
-          }
-        ).base();
-      if (left_ != base_->begin()) {
-        --left_;
-      }
-    }
-
-  public:
-    friend auto operator==(const Iterator& a, const Iterator& b) -> bool {
-      return a.left_ == b.left_;
-    }
-    friend auto operator==(const Iterator& a, Sentinel) -> bool {
-      return a.left_ == a.base_->end();
-    }
-
-    auto operator*() const -> reference_type { return value_type{ left_, right_ }; }
-  };
-  auto begin() { return Iterator{ base_, pred_ }; }
-  auto end() { return Sentinel{}; }
-
-  ChunkByView(View view, Pred pred) : base_(std::move(view)), pred_(std::move(pred)) {}
-};
-
-struct ChunkByAdaptor {
-  auto operator()(auto&& range, auto pred) const {
-    return ChunkByView(views::all(std::forward<decltype(range)>(range)), pred);
-  }
-  auto operator()(auto pred) const { return AdaptorClosure{ *this, pred }; }
-};
-
 inline constexpr EnumerateAdaptor enumerate = EnumerateAdaptor{};
-inline constexpr ChunkByAdaptor   chunkBy = ChunkByAdaptor{};
 
-// 给一个range，返回一个排序后的新range，该range为了省空间只会存储排序后的迭代器
-template <typename Range, class Comp = ranges::less, class Proj = std::identity>
-  requires ranges::random_access_range<Range> && ranges::viewable_range<Range>
-class SortedView : public ranges::view_interface<SortedView<Range, Comp, Proj>> {
-private:
-  using BaseView = views::all_t<Range>;
-  using BaseIterator = ranges::iterator_t<Range>;
-  using IndexRange = std::vector<BaseIterator>;
-  using IndexIterator = ranges::iterator_t<IndexRange>;
+// template <
+//   ranges::forward_range                                                              View,
+//   std::indirect_binary_predicate<ranges::iterator_t<View>, ranges::iterator_t<View>> Pred>
+//   requires ranges::view<View> && std::is_object_v<Pred>
+// class ChunkByView : public ranges::view_interface<ChunkByView<View, Pred>> {
+// private:
+//   using Element = ranges::range_value_t<View>;
+//   using BaseIterator = ranges::iterator_t<View>;
+//   using SubRange = ranges::subrange<BaseIterator>;
 
-  BaseView   view_;
-  IndexRange index_;
+//   View base_;
+//   Pred pred_;
 
-public:
-  SortedView(const SortedView&) = delete;
-  SortedView(SortedView&&) = default;
-  SortedView& operator=(const SortedView&) = delete;
-  SortedView& operator=(SortedView&&) = default;
+// public:
+//   class Sentinel {};
+//   class Iterator : public SelfOperatorHelper {
+//     //
+//     指向一个子范围（惰性的），当解引用时需要得到一个子范围（除非是end），自增操作需要寻找下一个子范围
+//   private:
+//     View*        base_;
+//     BaseIterator left_;
+//     BaseIterator right_;
+//     Pred*        pred_;
 
-  class Iterator : public RandomAccessIteratorHelper<Iterator> {
-  private:
-    IndexIterator index_iter;
+//   public:
+//     Iterator(View& base, Pred& pred)
+//       : base_(&base), left_(base.begin()), right_(left_), pred_(&pred) {
+//       selfIncrement();
+//     }
+//     Iterator() = default;
 
-  public:
-    using reference_type = std::iter_reference_t<BaseIterator>;
-    using value_type = std::iter_value_t<BaseIterator>;
+//     using difference_type = std::ptrdiff_t;
+//     using value_type = SubRange;
+//     using reference_type = value_type;
 
-    Iterator(IndexIterator index_it) : index_iter(index_it) {}
-    Iterator() = default;
+//   private:
+//     friend SelfOperatorHelper;
+//     auto selfIncrement() {
+//       left_ = right_;
+//       right_ =
+//         ranges::adjacent_find(ranges::subrange(left_, base_->end()), [this](auto&& a, auto&& b) {
+//           return !std::invoke(*pred_, std::forward<decltype(a)>(a),
+//           std::forward<decltype(b)>(b));
+//         });
+//       if (right_ != base_->end()) {
+//         ++right_;
+//       }
+//     }
+//     auto selfDecrement() {
+//       right_ = left_;
+//       left_ =
+//         ranges::adjacent_find(
+//           ranges::subrange(base_->begin(), left_) | views::reverse,
+//           [this](auto&& a, auto&& b) {
+//             return std::invoke(*pred_, std::forward<decltype(a)>(a),
+//             std::forward<decltype(b)>(b));
+//           }
+//         ).base();
+//       if (left_ != base_->begin()) {
+//         --left_;
+//       }
+//     }
 
-  private:
-    friend RandomAccessIteratorHelper<Iterator>;
-    constexpr static IndexIterator Iterator::*randomAccessMember() { return &Iterator::index_iter; }
+//   public:
+//     friend auto operator==(const Iterator& a, const Iterator& b) -> bool {
+//       return a.left_ == b.left_;
+//     }
+//     friend auto operator==(const Iterator& a, Sentinel) -> bool {
+//       return a.left_ == a.base_->end();
+//     }
 
-  public:
-    auto operator*() const -> reference_type { return **index_iter; }
-  };
-  auto begin() { return Iterator{ index_.begin() }; }
-  auto end() { return Iterator{ index_.end() }; }
+//     auto operator*() const -> reference_type { return value_type{ left_, right_ }; }
+//   };
+//   auto begin() { return Iterator{ base_, pred_ }; }
+//   auto end() { return Sentinel{}; }
 
-  SortedView(Range&& range, Comp comp = {}, Proj proj = {})
-    : view_(views::all(range)), index_(view_.size()) {
-    int j = 0;
-    for (auto i = view_.begin(); i != view_.end(); i++, j++) {
-      index_[j] = std::move(i);
+//   ChunkByView(View view, Pred pred) : base_(std::move(view)), pred_(std::move(pred)) {}
+// };
+
+// struct ChunkByAdaptor {
+//   auto operator()(auto&& range, auto pred) const {
+//     return ChunkByView(views::all(std::forward<decltype(range)>(range)), pred);
+//   }
+//   auto operator()(auto pred) const { return AdaptorClosure{ *this, pred }; }
+// };
+
+// inline constexpr ChunkByAdaptor   chunkBy = ChunkByAdaptor{};
+
+// // 给一个range，返回一个排序后的新range，该range为了省空间只会存储排序后的迭代器
+// template <typename Range, class Comp = ranges::less, class Proj = std::identity>
+//   requires ranges::random_access_range<Range> && ranges::viewable_range<Range>
+// class SortedView : public ranges::view_interface<SortedView<Range, Comp, Proj>> {
+// private:
+//   using BaseView = views::all_t<Range>;
+//   using BaseIterator = ranges::iterator_t<Range>;
+//   using IndexRange = std::vector<BaseIterator>;
+//   using IndexIterator = ranges::iterator_t<IndexRange>;
+
+//   BaseView   view_;
+//   IndexRange index_;
+
+// public:
+//   SortedView(const SortedView&) = delete;
+//   SortedView(SortedView&&) = default;
+//   SortedView& operator=(const SortedView&) = delete;
+//   SortedView& operator=(SortedView&&) = default;
+
+//   class Iterator : public RandomAccessIteratorHelper<> {
+//   private:
+//     IndexIterator index_iter;
+
+//   public:
+//     using reference_type = std::iter_reference_t<BaseIterator>;
+//     using value_type = std::iter_value_t<BaseIterator>;
+
+//     Iterator(IndexIterator index_it) : index_iter(index_it) {}
+//     Iterator() = default;
+
+//   private:
+//     friend RandomAccessIteratorHelper<Iterator>;
+//     constexpr static IndexIterator Iterator::*randomAccessMember() { return
+//     &Iterator::index_iter; }
+
+//   public:
+//     auto operator*() const -> reference_type { return **index_iter; }
+//   };
+//   auto begin() { return Iterator{ index_.begin() }; }
+//   auto end() { return Iterator{ index_.end() }; }
+
+//   SortedView(Range&& range, Comp comp = {}, Proj proj = {})
+//     : view_(views::all(range)), index_(view_.size()) {
+//     int j = 0;
+//     for (auto i = view_.begin(); i != view_.end(); i++, j++) {
+//       index_[j] = std::move(i);
+//     }
+//     ranges::sort(index_, std::move(comp), [this, proj](auto iter) { return proj(*iter); });
+//   }
+// };
+// template <typename Range, class Comp = ranges::less, class Proj = std::identity>
+// SortedView(Range&& range, Comp comp = {}, Proj proj = {}) -> SortedView<Range, Comp, Proj>;
+
+// void test_EnumerateAdaptor() {
+//   std::array     arr{ "abc", "eddd" };
+//   auto           brr = arr | EnumerateAdaptor{};
+//   decltype(auto) c = *brr.begin();
+//   int            j = 0;
+//   for (auto [i, e] : arr | EnumerateAdaptor{}) {
+//     j++;
+//   }
+//   throwf(j == 2, "");
+// }
+
+// void test_SortedRange() {
+//   static_assert(ranges::view<SortedView<std::vector<int>>>);
+//   static_assert(ranges::random_access_range<SortedView<std::vector<int>>>);
+//   static_assert(std::random_access_iterator<SortedView<std::vector<int>>::Iterator>);
+//   static_assert(!std::copyable<SortedView<std::vector<int>>>);
+//   auto view = views::iota(0, 10);
+//   auto view2 = view | views::reverse;
+//   auto view3 =
+//     SortedView{ view, [](auto a, auto b) { return a > b; }, [](auto a) { return a + 10; } };
+//   auto view4 = SortedView{ view, {}, [](auto a) { return 10 - a; } };
+//   debug(view2);
+//   throwf(
+//     ranges::all_of(views::zip(view2, std::move(view3)), [](auto a) { return a.first == a.second;
+//     }), "test_SortedRange"
+//   );
+//   throwf(
+//     ranges::all_of(views::zip(view2, std::move(view4)), [](auto a) { return a.first == a.second;
+//     }), "test_SortedRange"
+//   );
+// }
+
+// void test_ChunkBy() {
+//   static_assert(ranges::forward_range<
+//                 ChunkByView<views::all_t<std::vector<int>>, ranges::not_equal_to>>);
+//   static_assert(ranges::bidirectional_range<
+//                 ChunkByView<views::all_t<std::vector<int>>, ranges::not_equal_to>>);
+//   // todo
+//   // static_assert(ranges::common_range<ChunkByView<views::all_t<std::vector<int>>,
+//   // std::ranges::not_equal_to>>);
+//   std::array arr{ 1, 2, 3, 2, 3, 1, 5, 10, 9, 8 };
+//   auto       view = toy::chunkBy(arr, std::less{});
+//   auto       i = view.begin();
+//   for (auto _ : views::iota(0, 5)) {
+//     debug(*i);
+//     i++;
+//   }
+//   throwf(i == view.end(), "i == view.end()");
+//   i--;
+//   for (auto _ : views::iota(0, 4)) {
+//     debug(*i);
+//     i--;
+//   }
+//   debug(*i);
+//   throwf(i == view.begin(), "i == view.begin()");
+// }
+
+struct Find {
+  template <ranges::input_range R, class T, class Proj = std::identity>
+    requires std::indirect_binary_predicate<
+               ranges::equal_to,
+               std::projected<ranges::iterator_t<R>, Proj>,
+               const T*>
+  auto operator()(R&& range, T const& value, Proj proj = {}) const
+    -> std::optional<ranges::range_value_t<R>> {
+    auto iter = ranges::find(std::forward<R>(range), value, std::move(proj));
+    if (iter == ranges::end(range)) {
+      return std::nullopt;
+    } else {
+      return *iter;
     }
-    ranges::sort(index_, std::move(comp), [this, proj](auto iter) { return proj(*iter); });
   }
 };
-template <typename Range, class Comp = ranges::less, class Proj = std::identity>
-SortedView(Range&& range, Comp comp = {}, Proj proj = {}) -> SortedView<Range, Comp, Proj>;
 
-void test_EnumerateAdaptor() {
-  std::array     arr{ "abc", "eddd" };
-  auto           brr = arr | EnumerateAdaptor{};
-  decltype(auto) c = *brr.begin();
-  int            j = 0;
-  for (auto [i, e] : arr | EnumerateAdaptor{}) {
-    j++;
-  }
-  throwf(j == 2, "");
-}
-
-void test_SortedRange() {
-  static_assert(ranges::view<SortedView<std::vector<int>>>);
-  static_assert(ranges::random_access_range<SortedView<std::vector<int>>>);
-  static_assert(std::random_access_iterator<SortedView<std::vector<int>>::Iterator>);
-  static_assert(!std::copyable<SortedView<std::vector<int>>>);
-  auto view = views::iota(0, 10);
-  auto view2 = view | views::reverse;
-  auto view3 =
-    SortedView{ view, [](auto a, auto b) { return a > b; }, [](auto a) { return a + 10; } };
-  auto view4 = SortedView{ view, {}, [](auto a) { return 10 - a; } };
-  debug(view2);
-  throwf(
-    ranges::all_of(views::zip(view2, std::move(view3)), [](auto a) { return a.first == a.second; }),
-    "test_SortedRange"
-  );
-  throwf(
-    ranges::all_of(views::zip(view2, std::move(view4)), [](auto a) { return a.first == a.second; }),
-    "test_SortedRange"
-  );
-}
-
-void test_ChunkBy() {
-  static_assert(ranges::forward_range<
-                ChunkByView<views::all_t<std::vector<int>>, ranges::not_equal_to>>);
-  static_assert(ranges::bidirectional_range<
-                ChunkByView<views::all_t<std::vector<int>>, ranges::not_equal_to>>);
-  // todo
-  // static_assert(ranges::common_range<ChunkByView<views::all_t<std::vector<int>>,
-  // std::ranges::not_equal_to>>);
-  std::array arr{ 1, 2, 3, 2, 3, 1, 5, 10, 9, 8 };
-  auto       view = toy::chunkBy(arr, std::less{});
-  auto       i = view.begin();
-  for (auto _ : views::iota(0, 5)) {
-    debug(*i);
-    i++;
-  }
-  throwf(i == view.end(), "i == view.end()");
-  i--;
-  for (auto _ : views::iota(0, 4)) {
-    debug(*i);
-    i--;
-  }
-  debug(*i);
-  throwf(i == view.begin(), "i == view.begin()");
-}
+inline constexpr auto find = Find{};
 
 struct FindIf {
   template <

@@ -140,10 +140,9 @@ auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& requ
   }
   auto& pdevice = request.getPdevice();
   auto  formats = getVkResources(vkGetPhysicalDeviceSurfaceFormatsKHR, pdevice.get(), surface);
-  auto  iter_format = ranges::find_if(formats, [&](auto format) {
-    return format.format == _format && format.colorSpace == _color_space;
-  });
-  if (iter_format == formats.end()) {
+  if (!toy::findIf(formats, [&](auto format) {
+        return format.format == _format && format.colorSpace == _color_space;
+      })) {
     toy::debugf("no suitable format");
     return false;
   }
@@ -165,8 +164,7 @@ auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& requ
    */
   auto present_modes =
     getVkResources(vkGetPhysicalDeviceSurfacePresentModesKHR, pdevice.get(), surface);
-  auto p_present_mode = ranges::find(present_modes, _present_mode);
-  if (p_present_mode == present_modes.end()) {
+  if (!ranges::contains(present_modes, _present_mode)) {
     toy::debugf("no suitable present mode");
     return false;
   }

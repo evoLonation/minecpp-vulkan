@@ -104,12 +104,11 @@ private:
   }
 };
 
-class DescriptorPool : public toy::ObjectPoolHelper<DescriptorPool, DescriptorSet>,
-                       public DescriptorSetLayout {
+class DescriptorPool : public toy::ObjectPoolHelper<DescriptorSet>, public DescriptorSetLayout {
 public:
-  using Base = toy::ObjectPoolHelper<DescriptorPool, DescriptorSet>;
+  using Base = toy::ObjectPoolHelper<DescriptorSet>;
   friend Base;
-  DescriptorPool(std::vector<BindingInfo> infos) : Base{}, DescriptorSetLayout(std::move(infos)) {
+  DescriptorPool(std::vector<BindingInfo> infos) : DescriptorSetLayout(std::move(infos)) {
     _pool_sizes = getInfo() | views::transform([](auto info) {
                     return VkDescriptorPoolSize{
                       .type = info.type,

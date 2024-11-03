@@ -50,7 +50,7 @@ Context::Context(const std::string& app_name, uint32 width, uint32 height) {
     DeviceCapabilityChecker{ device_checkers::vertex },
     DeviceCapabilityChecker{ device_checkers::sync },
   };
-  _device.reset(new Device{ device_checkers });
+  _device.reset(new Device{ Device::create(device_checkers) });
   auto family_counts = queue_requestor.getFamilyQueueCounts(*_device);
   auto family_info = std::vector<std::pair<FamilyType, FamilyQueueCount>>(3);
   using enum FamilyType;
