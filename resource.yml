@@ -8,8 +8,6 @@ module:
     provide: model
 - transform.ccm:
     provide: transform
-- input.ccm:
-    provide: input
 source:
 - header_impl.cc
 sub_dir:
@@ -18,5 +16,6 @@ sub_dir:
 - toy
 - render2
 - shader
+- framework
 target:
 - main.cc: hello_vulkan

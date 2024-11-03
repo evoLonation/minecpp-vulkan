@@ -1,0 +1,155 @@
+module;
+#include <toy.h>
+export module input;
+
+export import input.convert;
+
+import glfw;
+
+import <glfw_config.h>;
+
+import std;
+import toy;
+
+import input.convert;
+
+export namespace input {
+
+struct ButtonState {
+  enum State {
+    DOWN, // FREE to HOLD
+    HOLD,
+    RELEASE, // HOLD to FREE
+    MAX_ENUM_VALUE,
+  } state;
+  // in DOWN, is always at 0
+  float hold_time;
+};
+struct CursorState {
+  uint32 x;
+  uint32 y;
+  int32  x_move;
+  int32  y_move;
+  bool   visible;
+};
+
+class InputProcessor : public toy::ProactiveSingleton<InputProcessor> {
+private:
+  std::map<Keyboard, ButtonState> _key_states;
+  std::map<Mouse, ButtonState>    _mouse_states;
+
+  CursorState _cursor_state;
+
+public:
+  InputProcessor() {
+    auto window = glfw::Window::getInstance().get();
+    // 须在创建窗口后、开始渲染前注册回调函数
+    glfwSetKeyCallback(
+      window,
+      [](GLFWwindow* window, int key_, int scancode, int action, int mods) {
+        updateState(getInstance()._key_states, keyboardMapper(key_), action);
+      }
+    );
+    glfwSetMouseButtonCallback(window, [](GLFWwindow* window, int mouse_, int action, int mods) {
+      updateState(getInstance()._mouse_states, mouseMapper(mouse_), action);
+    });
+    double last_x, last_y;
+    glfwGetCursorPos(window, &last_x, &last_y);
+    TOY_ASSERT(
+      last_x == static_cast<int32>(last_x) && last_y == static_cast<int32>(last_y), last_x, last_y
+    );
+    _cursor_state = {
+      .x = static_cast<uint32>(last_x),
+      .y = static_cast<uint32>(last_y),
+      .x_move = 0,
+      .y_move = 0,
+      .visible = false,
+    };
+    glfwSetCursorPosCallback(window, [](GLFWwindow* window, double x, double y) {
+      auto& instance = getInstance();
+      TOY_CHECK(x == (int32)x && y == (int32)y, x, y);
+      instance._cursor_state.x_move = (int32)x - (int32)instance._cursor_state.x;
+      instance._cursor_state.y_move = (int32)y - (int32)instance._cursor_state.y;
+      instance._cursor_state.x = x;
+      instance._cursor_state.y = y;
+    });
+    setCursorVisible(true);
+  }
+  template <typename Button>
+  static void updateState(std::map<Button, ButtonState>& states, Button key, int action) {
+    if (action == GLFW_REPEAT) {
+      return;
+    }
+    toy::throwf(action == GLFW_PRESS || action == GLFW_RELEASE, "action equal to another value");
+    auto press = action == GLFW_PRESS;
+    toy::throwf(
+      press == (!states.contains(key) || states.at(key).state == ButtonState::RELEASE),
+      "The state of InputProcessor is not match to glfw callback"
+    );
+    if (press) {
+      auto state = ButtonState{
+        .state = ButtonState::DOWN,
+        .hold_time = 0,
+      };
+      states.emplace(key, state);
+    } else {
+      states.at(key).state = ButtonState::RELEASE;
+    }
+  }
+
+  auto getCursorState() -> const CursorState& { return _cursor_state; }
+  auto getState(Keyboard key) const -> std::optional<ButtonState> {
+    if (_key_states.contains(key)) {
+      return _key_states.at(key);
+    } else {
+      return std::nullopt;
+    }
+  }
+  auto getState(Mouse mouse) const -> std::optional<ButtonState> {
+    if (_mouse_states.contains(mouse)) {
+      return _mouse_states.at(mouse);
+    } else {
+      return std::nullopt;
+    }
+  }
+  auto getKeyboardStates() const -> std::map<Keyboard, ButtonState> const& { return _key_states; }
+  auto getMouseStates() const -> std::map<Mouse, ButtonState> const& { return _mouse_states; }
+
+  void setCursorVisible(bool visible) {
+    if (_cursor_state.visible == visible) {
+      return;
+    }
+    _cursor_state.visible = visible;
+    if (visible) {
+      glfwSetInputMode(glfw::Window::getInstance().get(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    } else {
+      glfwSetInputMode(glfw::Window::getInstance().get(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    }
+  }
+
+  void processInput(float interval) {
+    auto states_hanlder = [&](auto& states) {
+      for (auto iter = states.begin(); iter != states.end();) {
+        auto& state = iter->second;
+        state.hold_time += interval;
+        if (state.state == ButtonState::DOWN) {
+          state.state = ButtonState::HOLD;
+        }
+        if (state.state == ButtonState::RELEASE) {
+          iter = states.erase(iter);
+        } else {
+          iter++;
+        }
+      }
+    };
+    states_hanlder(_key_states);
+    states_hanlder(_mouse_states);
+    _cursor_state.x_move = 0;
+    _cursor_state.y_move = 0;
+    glfwPollEvents();
+  }
+
+  UNCOPYABLE_MOVEABLE(InputProcessor);
+};
+
+} // namespace input

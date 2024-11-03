@@ -12,7 +12,7 @@ struct OverloadLambda : public Lambdas... {
 };
 
 template <typename P>
-using ptr_manager = std::unique_ptr<std::remove_pointer_t<P>, decltype([](auto) {})>;
+using PtrManager = std::unique_ptr<std::remove_pointer_t<P>, decltype([](auto) {})>;
 
 /**
  * @brief must place it to the first base class location

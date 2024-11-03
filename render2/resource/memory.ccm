@@ -46,8 +46,8 @@ private:
   void unmap();
 
 private:
-  toy::ptr_manager<void*>          _data;
-  toy::ptr_manager<VkDeviceMemory> _memory;
+  toy::PtrManager<void*>          _data;
+  toy::PtrManager<VkDeviceMemory> _memory;
 };
 
 } // namespace rd::vk

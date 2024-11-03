@@ -1,0 +1,7 @@
+module:
+- input.ccm:
+    provide: input
+- action.ccm:
+    provide: action
+- input_convert.ccm:
+    provide: input.convert

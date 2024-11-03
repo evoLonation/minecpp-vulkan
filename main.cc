@@ -38,7 +38,7 @@ int main() {
     toy::test_EnumSet::test();
     trans::test_trans();
     auto  ctx = rd::Context{ "hello vulkan", 1920, 1080 };
-    auto& input_processor = input::InputProcessor::getInstance();
+    auto& input = input::InputProcessor::getInstance();
 
     auto depth_format = VK_FORMAT_D32_SFLOAT;
     auto sample_count = VK_SAMPLE_COUNT_8_BIT;
@@ -180,9 +180,14 @@ int main() {
       VkClearValue{ .depthStencil = { .depth = 1.0f, } },
     };
 
-    auto count = 0;
+    auto  count = 0;
+    auto  last_time = chrono::high_resolution_clock::now();
+    float interval;
     while (!glfwWindowShouldClose(glfw::Window::getInstance())) {
-      input_processor.processInput(16.6);
+      auto interval_ = chrono::high_resolution_clock::now() - last_time;
+      last_time += interval_;
+      interval = chrono::duration_cast<chrono::microseconds>(interval_).count() / 1'000'000.0f;
+      input.processInput(interval);
       auto res = presentation.prepare();
       if (!res.has_value()) {
         if (presentation.recreate()) {
@@ -190,6 +195,13 @@ int main() {
           createResource();
         }
       } else {
+        using Keyboard = input::Keyboard;
+        using ButtonState = input::ButtonState;
+        if (auto opt = input.getState(Keyboard::KEY_A); opt && opt->state == ButtonState::DOWN) {
+          model_data = model_data * trans::rotate<trans::Axis::Z>(90.0f);
+          model_uniform.update();
+        }
+
         auto& context = res.value();
         render_pass.setRecorder(0, [&](rd::vk::PipelineDrawer drawer) {
           drawer.bindVertexBuffer(&vertex_buffer);
@@ -205,13 +217,11 @@ int main() {
           &framebuffers.depth_image,
         };
         render_pass.recordDraw(attachments, clear_values, swapchain.getExtent());
-
-        count++;
-        if (count % 1000 == 0) {
-          toy::debug(count);
-        }
         presentation.present(context.image_index);
-        // return 0;
+      }
+      count++;
+      if (count % 1000 == 0) {
+        toy::debug(count);
       }
     }
   } catch (const std::exception& e) {
