@@ -181,17 +181,16 @@ class CommandExecutorManager : public toy::ProactiveSingleton<CommandExecutorMan
 public:
   CommandExecutorManager(std::span<std::pair<EnumT, FamilyQueueCount> const> family_infos);
 
-  auto operator[](uint32 family, uint32 queue_index) -> CommandExecutor& {
+  auto getExecutor(uint32 family, uint32 queue_index = 0) -> CommandExecutor& {
     return _executors.at(family).at(queue_index);
   }
-
-  auto operator[](uint32 family) -> CommandExecutor& { return operator[](family, 0); }
-
-  auto operator[](EnumT family, uint32 queue_index) -> CommandExecutor& {
-    return operator[](_families.at(family), queue_index);
+  auto getExecutor(EnumT family, uint32 queue_index = 0) -> CommandExecutor& {
+    return getExecutor(_families.at(family), queue_index);
   }
 
-  auto operator[](EnumT family) -> CommandExecutor& { return operator[](family, 0); }
+  auto getFamilyIndex(EnumT family) -> uint32 { return _families.at(family); }
+
+  auto operator[](auto... args) -> CommandExecutor& { return getExecutor(args...); }
 
   UNCOPYABLE_MOVEABLE(CommandExecutorManager);
 

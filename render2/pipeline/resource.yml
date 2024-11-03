@@ -6,14 +6,14 @@ module:
 - descriptor.cc:
     implement: render.descriptor
 - render_pass.ccm:
-    provide: render.render_pass2
+    provide: render.render_pass
 - pipeline.ccm:
     provide: render.pipeline
 - render_pass_create.cc:
-    implement: render.render_pass2
+    implement: render.render_pass
 - framebuffer.ccm:
     provide: render.framebuffer
 - pipeline.cc:
     implement: render.pipeline
 - render_pass.cc:
-    implement: render.render_pass2
+    implement: render.render_pass

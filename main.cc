@@ -12,7 +12,7 @@ import render.resource;
 import render.executor;
 import render.queue_requestor;
 import render.image;
-import render.render_pass2;
+import render.render_pass;
 import render.descriptor;
 import render.buffer;
 import render.framebuffer;

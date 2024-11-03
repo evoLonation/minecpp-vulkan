@@ -2,6 +2,7 @@ export module render.pipeline;
 
 import <vulkan_config.h>;
 import render.resource;
+import render.vertex;
 
 import std;
 
@@ -23,20 +24,44 @@ struct DepthOption {
   bool        overwrite;
 };
 
+auto createGraphicsPipeline(
+  VkRenderPass                                       render_pass,
+  uint32                                             subpass_i,
+  VkShaderModule                                     vertex_shader,
+  VkShaderModule                                     frag_shader,
+  VkPipelineLayout                                   layout,
+  VkPrimitiveTopology                                topology,
+  VkSampleCountFlagBits                              sample_count,
+  std::optional<StencilOption>                       stencil_option,
+  std::optional<DepthOption>                         depth_option,
+  std::span<VkVertexInputBindingDescription const>   vertex_bindings,
+  std::span<VkVertexInputAttributeDescription const> vertex_attribs
+) -> rs::Pipeline;
+
 struct PipelineInfo {
-  VkRenderPass                                       render_pass;
-  uint32                                             subpass_index;
-  VkShaderModule                                     vertex_shader;
-  VkShaderModule                                     frag_shader;
-  VkPipelineLayout                                   layout;
-  VkPrimitiveTopology                                topology;
-  VkSampleCountFlagBits                              sample_count;
-  std::optional<StencilOption>                       stencil_option;
-  std::optional<DepthOption>                         depth_option;
-  std::span<VkVertexInputBindingDescription const>   vertex_bindings;
-  std::span<VkVertexInputAttributeDescription const> vertex_attribs;
+  VkRenderPass                       render_pass;
+  uint32                             subpass_i;
+  std::string                        vertex_shader_name;
+  std::string                        frag_shader_name;
+  std::vector<VkDescriptorSetLayout> dset_layouts;
+  VkPrimitiveTopology                topology;
+  VkSampleCountFlagBits              sample_count;
+  std::optional<StencilOption>       stencil_option;
+  std::optional<DepthOption>         depth_option;
+  VertexInfo                         vertex_info;
 };
 
-auto createGraphicsPipeline(PipelineInfo info) -> rs::Pipeline;
+struct Pipeline {
+public:
+  Pipeline(PipelineInfo info);
+  auto getPipeline() -> VkPipeline { return _pipeline; }
+  auto getLayout() -> VkPipelineLayout { return _layout; }
+
+private:
+  rs::ShaderModule   _vertex_shader;
+  rs::ShaderModule   _frag_shader;
+  rs::PipelineLayout _layout;
+  rs::Pipeline       _pipeline;
+};
 
 } // namespace rd

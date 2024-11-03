@@ -1,4 +1,4 @@
-module render.render_pass2;
+module render.render_pass;
 
 import <vulkan_config.h>;
 
@@ -24,30 +24,20 @@ RenderPass::RenderPass(
   std::tie(render_pass, _attachment_syncs) = createRenderPass(attachments, subpass_infos);
 
   for (auto [subpass_i, subpass] : subpasses | toy::enumerate) {
-    auto vertex_shader = createShaderModule(subpass.vertex_shader_name);
-    auto frag_shader = createShaderModule(subpass.frag_shader_name);
-    auto pipeline_layout = createPipelineLayout(subpass.dset_layouts);
     auto pipeline_info = PipelineInfo{
       .render_pass = render_pass,
-      .subpass_index = subpass_i,
-      .vertex_shader = vertex_shader,
-      .frag_shader = frag_shader,
-      .layout = pipeline_layout,
+      .subpass_i = subpass_i,
+      .vertex_shader_name = subpass.vertex_shader_name,
+      .frag_shader_name = subpass.frag_shader_name,
+      .dset_layouts = subpass.dset_layouts,
       .topology = subpass.topology,
       .sample_count =
         subpass.multi_sample ? subpass.multi_sample->sample_count : VK_SAMPLE_COUNT_1_BIT,
       .stencil_option = subpass.depst.transform([](auto x) { return x.stencil_option; }),
       .depth_option = subpass.depst.transform([](auto x) { return x.depth_option; }),
-      .vertex_bindings = std::array{ *subpass.vertex_info.binding_description },
-      .vertex_attribs = subpass.vertex_info.attribute_descriptions,
+      .vertex_info = subpass.vertex_info,
     };
-    auto pipeline = createGraphicsPipeline(pipeline_info);
-    _pipelines.push_back(PipelineResource{
-      .vertex_shader = std::move(vertex_shader),
-      .frag_shader = std::move(frag_shader),
-      .layout = std::move(pipeline_layout),
-      .pipeline = std::move(pipeline),
-    });
+    _pipelines.push_back(Pipeline{ pipeline_info });
   }
 }
 
@@ -144,7 +134,8 @@ void RenderPassManager::recordDraw(
 
   auto drawers = std::vector<PipelineDrawer>{};
   for (auto& info : getPipelines()) {
-    drawers.push_back(PipelineDrawer::forGetResources(info.pipeline, info.layout, extent));
+    drawers.push_back(PipelineDrawer::forGetResources(info.getPipeline(), info.getLayout(), extent)
+    );
   }
   auto batches = std::vector<CommandBatch>{};
   auto waitables_keep_lifetime = std::list<Waitable>{};
@@ -246,8 +237,8 @@ void RenderPassManager::recordDraw(
   auto pipeline_infos = std::vector<RenderPassDrawInfo::PipelineDrawInfo>{};
   for (auto [resource, recorder] : views::zip(getPipelines(), _recorders)) {
     pipeline_infos.push_back(RenderPassDrawInfo::PipelineDrawInfo{
-      .pipeline = resource.pipeline,
-      .layout = resource.layout,
+      .pipeline = resource.getPipeline(),
+      .layout = resource.getLayout(),
       .recorder = recorder,
     });
   }

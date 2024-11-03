@@ -28,7 +28,19 @@ auto createPipelineLayout(std::span<VkDescriptorSetLayout const> dset_layouts) /
 }
 
 // todo: add depth option
-auto createGraphicsPipeline(PipelineInfo info) -> rs::Pipeline {
+auto createGraphicsPipeline(
+  VkRenderPass                                       render_pass,
+  uint32                                             subpass_i,
+  VkShaderModule                                     vertex_shader,
+  VkShaderModule                                     frag_shader,
+  VkPipelineLayout                                   layout,
+  VkPrimitiveTopology                                topology,
+  VkSampleCountFlagBits                              sample_count,
+  std::optional<StencilOption>                       stencil_option,
+  std::optional<DepthOption>                         depth_option,
+  std::span<VkVertexInputBindingDescription const>   vertex_bindings,
+  std::span<VkVertexInputAttributeDescription const> vertex_attribs
+) -> rs::Pipeline {
   constexpr bool enable_blending_color = false;
 
   // pSpecializationInfo 可以为 管道 配置着色器的常量，利于编译器优化
@@ -37,13 +49,13 @@ auto createGraphicsPipeline(PipelineInfo info) -> rs::Pipeline {
     VkPipelineShaderStageCreateInfo{
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
       .stage = VK_SHADER_STAGE_VERTEX_BIT,
-      .module = info.vertex_shader,
+      .module = vertex_shader,
       .pName = "main",
     },
     VkPipelineShaderStageCreateInfo{
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
       .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-      .module = info.frag_shader,
+      .module = frag_shader,
       .pName = "main",
     },
   };
@@ -55,7 +67,7 @@ auto createGraphicsPipeline(PipelineInfo info) -> rs::Pipeline {
     VK_DYNAMIC_STATE_VIEWPORT,
     VK_DYNAMIC_STATE_SCISSOR,
   };
-  if (info.stencil_option
+  if (stencil_option
         .transform([](auto& x) { return x.dynamic_reference; }) //
         .value_or(false)) {
     dynamic_states.push_back(VK_DYNAMIC_STATE_STENCIL_REFERENCE);
@@ -69,10 +81,10 @@ auto createGraphicsPipeline(PipelineInfo info) -> rs::Pipeline {
 
   auto vertex_input_info = VkPipelineVertexInputStateCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-    .vertexBindingDescriptionCount = static_cast<uint32>(info.vertex_bindings.size()),
-    .pVertexBindingDescriptions = info.vertex_bindings.data(),
-    .vertexAttributeDescriptionCount = static_cast<uint32>(info.vertex_attribs.size()),
-    .pVertexAttributeDescriptions = info.vertex_attribs.data(),
+    .vertexBindingDescriptionCount = static_cast<uint32>(vertex_bindings.size()),
+    .pVertexBindingDescriptions = vertex_bindings.data(),
+    .vertexAttributeDescriptionCount = static_cast<uint32>(vertex_attribs.size()),
+    .pVertexAttributeDescriptions = vertex_attribs.data(),
   };
 
   auto input_assembly_info = VkPipelineInputAssemblyStateCreateInfo{
@@ -83,7 +95,7 @@ auto createGraphicsPipeline(PipelineInfo info) -> rs::Pipeline {
     // VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST: 不复用的三角形
     // VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
     // 下一个三角形的前两条边是上一个三角形的后两条边
-    .topology = info.topology,
+    .topology = topology,
     // 当_STRIP topology下，如果为True，则可以用特殊索引值来 break up 线和三角形
     .primitiveRestartEnable = VK_FALSE,
   };
@@ -116,7 +128,7 @@ auto createGraphicsPipeline(PipelineInfo info) -> rs::Pipeline {
 
   auto multisampling_state_info = VkPipelineMultisampleStateCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-    .rasterizationSamples = info.sample_count,
+    .rasterizationSamples = sample_count,
     .sampleShadingEnable = VK_FALSE,
   };
 
@@ -129,21 +141,21 @@ auto createGraphicsPipeline(PipelineInfo info) -> rs::Pipeline {
     .maxDepthBounds = 1.0f,
   };
 
-  if (info.depth_option.has_value()) {
+  if (depth_option.has_value()) {
     // new fragment are compared to the depth buffer to see if they should by discard
     depst_info.depthTestEnable = VK_TRUE;
     // If replace the depth buffer with new fragment if test success
-    depst_info.depthWriteEnable = info.depth_option->overwrite;
+    depst_info.depthWriteEnable = depth_option->overwrite;
     // Lower depth of fragment is closer
-    depst_info.depthCompareOp = info.depth_option->compare_op;
+    depst_info.depthCompareOp = depth_option->compare_op;
   } else {
     depst_info.depthTestEnable = VK_FALSE;
   }
 
-  if (info.stencil_option.has_value()) {
+  if (stencil_option.has_value()) {
     depst_info.stencilTestEnable = VK_TRUE;
-    depst_info.front = info.stencil_option->front;
-    depst_info.back = info.stencil_option->back;
+    depst_info.front = stencil_option->front;
+    depst_info.back = stencil_option->back;
   } else {
     depst_info.stencilTestEnable = VK_FALSE;
   }
@@ -196,15 +208,34 @@ auto createGraphicsPipeline(PipelineInfo info) -> rs::Pipeline {
     .pDepthStencilState = &depst_info,
     .pColorBlendState = &color_blend_state_info,
     .pDynamicState = &dynamic_state_info,
-    .layout = info.layout,
-    .renderPass = info.render_pass,
-    .subpass = info.subpass_index,
+    .layout = layout,
+    .renderPass = render_pass,
+    .subpass = subpass_i,
     // 相同功能的管道可以共用
     .basePipelineHandle = VK_NULL_HANDLE,
   };
 
   return std::move(
     rs::GraphicsPipelineFactory::create(VK_NULL_HANDLE, std::span{ &pipeline_create_info, 1 })[0]
+  );
+}
+
+Pipeline::Pipeline(PipelineInfo info) {
+  _vertex_shader = createShaderModule(info.vertex_shader_name);
+  _frag_shader = createShaderModule(info.frag_shader_name);
+  _layout = createPipelineLayout(info.dset_layouts);
+  _pipeline = createGraphicsPipeline(
+    info.render_pass,
+    info.subpass_i,
+    _vertex_shader,
+    _frag_shader,
+    _layout,
+    info.topology,
+    info.sample_count,
+    info.stencil_option,
+    info.depth_option,
+    std::array{ *info.vertex_info.binding_description },
+    info.vertex_info.attribute_descriptions
   );
 }
 

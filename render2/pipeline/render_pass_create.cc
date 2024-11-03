@@ -1,6 +1,6 @@
 module;
 #include <toy.h>
-module render.render_pass2;
+module render.render_pass;
 
 import <vulkan_config.h>;
 

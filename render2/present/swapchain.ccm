@@ -33,7 +33,8 @@ public:
   auto getImages() const -> std::span<const VkImage> { return _images; }
   auto getImageViews() const -> std::span<const rs::ImageView> { return _image_views; }
   auto getExtent() const -> VkExtent2D { return _swapchain_extent; }
-  auto getFormat() -> VkFormat { return _format; }
+
+  static auto getFormat() -> VkFormat { return _format; }
 
 private:
   static VkFormat         _format;

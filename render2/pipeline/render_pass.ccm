@@ -1,7 +1,7 @@
 module;
 #include <toy.h>
 
-export module render.render_pass2;
+export module render.render_pass;
 
 import <vulkan_config.h>;
 import render.resource;
@@ -70,18 +70,12 @@ public:
     std::span<AttachmentInfo const> attachments, std::span<SubpassPipelineInfo const> subpasses
   );
 
-  struct PipelineResource {
-    rs::ShaderModule   vertex_shader;
-    rs::ShaderModule   frag_shader;
-    rs::PipelineLayout layout;
-    rs::Pipeline       pipeline;
-  };
-  auto getPipelines() const -> std::span<PipelineResource const> { return _pipelines; }
+  auto getPipelines() -> std::span<Pipeline> { return _pipelines; }
   auto getSyncInfos() const -> std::span<AttachmentSyncInfo const> { return _attachment_syncs; }
 
 private:
   std::vector<AttachmentSyncInfo> _attachment_syncs;
-  std::vector<PipelineResource>   _pipelines;
+  std::vector<Pipeline>           _pipelines;
 };
 
 // todo: change to abstract class
