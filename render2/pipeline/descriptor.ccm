@@ -57,7 +57,7 @@ private:
   void removeIdles();
 
   friend toy::AutoMoveAssigner<DescriptorSet>;
-  void beforeDestroy();
+  void beforeDestroy() { TOY_CHECK(!valid()); }
 };
 
 class DescriptorPool : public toy::ObjectPoolHelper<DescriptorSet>, public DescriptorSetLayout {
@@ -67,6 +67,7 @@ public:
   DescriptorPool(std::vector<BindingInfo> infos);
 
   UNCOPYABLE_MOVEABLE(DescriptorPool);
+  ~DescriptorPool();
 
   void recycle(DescriptorSet dset);
 

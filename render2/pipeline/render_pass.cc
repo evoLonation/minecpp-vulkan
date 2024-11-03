@@ -8,36 +8,62 @@ import render.tracker;
 
 namespace rd {
 
-RenderPass::RenderPass(
-  std::span<AttachmentInfo const> attachments, std::span<SubpassPipelineInfo const> subpasses
+void recordRenderPass(
+  VkCommandBuffer                      cmdbuf,
+  VkRenderPass                         render_pass,
+  VkFramebuffer                        framebuffer,
+  VkExtent2D                           extent,
+  std::span<VkClearValue const>        clear_values,
+  std::function<void(VkCommandBuffer)> recorder
 ) {
-  auto subpass_infos = std::vector<SubpassInfo>{};
-  for (auto& subpass : subpasses) {
-    subpass_infos.push_back(SubpassInfo{
-      .colors = subpass.colors,
-      .multi_sample = subpass.multi_sample,
-      .depst = subpass.depst.transform([](auto x) { return x.attachment; }),
-      .inputs = subpass.inputs,
-    });
-  }
-  auto& render_pass = static_cast<rs::RenderPass&>(*this);
-  std::tie(render_pass, _attachment_syncs) = createRenderPass(attachments, subpass_infos);
+  auto render_pass_begin_info = VkRenderPassBeginInfo{
+    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+    .renderPass = render_pass,
+    .framebuffer = framebuffer,
+    .renderArea = VkRect2D{ .offset = VkOffset2D{ 0, 0 }, .extent = extent },
+    .clearValueCount = static_cast<uint32>(clear_values.size()),
+    .pClearValues = clear_values.data(),
+  };
+  // VK_SUBPASS_CONTENTS_: render pass的command被嵌入主缓冲区
+  // VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS: render pass 命令
+  // 将会从次缓冲区执行
+  vkCmdBeginRenderPass(cmdbuf, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+  recorder(cmdbuf);
+  vkCmdEndRenderPass(cmdbuf);
+}
 
-  for (auto [subpass_i, subpass] : subpasses | toy::enumerate) {
-    auto pipeline_info = PipelineInfo{
-      .render_pass = render_pass,
-      .subpass_i = subpass_i,
-      .vertex_shader_name = subpass.vertex_shader_name,
-      .frag_shader_name = subpass.frag_shader_name,
-      .dset_layouts = subpass.dset_layouts,
-      .topology = subpass.topology,
-      .sample_count =
-        subpass.multi_sample ? subpass.multi_sample->sample_count : VK_SAMPLE_COUNT_1_BIT,
-      .stencil_option = subpass.depst.transform([](auto x) { return x.stencil_option; }),
-      .depth_option = subpass.depst.transform([](auto x) { return x.depth_option; }),
-      .vertex_info = subpass.vertex_info,
-    };
-    _pipelines.push_back(Pipeline{ pipeline_info });
+void RenderPass::record(
+  std::vector<CommandBatch>            batches,
+  std::span<FrameImageManager*>        images,
+  std::vector<VkClearValue>            clear_values,
+  VkExtent2D                           extent,
+  std::function<void(VkCommandBuffer)> pipeline_recorder
+) {
+  auto framebuffer = FramebufferPool::getInstance().getFramebuffer(get(), images);
+
+  auto waitables_keep_lifetime = std::list<Waitable>{};
+  for (auto [image, info] : views::zip(images, getSyncInfos())) {
+    auto sync = image->getTracker().syncScope(
+      Scope{ .stage_mask = info.initial_stage }, _executor->getFamily(), info.initial_layout
+    );
+    if (auto* ctx = std::get_if<BarrierRecorder>(&sync)) {
+      batches.push_back(CommandBatch{ std::move(*ctx) });
+    } else if (auto* ctx = std::get_if<FamilyTransferRecorder>(&sync)) {
+      auto waitable = ctx->executeRelease();
+      waitables_keep_lifetime.push_back(std::move(waitable));
+      batches.push_back(ctx->toAcquireBatch(&waitables_keep_lifetime.back()));
+    }
+  }
+
+  batches.push_back(CommandBatch{ [&](VkCommandBuffer cmdbuf) {
+    recordRenderPass(cmdbuf, get(), framebuffer, extent, clear_values, pipeline_recorder);
+  } });
+  _executor->submit(batches);
+
+  for (auto [image, info] : views::zip(images, getSyncInfos())) {
+    image->getTracker().setNewScope(
+      Scope{ .stage_mask = info.final_stage }, _executor->getFamily(), info.final_layout
+    );
   }
 }
 
@@ -89,51 +115,74 @@ void PipelineDrawer::draw() {
   }
 }
 
-void recordRenderPassDraw(VkCommandBuffer cmdbuf, RenderPassDrawInfo info) {
-  auto& [render_pass, framebuffer, clear_values, extent, pipeline_infos] = info;
-  auto render_pass_begin_info = VkRenderPassBeginInfo{
-    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-    .renderPass = render_pass,
-    .framebuffer = framebuffer,
-    .renderArea = VkRect2D{ .offset = VkOffset2D{ 0, 0 }, .extent = extent },
-    .clearValueCount = static_cast<uint32>(clear_values.size()),
-    .pClearValues = clear_values.data(),
+void recordPipeline(
+  VkCommandBuffer      cmdbuf,
+  VkExtent2D           extent,
+  VkPipeline           pipeline,
+  VkPipelineLayout     layout,
+  PipelineDrawRecorder recorder
+) {
+  vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+  // 定义了 viewport 到缓冲区的变换
+  auto viewport = VkViewport{
+    .x = 0,
+    .y = 0,
+    .width = static_cast<float>(extent.width),
+    .height = static_cast<float>(extent.height),
+    .minDepth = 0.0f,
+    .maxDepth = 1.0f,
   };
-  // VK_SUBPASS_CONTENTS_: render pass的command被嵌入主缓冲区
-  // VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS: render pass 命令
-  // 将会从次缓冲区执行
-  vkCmdBeginRenderPass(cmdbuf, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-  for (auto& [pipeline, layout, recorder] : pipeline_infos) {
-    vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-    // 定义了 viewport 到缓冲区的变换
-    auto viewport = VkViewport{
-      .x = 0,
-      .y = 0,
-      .width = static_cast<float>(extent.width),
-      .height = static_cast<float>(extent.height),
-      .minDepth = 0.0f,
-      .maxDepth = 1.0f,
-    };
-    vkCmdSetViewport(cmdbuf, 0, 1, &viewport);
-    // 定义了缓冲区实际存储像素的区域
-    auto scissor = VkRect2D{
-      .offset = { .x = 0, .y = 0 },
-      .extent = extent,
-    };
-    vkCmdSetScissor(cmdbuf, 0, 1, &scissor);
-    recorder(PipelineDrawer::forRecord(cmdbuf, pipeline, layout, extent));
-  }
-  vkCmdEndRenderPass(cmdbuf);
+  vkCmdSetViewport(cmdbuf, 0, 1, &viewport);
+  // 定义了缓冲区实际存储像素的区域
+  auto scissor = VkRect2D{
+    .offset = { .x = 0, .y = 0 },
+    .extent = extent,
+  };
+  vkCmdSetScissor(cmdbuf, 0, 1, &scissor);
+  recorder(PipelineDrawer::forRecord(cmdbuf, pipeline, layout, extent));
 }
 
-void RenderPassManager::recordDraw(
+RenderPassPipeline::RenderPassPipeline(
+  std::span<AttachmentInfo const> attachments, std::span<SubpassPipelineInfo const> subpasses
+)
+  : _render_pass(
+      attachments,
+      subpasses | ranges::views::transform([](auto x) {
+        return SubpassInfo{
+          .colors = x.colors,
+          .multi_sample = x.multi_sample,
+          .depst = x.depst.transform([](auto x) { return x.attachment; }),
+          .inputs = x.inputs,
+        };
+      }) |
+        ranges::to<std::vector>()
+    ) {
+  for (auto [subpass_i, subpass] : subpasses | toy::enumerate) {
+    auto pipeline_info = PipelineInfo{
+      .render_pass = _render_pass,
+      .subpass_i = subpass_i,
+      .vertex_shader_name = subpass.vertex_shader_name,
+      .frag_shader_name = subpass.frag_shader_name,
+      .dset_layouts = subpass.dset_layouts,
+      .topology = subpass.topology,
+      .sample_count =
+        subpass.multi_sample ? subpass.multi_sample->sample_count : VK_SAMPLE_COUNT_1_BIT,
+      .stencil_option = subpass.depst.transform([](auto x) { return x.stencil_option; }),
+      .depth_option = subpass.depst.transform([](auto x) { return x.depth_option; }),
+      .vertex_info = subpass.vertex_info,
+    };
+    _pipelines.push_back(Pipeline{ pipeline_info });
+  }
+  _recorders.resize(subpasses.size());
+}
+
+void RenderPassPipeline::recordDraw(
   std::span<FrameImageManager*> images, std::vector<VkClearValue> clear_values, VkExtent2D extent
 ) {
-  auto  framebuffer = FramebufferPool::getInstance().getFramebuffer(get(), images);
-  auto& executor = CommandExecutorManager::getInstance()[FamilyType::GRAPHICS];
+  auto& executor = _render_pass.getExecutor();
 
   auto drawers = std::vector<PipelineDrawer>{};
-  for (auto& info : getPipelines()) {
+  for (auto& info : _pipelines) {
     drawers.push_back(PipelineDrawer::forGetResources(info.getPipeline(), info.getLayout(), extent)
     );
   }
@@ -148,11 +197,6 @@ void RenderPassManager::recordDraw(
       batches.push_back(ctx->toAcquireBatch(&waitables_keep_lifetime.back()));
     }
   };
-  for (auto [image, info] : views::zip(images, getSyncInfos())) {
-    addSync(image->getTracker().syncScope(
-      Scope{ .stage_mask = info.initial_stage }, executor.getFamily(), info.initial_layout
-    ));
-  }
   for (auto [drawer, recorder] : views::zip(drawers, _recorders)) {
     recorder(drawer);
     for (auto* vertex_buffer : drawer.getVertexBuffers()) {
@@ -234,30 +278,12 @@ void RenderPassManager::recordDraw(
       }
     }
   }
-  auto pipeline_infos = std::vector<RenderPassDrawInfo::PipelineDrawInfo>{};
-  for (auto [resource, recorder] : views::zip(getPipelines(), _recorders)) {
-    pipeline_infos.push_back(RenderPassDrawInfo::PipelineDrawInfo{
-      .pipeline = resource.getPipeline(),
-      .layout = resource.getLayout(),
-      .recorder = recorder,
-    });
-  }
-  auto info = RenderPassDrawInfo{
-    .render_pass = get(),
-    .framebuffer = framebuffer,
-    .clear_values = std::move(clear_values),
-    .extent = extent,
-    .pipeline_infos = std::move(pipeline_infos),
+  auto pipeline_recorder = [&](VkCommandBuffer cmdbuf) {
+    for (auto [pipeline, recorder] : views::zip(_pipelines, _recorders)) {
+      recordPipeline(cmdbuf, extent, pipeline.getPipeline(), pipeline.getLayout(), recorder);
+    }
   };
-  using namespace std::placeholders;
-  batches.push_back(CommandBatch{ std::bind(recordRenderPassDraw, _1, info) });
-  auto waitables = executor.submit(batches);
-  auto waitable_ptr = std::make_shared<Waitable>(std::move(waitables.back()));
-  for (auto [image, info] : views::zip(images, getSyncInfos())) {
-    image->getTracker().setNewScope(
-      Scope{ .stage_mask = info.final_stage }, executor.getFamily(), info.final_layout
-    );
-  }
+  _render_pass.record(batches, images, clear_values, extent, pipeline_recorder);
 }
 
 } // namespace rd

@@ -6,6 +6,7 @@ import <vulkan_config.h>;
 
 import render.reflections;
 import render.sync;
+import render.executor;
 
 namespace rd {
 
@@ -399,9 +400,9 @@ auto createDependencies(
   };
 }
 
-auto createRenderPass(
+RenderPass::RenderPass(
   std::span<AttachmentInfo const> attachments, std::span<SubpassInfo const> subpasses
-) -> std::pair<rs::RenderPass, std::vector<AttachmentSyncInfo>> {
+) {
   checkSubpassAttachmentMatch(attachments, subpasses);
   auto [_1, subpass_descs, initial_layouts, final_layouts] =
     createSubpassDescriptions(attachments, subpasses);
@@ -434,7 +435,9 @@ auto createRenderPass(
       refl::imageLayout(info.final_layout)
     );
   }
-  return { rs::RenderPass{ render_pass_create_info }, attachment_sync_infos };
+  rs::RenderPass::operator=({ render_pass_create_info });
+  _attachment_syncs = std::move(attachment_sync_infos);
+  _executor = &CommandExecutorManager::getInstance()[FamilyType::GRAPHICS];
 }
 
 } // namespace rd

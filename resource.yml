@@ -8,6 +8,8 @@ module:
     provide: model
 - transform.ccm:
     provide: transform
+- gui.ccm:
+    provide: gui
 source:
 - header_impl.cc
 sub_dir:

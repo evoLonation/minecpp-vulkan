@@ -1,3 +1,5 @@
+module;
+#include "toy.h"
 module render.descriptor;
 
 import std;
@@ -54,12 +56,6 @@ void DescriptorSet::removeIdles() {
     return w->wait(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0);
   });
   _waitables.erase(new_end, _waitables.end());
-}
-
-void DescriptorSet::beforeDestroy() {
-  if (valid()) {
-    waitIdle();
-  }
 }
 
 DescriptorPool::DescriptorPool(std::vector<BindingInfo> infos)
@@ -135,6 +131,15 @@ void DescriptorPool::workingToIdle() {
     _pool_counts.emplace(dsets.size(), dsets.getPool());
   }
   _working_resources.erase(new_end, _working_resources.end());
+}
+
+DescriptorPool::~DescriptorPool() {
+  for (auto& resource : _working_resources) {
+    resource.waitIdle();
+  }
+  // move _working_resources to _resources
+  // because dsets in _working_resources can not destroy directly
+  workingToIdle();
 }
 
 ResourceSet::ResourceSet(DescriptorPool* pool, std::initializer_list<ResourceBinding> bindings)

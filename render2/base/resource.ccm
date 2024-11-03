@@ -276,11 +276,11 @@ public:
       _pool = nullptr;
     }
     void destroy() {
-      if constexpr (!canDestroy) {
-        toy::debugf("simply discard resource {}", refl::resource<VkHandle>());
-        return;
-      }
       if (_handle) {
+        if constexpr (!canDestroy) {
+          toy::debugf("simply discard resource {}", refl::resource<VkHandle>());
+          return;
+        }
         Destroyer(ContextResource::getInstance().get(), _pool, 1, &_handle);
         toy::debugf("destroy resource {}", refl::resource<VkHandle>());
       }
