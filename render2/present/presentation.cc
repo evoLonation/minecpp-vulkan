@@ -1,3 +1,5 @@
+module;
+#include <vulkan_tool.h>
 module render.vk.presentation;
 
 import <vulkan_config.h>;
@@ -34,9 +36,7 @@ auto Presentation::acquireNextImage() -> std::pair<uint32, VkResult> {
     _acquire_ctx.available_fence,
     &image_index
   );
-  checkVkResult(
-    result, "acquire next image", { VK_SUCCESS, VK_ERROR_OUT_OF_DATE_KHR, VK_SUBOPTIMAL_KHR }
-  );
+  CHECK_VK_RESULT(result, { VK_SUCCESS, VK_ERROR_OUT_OF_DATE_KHR, VK_SUBOPTIMAL_KHR });
   if (result != VK_SUCCESS) {
     toy::debugf("acquire next image return: {}", refl::result(result));
   }
@@ -114,7 +114,7 @@ auto Presentation::vkPresent(uint32 image_index, VkSemaphore wait_sema, VkFence 
   auto result = vkQueuePresentKHR(
     CommandExecutorManager::getInstance()[FamilyType::PRESENT].getQueue(), &present_info
   );
-  checkVkResult(result, "present", { VK_SUCCESS, VK_ERROR_OUT_OF_DATE_KHR, VK_SUBOPTIMAL_KHR });
+  CHECK_VK_RESULT(result, { VK_SUCCESS, VK_ERROR_OUT_OF_DATE_KHR, VK_SUBOPTIMAL_KHR });
   if (result != VK_SUCCESS) {
     toy::debugf("present return: {}", refl::result(result));
   }
@@ -164,12 +164,9 @@ auto Presentation::recreate() -> bool {
     ImageContext::destroy(std::move(_image_ctxs), _swapchain);
   }
   auto capabilities = VkSurfaceCapabilitiesKHR{};
-  checkVkResult(
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
-      Device::getInstance().getPdevice().get(), _surface, &capabilities
-    ),
-    "get surface capabilities"
-  );
+  CHECK_VK_RESULT(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+    Device::getInstance().getPdevice().get(), _surface, &capabilities
+  ));
   _swapchain = { _surface, capabilities, _swapchain.get() };
   if (!_swapchain.isValid()) {
     return false;
@@ -210,9 +207,7 @@ void Presentation::ImageContext::destroy(
       .imageIndexCount = static_cast<uint32>(need_release.size()),
       .pImageIndices = need_release.data(),
     };
-    checkVkResult(
-      vkReleaseSwapchainImagesEXT(Device::getInstance(), &release_info), "release swapchain images"
-    );
+    CHECK_VK_RESULT(vkReleaseSwapchainImagesEXT(Device::getInstance(), &release_info));
   }
   image_ctxs.clear();
 }

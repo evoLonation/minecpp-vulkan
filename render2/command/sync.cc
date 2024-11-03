@@ -179,9 +179,7 @@ Fence::Fence(bool signaled) {
 
 void Fence::wait(bool reset, uint64 timeout) {
   auto handle = get();
-  checkVkResult(
-    vkWaitForFences(Device::getInstance(), 1, &handle, VK_TRUE, timeout), "wait fences"
-  );
+  CHECK_VK_RESULT(vkWaitForFences(Device::getInstance(), 1, &handle, VK_TRUE, timeout));
   if (reset) {
     this->reset();
   }
@@ -189,7 +187,7 @@ void Fence::wait(bool reset, uint64 timeout) {
 
 void Fence::reset() {
   auto handle = get();
-  checkVkResult(vkResetFences(Device::getInstance(), 1, &handle), "reset fence");
+  CHECK_VK_RESULT(vkResetFences(Device::getInstance(), 1, &handle));
 }
 
 auto Fence::isSignaled() -> bool {
@@ -198,15 +196,9 @@ auto Fence::isSignaled() -> bool {
    * VK_NOT_READY: The fence specified by fence is unsignaled.
    * VK_ERROR_DEVICE_LOST: The device has been lost. See Lost Device.
    */
-  auto result = vkGetFenceStatus(Device::getInstance(), get());
-  if (result == VK_SUCCESS) {
-    return true;
-  } else if (result == VK_NOT_READY) {
-    return false;
-  } else {
-    vk::checkVkResult(result, "get fence status");
-  }
-  std::unreachable();
+  auto result =
+    CHECK_VK_RESULT(vkGetFenceStatus(Device::getInstance(), get()), { VK_SUCCESS, VK_NOT_READY });
+  return result == VK_SUCCESS;
 }
 
 } // namespace rd::vk

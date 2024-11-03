@@ -1,3 +1,5 @@
+module;
+#include <vulkan_tool.h>
 module render.vk.memory;
 
 import <vulkan_config.h>;
@@ -63,9 +65,7 @@ Memory::Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property
 auto HostMemoryManager::data() -> void* {
   if (!_data.get()) {
     void* data;
-    checkVkResult(
-      vkMapMemory(Device::getInstance(), _memory.get(), 0, VK_WHOLE_SIZE, 0, &data), "map memory"
-    );
+    CHECK_VK_RESULT(vkMapMemory(Device::getInstance(), _memory.get(), 0, VK_WHOLE_SIZE, 0, &data));
     _data.reset(data);
   }
   return _data.get();

@@ -128,7 +128,7 @@ auto Waitable::getWaitInfo(VkPipelineStageFlags2 stage) -> std::pair<VkSemaphore
  */
 auto CommandExecutor::submit(CommandBatch const& batch) -> Waitable {
   auto [submit_info, waitable] = getSubmitInfo(batch);
-  checkVkResult(vkQueueSubmit2(_queue, 1, &submit_info.info, VK_NULL_HANDLE), "submit queue");
+  CHECK_VK_RESULT(vkQueueSubmit2(_queue, 1, &submit_info.info, VK_NULL_HANDLE));
   return std::move(waitable);
 }
 
@@ -142,9 +142,8 @@ auto CommandExecutor::submit(std::span<CommandBatch const> batches) -> std::vect
     vk_submit_infos.push_back(submit_info.info);
     waitables.push_back(std::move(waitable));
   }
-  checkVkResult(
-    vkQueueSubmit2(_queue, vk_submit_infos.size(), vk_submit_infos.data(), VK_NULL_HANDLE),
-    "submit queue"
+  CHECK_VK_RESULT(
+    vkQueueSubmit2(_queue, vk_submit_infos.size(), vk_submit_infos.data(), VK_NULL_HANDLE)
   );
   return waitables;
 }
@@ -167,7 +166,7 @@ auto CommandExecutor::submit(RawWaitCommandBatch batch) -> Waitable {
     .signalSemaphoreInfoCount = static_cast<uint32>(signal_infos.size()),
     .pSignalSemaphoreInfos = signal_infos.data(),
   };
-  checkVkResult(vkQueueSubmit2(_queue, 1, &submit_info, VK_NULL_HANDLE), "submit queue");
+  CHECK_VK_RESULT(vkQueueSubmit2(_queue, 1, &submit_info, VK_NULL_HANDLE));
   return std::move(waitable);
 }
 
@@ -189,7 +188,7 @@ auto CommandExecutor::submit(RawSignalCommandBatch batch) -> Waitable {
     .signalSemaphoreInfoCount = static_cast<uint32>(signal_infos.size()),
     .pSignalSemaphoreInfos = signal_infos.data(),
   };
-  checkVkResult(vkQueueSubmit2(_queue, 1, &submit_info, VK_NULL_HANDLE), "submit queue");
+  CHECK_VK_RESULT(vkQueueSubmit2(_queue, 1, &submit_info, VK_NULL_HANDLE));
   return std::move(waitable);
 }
 
