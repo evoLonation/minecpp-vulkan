@@ -29,7 +29,7 @@ public:
     uint32                    concurrent_image_count = 1
   );
 
-  auto isValid() -> bool { return get() != VK_NULL_HANDLE; }
+  auto isValid() -> bool { return get(); }
   auto getImages() const -> std::span<const VkImage> { return _images; }
   auto getImageViews() const -> std::span<const rs::ImageView> { return _image_views; }
   auto getExtent() const -> VkExtent2D { return _swapchain_extent; }
@@ -48,127 +48,5 @@ private:
   std::vector<VkImage>       _images;
   std::vector<rs::ImageView> _image_views;
 };
-
-VkFormat         Swapchain::_format = VK_FORMAT_R8G8B8A8_SRGB;
-VkPresentModeKHR Swapchain::_present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
-VkColorSpaceKHR  Swapchain::_color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-
-Swapchain::Swapchain(
-  VkSurfaceKHR              surface,
-  VkSurfaceCapabilitiesKHR& capabilities,
-  VkSwapchainKHR            old_swapchain,
-  uint32                    concurrent_image_count
-) {
-
-  // With Win32, minImageExtent, maxImageExtent, and currentExtent must always equal the window
-  // size.
-  // The currentExtent of a Win32 surface must have both width and height greater than 0, or both
-  // of them 0.
-  auto eq_extent = [](auto a, auto b) { return a.height == b.height && a.width == b.width; };
-  toy::throwf(
-    eq_extent(capabilities.currentExtent, capabilities.minImageExtent) &&
-      eq_extent(capabilities.currentExtent, capabilities.maxImageExtent),
-    "minImageExtent, maxImageExtent, and currentExtent must always equal."
-  );
-  auto extent = capabilities.currentExtent;
-  if (extent.height == 0 || extent.width == 0) {
-    return;
-  }
-  // the driver will use _capabilities.minImageCount - 1 images
-  auto min_image_count = capabilities.minImageCount - 1 + concurrent_image_count;
-  toy::throwf(
-    min_image_count <= capabilities.maxImageCount,
-    "the min_image_count which passed to create swapchain > maxImageCount"
-  );
-
-  auto create_info = VkSwapchainCreateInfoKHR{
-    .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-    .surface = surface,
-    .minImageCount = min_image_count,
-    .imageFormat = _format,
-    .imageColorSpace = _color_space,
-    .imageExtent = extent,
-    // 不整 3D 应用程序的话就设置为1
-    .imageArrayLayers = 1,
-    /*
-     * VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT: 交换链的图像直接用于渲染
-     * VK_IMAGE_USAGE_TRANSFER_DST_BIT :
-     * 先渲染到单独的图像上（以便进行后处理），然后传输到交换链图像
-     */
-    .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-    /*
-     * VK_SHARING_MODE_CONCURRENT:
-     * 图像可以跨多个队列族使用，而无需明确的所有权转移
-     * VK_SHARING_MODE_EXCLUSIVE:
-     * 一个图像一次由一个队列族所有，在将其用于另一队列族之前，必须明确转移所有权
-     * (性能最佳)
-     */
-    .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-    .queueFamilyIndexCount = 0,
-    .pQueueFamilyIndices = nullptr,
-
-    .preTransform = capabilities.currentTransform,
-    // alpha通道是否应用于与窗口系统中的其他窗口混合
-    // 简单地忽略alpha通道
-    .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-    .presentMode = _present_mode,
-    // 不关心被遮挡的像素的颜色
-    .clipped = VK_TRUE,
-    // 尚且有效的swapchain，利于进行资源复用
-    .oldSwapchain = old_swapchain,
-  };
-
-  toy::debugf("the info of created swap chain:");
-  toy::debugf("min image count:{}", min_image_count);
-  toy::debugf("extent:({},{})", extent.width, extent.height);
-
-  rs::Swapchain::operator=(create_info);
-  _swapchain_extent = extent;
-  _images = getVkResources(vkGetSwapchainImagesKHR, Device::getInstance(), get());
-  _image_views = _images | views::transform([&](VkImage image) {
-                   return createImageView(image, _format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
-                 }) |
-                 ranges::to<std::vector>();
-}
-
-auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& request) -> bool {
-  if (!request.enableExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
-    return false;
-  }
-  if (!request.enableExtension("VK_EXT_swapchain_maintenance1")) {
-    return false;
-  }
-  auto& pdevice = request.getPdevice();
-  auto  formats = getVkResources(vkGetPhysicalDeviceSurfaceFormatsKHR, pdevice.get(), surface);
-  if (!toy::findIf(formats, [&](auto format) {
-        return format.format == _format && format.colorSpace == _color_space;
-      })) {
-    toy::debugf("no suitable format");
-    return false;
-  }
-  if (!pdevice.checkFormatSupport(
-        FormatTarget::OPTIMAL_TILING,
-        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
-        { &_format, &_format + 1 }
-      )) {
-    return false;
-  }
-  /*
-   * VK_PRESENT_MODE_IMMEDIATE_KHR: 图像提交后直接渲染到屏幕上
-   * VK_PRESENT_MODE_FIFO_KHR:
-   * 有一个队列，队列以刷新率的速度消耗图像显示在屏幕上，图像提交后入队，队列满时等待（也即只能在
-   * "vertical blank" 时刻提交图像）
-   * VK_PRESENT_MODE_FIFO_RELAXED_KHR: 当图像提交时，若队列为空，就直接渲染到屏幕上，否则同上
-   * VK_PRESENT_MODE_MAILBOX_KHR: 有一个 single-entry queue, 当队列满时,
-   * 不阻塞而是直接将队中图像替换为提交的图像
-   */
-  auto present_modes =
-    getVkResources(vkGetPhysicalDeviceSurfacePresentModesKHR, pdevice.get(), surface);
-  if (!ranges::contains(present_modes, _present_mode)) {
-    toy::debugf("no suitable present mode");
-    return false;
-  }
-  return true;
-}
 
 } // namespace rd::vk

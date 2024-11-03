@@ -1,6 +1,7 @@
+module;
+#include <toy.h>
 module render.vk.image;
 
-import render.vk.resource;
 import render.vk.device;
 
 namespace rd::vk {
@@ -106,6 +107,48 @@ ImageContext::ImageContext() {
                              properties.limits.sampledImageStencilSampleCounts &
                              properties.limits.storageImageSampleCounts;
 }
+
+ImageResource::ImageResource(
+  VkFormat              format,
+  uint32                width,
+  uint32                height,
+  VkImageUsageFlags     usage,
+  VkImageAspectFlags    aspect,
+  uint32                mip_levels,
+  VkSampleCountFlagBits sample_count
+)
+  : _image(createImage(
+      format,
+      width,
+      height,
+      usage,
+      mip_levels,
+      [&]() {
+        TOY_ASSERT(
+          (ImageContext::getInstance().getAvailableSampleCounts() & sample_count) > 0, sample_count
+        );
+        return sample_count;
+      }()
+    )),
+    _memory(_image, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+    _image_view(createImageView(_image, format, aspect, mip_levels)) {}
+
+Image::Image(
+  VkFormat              format,
+  uint32                width,
+  uint32                height,
+  VkImageUsageFlags     usage,
+  VkImageAspectFlags    aspect,
+  uint32                mip_levels,
+  VkSampleCountFlagBits sample_count
+)
+  : ImageResource(format, width, height, usage, aspect, mip_levels, sample_count),
+    ImageManager(
+      ImageResource::_image,
+      ImageResource::_image_view,
+      VkExtent2D{ width, height },
+      getSubresourceRange(aspect, MipRange{ 0, 1 })
+    ) {}
 
 void copyBufferToImage(
   VkCommandBuffer       cmdbuf,

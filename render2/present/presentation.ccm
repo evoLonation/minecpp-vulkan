@@ -6,14 +6,9 @@ import toy;
 
 import <vulkan_config.h>;
 
-import render.vk.tracker;
-import render.vk.device;
 import render.vk.resource;
-import render.vk.tool;
 import render.vk.sync;
-import render.vk.image;
 import render.vk.executor;
-import render.vk.reflections;
 import render.vk.framebuffer;
 import render.vk.swapchain;
 
@@ -29,29 +24,19 @@ public:
     FrameImageManager* image_manager;
   };
   auto prepare() -> std::optional<Context>;
-
   auto present(uint32 image_index) -> bool;
-
   auto recreate() -> bool;
-
   struct ImageContext;
   auto getImages() -> std::span<ImageContext> { return _image_ctxs; }
-
   auto getSwapchain() -> Swapchain& { return _swapchain; }
 
-  Presentation(const Presentation&) noexcept = delete;
-  Presentation(Presentation&&) noexcept = delete;
-  auto operator=(const Presentation&) noexcept -> Presentation& = delete;
-  auto operator=(Presentation&&) noexcept -> Presentation& = delete;
+  UNCOPYABLE_MOVEABLE(Presentation);
 
 private:
-  VkSurfaceKHR _surface;
-
+  VkSurfaceKHR     _surface;
   CommandExecutor* _present_executor;
-
-  bool _need_recreate;
-
-  Swapchain _swapchain;
+  bool             _need_recreate;
+  Swapchain        _swapchain;
 
   /**
    * @brief

@@ -11,3 +11,7 @@ module:
     implement: render.vk.tracker
 - executor.ccm:
     provide: render.vk.executor
+- executor.cc:
+    implement: render.vk.executor
+- queue_requestor.cc:
+    implement: render.vk.queue_requestor

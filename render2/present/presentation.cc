@@ -2,6 +2,12 @@ module render.vk.presentation;
 
 import <vulkan_config.h>;
 
+import render.vk.device;
+import render.vk.tool;
+import render.vk.tracker;
+import render.vk.reflections;
+import render.vk.image;
+
 namespace rd::vk {
 
 Presentation::Presentation(VkSurfaceKHR surface) {

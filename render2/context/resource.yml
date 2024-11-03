@@ -5,3 +5,5 @@ module:
     provide: render.vk.device
 - device.cc:
     implement: render.vk.device
+- instance.cc:
+    implement: render.vk.instance

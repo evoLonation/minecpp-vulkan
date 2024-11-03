@@ -9,7 +9,11 @@ module:
     provide: render.vk.render_pass2
 - pipeline.ccm:
     provide: render.vk.pipeline
-- render_pass.cc:
+- render_pass_create.cc:
     implement: render.vk.render_pass2
 - framebuffer.ccm:
     provide: render.vk.framebuffer
+- pipeline.cc:
+    implement: render.vk.pipeline
+- render_pass.cc:
+    implement: render.vk.render_pass2

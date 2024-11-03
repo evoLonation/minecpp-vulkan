@@ -1,10 +1,165 @@
+module;
+#include <toy.h>
+#include <vulkan_tool.h>
 module render.vk.sync;
 
 import <vulkan_config.h>;
 import render.vk.tool;
-import render.vk.device;
 
 namespace rd::vk {
+
+TimelineSemaphore::TimelineSemaphore(uint64 initial_value) {
+  auto type_info = VkSemaphoreTypeCreateInfo{
+    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+    .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+    .initialValue = initial_value,
+  };
+  VkSemaphoreCreateInfo create_info{
+    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+    .pNext = &type_info,
+  };
+  rs::Semaphore::operator=(create_info);
+  _host_signal_value = initial_value;
+  _device_signal_value = initial_value;
+}
+
+auto TimelineSemaphore::wait(uint64 value, uint64 nano_timeout) -> bool {
+  return wait(std::array{ std::pair{ this, value } }, false, nano_timeout);
+}
+
+auto TimelineSemaphore::wait(
+  std::span<std::pair<TimelineSemaphore*, uint64> const> semaphores, bool any, uint64 nano_timeout
+) -> bool {
+  if (semaphores.empty()) {
+    return true;
+  }
+  auto handles = semaphores | views::transform([](auto& s) { return s.first->get(); }) |
+                 ranges::to<std::vector>();
+  auto values =
+    semaphores | views::transform([](auto& s) { return s.second; }) | ranges::to<std::vector>();
+  auto wait_info = VkSemaphoreWaitInfo{
+    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+    .flags = any ? VK_SEMAPHORE_WAIT_ANY_BIT : 0u,
+    .semaphoreCount = static_cast<uint32>(semaphores.size()),
+    .pSemaphores = handles.data(),
+    .pValues = values.data(),
+  };
+  auto res = CHECK_VK_RESULT(
+    vkWaitSemaphores(Device::getInstance(), &wait_info, nano_timeout), { VK_SUCCESS, VK_TIMEOUT }
+  );
+  return res == VK_SUCCESS;
+}
+
+void TimelineSemaphore::signal(uint64 value) {
+  auto signal_info = VkSemaphoreSignalInfo{
+    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO,
+    .semaphore = get(),
+    .value = value,
+  };
+  CHECK_VK_RESULT(vkSignalSemaphore(Device::getInstance(), &signal_info));
+  _host_signal_value = value;
+}
+
+auto TimelineSemaphore::getCurrentValue() const -> uint64 {
+  uint64 value;
+  CHECK_VK_RESULT(vkGetSemaphoreCounterValue(Device::getInstance().get(), get(), &value));
+  TOY_ASSERT(value <= getBiggestSignalValue());
+  return value;
+}
+
+/**
+ * @brief must call it when submit device signal operation
+ */
+void TimelineSemaphore::pendingDeviceSignal(uint64 value) {
+  TOY_ASSERT(value > _host_signal_value);
+  if (value > _device_signal_value) {
+    _device_signal_value = value;
+  }
+  _device_signal_value = value;
+}
+
+auto TimelineSemaphore::getBiggestSignalValue() const -> uint64 {
+  return std::max(_device_signal_value, _host_signal_value);
+}
+
+auto TimelineSemaphore::waitIdle(
+  std::span<TimelineSemaphore* const> semaphores, bool any, uint64 nano_timeout
+) -> bool {
+  return wait(
+    semaphores |
+      views::transform([](auto& s) { return std::pair{ s, s->getBiggestSignalValue() }; }) |
+      ranges::to<std::vector>(),
+    any,
+    nano_timeout
+  );
+}
+
+auto TimelineSemaphore::waitIdle(uint64 nano_timeout) -> bool {
+  return wait(getBiggestSignalValue(), nano_timeout);
+}
+
+auto IncrementalSemaphore::getDeviceSyncInfo() -> std::pair<VkSemaphore, uint64> {
+  return { _sema.get(), _sema.getBiggestSignalValue() };
+}
+
+auto IncrementalSemaphore::wait(uint64 nano_timeout) -> bool {
+  return _sema.waitIdle(nano_timeout);
+}
+
+auto IncrementalSemaphore::wait(
+  std::span<IncrementalSemaphore* const> semaphores, bool any, uint64 nano_timeout
+) -> bool {
+  return TimelineSemaphore::waitIdle(
+    semaphores | views::transform([](auto& s) { return &s->_sema; }) | ranges::to<std::vector>(),
+    any,
+    nano_timeout
+  );
+}
+
+void IncrementalSemaphore::pendingNewSignal() {
+  TOY_ASSERT(wait(0));
+  TOY_ASSERT(_sema.getCurrentValue() == _sema.getBiggestSignalValue());
+  _sema.pendingDeviceSignal(_sema.getBiggestSignalValue() + 1);
+}
+
+auto IncrementalSemaphore::valid() const -> bool { return _sema.get(); }
+
+TimelineSemaphorePool::TimelineSemaphorePool() { _idle_semas.resize(10); }
+
+void TimelineSemaphorePool::recycle(IncrementalSemaphore s) {
+  _working_semas.push_back(std::move(s));
+}
+
+void TimelineSemaphorePool::expand() { _idle_semas.push_back(IncrementalSemaphore{}); }
+
+auto TimelineSemaphorePool::isEmpty() -> bool { return _idle_semas.empty(); }
+
+auto TimelineSemaphorePool::extract() -> IncrementalSemaphore {
+  auto ret = std::move(_idle_semas.back());
+  ret.pendingNewSignal();
+  _idle_semas.pop_back();
+  return ret;
+}
+
+void TimelineSemaphorePool::tryShrink() {
+  auto shrink_size = 5;
+  toy::debugf("shrink {} -> {}", _idle_semas.size(), shrink_size);
+  if (_idle_semas.size() <= shrink_size) {
+    return;
+  }
+  _idle_semas.erase(_idle_semas.begin() + shrink_size, _idle_semas.end());
+}
+
+void TimelineSemaphorePool::workingToIdle() {
+  for (auto iter = _working_semas.begin(); iter != _working_semas.end();) {
+    if (iter->wait(0)) {
+      _idle_semas.push_back(std::move(*iter));
+      iter = _working_semas.erase(iter);
+    } else {
+      iter++;
+    }
+  }
+}
 
 auto createSemaphore() -> rs::Semaphore {
   return rs::Semaphore{ VkSemaphoreCreateInfo{

@@ -7,3 +7,5 @@ module:
     provide: render.vk.swapchain
 - presentation.cc:
     implement: render.vk.presentation
+- swapchain.cc:
+    implement: render.vk.swapchain

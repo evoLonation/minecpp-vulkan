@@ -1,11 +1,7 @@
 module render.vk.memory;
 
-import std;
-import toy;
-
 import <vulkan_config.h>;
 import render.vk.tool;
-import render.vk.resource;
 import render.vk.device;
 
 namespace rd::vk {
@@ -79,7 +75,7 @@ void HostMemoryManager::fill(std::span<const std::byte> buffer_data) {
   std::copy(buffer_data.begin(), buffer_data.end(), reinterpret_cast<std::byte*>(data()));
 }
 
-void HostMemoryManager::unmap() {
+void HostMemoryManager::beforeDestroy() {
   if (_data.get()) {
     vkUnmapMemory(Device::getInstance(), _memory.get());
   }

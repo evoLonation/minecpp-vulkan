@@ -1,0 +1,148 @@
+module render.vk.instance;
+
+import <vulkan_config.h>;
+import render.vk.tool;
+
+namespace rd::vk {
+
+VKAPI_ATTR VkBool32 VKAPI_CALL debugHandler(
+  VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
+  VkDebugUtilsMessageTypeFlagsEXT             message_type,
+  const VkDebugUtilsMessengerCallbackDataEXT* p_callback_data,
+  void*                                       p_user_data
+) {
+  auto& info = *reinterpret_cast<DebugMessengerConfig*>(p_user_data);
+  /*
+   * VkDebugUtilsMessageSeverityFlagBitsEXT : 严重性， VERBOSE, INFO, WARNING,
+   * ERROR (可以比较，越严重越大）
+   * VkDebugUtilsMessageTypeFlagsEXT : 类型，GENERAL, VALIDATION, PERFORMANCE
+   * return: always VK_FALSE, VK_TRUE is reserved for use in layer development
+   */
+  if (message_severity < info.message_severity_level)
+    return VK_FALSE;
+  if (!(message_type & info.message_type_flags))
+    return VK_FALSE;
+  auto terminate = false;
+  auto serverityGetter = [&](VkDebugUtilsMessageSeverityFlagBitsEXT e) {
+    switch (e) {
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+      return "VERBOSE";
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+      return "INFO";
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+      return "WARNING";
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+      terminate = true;
+      return "ERROR";
+    default:
+      return "OTHER";
+    }
+  };
+  auto typeGetter = [](VkDebugUtilsMessageTypeFlagsEXT e) {
+    switch (e) {
+    case VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT:
+      return "GENERAL";
+    case VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT:
+      return "VALIDATION";
+    case VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT:
+      return "PERFORMANCE";
+    case VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT:
+      return "DEVICE_ADDRESS_BINDING";
+    default:
+      return "OTHER";
+    }
+  };
+  toy::debugf(
+    {},
+    "validation layer: ({},{}) {}",
+    serverityGetter(message_severity),
+    typeGetter(message_type),
+    p_callback_data->pMessage
+  );
+  if (terminate) {
+    // std::terminate();
+  }
+  return VK_FALSE;
+}
+
+auto createInstance(
+  const std::string& app_name, std::span<std::string> extensions, bool enable_debug_messenger
+) -> InstanceResource {
+  auto debug_info = std::optional<VkDebugUtilsMessengerCreateInfoEXT>{};
+  auto messenger_config = std::unique_ptr<DebugMessengerConfig>{};
+  if (enable_debug_messenger) {
+    messenger_config.reset(new DebugMessengerConfig{
+      .message_severity_level = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT,
+      .message_type_flags = VK_DEBUG_UTILS_MESSAGE_TYPE_FLAG_BITS_MAX_ENUM_EXT,
+    });
+    debug_info = VkDebugUtilsMessengerCreateInfoEXT{
+      .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+      .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                         VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+                         VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                         VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+      .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                     VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                     VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+      .pfnUserCallback = debugHandler,
+      .pUserData = reinterpret_cast<void*>(messenger_config.get()),
+    };
+  }
+
+  /*
+   * 1. 创建appInfo
+   * 2. 创建createInfo（指向appInfo）
+   * 3. 调用createInstance创建instance
+   */
+
+  auto app_info = VkApplicationInfo{
+    .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+    .pApplicationName = app_name.data(),
+    .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
+    .engineVersion = VK_MAKE_VERSION(1, 0, 0),
+    .apiVersion = VK_API_VERSION_1_3,
+  };
+
+  std::vector<const char*> required_extensions;
+  std::vector<const char*> required_layers;
+
+  required_extensions.append_range(extensions | views::transform([](const auto& str) {
+                                     return str.data();
+                                   }));
+
+  if constexpr (toy::enable_debug) {
+    // VK_EXT_debug_utils 扩展用于扩展debug功能
+    required_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    required_layers.push_back("VK_LAYER_KHRONOS_validation");
+  }
+
+  checkAvaliableSupports(
+    required_extensions,
+    getVkResources(vkEnumerateInstanceExtensionProperties, nullptr),
+    [](auto& extension) { return extension.extensionName; }
+  );
+
+  checkAvaliableSupports(
+    required_layers,
+    getVkResources(vkEnumerateInstanceLayerProperties),
+    [](auto& layer) { return layer.layerName; }
+  );
+
+  auto create_info = VkInstanceCreateInfo{
+    .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+    .pNext = debug_info.has_value() ? &debug_info.value() : nullptr,
+    .pApplicationInfo = &app_info,
+    .enabledLayerCount = (uint32)required_layers.size(),
+    .ppEnabledLayerNames = required_layers.data(),
+    .enabledExtensionCount = (uint32)required_extensions.size(),
+    .ppEnabledExtensionNames = required_extensions.data(),
+  };
+  auto instance = rs::Instance{ create_info };
+  auto debug_messenger = rs::DebugMessenger{};
+  if (enable_debug_messenger) {
+    debug_messenger = { debug_info.value() };
+  }
+  return { std::move(instance), std::move(debug_messenger), std::move(messenger_config) };
+}
+
+} // namespace rd::vk

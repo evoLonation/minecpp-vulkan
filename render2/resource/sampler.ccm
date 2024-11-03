@@ -6,7 +6,6 @@ import render.vk.device;
 import render.vk.image;
 import render.vk.buffer;
 import render.vk.descriptor;
-import render.vk.tracker;
 
 import std;
 import toy;
@@ -21,17 +20,7 @@ public:
   auto getSampler() const -> VkSampler { return _sampler; }
   auto getLayout() const -> VkImageLayout { return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; }
 
-  auto getDescriptorContext() -> Context override {
-    return ImageContext{
-      .dscriptor_info =
-        VkDescriptorImageInfo{
-          .sampler = getSampler(),
-          .imageView = getImage().getImageView(),
-          .imageLayout = getLayout(),
-        },
-      .tracker = &_image.getTracker(),
-    };
-  }
+  auto getDescriptorContext() -> Context override;
 
 private:
   vk::StagingBuffer _staging_buffer;
@@ -57,17 +46,7 @@ private:
   static inline auto    _max_anisotropy = float{};
 
 public:
-  static auto checkPdevice(vk::DeviceCapabilityBuilder& request) -> bool {
-    if (!request.enableFeature(&VkPhysicalDeviceFeatures::samplerAnisotropy)) {
-      return false;
-    }
-    return request.getPdevice().checkFormatSupport(
-      vk::FormatTarget::OPTIMAL_TILING,
-      VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
-        VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT,
-      _formats
-    );
-  }
+  static auto checkPdevice(vk::DeviceCapabilityBuilder& request) -> bool;
 };
 
 } // namespace rd

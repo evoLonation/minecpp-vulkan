@@ -36,4 +36,19 @@ DeviceLocalBuffer::DeviceLocalBuffer(
   );
 }
 
+void recordCopyBuffer(
+  VkCommandBuffer transfer_cmdbuf,
+  VkBuffer        src_buffer,
+  VkBuffer        dst_buffer,
+  VkDeviceSize    buffer_size
+) {
+  auto copy_info = VkBufferCopy{
+    // this offset is about buffer, not about memory
+    .srcOffset = 0,
+    .dstOffset = 0,
+    .size = buffer_size,
+  };
+  vkCmdCopyBuffer(transfer_cmdbuf, src_buffer, dst_buffer, 1, &copy_info);
+}
+
 } // namespace rd::vk

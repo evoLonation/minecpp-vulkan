@@ -1,3 +1,5 @@
+module;
+#include <toy.h>
 export module render.vk.memory;
 
 import std;
@@ -22,30 +24,23 @@ public:
   Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property_flags);
 };
 
-class HostMemoryManager {
+class HostMemoryManager : toy::AutoMoveAssigner<HostMemoryManager> {
 public:
   HostMemoryManager() = default;
   HostMemoryManager(VkDeviceMemory memory) : _memory(memory) {}
 
   auto data() -> void*;
   void fill(std::span<const std::byte> buffer_data);
-  ~HostMemoryManager() { unmap(); }
 
   static constexpr auto propreties =
     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
-  HostMemoryManager(HostMemoryManager&&) noexcept = default;
-  auto operator=(HostMemoryManager&& a) noexcept -> HostMemoryManager& {
-    unmap();
-    _data = std::move(a._data);
-    _memory = std::move(a._memory);
-    return *this;
-  }
+  ~HostMemoryManager() { beforeDestroy(); }
+  DEFAULT_MOVEABLE(HostMemoryManager);
 
 private:
-  void unmap();
+  void beforeDestroy();
 
-private:
   toy::PtrManager<void*>          _data;
   toy::PtrManager<VkDeviceMemory> _memory;
 };

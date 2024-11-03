@@ -240,4 +240,28 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
   return texture;
 }
 
+auto SampledTexture::getDescriptorContext() -> Context {
+  return ImageContext{
+    .dscriptor_info =
+      VkDescriptorImageInfo{
+        .sampler = getSampler(),
+        .imageView = getImage().getImageView(),
+        .imageLayout = getLayout(),
+      },
+    .tracker = &_image.getTracker(),
+  };
+}
+
+auto SampledTexture::checkPdevice(vk::DeviceCapabilityBuilder& request) -> bool {
+  if (!request.enableFeature(&VkPhysicalDeviceFeatures::samplerAnisotropy)) {
+    return false;
+  }
+  return request.getPdevice().checkFormatSupport(
+    vk::FormatTarget::OPTIMAL_TILING,
+    VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+      VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT,
+    _formats
+  );
+}
+
 }; // namespace rd
