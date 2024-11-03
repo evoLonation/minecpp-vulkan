@@ -1,12 +1,12 @@
 module;
 #include <toy.h>
-export module render.vk.reflections;
+export module render.reflections;
 
 import std;
 import toy;
 import <vulkan_config.h>;
 
-export namespace rd::vk::refl {
+export namespace rd::refl {
 
 auto imageLayout(VkImageLayout image_layout) -> std::string_view;
 
@@ -23,16 +23,16 @@ auto sampleCount(VkSampleCountFlagBits sample_count) -> std::string_view;
 template <typename Resource>
 consteval auto resource() -> std::string_view;
 
-} // namespace rd::vk::refl
+} // namespace rd::refl
 
-CUSTOM_FORMATTER(VkImageLayout, [](auto e) { return std::string{ rd::vk::refl::imageLayout(e) }; });
-CUSTOM_FORMATTER(VkFormat, [](auto e) { return std::string{ rd::vk::refl::format(e) }; });
-CUSTOM_FORMATTER(VkResult, [](auto e) { return std::string{ rd::vk::refl::result(e) }; });
+CUSTOM_FORMATTER(VkImageLayout, [](auto e) { return std::string{ rd::refl::imageLayout(e) }; });
+CUSTOM_FORMATTER(VkFormat, [](auto e) { return std::string{ rd::refl::format(e) }; });
+CUSTOM_FORMATTER(VkResult, [](auto e) { return std::string{ rd::refl::result(e) }; });
 CUSTOM_FORMATTER(VkSampleCountFlagBits, [](auto e) {
-  return std::string{ rd::vk::refl::sampleCount(e) };
+  return std::string{ rd::refl::sampleCount(e) };
 });
 
-namespace rd::vk::refl {
+namespace rd::refl {
 
 template <typename Resource>
 consteval auto resource() -> std::string_view {
@@ -77,4 +77,4 @@ consteval auto resource() -> std::string_view {
 
   toy::throwf("unknown resource type");
 }
-} // namespace rd::vk::refl
+} // namespace rd::refl

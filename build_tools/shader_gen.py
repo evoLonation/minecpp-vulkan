@@ -31,7 +31,7 @@ if __name__ == "__main__":
         code = f"""module {args.module};
             import std;
             {import_decl}
-            namespace rd::vk{{
+            namespace rd{{
             auto get_shader_code(std::string_view shader) -> std::span<const std::byte> {{
               auto shader_code_map = std::map<std::string_view, std::span<const std::byte>> {{
                 {pair_decl}

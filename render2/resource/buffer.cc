@@ -1,9 +1,9 @@
-module render.vk.buffer;
+module render.buffer;
 
-import render.vk.executor;
-import render.vk.sync;
+import render.executor;
+import render.sync;
 
-namespace rd::vk {
+namespace rd {
 
 auto createBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage) -> rs::Buffer {
   auto buffer_info = VkBufferCreateInfo{
@@ -17,18 +17,18 @@ auto createBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage) -> rs::Buf
 
 DeviceLocalBuffer::DeviceLocalBuffer(
   std::span<std::byte const> buffer_data, VkBufferUsageFlags usage
-): vk::Buffer{
+): Buffer{
     buffer_data.size(),
     usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
   }, _staging_buffer{buffer_data} {
 
-  auto& copy_executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::TRANSFER];
+  auto& copy_executor = CommandExecutorManager::getInstance()[FamilyType::TRANSFER];
   copy_executor.submit([&](VkCommandBuffer cmdbuf) {
-    vk::recordCopyBuffer(cmdbuf, _staging_buffer, *this, buffer_data.size());
+    recordCopyBuffer(cmdbuf, _staging_buffer, *this, buffer_data.size());
   });
   getTracker().setNewScope(
-    vk::Scope{
+    Scope{
       .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
       .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
     },
@@ -51,4 +51,4 @@ void recordCopyBuffer(
   vkCmdCopyBuffer(transfer_cmdbuf, src_buffer, dst_buffer, 1, &copy_info);
 }
 
-} // namespace rd::vk
+} // namespace rd

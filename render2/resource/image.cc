@@ -1,10 +1,10 @@
 module;
 #include <toy.h>
-module render.vk.image;
+module render.image;
 
-import render.vk.device;
+import render.device;
 
-namespace rd::vk {
+namespace rd {
 
 auto getSubresourceRange(VkImageAspectFlags aspect, MipRange mip_range) -> VkImageSubresourceRange {
   return {
@@ -210,4 +210,4 @@ auto computeMipExtents(VkExtent2D extent) -> std::vector<VkExtent2D> {
   return mip_extents;
 }
 
-} // namespace rd::vk
+} // namespace rd

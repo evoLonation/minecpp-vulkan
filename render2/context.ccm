@@ -2,13 +2,13 @@ export module render.context;
 import std;
 import toy;
 
-import render.vk.resource;
-import render.vk.device;
-import render.vk.instance;
-import render.vk.surface;
-import render.vk.executor;
-import render.vk.image;
-import render.vk.framebuffer;
+import render.resource;
+import render.device;
+import render.instance;
+import render.surface;
+import render.executor;
+import render.image;
+import render.framebuffer;
 import input;
 import glfw;
 
@@ -23,12 +23,12 @@ public:
   std::unique_ptr<glfw::Window>          _glfw_window;
   std::unique_ptr<input::InputProcessor> _input_processor;
 
-  std::unique_ptr<vk::InstanceResource>       _instance;
-  std::unique_ptr<vk::rs::Surface>            _surface;
-  std::unique_ptr<vk::Device>                 _device;
-  std::unique_ptr<vk::CommandExecutorManager> _command_executor_manager;
-  std::unique_ptr<vk::ImageContext>           _image_context;
-  std::unique_ptr<vk::FramebufferPool>        _framebuffer_pool;
+  std::unique_ptr<InstanceResource>       _instance;
+  std::unique_ptr<rs::Surface>            _surface;
+  std::unique_ptr<Device>                 _device;
+  std::unique_ptr<CommandExecutorManager> _command_executor_manager;
+  std::unique_ptr<ImageContext>           _image_context;
+  std::unique_ptr<FramebufferPool>        _framebuffer_pool;
 };
 
 } // namespace rd

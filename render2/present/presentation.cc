@@ -1,16 +1,16 @@
 module;
 #include <vulkan_tool.h>
-module render.vk.presentation;
+module render.presentation;
 
 import <vulkan_config.h>;
 
-import render.vk.device;
-import render.vk.tool;
-import render.vk.tracker;
-import render.vk.reflections;
-import render.vk.image;
+import render.device;
+import render.tool;
+import render.tracker;
+import render.reflections;
+import render.image;
 
-namespace rd::vk {
+namespace rd {
 
 Presentation::Presentation(VkSurfaceKHR surface) {
   _surface = surface;
@@ -211,4 +211,4 @@ void Presentation::ImageContext::destroy(
   }
   image_ctxs.clear();
 }
-} // namespace rd::vk
+} // namespace rd

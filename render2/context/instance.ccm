@@ -1,11 +1,11 @@
-export module render.vk.instance;
+export module render.instance;
 
 import <vulkan_config.h>;
-import render.vk.resource;
+import render.resource;
 import toy;
 import std;
 
-export namespace rd::vk {
+export namespace rd {
 
 struct DebugMessengerConfig {
   VkDebugUtilsMessageSeverityFlagBitsEXT message_severity_level;
@@ -24,4 +24,4 @@ auto createInstance(
   bool                   enable_debug_messenger = toy::enable_debug
 ) -> InstanceResource;
 
-} // namespace rd::vk
+} // namespace rd

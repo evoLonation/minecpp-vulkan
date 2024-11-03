@@ -1,18 +1,18 @@
 module;
 #include <toy.h>
-export module render.vk.presentation;
+export module render.presentation;
 import std;
 import toy;
 
 import <vulkan_config.h>;
 
-import render.vk.resource;
-import render.vk.sync;
-import render.vk.executor;
-import render.vk.framebuffer;
-import render.vk.swapchain;
+import render.resource;
+import render.sync;
+import render.executor;
+import render.framebuffer;
+import render.swapchain;
 
-export namespace rd::vk {
+export namespace rd {
 
 class Presentation {
 public:
@@ -100,4 +100,4 @@ private:
   auto vkPresent(uint32 image_index, VkSemaphore wait_sema, VkFence signal_fence) -> VkResult;
 };
 
-} // namespace rd::vk
+} // namespace rd

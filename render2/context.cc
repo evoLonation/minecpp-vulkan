@@ -1,17 +1,15 @@
 module render.context;
 
-import render.vk.queue_requestor;
-import render.vk.sync;
+import render.queue_requestor;
+import render.sync;
 import render.sampler;
 import render.vertex;
-import render.vk.presentation;
-import render.vk.swapchain;
+import render.presentation;
+import render.swapchain;
 
 import <vulkan_config.h>;
 
 namespace rd {
-
-using namespace vk;
 
 auto requestGraphicQueue(const QueueFamilyCheckContext& ctx) -> bool {
   return ctx.properties.queueFlags & VK_QUEUE_GRAPHICS_BIT;

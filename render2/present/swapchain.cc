@@ -1,8 +1,8 @@
-module render.vk.swapchain;
+module render.swapchain;
 
 import <vulkan_config.h>;
 
-namespace rd::vk {
+namespace rd {
 
 VkFormat         Swapchain::_format = VK_FORMAT_R8G8B8A8_SRGB;
 VkPresentModeKHR Swapchain::_present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
@@ -125,4 +125,4 @@ auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& requ
   }
   return true;
 }
-} // namespace rd::vk
+} // namespace rd

@@ -1,16 +1,16 @@
 module;
 #include <toy.h>
-export module render.vk.sync;
+export module render.sync;
 
 import <vulkan_config.h>;
-import render.vk.resource;
-import render.vk.device;
-import render.vk.reflections;
+import render.resource;
+import render.device;
+import render.reflections;
 
 import std;
 import toy;
 
-export namespace rd::vk {
+export namespace rd {
 
 namespace device_checkers {
 
@@ -200,7 +200,7 @@ struct Scope {
 
   auto extractWriteAccess() const -> Scope {
     auto scope = *this;
-    scope.access_mask = vk::extractWriteAccess(scope.access_mask);
+    scope.access_mask = rd::extractWriteAccess(scope.access_mask);
     return scope;
   }
 };
@@ -375,6 +375,6 @@ void recordImageBarrier(
   recordPipelineBarrier(cmdbuf, {}, {}, { &image_barrier, 1 });
 }
 
-} // namespace rd::vk
+} // namespace rd
 
-CUSTOM_FORMATTER(rd::vk::Scope, scope2Str);
+CUSTOM_FORMATTER(rd::Scope, scope2Str);

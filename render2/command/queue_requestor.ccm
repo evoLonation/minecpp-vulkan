@@ -1,11 +1,11 @@
-export module render.vk.queue_requestor;
+export module render.queue_requestor;
 
 import <vulkan_config.h>;
-import render.vk.device;
+import render.device;
 
 import std;
 
-export namespace rd::vk {
+export namespace rd {
 
 struct QueueFamilyCheckContext {
   VkPhysicalDevice        device;
@@ -33,4 +33,4 @@ private:
   std::unordered_map<VkPhysicalDevice, std::vector<FamilyQueueCount>> _pdevice2family_queue_counts;
 };
 
-} // namespace rd::vk
+} // namespace rd

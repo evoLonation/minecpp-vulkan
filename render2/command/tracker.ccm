@@ -1,15 +1,15 @@
 module;
 #include <toy.h>
-export module render.vk.tracker;
+export module render.tracker;
 import std;
 import toy;
-import render.vk.sync;
-import render.vk.reflections;
-import render.vk.executor;
+import render.sync;
+import render.reflections;
+import render.executor;
 
 import <vulkan_config.h>;
 
-export namespace rd::vk {
+export namespace rd {
 
 using BarrierRecorder = std::function<void(VkCommandBuffer)>;
 struct FamilyTransferRecorder {
@@ -400,4 +400,4 @@ private:
   CommonWaitableTracker<true> _base;
 };
 
-} // namespace rd::vk
+} // namespace rd

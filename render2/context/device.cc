@@ -1,10 +1,10 @@
-module render.vk.device;
+module render.device;
 
 import <vulkan_config.h>;
-import render.vk.tool;
+import render.tool;
 import toy;
 
-namespace rd::vk {
+namespace rd {
 
 auto Device::create(std::span<DeviceCapabilityChecker> checkers) -> Device {
   auto devices = getVkResources(vkEnumeratePhysicalDevices, rs::Instance::getInstance()) |
@@ -181,4 +181,4 @@ auto PhysicalDevice::checkFormatSupport(
   return true;
 }
 
-} // namespace rd::vk
+} // namespace rd

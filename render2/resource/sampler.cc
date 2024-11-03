@@ -1,14 +1,14 @@
 module render.sampler;
 
 import <vulkan_config.h>;
-import render.vk.sync;
-import render.vk.executor;
+import render.sync;
+import render.executor;
 
 import <stb_image.h>;
 
 namespace rd {
 
-auto createSampler(float max_anisotropy) -> vk::rs::Sampler {
+auto createSampler(float max_anisotropy) -> rs::Sampler {
   toy::debugf("max_anisotropy: {}", max_anisotropy);
   // lod 是 lod 等级，用于选择纹理过滤模式等等
   // level 是在 lod 基础上计算得到的 mip 等级
@@ -53,7 +53,7 @@ decltype(SampledTexture::_formats) SampledTexture::_formats = { VK_FORMAT_R8G8B8
 
 auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStageFlagBits use_stage)
   -> SampledTexture {
-  auto& ctx = vk::Device::getInstance();
+  auto& ctx = Device::getInstance();
 
   // todo: just execute once in whole program
   _max_anisotropy = ctx.getPdevice().getProperties().limits.maxSamplerAnisotropy;
@@ -69,45 +69,45 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
   auto image_data = std::as_bytes(std::span{ pixels, image_size });
   toy::debugf("image {} info: width {}, height {}", path.data(), width, height);
 
-  auto staging_buffer = vk::StagingBuffer{ image_data };
+  auto staging_buffer = StagingBuffer{ image_data };
 
   stbi_image_free(pixels);
 
   auto mip_extents = std::vector<VkExtent2D>{};
-  auto mip_range = vk::MipRange{
+  auto mip_range = MipRange{
     .base_level = 0,
     .count = 1,
   };
   auto mip_levels = uint32{};
   if (mipmap) {
-    mip_extents = vk::computeMipExtents({ width, height });
+    mip_extents = computeMipExtents({ width, height });
     mip_levels = mip_extents.size();
     mip_range.count = mip_levels;
   }
 
-  auto image = vk::Image{
+  auto image = Image{
     _formats[0], width, height, _usage, _aspect, mip_levels, VK_SAMPLE_COUNT_1_BIT,
   };
 
   auto sampler = createSampler(_max_anisotropy);
   auto texture =
     SampledTexture{ std::move(staging_buffer), std::move(image), std::move(sampler), mip_range };
-  auto& copy_executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::TRANSFER];
-  auto& graphics_executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::GRAPHICS];
+  auto& copy_executor = CommandExecutorManager::getInstance()[FamilyType::TRANSFER];
+  auto& graphics_executor = CommandExecutorManager::getInstance()[FamilyType::GRAPHICS];
   auto  family_transfer =
-    vk::FamilyTransferInfo{ copy_executor.getFamily(), graphics_executor.getFamily() };
+    FamilyTransferInfo{ copy_executor.getFamily(), graphics_executor.getFamily() };
 
   auto recorder_copy = [&](VkCommandBuffer cmdbuf) {
-    vk::recordImageBarrier(
+    recordImageBarrier(
       cmdbuf,
       texture._image.getImage(),
-      vk::getSubresourceRange(_aspect, mip_range),
+      getSubresourceRange(_aspect, mip_range),
       { VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL },
       {
-        vk::Scope{
+        Scope{
           .stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
         },
-        vk::Scope{
+        Scope{
           .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
           .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
         },
@@ -115,19 +115,19 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
       {}
     );
 
-    vk::copyBufferToImage(
+    copyBufferToImage(
       cmdbuf, texture._staging_buffer, texture._image.getImage(), _aspect, width, height, 0
     );
 
-    vk::recordImageBarrier(
+    recordImageBarrier(
       cmdbuf,
       texture._image.getImage(),
-      vk::getSubresourceRange(_aspect, mip_range),
+      getSubresourceRange(_aspect, mip_range),
       {
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         mipmap ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
       },
-      vk::BarrierScope::release(vk::Scope{
+      BarrierScope::release(Scope{
         .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
         .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
       }),
@@ -136,18 +136,18 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
   };
 
   auto recorder_blit = [&](VkCommandBuffer cmdbuf) {
-    vk::recordImageBarrier(
+    recordImageBarrier(
         cmdbuf,
         texture._image.getImage(),
-        vk::getSubresourceRange(_aspect, mip_range),
+        getSubresourceRange(_aspect, mip_range),
         {
           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
           mipmap ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         },
-        vk::BarrierScope::acquire(mipmap ? vk::Scope{
+        BarrierScope::acquire(mipmap ? Scope{
           .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
           .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-        }: vk::Scope{
+        }: Scope{
           .stage_mask = use_stage,
           .access_mask = VK_ACCESS_SHADER_READ_BIT,
         }),
@@ -156,33 +156,33 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
 
     if (mipmap) {
       for (auto dst_mip_level : views::iota(1u, mip_extents.size())) {
-        vk::recordImageBarrier(
+        recordImageBarrier(
           cmdbuf,
           texture._image.getImage(),
-          vk::getSubresourceRange(
-            _aspect, vk::MipRange{ .base_level = dst_mip_level - 1, .count = 1 }
+          getSubresourceRange(
+            _aspect, MipRange{ .base_level = dst_mip_level - 1, .count = 1 }
           ),
           { VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL },
-          { vk::Scope{
+          { Scope{
               .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
               .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
             },
-            vk::Scope{
+            Scope{
               .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
               .access_mask = VK_ACCESS_TRANSFER_READ_BIT,
             } },
           {}
         );
-        vk::blitImage(
+        blitImage(
           cmdbuf,
-          vk::ImageBlit{
+          ImageBlit{
             .image = texture._image.getImage(),
             .aspect = _aspect,
             .layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             .mip_level = dst_mip_level - 1,
             .extent = mip_extents[dst_mip_level - 1],
           },
-          vk::ImageBlit{
+          ImageBlit{
             .image = texture._image.getImage(),
             .aspect = _aspect,
             .layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -191,31 +191,31 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
           }
         );
       }
-      vk::recordImageBarrier(
+      recordImageBarrier(
         cmdbuf,
         texture._image.getImage(),
-        vk::getSubresourceRange(_aspect, { .base_level = mip_levels - 1, .count = 1 }),
+        getSubresourceRange(_aspect, { .base_level = mip_levels - 1, .count = 1 }),
         { VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-        { vk::Scope{
+        { Scope{
             .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
             .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
           },
-          vk::Scope{
+          Scope{
             .stage_mask = use_stage,
             .access_mask = VK_ACCESS_SHADER_READ_BIT,
           } },
         {}
       );
-      vk::recordImageBarrier(
+      recordImageBarrier(
         cmdbuf,
         texture._image.getImage(),
-        vk::getSubresourceRange(_aspect, { .base_level = 0, .count = mip_levels - 1 }),
+        getSubresourceRange(_aspect, { .base_level = 0, .count = mip_levels - 1 }),
         { VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-        { vk::Scope{
+        { Scope{
             .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
             .access_mask = 0,
           },
-          vk::Scope{
+          Scope{
             .stage_mask = use_stage,
             .access_mask = VK_ACCESS_SHADER_READ_BIT,
           } },
@@ -225,12 +225,12 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
   };
 
   auto waitable = copy_executor.submit(recorder_copy);
-  graphics_executor.submit(vk::CommandBatch{
+  graphics_executor.submit(CommandBatch{
     .recorder = recorder_blit,
     .waits = { { &waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
   });
   texture.getImage().getTracker().setNewScope(
-    vk::Scope{
+    Scope{
       .stage_mask = use_stage,
       .access_mask = VK_ACCESS_SHADER_READ_BIT,
     },
@@ -252,12 +252,12 @@ auto SampledTexture::getDescriptorContext() -> Context {
   };
 }
 
-auto SampledTexture::checkPdevice(vk::DeviceCapabilityBuilder& request) -> bool {
+auto SampledTexture::checkPdevice(DeviceCapabilityBuilder& request) -> bool {
   if (!request.enableFeature(&VkPhysicalDeviceFeatures::samplerAnisotropy)) {
     return false;
   }
   return request.getPdevice().checkFormatSupport(
-    vk::FormatTarget::OPTIMAL_TILING,
+    FormatTarget::OPTIMAL_TILING,
     VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
       VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT,
     _formats

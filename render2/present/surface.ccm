@@ -1,8 +1,8 @@
-export module render.vk.surface;
+export module render.surface;
 
 import <vulkan_config.h>;
-import render.vk.resource;
-import render.vk.tool;
+import render.resource;
+import render.tool;
 
 import <glfw_config.h>;
 import glfw;
@@ -10,7 +10,7 @@ import glfw;
 import std;
 import toy;
 
-export namespace rd::vk {
+export namespace rd {
 
 namespace extensions {
 auto surface = std::vector<std::string>{
@@ -37,4 +37,4 @@ auto createSurface(glfw::Window& window) -> rs::Surface {
   return rs::Surface{ create_info };
 }
 
-} // namespace rd::vk
+} // namespace rd

@@ -1,16 +1,16 @@
 module;
 #include <toy.h>
-export module render.vk.executor;
+export module render.executor;
 import std;
 import toy;
 
-import render.vk.sync;
-import render.vk.resource;
-import render.vk.device;
+import render.sync;
+import render.resource;
+import render.device;
 
 import <vulkan_config.h>;
 
-export namespace rd::vk {
+export namespace rd {
 
 /**
  * @brief a command buffer bind to a timeline semaphore
@@ -201,4 +201,4 @@ private:
   std::unordered_map<FamilyType, uint32>                  _families;
 };
 
-} // namespace rd::vk
+} // namespace rd

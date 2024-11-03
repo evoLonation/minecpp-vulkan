@@ -1,13 +1,13 @@
 module;
 #include <toy.h>
 #include <vulkan_tool.h>
-module render.vk.executor;
+module render.executor;
 
-import render.vk.tool;
+import render.tool;
 
 import <vulkan_config.h>;
 
-namespace rd::vk {
+namespace rd {
 
 void CommandBuffer::record(std::function<void(VkCommandBuffer cmdbuf)> const& recorder) {
   // vkBeginCommandBuffer 会隐式执行vkResetCommandBuffer
@@ -301,4 +301,4 @@ CommandExecutorManager::CommandExecutorManager(
   }
 }
 
-} // namespace rd::vk
+} // namespace rd

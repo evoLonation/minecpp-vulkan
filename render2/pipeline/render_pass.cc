@@ -1,12 +1,12 @@
-module render.vk.render_pass2;
+module render.render_pass2;
 
 import <vulkan_config.h>;
 
-import render.vk.sync;
-import render.vk.executor;
-import render.vk.tracker;
+import render.sync;
+import render.executor;
+import render.tracker;
 
-namespace rd::vk {
+namespace rd {
 
 RenderPass::RenderPass(
   std::span<AttachmentInfo const> attachments, std::span<SubpassPipelineInfo const> subpasses
@@ -140,7 +140,7 @@ void RenderPassManager::recordDraw(
   std::span<FrameImageManager*> images, std::vector<VkClearValue> clear_values, VkExtent2D extent
 ) {
   auto  framebuffer = FramebufferPool::getInstance().getFramebuffer(get(), images);
-  auto& executor = vk::CommandExecutorManager::getInstance()[vk::FamilyType::GRAPHICS];
+  auto& executor = CommandExecutorManager::getInstance()[FamilyType::GRAPHICS];
 
   auto drawers = std::vector<PipelineDrawer>{};
   for (auto& info : getPipelines()) {
@@ -269,4 +269,4 @@ void RenderPassManager::recordDraw(
   }
 }
 
-} // namespace rd::vk
+} // namespace rd

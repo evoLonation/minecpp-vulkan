@@ -1,12 +1,12 @@
-export module render.vk.resource;
+export module render.resource;
 
 import <vulkan_config.h>;
-import render.vk.tool;
-import render.vk.reflections;
+import render.tool;
+import render.reflections;
 import std;
 import toy;
 
-namespace rd::vk::rs {
+namespace rd::rs {
 
 template <typename T>
 concept isConstPointer = std::is_pointer_v<T> && std::is_const_v<std::remove_pointer_t<T>>;
@@ -476,4 +476,4 @@ export using GraphicsPipelineFactory = PipelineFactory<PipelineType::GRAPHICS>;
 template class PipelineFactory<PipelineType::COMPUTE>;
 export using ComputePipelineFactory = PipelineFactory<PipelineType::COMPUTE>;
 
-} // namespace rd::vk::rs
+} // namespace rd::rs

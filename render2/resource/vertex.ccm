@@ -1,10 +1,10 @@
 export module render.vertex;
 
 import <vulkan_config.h>;
-import render.vk.device;
-import render.vk.buffer;
-import render.vk.sync;
-import render.vk.tracker;
+import render.device;
+import render.buffer;
+import render.sync;
+import render.tracker;
 
 import std;
 import glm;
@@ -30,8 +30,8 @@ using FormatTypeInfos = toy::TypePack<
   FormatTypeInfo<VK_FORMAT_R64_SFLOAT, double>               //
   >;
 
-export namespace vk::device_checkers {
-auto vertex(vk::DeviceCapabilityBuilder&) -> bool;
+export namespace device_checkers {
+auto vertex(DeviceCapabilityBuilder&) -> bool;
 }
 
 export struct VertexInfo {
@@ -119,7 +119,7 @@ private:
   }();
 };
 
-export class VertexBuffer : public vk::DeviceLocalBuffer {
+export class VertexBuffer : public DeviceLocalBuffer {
 public:
   template <ranges::contiguous_range R>
   VertexBuffer(R&& range) : VertexBuffer{ std::span<const ranges::range_value_t<R>>{ range } } {}
@@ -134,14 +134,14 @@ private:
   VertexInfo _vertex_info;
 
   VertexBuffer(std::span<const std::byte> vertex_data, VertexInfo vertex_info)
-    : vk::DeviceLocalBuffer(vertex_data, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT),
+    : DeviceLocalBuffer(vertex_data, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT),
       _vertex_info(vertex_info) {}
 };
 
-export class IndexBuffer : public vk::DeviceLocalBuffer {
+export class IndexBuffer : public DeviceLocalBuffer {
 public:
   IndexBuffer(std::span<const uint16_t> indices)
-    : vk::DeviceLocalBuffer(std::as_bytes(indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT),
+    : DeviceLocalBuffer(std::as_bytes(indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT),
       _index_number(indices.size()) {}
 
   auto getIndexNumber() -> uint32 { return _index_number; }

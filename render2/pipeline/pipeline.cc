@@ -1,10 +1,10 @@
-module render.vk.pipeline;
+module render.pipeline;
 
-import render.vk.shader_code;
+import render.shader_code;
 
 import <vulkan_config.h>;
 
-namespace rd::vk {
+namespace rd {
 
 auto createShaderModule(std::string_view filename) -> rs::ShaderModule {
   auto content = get_shader_code(filename);
@@ -208,4 +208,4 @@ auto createGraphicsPipeline(PipelineInfo info) -> rs::Pipeline {
   );
 }
 
-} // namespace rd::vk
+} // namespace rd

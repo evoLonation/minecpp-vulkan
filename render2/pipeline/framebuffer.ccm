@@ -1,15 +1,15 @@
 module;
 #include <toy.h>
-export module render.vk.framebuffer;
+export module render.framebuffer;
 
 import <vulkan_config.h>;
-import render.vk.resource;
-import render.vk.image;
+import render.resource;
+import render.image;
 
 import std;
 import toy;
 
-export namespace rd::vk {
+export namespace rd {
 
 class FramebufferPool;
 
@@ -225,4 +225,4 @@ public:
   FrameImage(FrameImage&& e) noexcept = default;
 };
 
-} // namespace rd::vk
+} // namespace rd

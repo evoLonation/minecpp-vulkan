@@ -1,10 +1,10 @@
-module render.vk.queue_requestor;
+module render.queue_requestor;
 
 import toy;
 
 import <vulkan_config.h>;
 
-namespace rd::vk {
+namespace rd {
 
 /**
  * @brief 二分图匹配算法
@@ -85,4 +85,4 @@ auto QueueRequestor::checkPdevice(DeviceCapabilityBuilder& request) -> bool {
     return false;
   }
 }
-} // namespace rd::vk
+} // namespace rd

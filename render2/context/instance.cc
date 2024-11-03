@@ -1,9 +1,9 @@
-module render.vk.instance;
+module render.instance;
 
 import <vulkan_config.h>;
-import render.vk.tool;
+import render.tool;
 
-namespace rd::vk {
+namespace rd {
 
 VKAPI_ATTR VkBool32 VKAPI_CALL debugHandler(
   VkDebugUtilsMessageSeverityFlagBitsEXT      message_severity,
@@ -145,4 +145,4 @@ auto createInstance(
   return { std::move(instance), std::move(debug_messenger), std::move(messenger_config) };
 }
 
-} // namespace rd::vk
+} // namespace rd

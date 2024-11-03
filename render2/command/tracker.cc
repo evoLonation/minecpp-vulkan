@@ -1,3 +1,3 @@
-module render.vk.tracker;
+module render.tracker;
 
-namespace rd::vk {} // namespace rd::vk
+namespace rd {} // namespace rd

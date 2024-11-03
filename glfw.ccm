@@ -4,7 +4,7 @@ import <glfw_config.h>;
 import toy;
 import std;
 
-import render.vk.instance;
+import render.instance;
 
 export namespace glfw {
 

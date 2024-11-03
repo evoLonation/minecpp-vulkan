@@ -1,20 +1,20 @@
 module;
 #include <toy.h>
 
-export module render.vk.render_pass2;
+export module render.render_pass2;
 
 import <vulkan_config.h>;
-import render.vk.resource;
-import render.vk.buffer;
-import render.vk.descriptor;
-import render.vk.pipeline;
-import render.vk.framebuffer;
+import render.resource;
+import render.buffer;
+import render.descriptor;
+import render.pipeline;
+import render.framebuffer;
 import render.vertex;
 
 import std;
 import toy;
 
-export namespace rd::vk {
+export namespace rd {
 
 struct AttachmentInfo {
   AttachmentFormat      format;
@@ -167,4 +167,4 @@ private:
   std::vector<PipelineDrawRecorder> _recorders;
 };
 
-} // namespace rd::vk
+} // namespace rd

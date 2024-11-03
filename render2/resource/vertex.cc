@@ -1,6 +1,6 @@
 module render.vertex;
 
-import render.vk.executor;
+import render.executor;
 
 namespace rd {
 
@@ -10,7 +10,7 @@ auto operator==(const VertexInfo& a, const VertexInfo& b) -> bool {
          a.attribute_descriptions.end() == b.attribute_descriptions.end();
 }
 
-auto vk::device_checkers::vertex(vk::DeviceCapabilityBuilder& builder) -> bool {
+auto device_checkers::vertex(DeviceCapabilityBuilder& builder) -> bool {
   auto formats =
     FormatTypeInfos::applyFunc([]<typename... Info> { return std::array{ Info::format... }; });
   toy::debugf("the vertex formats: {::}", formats | views::transform([](auto a) {
@@ -20,7 +20,7 @@ auto vk::device_checkers::vertex(vk::DeviceCapabilityBuilder& builder) -> bool {
     return false;
   }
   return builder.getPdevice().checkFormatSupport(
-    vk::FormatTarget::BUFFER, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT, formats
+    FormatTarget::BUFFER, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT, formats
   );
 }
 

@@ -1,37 +1,37 @@
 export module render.sampler;
 
 import <vulkan_config.h>;
-import render.vk.resource;
-import render.vk.device;
-import render.vk.image;
-import render.vk.buffer;
-import render.vk.descriptor;
+import render.resource;
+import render.device;
+import render.image;
+import render.buffer;
+import render.descriptor;
 
 import std;
 import toy;
 
 export namespace rd {
 
-class SampledTexture : public vk::DescriptorResource {
+class SampledTexture : public DescriptorResource {
 public:
   static auto create(const std::string& path, bool mipmap, VkPipelineStageFlagBits use_stage)
     -> SampledTexture;
-  auto getImage() -> vk::Image& { return _image; }
+  auto getImage() -> Image& { return _image; }
   auto getSampler() const -> VkSampler { return _sampler; }
   auto getLayout() const -> VkImageLayout { return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; }
 
   auto getDescriptorContext() -> Context override;
 
 private:
-  vk::StagingBuffer _staging_buffer;
-  vk::Image         _image;
-  vk::rs::Sampler   _sampler;
+  StagingBuffer _staging_buffer;
+  Image         _image;
+  rs::Sampler   _sampler;
 
   SampledTexture(
-    vk::StagingBuffer staging_buffer,
-    vk::Image         image,
-    vk::rs::Sampler   sampler,
-    vk::MipRange      mip_range
+    StagingBuffer staging_buffer,
+    Image         image,
+    rs::Sampler   sampler,
+    MipRange      mip_range
   )
     : _staging_buffer(std::move(staging_buffer)), _image(std::move(image)),
       _sampler(std::move(sampler)) {}
@@ -46,7 +46,7 @@ private:
   static inline auto    _max_anisotropy = float{};
 
 public:
-  static auto checkPdevice(vk::DeviceCapabilityBuilder& request) -> bool;
+  static auto checkPdevice(DeviceCapabilityBuilder& request) -> bool;
 };
 
 } // namespace rd

@@ -1,14 +1,14 @@
 module;
 #include <toy.h>
-export module render.vk.memory;
+export module render.memory;
 
 import std;
 import toy;
 
 import <vulkan_config.h>;
-import render.vk.resource;
+import render.resource;
 
-export namespace rd::vk {
+export namespace rd {
 
 class Memory : public rs::Memory {
 public:
@@ -45,4 +45,4 @@ private:
   toy::PtrManager<VkDeviceMemory> _memory;
 };
 
-} // namespace rd::vk
+} // namespace rd

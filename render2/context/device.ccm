@@ -1,12 +1,12 @@
-export module render.vk.device;
+export module render.device;
 
 import std;
 import toy;
 
 import <vulkan_config.h>;
-import render.vk.resource;
+import render.resource;
 
-export namespace rd::vk {
+export namespace rd {
 
 enum class FormatTarget {
   BUFFER,
@@ -117,4 +117,4 @@ private:
   VkPhysicalDeviceFeatures _features;
 };
 
-} // namespace rd::vk
+} // namespace rd

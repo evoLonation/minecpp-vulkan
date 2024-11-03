@@ -1,12 +1,12 @@
 module;
 #include <vulkan_tool.h>
-module render.vk.memory;
+module render.memory;
 
 import <vulkan_config.h>;
-import render.vk.tool;
-import render.vk.device;
+import render.tool;
+import render.device;
 
-namespace rd::vk {
+namespace rd {
 
 Memory::Memory(VkBuffer buffer, VkMemoryPropertyFlags property_flags)
   : Memory(
@@ -81,4 +81,4 @@ void HostMemoryManager::beforeDestroy() {
   }
 }
 
-} // namespace rd::vk
+} // namespace rd

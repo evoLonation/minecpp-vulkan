@@ -1,13 +1,13 @@
 module;
 #include <toy.h>
-module render.vk.render_pass2;
+module render.render_pass2;
 
 import <vulkan_config.h>;
 
-import render.vk.reflections;
-import render.vk.sync;
+import render.reflections;
+import render.sync;
 
-namespace rd::vk {
+namespace rd {
 
 void checkSubpassAttachmentMatch(
   std::span<AttachmentInfo const> attachments, std::span<SubpassInfo const> subpasses
@@ -284,13 +284,13 @@ auto createDependencies(
     .access_mask =
       VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
   };
-  auto input_scope = vk::Scope{
+  auto input_scope = Scope{
     .stage_mask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
     .access_mask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
   };
   for (auto [subpass_i, subpass] : subpasses | toy::enumerate) {
     auto dealWriteAttachment = [&](bool is_color, uint32 attach_i, Scope dst_scope) {
-      auto add_dependency = [&](uint32 src_subpass, vk::Scope src_scope) {
+      auto add_dependency = [&](uint32 src_subpass, Scope src_scope) {
         add_dependency_(src_subpass, subpass_i, src_scope, dst_scope, attach_i);
       };
       auto& last_write = is_color ? color_last_write : depst_last_write;
@@ -310,7 +310,7 @@ auto createDependencies(
       last_write[attach_i] = subpass_i;
     };
     auto dealReadAttachment = [&](uint32 attach_i, Scope dst_scope) {
-      auto add_dependency = [&](uint32 src_subpass, vk::Scope src_scope) {
+      auto add_dependency = [&](uint32 src_subpass, Scope src_scope) {
         add_dependency_(src_subpass, subpass_i, src_scope, dst_scope, attach_i);
       };
       if (color_last_write.contains(attach_i)) {
@@ -437,4 +437,4 @@ auto createRenderPass(
   return { rs::RenderPass{ render_pass_create_info }, attachment_sync_infos };
 }
 
-} // namespace rd::vk
+} // namespace rd

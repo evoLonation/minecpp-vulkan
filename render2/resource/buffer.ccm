@@ -1,15 +1,15 @@
-export module render.vk.buffer;
+export module render.buffer;
 
 import std;
 import toy;
 
 import <vulkan_config.h>;
-import render.vk.resource;
-import render.vk.memory;
-import render.vk.tracker;
-import render.vk.descriptor;
+import render.resource;
+import render.memory;
+import render.tracker;
+import render.descriptor;
 
-export namespace rd::vk {
+export namespace rd {
 
 auto createBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage) -> rs::Buffer;
 
@@ -86,13 +86,13 @@ private:
   DataType* _p_data;
 };
 
-class DeviceLocalBuffer : public vk::Buffer {
+class DeviceLocalBuffer : public Buffer {
 public:
   DeviceLocalBuffer(std::span<std::byte const> buffer_data, VkBufferUsageFlags usage);
 
 private:
   // todo: destroy after transfer
-  vk::StagingBuffer _staging_buffer;
+  StagingBuffer _staging_buffer;
 };
 
 void recordCopyBuffer(
@@ -102,4 +102,4 @@ void recordCopyBuffer(
   VkDeviceSize    buffer_size
 );
 
-} // namespace rd::vk
+} // namespace rd

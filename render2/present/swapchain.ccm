@@ -1,19 +1,19 @@
-export module render.vk.swapchain;
+export module render.swapchain;
 import std;
 import toy;
 
 import <vulkan_config.h>;
 
-import render.vk.tracker;
-import render.vk.device;
-import render.vk.resource;
-import render.vk.tool;
-import render.vk.sync;
-import render.vk.image;
-import render.vk.executor;
-import render.vk.reflections;
+import render.tracker;
+import render.device;
+import render.resource;
+import render.tool;
+import render.sync;
+import render.image;
+import render.executor;
+import render.reflections;
 
-export namespace rd::vk {
+export namespace rd {
 
 class Swapchain : public rs::Swapchain {
 public:
@@ -49,4 +49,4 @@ private:
   std::vector<rs::ImageView> _image_views;
 };
 
-} // namespace rd::vk
+} // namespace rd

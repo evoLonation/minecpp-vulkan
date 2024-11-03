@@ -1,17 +1,17 @@
 module;
 #include <toy.h>
-export module render.vk.descriptor;
+export module render.descriptor;
 import std;
 import toy;
 
-import render.vk.resource;
-import render.vk.executor;
-import render.vk.tracker;
-import render.vk.sync;
+import render.resource;
+import render.executor;
+import render.tracker;
+import render.sync;
 
 import <vulkan_config.h>;
 
-export namespace rd::vk {
+export namespace rd {
 
 class DescriptorSetLayout : public rs::DescriptorSetLayout {
 public:
@@ -127,4 +127,4 @@ private:
   std::vector<ResourceInfo> _resources;
 };
 
-} // namespace rd::vk
+} // namespace rd

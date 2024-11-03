@@ -1,14 +1,14 @@
-export module render.vk.image;
+export module render.image;
 
 import std;
 import toy;
 
 import <vulkan_config.h>;
-import render.vk.resource;
-import render.vk.memory;
-import render.vk.tracker;
+import render.resource;
+import render.memory;
+import render.tracker;
 
-export namespace rd::vk {
+export namespace rd {
 
 struct MipRange {
   uint32 base_level;
@@ -113,4 +113,4 @@ void blitImage(VkCommandBuffer cmdbuf, ImageBlit src, ImageBlit dst);
 
 auto computeMipExtents(VkExtent2D extent) -> std::vector<VkExtent2D>;
 
-} // namespace rd::vk
+} // namespace rd

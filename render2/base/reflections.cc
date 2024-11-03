@@ -1,10 +1,10 @@
-module render.vk.reflections;
+module render.reflections;
 import std;
 import toy;
 
 import <vulkan_config.h>;
 
-namespace rd::vk::refl {
+namespace rd::refl {
 
 #define CASE(x)                                                                                    \
   case x:                                                                                          \
@@ -117,4 +117,4 @@ auto sampleCount(VkSampleCountFlagBits sample_count) -> std::string_view {
 }
 
 #undef CASE
-} // namespace rd::vk::refl
+} // namespace rd::refl

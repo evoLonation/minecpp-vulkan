@@ -1,19 +1,19 @@
 module:
 - shader_code.ccm:
-    provide: render.vk.shader_code
+    provide: render.shader_code
 - descriptor.ccm:
-    provide: render.vk.descriptor
+    provide: render.descriptor
 - descriptor.cc:
-    implement: render.vk.descriptor
+    implement: render.descriptor
 - render_pass.ccm:
-    provide: render.vk.render_pass2
+    provide: render.render_pass2
 - pipeline.ccm:
-    provide: render.vk.pipeline
+    provide: render.pipeline
 - render_pass_create.cc:
-    implement: render.vk.render_pass2
+    implement: render.render_pass2
 - framebuffer.ccm:
-    provide: render.vk.framebuffer
+    provide: render.framebuffer
 - pipeline.cc:
-    implement: render.vk.pipeline
+    implement: render.pipeline
 - render_pass.cc:
-    implement: render.vk.render_pass2
+    implement: render.render_pass2

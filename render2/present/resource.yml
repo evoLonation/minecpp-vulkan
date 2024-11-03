@@ -1,11 +1,11 @@
 module:
 - surface.ccm:
-    provide: render.vk.surface
+    provide: render.surface
 - presentation.ccm:
-    provide: render.vk.presentation
+    provide: render.presentation
 - swapchain.ccm:
-    provide: render.vk.swapchain
+    provide: render.swapchain
 - presentation.cc:
-    implement: render.vk.presentation
+    implement: render.presentation
 - swapchain.cc:
-    implement: render.vk.swapchain
+    implement: render.swapchain

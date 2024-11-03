@@ -1,17 +1,17 @@
 module:
 - sync.ccm:
-    provide: render.vk.sync
+    provide: render.sync
 - sync.cc:
-    implement: render.vk.sync
+    implement: render.sync
 - queue_requestor.ccm:
-    provide: render.vk.queue_requestor
+    provide: render.queue_requestor
 - tracker.ccm:
-    provide: render.vk.tracker
+    provide: render.tracker
 - tracker.cc:
-    implement: render.vk.tracker
+    implement: render.tracker
 - executor.ccm:
-    provide: render.vk.executor
+    provide: render.executor
 - executor.cc:
-    implement: render.vk.executor
+    implement: render.executor
 - queue_requestor.cc:
-    implement: render.vk.queue_requestor
+    implement: render.queue_requestor

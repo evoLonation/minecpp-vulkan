@@ -61,7 +61,7 @@ def build_gen_shader(resources: list[Shader]) -> list[Module]:
                     Workspace.gen_shader.get_dir(), Root.relpath(shader.file) + ".ccm"
                 )
             )
-            module_names.append(f"render.vk.shader_code.{path.basename(shader.file)}")
+            module_names.append(f"render.shader_code.{path.basename(shader.file)}")
             shader_names.append(path.basename(shader.file))
         for shader, output, module in zip(resources, gen_files, module_names):
             ninja_writer.build(
@@ -86,7 +86,7 @@ def build_gen_shader(resources: list[Shader]) -> list[Module]:
             description="SHADERCODE TOTAL GEN $out",
         )
         total_output = path.join(Workspace.gen_shader.get_dir(), "shader_code.cc")
-        total_module_name = "render.vk.shader_code"
+        total_module_name = "render.shader_code"
         ninja_writer.build(
             rule=Rule.shader_code_total,
             outputs=total_output,

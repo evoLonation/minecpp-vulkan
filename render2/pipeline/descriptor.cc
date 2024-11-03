@@ -1,12 +1,12 @@
-module render.vk.descriptor;
+module render.descriptor;
 
 import std;
 
-import render.vk.device;
+import render.device;
 
 import <vulkan_config.h>;
 
-namespace rd::vk {
+namespace rd {
 
 DescriptorSetLayout::DescriptorSetLayout(std::vector<BindingInfo> infos)
   : _infos(std::move(infos)) {
@@ -187,4 +187,4 @@ ResourceSet::ResourceSet(DescriptorPool* pool, std::initializer_list<ResourceBin
   vkUpdateDescriptorSets(Device::getInstance(), write_infos.size(), write_infos.data(), 0, nullptr);
 }
 
-} // namespace rd::vk
+} // namespace rd

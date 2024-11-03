@@ -2,10 +2,10 @@ source:
 - loader.cc
 module:
 - tool.ccm:
-    provide: render.vk.tool
+    provide: render.tool
 - resource.ccm:
-    provide: render.vk.resource
+    provide: render.resource
 - reflections.ccm:
-    provide: render.vk.reflections
+    provide: render.reflections
 - reflections.cc:
-    implement: render.vk.reflections
+    implement: render.reflections

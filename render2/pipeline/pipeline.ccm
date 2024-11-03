@@ -1,11 +1,11 @@
-export module render.vk.pipeline;
+export module render.pipeline;
 
 import <vulkan_config.h>;
-import render.vk.resource;
+import render.resource;
 
 import std;
 
-export namespace rd::vk {
+export namespace rd {
 
 auto createShaderModule(std::string_view filename) -> rs::ShaderModule;
 auto createPipelineLayout(std::span<VkDescriptorSetLayout const> dset_layouts) //
@@ -39,4 +39,4 @@ struct PipelineInfo {
 
 auto createGraphicsPipeline(PipelineInfo info) -> rs::Pipeline;
 
-} // namespace rd::vk
+} // namespace rd

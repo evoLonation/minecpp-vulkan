@@ -1,12 +1,12 @@
 module;
 #include <toy.h>
 #include <vulkan_tool.h>
-module render.vk.sync;
+module render.sync;
 
 import <vulkan_config.h>;
-import render.vk.tool;
+import render.tool;
 
-namespace rd::vk {
+namespace rd {
 
 TimelineSemaphore::TimelineSemaphore(uint64 initial_value) {
   auto type_info = VkSemaphoreTypeCreateInfo{
@@ -201,4 +201,4 @@ auto Fence::isSignaled() -> bool {
   return result == VK_SUCCESS;
 }
 
-} // namespace rd::vk
+} // namespace rd

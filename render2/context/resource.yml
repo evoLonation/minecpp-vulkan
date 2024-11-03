@@ -1,9 +1,9 @@
 module:
 - instance.ccm:
-    provide: render.vk.instance
+    provide: render.instance
 - device.ccm:
-    provide: render.vk.device
+    provide: render.device
 - device.cc:
-    implement: render.vk.device
+    implement: render.device
 - instance.cc:
-    implement: render.vk.instance
+    implement: render.instance

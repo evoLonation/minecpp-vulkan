@@ -1,12 +1,12 @@
-export module render.vk.tool;
+export module render.tool;
 
-import render.vk.reflections;
+import render.reflections;
 
 import <vulkan_config.h>;
 import std;
 import toy;
 
-export namespace rd::vk {
+export namespace rd {
 
 auto checkVkResult(
   VkResult                        result,
@@ -106,9 +106,9 @@ template <typename T>
 concept CustomFormatter =
   std::is_same_v<T, VkExtensionProperties> || std::is_same_v<T, VkLayerProperties>;
 
-} // namespace rd::vk
+} // namespace rd
 
-export template <rd::vk::CustomFormatter T>
+export template <rd::CustomFormatter T>
 class std::formatter<T> : public std::formatter<std::string> {
 public:
   template <typename FormatContext, typename... Args>
