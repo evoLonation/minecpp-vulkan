@@ -130,7 +130,7 @@ int main() {
     auto vertex_buffer = rd::VertexBuffer{ vertexes };
     auto index_buffer = rd::IndexBuffer{ indices };
 
-    auto render_pass = rd::RenderPassManager{ attachment_infos, subpass_infos };
+    auto render_pass = rd::RenderPassPipeline{ attachment_infos, subpass_infos };
     auto dset_model = rd::ResourceSet{ &dset_pool_model, { &model_uniform } };
     auto dset_camera = rd::ResourceSet{ &dset_pool_camera, { &view_uniform, &proj_uniform } };
     auto dset_texture = rd::ResourceSet{ &dset_pool_texture, { &sampled_texture } };
