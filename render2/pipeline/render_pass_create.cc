@@ -437,7 +437,7 @@ RenderPass::RenderPass(
   }
   rs::RenderPass::operator=({ render_pass_create_info });
   _attachment_syncs = std::move(attachment_sync_infos);
-  _executor = &CommandExecutorManager::getInstance()[FamilyType::GRAPHICS];
+  _executor = &ExecutorManager::getInstance()[FamilyType::GRAPHICS];
 }
 
 } // namespace rd

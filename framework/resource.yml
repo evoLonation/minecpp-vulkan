@@ -5,3 +5,9 @@ module:
     provide: action
 - input_convert.ccm:
     provide: input.convert
+- loop.ccm:
+    provide: loop
+- context.ccm:
+    provide: context
+- context.cc:
+    implement: context

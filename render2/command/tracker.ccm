@@ -28,12 +28,12 @@ struct FamilyTransferRecorder {
     return batch;
   }
   auto executeRelease(auto batch = CommandBatch{}) -> Waitable {
-    auto& release_executor = CommandExecutorManager::getInstance()[release_family];
+    auto& release_executor = ExecutorManager::getInstance()[release_family];
     batch.recorder = std::move(release);
     return release_executor.submit(batch);
   }
   auto executeRelease() -> Waitable {
-    auto& release_executor = CommandExecutorManager::getInstance()[release_family];
+    auto& release_executor = ExecutorManager::getInstance()[release_family];
     return release_executor.submit(release);
   }
 };
@@ -347,7 +347,7 @@ void CommonWaitableTracker<IsImage>::waitIdle(uint64 nano_timeout) {
   };
   auto  ret = this->generateRecorder(src_scope.value(), dst_scope, this->getNowFamily(), layout);
   auto& barrier = std::get<BarrierRecorder>(ret);
-  auto& executor = CommandExecutorManager::getInstance()[this->getNowFamily()];
+  auto& executor = ExecutorManager::getInstance()[this->getNowFamily()];
   executor.submit(barrier).wait(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, nano_timeout);
   _idle = true;
 }

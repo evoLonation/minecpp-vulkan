@@ -1,10 +1,5 @@
 include_dir:
 - base
-module:
-- context.ccm:
-    provide: render.context
-- context.cc:
-    implement: render.context
 sub_dir:
 - base
 - context

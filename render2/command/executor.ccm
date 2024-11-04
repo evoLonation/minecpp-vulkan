@@ -177,9 +177,9 @@ enum class FamilyType {
 
 // template <typename EnumT>
 using EnumT = FamilyType;
-class CommandExecutorManager : public toy::ProactiveSingleton<CommandExecutorManager> {
+class ExecutorManager : public toy::ProactiveSingleton<ExecutorManager> {
 public:
-  CommandExecutorManager(std::span<std::pair<EnumT, FamilyQueueCount> const> family_infos);
+  ExecutorManager(std::span<std::pair<EnumT, FamilyQueueCount> const> family_infos);
 
   auto getExecutor(uint32 family, uint32 queue_index = 0) -> CommandExecutor& {
     return _executors.at(family).at(queue_index);
@@ -192,7 +192,7 @@ public:
 
   auto operator[](auto... args) -> CommandExecutor& { return getExecutor(args...); }
 
-  UNCOPYABLE_MOVEABLE(CommandExecutorManager);
+  UNCOPYABLE_MOVEABLE(ExecutorManager);
 
 private:
   TimelineSemaphorePool                                   _sema_pool;

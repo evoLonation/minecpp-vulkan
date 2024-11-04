@@ -17,7 +17,7 @@ import render.descriptor;
 import render.buffer;
 import render.framebuffer;
 import render.presentation;
-import render.context;
+import context;
 import render.sync;
 import render.tracker;
 import render.sampler;
@@ -35,15 +35,15 @@ int main() {
     toy::test_Generator::test();
     toy::test_EnumSet::test();
     trans::test_trans();
-    auto  ctx = rd::Context{ "hello vulkan", 1920, 1080 };
+    auto  ctx = ctx::Context{ "hello vulkan", 1920, 1080 };
     auto& input = input::InputProcessor::getInstance();
-    auto  gui_ctx = gui::Context{};
+    auto& gui_ctx = gui::Context::getInstance();
 
     auto depth_format = VK_FORMAT_D32_SFLOAT;
     auto sample_count = VK_SAMPLE_COUNT_8_BIT;
     TOY_ASSERT((rd::ImageContext::getInstance().getAvailableSampleCounts() & sample_count) > 0);
 
-    auto  presentation = rd::Presentation{ ctx._surface->get() };
+    auto& presentation = rd::Presentation::getInstance();
     auto& swapchain = presentation.getSwapchain();
     toy::throwf(swapchain.isValid(), "the swapchain is not valid");
 

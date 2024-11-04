@@ -2,6 +2,7 @@ export module render.queue_requestor;
 
 import <vulkan_config.h>;
 import render.device;
+import render.executor;
 
 import std;
 
@@ -14,23 +15,49 @@ struct QueueFamilyCheckContext {
 };
 
 struct QueueFamilyRequirement {
+  FamilyType                                   family;
   std::function<bool(QueueFamilyCheckContext)> checker;
   uint32                                       queue_count;
 };
 
+auto requestGraphicQueue(const QueueFamilyCheckContext& ctx) -> bool {
+  return ctx.properties.queueFlags & VK_QUEUE_GRAPHICS_BIT;
+}
+auto requestPresentQueue(const QueueFamilyCheckContext& ctx, VkSurfaceKHR surface) -> bool {
+  VkBool32 presentSupport = VK_FALSE;
+  vkGetPhysicalDeviceSurfaceSupportKHR(ctx.device, ctx.index, surface, &presentSupport);
+  return presentSupport == VK_TRUE;
+}
+auto requestTransferQueue(const QueueFamilyCheckContext& ctx) -> bool {
+  // 支持 graphics 和 compute operation 的 queue 也必定支持 transfer operation
+  return ctx.properties.queueFlags &
+         (VK_QUEUE_TRANSFER_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_GRAPHICS_BIT);
+}
+
 class QueueRequestor {
 public:
-  QueueRequestor(std::span<QueueFamilyRequirement const> requirements)
-    : _requirements(requirements | ranges::to<std::vector>()) {}
+  QueueRequestor(VkSurfaceKHR surface) {
+    using namespace std::placeholders;
+    _requirements = {
+      { FamilyType::GRAPHICS, requestGraphicQueue, 1 },
+      { FamilyType::PRESENT, std::bind(requestPresentQueue, _1, surface), 1 },
+      { FamilyType::TRANSFER, requestTransferQueue, 1 },
+    };
+  }
   auto checkPdevice(DeviceCapabilityBuilder& request) -> bool;
-  // call after Device is constructed
-  auto getFamilyQueueCounts(Device const& device) -> std::span<FamilyQueueCount const> {
-    return _pdevice2family_queue_counts[device.getPdevice().get()];
+  /**
+   * @brief call after @ref rd::Device is constructed
+   */
+  auto createExecutorManager() -> std::unique_ptr<ExecutorManager> {
+    return std::make_unique<ExecutorManager>(
+      _family_infos[rd::Device::getInstance().getPdevice().get()]
+    );
   }
 
 private:
-  std::vector<QueueFamilyRequirement>                                 _requirements;
-  std::unordered_map<VkPhysicalDevice, std::vector<FamilyQueueCount>> _pdevice2family_queue_counts;
+  std::vector<QueueFamilyRequirement> _requirements;
+  std::unordered_map<VkPhysicalDevice, std::vector<std::pair<FamilyType, FamilyQueueCount>>>
+    _family_infos;
 };
 
 } // namespace rd

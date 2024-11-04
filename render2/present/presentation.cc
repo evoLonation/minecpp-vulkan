@@ -14,7 +14,7 @@ namespace rd {
 
 Presentation::Presentation(VkSurfaceKHR surface) {
   _surface = surface;
-  _present_executor = &CommandExecutorManager::getInstance()[FamilyType::PRESENT];
+  _present_executor = &ExecutorManager::getInstance()[FamilyType::PRESENT];
   if (!recreate()) {
     toy::debugf("create swapchain failed when construct presentation");
   }
@@ -112,7 +112,7 @@ auto Presentation::vkPresent(uint32 image_index, VkSemaphore wait_sema, VkFence 
     .pImageIndices = &image_index,
   };
   auto result = vkQueuePresentKHR(
-    CommandExecutorManager::getInstance()[FamilyType::PRESENT].getQueue(), &present_info
+    ExecutorManager::getInstance()[FamilyType::PRESENT].getQueue(), &present_info
   );
   CHECK_VK_RESULT(result, { VK_SUCCESS, VK_ERROR_OUT_OF_DATE_KHR, VK_SUBOPTIMAL_KHR });
   if (result != VK_SUCCESS) {

@@ -289,7 +289,7 @@ auto CommandExecutor::getSubmitInfo(CommandBatch const& batch) -> std::pair<Subm
   };
 }
 
-CommandExecutorManager::CommandExecutorManager(
+ExecutorManager::ExecutorManager(
   std::span<std::pair<EnumT, FamilyQueueCount> const> family_infos
 ) {
   for (auto& [family, info] : family_infos) {

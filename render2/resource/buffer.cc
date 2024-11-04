@@ -23,7 +23,7 @@ DeviceLocalBuffer::DeviceLocalBuffer(
     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
   }, _staging_buffer{buffer_data} {
 
-  auto& copy_executor = CommandExecutorManager::getInstance()[FamilyType::TRANSFER];
+  auto& copy_executor = ExecutorManager::getInstance()[FamilyType::TRANSFER];
   copy_executor.submit([&](VkCommandBuffer cmdbuf) {
     recordCopyBuffer(cmdbuf, _staging_buffer, *this, buffer_data.size());
   });

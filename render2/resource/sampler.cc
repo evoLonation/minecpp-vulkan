@@ -92,8 +92,8 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
   auto sampler = createSampler(_max_anisotropy);
   auto texture =
     SampledTexture{ std::move(staging_buffer), std::move(image), std::move(sampler), mip_range };
-  auto& copy_executor = CommandExecutorManager::getInstance()[FamilyType::TRANSFER];
-  auto& graphics_executor = CommandExecutorManager::getInstance()[FamilyType::GRAPHICS];
+  auto& copy_executor = ExecutorManager::getInstance()[FamilyType::TRANSFER];
+  auto& graphics_executor = ExecutorManager::getInstance()[FamilyType::GRAPHICS];
   auto  family_transfer =
     FamilyTransferInfo{ copy_executor.getFamily(), graphics_executor.getFamily() };
 

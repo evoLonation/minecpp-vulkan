@@ -73,13 +73,12 @@ auto QueueRequestor::checkPdevice(DeviceCapabilityBuilder& request) -> bool {
     }
   }
   if (auto res = hungarian(graph, family_count); res.has_value()) {
-    request.family_queue_counts.append_range(
-      res.value() | toy::enumerate | views::transform([&](auto pair) {
-        auto& [index, family] = pair;
-        return FamilyQueueCount{ static_cast<uint32>(family), _requirements[index].queue_count };
-      })
-    );
-    _pdevice2family_queue_counts[pdevice.get()] = request.family_queue_counts;
+    for (auto [index, family_i] : res.value() | toy::enumerate) {
+      auto family_queue_count =
+        FamilyQueueCount{ static_cast<uint32>(family_i), _requirements[index].queue_count };
+      _family_infos[pdevice.get()].emplace_back(_requirements[index].family, family_queue_count);
+      request.family_queue_counts.push_back(family_queue_count);
+    }
     return true;
   } else {
     return false;
