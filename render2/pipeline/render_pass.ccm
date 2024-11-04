@@ -46,15 +46,15 @@ struct AttachmentSyncInfo {
 
 class RenderPass : public rs::RenderPass {
 public:
+  RenderPass() = default;
   RenderPass(std::span<AttachmentInfo const> attachments, std::span<SubpassInfo const> subpasses);
   auto getSyncInfos() const -> std::span<AttachmentSyncInfo const> { return _attachment_syncs; }
   auto getExecutor() -> CommandExecutor& { return *_executor; }
   void record(
-    std::vector<CommandBatch>            batches,
-    std::span<FrameImageManager*>        images,
-    std::vector<VkClearValue>            clear_values,
-    VkExtent2D                           extent,
-    std::function<void(VkCommandBuffer)> pipeline_recorder
+    std::vector<CommandBatch>                        batches,
+    std::span<FrameImageManager* const>              images,
+    std::vector<VkClearValue>                        clear_values,
+    std::function<void(VkCommandBuffer, VkExtent2D)> pipeline_recorder
   );
 
 private:
@@ -125,7 +125,11 @@ struct PipelineDrawInfo {
   PipelineDrawRecorder recorder;
 };
 void recordPipeline(
-  VkCommandBuffer cmdbuf, VkExtent2D extent, std::vector<PipelineDrawInfo> pipeline_infos
+  VkCommandBuffer      cmdbuf,
+  VkExtent2D           extent,
+  VkPipeline           pipeline,
+  VkPipelineLayout     layout,
+  PipelineDrawRecorder recorder
 );
 
 struct SubpassPipelineInfo {
@@ -155,9 +159,7 @@ public:
   void setRecorder(uint32 index, PipelineDrawRecorder recorder) {
     _recorders[index] = std::move(recorder);
   }
-  void recordDraw(
-    std::span<FrameImageManager*> images, std::vector<VkClearValue> clear_values, VkExtent2D extent
-  );
+  void recordDraw(std::span<FrameImageManager*> images, std::vector<VkClearValue> clear_values);
 
 private:
   RenderPass                        _render_pass;

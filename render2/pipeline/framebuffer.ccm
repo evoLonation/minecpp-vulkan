@@ -33,7 +33,8 @@ public:
   FramebufferPool() : _use_counter(0) {}
 
   auto getFramebuffer(VkRenderPass render_pass, std::span<FrameImageManager* const> images)
-    -> VkFramebuffer {
+    -> std::pair<VkFramebuffer, VkExtent2D> {
+    check();
     auto extent = images[0]->getExtent();
     auto eq_extent = [](auto x, auto y) { return x.width == y.width && x.height == y.height; };
     TOY_ASSERT(ranges::all_of(images, [&](auto x) { return eq_extent(x->getExtent(), extent); }));
@@ -43,8 +44,9 @@ public:
     }
     if (auto it = _image_views2framebuffer.find(image_views);
         it != _image_views2framebuffer.end()) {
-      return it->second;
+      return { it->second, extent };
     }
+    check();
     auto framebuffer = rs::Framebuffer{ VkFramebufferCreateInfo{
       .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
       .renderPass = render_pass,
@@ -77,7 +79,8 @@ public:
         _image_view2image_views[image_view].erase(image_views_ptr);
       }
     }
-    return handle;
+    check();
+    return { handle, extent };
   }
 
 private:
@@ -100,10 +103,41 @@ private:
   friend toy::ProactiveSingleton<FramebufferPool>;
   friend FrameImageManager;
 
+  void check(std::source_location loc = std::source_location::current()) {
+    // toy::debugf(loc, "framebuffers: {}", _framebuffers.size());
+    TOY_CHECK(
+      (views::join(_image_view2framebuffers | views::values) | ranges::to<std::set>()).size() ==
+        _framebuffers.size(),
+      (views::join(_image_view2framebuffers | views::values) | ranges::to<std::set>()).size(),
+      _framebuffers.size(),
+      loc
+    );
+    TOY_CHECK(
+      (views::join(_image_view2image_views | views::values) | ranges::to<std::set>()).size() ==
+        _framebuffers.size(),
+      (views::join(_image_view2image_views | views::values) | ranges::to<std::set>()).size(),
+      _framebuffers.size(),
+      loc
+    );
+    TOY_CHECK(
+      _counter2image_views.size() == _framebuffers.size(),
+      _counter2image_views.size(),
+      _framebuffers.size(),
+      loc
+    );
+    TOY_CHECK(
+      _image_views2counter.size() == _framebuffers.size(),
+      _image_views2counter.size(),
+      _framebuffers.size(),
+      loc
+    );
+  }
+
   /**
    * @brief must ensure the relative framebuffer is already idle
    */
   void destroyRelativeFramebuf(FrameImageManager& image) {
+    check();
     if (auto it = _image_view2framebuffers.find(image.getImageView());
         it != _image_view2framebuffers.end()) {
       auto framebuffers = _image_view2framebuffers.extract(it).mapped();
@@ -117,6 +151,7 @@ private:
         _counter2image_views.erase(_image_views2counter.extract(image_views).mapped());
       }
     }
+    check();
   }
 };
 

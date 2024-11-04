@@ -27,6 +27,7 @@ import input;
 import model;
 import glfw;
 import transform;
+import gui;
 
 int main() {
   try {
@@ -36,6 +37,7 @@ int main() {
     trans::test_trans();
     auto  ctx = rd::Context{ "hello vulkan", 1920, 1080 };
     auto& input = input::InputProcessor::getInstance();
+    auto  gui_ctx = gui::Context{};
 
     auto depth_format = VK_FORMAT_D32_SFLOAT;
     auto sample_count = VK_SAMPLE_COUNT_8_BIT;
@@ -213,7 +215,9 @@ int main() {
           context.image_manager,
           &framebuffers.depth_image,
         };
-        render_pass.recordDraw(attachments, clear_values, swapchain.getExtent());
+        render_pass.recordDraw(attachments, clear_values);
+        gui_ctx.draw();
+        gui_ctx.recordDraw(context.image_manager);
         presentation.present(context.image_index);
       }
       count++;

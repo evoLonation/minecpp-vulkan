@@ -33,13 +33,12 @@ void recordRenderPass(
 }
 
 void RenderPass::record(
-  std::vector<CommandBatch>            batches,
-  std::span<FrameImageManager*>        images,
-  std::vector<VkClearValue>            clear_values,
-  VkExtent2D                           extent,
-  std::function<void(VkCommandBuffer)> pipeline_recorder
+  std::vector<CommandBatch>                        batches,
+  std::span<FrameImageManager* const>              images,
+  std::vector<VkClearValue>                        clear_values,
+  std::function<void(VkCommandBuffer, VkExtent2D)> pipeline_recorder
 ) {
-  auto framebuffer = FramebufferPool::getInstance().getFramebuffer(get(), images);
+  auto [framebuffer, extent] = FramebufferPool::getInstance().getFramebuffer(get(), images);
 
   auto waitables_keep_lifetime = std::list<Waitable>{};
   for (auto [image, info] : views::zip(images, getSyncInfos())) {
@@ -54,9 +53,11 @@ void RenderPass::record(
       batches.push_back(ctx->toAcquireBatch(&waitables_keep_lifetime.back()));
     }
   }
-
+  using namespace std::placeholders;
   batches.push_back(CommandBatch{ [&](VkCommandBuffer cmdbuf) {
-    recordRenderPass(cmdbuf, get(), framebuffer, extent, clear_values, pipeline_recorder);
+    recordRenderPass(
+      cmdbuf, get(), framebuffer, extent, clear_values, std::bind(pipeline_recorder, _1, extent)
+    );
   } });
   _executor->submit(batches);
 
@@ -177,13 +178,14 @@ RenderPassPipeline::RenderPassPipeline(
 }
 
 void RenderPassPipeline::recordDraw(
-  std::span<FrameImageManager*> images, std::vector<VkClearValue> clear_values, VkExtent2D extent
+  std::span<FrameImageManager*> images, std::vector<VkClearValue> clear_values
 ) {
   auto& executor = _render_pass.getExecutor();
 
   auto drawers = std::vector<PipelineDrawer>{};
   for (auto& info : _pipelines) {
-    drawers.push_back(PipelineDrawer::forGetResources(info.getPipeline(), info.getLayout(), extent)
+    drawers.push_back(
+      PipelineDrawer::forGetResources(info.getPipeline(), info.getLayout(), images[0]->getExtent())
     );
   }
   auto batches = std::vector<CommandBatch>{};
@@ -278,12 +280,12 @@ void RenderPassPipeline::recordDraw(
       }
     }
   }
-  auto pipeline_recorder = [&](VkCommandBuffer cmdbuf) {
+  auto pipeline_recorder = [&](VkCommandBuffer cmdbuf, VkExtent2D extent) {
     for (auto [pipeline, recorder] : views::zip(_pipelines, _recorders)) {
       recordPipeline(cmdbuf, extent, pipeline.getPipeline(), pipeline.getLayout(), recorder);
     }
   };
-  _render_pass.record(batches, images, clear_values, extent, pipeline_recorder);
+  _render_pass.record(batches, images, clear_values, pipeline_recorder);
 }
 
 } // namespace rd

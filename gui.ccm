@@ -1,16 +1,21 @@
+module;
+#include <toy.h>
 export module gui;
 
 import std;
 import toy;
 import glm;
-import "vulkan_config.h";
-import "imgui_config.h";
-import render.context;
-import render.drawer;
-import render.loop;
-import vulkan.resource;
-import vulkan.descriptor;
-import vulkan.command;
+import glfw;
+
+import <vulkan_config.h>;
+import <imgui_config.h>;
+
+import render.resource;
+import render.device;
+import render.executor;
+import render.render_pass;
+import render.framebuffer;
+import render.swapchain;
 
 export namespace gui {
 
@@ -149,13 +154,51 @@ public:
 
 /**
  * @brief must call after input processor
- *
  */
-class Context : public toy::ProactiveSingleton<Context>,
-                private rd::DrawRecorder,
-                private toy::HookLoader<Context, rd::DrawRecorder>,
-                private rd::LoopActionLoader<rd::LoopOrder::GUI_RENDER> {
-  friend class DrawerLoader;
+class Context : public toy::ProactiveSingleton<Context> {
+public:
+  Context() {
+    auto window = glfw::Window::getInstance().get();
+    auto instance = rd::rs::Instance::getInstance().get();
+    auto pdevice = rd::Device::getInstance().getPdevice().get();
+    auto device = rd::Device::getInstance().get();
+    auto sample_count = VK_SAMPLE_COUNT_1_BIT;
+    auto attachment_info = rd::AttachmentInfo{
+      .format = rd::Swapchain::getFormat(),
+      .sample_count = sample_count,
+      .keep_old_content = true,
+      .keep_new_content = true,
+    };
+    auto subpass_info = rd::SubpassInfo{ .colors = { 0 } };
+    auto render_pass = rd::RenderPass{ std::array{ attachment_info }, std::array{ subpass_info } };
+    auto subpass_i = uint32{ 0 };
+    auto family_i = render_pass.getExecutor().getFamily();
+    auto queue = render_pass.getExecutor().getQueue();
+    auto pool_sizes = std::array{
+      VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
+    };
+    auto desc_pool = rd::rs::DescriptorPool{ VkDescriptorPoolCreateInfo{
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+      .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+      .maxSets = 1,
+      .poolSizeCount = static_cast<uint32>(pool_sizes.size()),
+      .pPoolSizes = pool_sizes.data(),
+    } };
+    _desc_pool = std::move(desc_pool);
+    _render_pass = std::move(render_pass);
+    init(
+      window,
+      instance,
+      pdevice,
+      device,
+      family_i,
+      queue,
+      _desc_pool,
+      _render_pass,
+      subpass_i,
+      sample_count
+    );
+  }
 
 private:
   static constexpr auto _base_font_size = 13;
@@ -164,23 +207,24 @@ private:
   static constexpr auto _min_scale = 0.5f;
   static constexpr auto _default_font_size = static_cast<int>(_base_font_size * _max_scale / 2);
 
-  toy::RefContainer<Drawer>         _drawers;
-  toy::RefContainer<toy::Generator> _co_drawers;
+  rd::rs::DescriptorPool _desc_pool;
+  rd::RenderPass         _render_pass;
 
   float    _scale;
   ImGuiIO* _io;
 
-  vk::DescriptorPool _dp_pool;
-
-private:
-  friend toy::HookLoader<Context, rd::DrawRecorder>;
-  auto getContainer() -> toy::RefContainer<rd::DrawRecorder>& {
-    return rd::Drawer::StageContainer<rd::DrawStage::GUI>::getInstance();
-  }
-
-public:
-  Context() {
-    auto& ctx = rd::Context::getInstance();
+  void init(
+    GLFWwindow*           window,
+    VkInstance            instance,
+    VkPhysicalDevice      pdevice,
+    VkDevice              device,
+    uint32                family_i,
+    VkQueue               queue,
+    VkDescriptorPool      desc_pool,
+    VkRenderPass          render_pass,
+    uint32                subpass_i,
+    VkSampleCountFlagBits sample_count
+  ) {
     // imgui 准备阶段 :
     // call ImGui::CreateContext()
     // call ImGui_ImplXXXX_Init() for each backend
@@ -188,34 +232,26 @@ public:
     ImGui::CreateContext();
     // install_callbacks: 如果为true，则imgui会设置glfw的相关callback,
     // 原来的callback（如果有）的函数指针会保存，imgui的callback会先调用
-    ImGui_ImplGlfw_InitForVulkan(ctx.window, true);
+    ImGui_ImplGlfw_InitForVulkan(window, true);
     ImGui_ImplVulkan_InitInfo init_info = {};
-    init_info.Instance = ctx.instance.instance;
-    init_info.PhysicalDevice = ctx.pdevice_info.device;
-    init_info.Device = ctx.device;
-    init_info.QueueFamily = ctx.graphic_ctx.family_index;
-    init_info.Queue = ctx.graphic_ctx.queues[0];
+    init_info.Instance = instance;
+    init_info.PhysicalDevice = pdevice;
+    init_info.Device = device;
+    init_info.QueueFamily = family_i;
+    init_info.Queue = queue;
     init_info.PipelineCache = VK_NULL_HANDLE;
-    _dp_pool = vk::createDescriptorPool(
-      ctx.device,
-      1,
-      std::array{
-        VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
-      }
-    );
-    init_info.DescriptorPool = _dp_pool.get();
-    init_info.RenderPass = ctx.render_pass;
-    init_info.Subpass = 0;
+    init_info.DescriptorPool = desc_pool;
+    init_info.RenderPass = render_pass;
+    init_info.Subpass = subpass_i;
     init_info.MinImageCount = 2;
     init_info.ImageCount = 2;
-    init_info.MSAASamples = ctx.sample_count.value_or(VK_SAMPLE_COUNT_1_BIT);
+    init_info.MSAASamples = sample_count;
     init_info.Allocator = nullptr;
     init_info.CheckVkResultFn = [](VkResult err) {
-      if (err == 0)
+      if (err == VK_SUCCESS) {
         return;
-      toy::debugf("[vulkan] Error: VkResult = {}", (int)err);
-      if (err < 0)
-        abort();
+      }
+      toy::debugf("[vulkan] Error: VkResult = {}", err);
     };
     ImGui_ImplVulkan_Init(&init_info);
 
@@ -227,6 +263,8 @@ public:
     _io->Fonts->AddFontFromFileTTF("TIMES.TTF", _default_font_size);
     _io->FontGlobalScale = _scale / (_default_font_size * 1.0f / _base_font_size);
   }
+
+public:
   ~Context() {
     // 销毁阶段:
     // call ImGui_ImplXXXX_Shutdown() for each backend
@@ -248,27 +286,21 @@ public:
 
     slider("scale ratio", _scale, _min_scale, _max_scale);
     _io->FontGlobalScale = _scale / (_default_font_size * 1.0f / _base_font_size);
-    for (auto* drawer : _co_drawers) {
-      drawer->next();
-    }
+    // for (auto* drawer : _co_drawers) {
+    //   drawer->next();
+    // }
     ImGui::End();
-    for (auto* drawer : _drawers) {
-      drawer->draw();
-    }
+    // for (auto* drawer : _drawers) {
+    //   drawer->draw();
+    // }
     ImGui::Render();
   }
-  void record(VkCommandBuffer cmdbuf, int in_flight_index) override {
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmdbuf);
+  void recordDraw(rd::FrameImageManager* image) {
+    auto recorder = [&](VkCommandBuffer cmdbuf, auto) {
+      ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmdbuf);
+    };
+    _render_pass.record({}, std::array{ image }, {}, recorder);
   }
-
-  void loopAction(uint32 _) override { draw(); }
-
-  operator toy::RefContainer<toy::Generator>&() { return _co_drawers; }
-};
-
-class DrawerLoader : public Drawer, public toy::HookLoader<DrawerLoader, Drawer> {
-  friend toy::HookLoader<DrawerLoader, Drawer>;
-  auto getContainer() -> toy::RefContainer<Drawer>& { return Context::getInstance()._drawers; }
 };
 
 } // namespace gui

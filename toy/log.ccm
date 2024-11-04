@@ -1,3 +1,5 @@
+module;
+#include <toy.h>
 export module toy.log;
 
 import toy.trait;
@@ -202,3 +204,5 @@ auto nextLineIfExist(std::string current_line, std::string_view next_line) -> st
 } // namespace macro
 
 } // namespace toy
+
+CUSTOM_FORMATTER(std::source_location, toy::formatSourceLocation);
