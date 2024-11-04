@@ -17,3 +17,5 @@ module:
     implement: render.pipeline
 - render_pass.cc:
     implement: render.render_pass
+- framebuffer.cc:
+    implement: render.framebuffer

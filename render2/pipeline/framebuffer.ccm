@@ -33,55 +33,7 @@ public:
   FramebufferPool() : _use_counter(0) {}
 
   auto getFramebuffer(VkRenderPass render_pass, std::span<FrameImageManager* const> images)
-    -> std::pair<VkFramebuffer, VkExtent2D> {
-    check();
-    auto extent = images[0]->getExtent();
-    auto eq_extent = [](auto x, auto y) { return x.width == y.width && x.height == y.height; };
-    TOY_ASSERT(ranges::all_of(images, [&](auto x) { return eq_extent(x->getExtent(), extent); }));
-    auto image_views = std::vector<VkImageView>{};
-    for (auto* image : images) {
-      image_views.push_back(image->getImageView());
-    }
-    if (auto it = _image_views2framebuffer.find(image_views);
-        it != _image_views2framebuffer.end()) {
-      return { it->second, extent };
-    }
-    check();
-    auto framebuffer = rs::Framebuffer{ VkFramebufferCreateInfo{
-      .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-      .renderPass = render_pass,
-      .attachmentCount = static_cast<uint32>(image_views.size()),
-      .pAttachments = image_views.data(),
-      .width = extent.width,
-      .height = extent.height,
-      .layers = 1,
-    } };
-    auto handle = framebuffer.get();
-    _framebuffers.emplace(handle, std::move(framebuffer));
-    for (auto image_view : image_views) {
-      _image_view2framebuffers[image_view].insert(handle);
-    }
-    auto image_views_ptr =
-      &_image_views2framebuffer.emplace(std::move(image_views), handle).first->first;
-    for (auto image_view : *image_views_ptr) {
-      _image_view2image_views[image_view].insert(image_views_ptr);
-    }
-    _counter2image_views.emplace(_use_counter, image_views_ptr);
-    _image_views2counter.emplace(image_views_ptr, _use_counter);
-    _use_counter++;
-    if (_counter2image_views.size() > _max_capacity) {
-      auto image_views_ptr = _counter2image_views.extract(_counter2image_views.begin()).mapped();
-      _image_views2counter.erase(image_views_ptr);
-      auto framebuffer = _image_views2framebuffer.extract(*image_views_ptr).mapped();
-      _framebuffers.erase(framebuffer);
-      for (auto image_view : *image_views_ptr) {
-        _image_view2framebuffers[image_view].erase(framebuffer);
-        _image_view2image_views[image_view].erase(image_views_ptr);
-      }
-    }
-    check();
-    return { handle, extent };
-  }
+    -> std::pair<VkFramebuffer, VkExtent2D>;
 
 private:
   // _image_views2framebuffer cannot be unordered map because:
@@ -89,13 +41,12 @@ private:
   // 2. key(std::vector<VkImageView>) is not hashable
   std::unordered_map<VkFramebuffer, rs::Framebuffer>                 _framebuffers;
   std::map<std::vector<VkImageView>, VkFramebuffer>                  _image_views2framebuffer;
+  std::unordered_map<VkFramebuffer, std::vector<VkImageView> const*> _framebuffer2image_views;
   std::unordered_map<VkImageView, std::unordered_set<VkFramebuffer>> _image_view2framebuffers;
-  std::unordered_map<VkImageView, std::set<std::vector<VkImageView> const*>>
-    _image_view2image_views;
 
   // LRU: removed longest time unused framebuffer
-  std::map<uint64, std::vector<VkImageView> const*>           _counter2image_views;
-  std::unordered_map<std::vector<VkImageView> const*, uint64> _image_views2counter;
+  std::map<uint64, VkFramebuffer>           _counter2framebuffer;
+  std::unordered_map<VkFramebuffer, uint64> _framebuffer2counter;
 
   uint64                _use_counter;
   static constexpr auto _max_capacity = 10;
@@ -103,64 +54,10 @@ private:
   friend toy::ProactiveSingleton<FramebufferPool>;
   friend FrameImageManager;
 
-  void check(std::source_location loc = std::source_location::current()) {
-    // toy::debugf(loc, "framebuffers: {}", _framebuffers.size());
-    TOY_CHECK(
-      (views::join(_image_view2framebuffers | views::values) | ranges::to<std::set>()).size() ==
-        _framebuffers.size(),
-      (views::join(_image_view2framebuffers | views::values) | ranges::to<std::set>()).size(),
-      _framebuffers.size(),
-      loc
-    );
-    TOY_CHECK(
-      (views::join(_image_view2image_views | views::values) | ranges::to<std::set>()).size() ==
-        _framebuffers.size(),
-      (views::join(_image_view2image_views | views::values) | ranges::to<std::set>()).size(),
-      _framebuffers.size(),
-      loc
-    );
-    TOY_CHECK(
-      _counter2image_views.size() == _framebuffers.size(),
-      _counter2image_views.size(),
-      _framebuffers.size(),
-      loc
-    );
-    TOY_CHECK(
-      _image_views2counter.size() == _framebuffers.size(),
-      _image_views2counter.size(),
-      _framebuffers.size(),
-      loc
-    );
-  }
+  void check(std::source_location loc = std::source_location::current());
 
-  /**
-   * @brief must ensure the relative framebuffer is already idle
-   */
-  void destroyRelativeFramebuf(FrameImageManager& image) {
-    check();
-    if (auto it = _image_view2framebuffers.find(image.getImageView());
-        it != _image_view2framebuffers.end()) {
-      auto framebuffers = _image_view2framebuffers.extract(it).mapped();
-      for (auto framebuffer : framebuffers) {
-        _framebuffers.erase(framebuffer);
-      }
-      auto node = _image_view2image_views.extract(image.getImageView());
-      TOY_ASSERT(!node.empty());
-      for (auto image_views : node.mapped()) {
-        _image_views2framebuffer.erase(*image_views);
-        _counter2image_views.erase(_image_views2counter.extract(image_views).mapped());
-      }
-    }
-    check();
-  }
+  void destroyRelativeFramebuf(FrameImageManager& image);
 };
-
-void FrameImageManager::beforeDestroy() {
-  if (valid()) {
-    getTracker().waitIdle();
-    FramebufferPool::getInstance().destroyRelativeFramebuf(*this);
-  }
-}
 
 struct AttachmentFormat {
   AttachmentFormat(VkFormat format) : _format(format) {
