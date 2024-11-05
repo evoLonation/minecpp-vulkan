@@ -16,7 +16,7 @@ sub_dir:
 - include
 - third_party
 - toy
-- render2
+- render
 - shader
 - framework
 target:
