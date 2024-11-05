@@ -1,25 +1,65 @@
 export module loop;
 
 import std;
+import toy;
+
 import glfw;
 import input;
 
 import <glfw_config.h>;
 
+import render.presentation;
+
 export namespace loop {
 
-class ActionLoader {
-public:
+enum Stage {
+  BEFORE_RENDER,
+  RENDER,
+  AFTER_RENDER,
 };
 
-class Loop {
+struct ActionContext : rd::Presentation::Context {
+  bool recreated;
+  // milli
+  float interval;
+};
+
+class Action {
 public:
-  Loop();
+  virtual void runLoop(ActionContext const&) = 0;
+
+  Action() = default;
+  Action(Stage stage) : _stage(stage) { add(); }
+  Action(const Action& e) noexcept : _stage(e._stage) { add(); }
+  Action(Action&& e) noexcept : Action(e) {}
+  auto operator=(const Action& e) noexcept -> Action& {
+    remove();
+    _stage = e._stage;
+    add();
+    return *this;
+  }
+  auto operator=(Action&& e) noexcept -> Action& {
+    *this = e;
+    return *this;
+  }
+
+private:
+  std::optional<Stage> _stage;
+
+  void add();
+  void remove();
+};
+
+class Loop : public toy::ProactiveSingleton<Loop> {
+public:
+  Loop() = default;
 
   void run() {
+    auto& presentation = rd::Presentation::getInstance();
     auto  count = 0;
     auto  last_time = chrono::high_resolution_clock::now();
     float interval;
+    bool  recreated;
     while (!glfwWindowShouldClose(glfw::Window::getInstance())) {
       auto interval_ = chrono::high_resolution_clock::now() - last_time;
       last_time += interval_;
@@ -28,35 +68,19 @@ public:
       auto res = presentation.prepare();
       if (!res.has_value()) {
         if (presentation.recreate()) {
-          toy::debugf("recreate success");
-          createResource();
+          recreated = true;
         }
       } else {
-        using Keyboard = input::Keyboard;
-        using ButtonState = input::ButtonState;
-        if (auto opt = input.getState(Keyboard::KEY_A); opt && opt->state == ButtonState::DOWN) {
-          model_data = model_data * trans::rotate<trans::Axis::Z>(90.0f);
-          model_uniform.update();
+        auto ctx = ActionContext{ res.value(), recreated, interval };
+        for (auto& actions : _actions | views::values) {
+          for (auto& action : actions) {
+            action->runLoop(ctx);
+          }
         }
-
-        auto& context = res.value();
-        render_pass.setRecorder(0, [&](rd::PipelineDrawer drawer) {
-          drawer.bindVertexBuffer(&vertex_buffer);
-          drawer.bindIndexBuffer(&index_buffer);
-          drawer.bindResourceSet(0, &dset_model);
-          drawer.bindResourceSet(1, &dset_camera);
-          drawer.bindResourceSet(2, &dset_texture);
-          drawer.draw();
-        });
-        auto attachments = std::array<rd::FrameImageManager*, 3>{
-          &framebuffers.sample_image,
-          context.image_manager,
-          &framebuffers.depth_image,
-        };
-        render_pass.recordDraw(attachments, clear_values);
-        gui_ctx.draw();
-        gui_ctx.recordDraw(context.image_manager);
-        presentation.present(context.image_index);
+        presentation.present(ctx.image_index);
+        if (recreated) {
+          recreated = false;
+        }
       }
       count++;
       if (count % 1000 == 0) {
@@ -64,6 +88,22 @@ public:
       }
     }
   }
+
+private:
+  friend Action;
+  std::map<Stage, std::unordered_set<Action*>> _actions;
 };
+
+void Action::add() {
+  if (_stage) {
+    Loop::getInstance()._actions[*_stage].insert(this);
+  }
+}
+
+void Action::remove() {
+  if (_stage) {
+    Loop::getInstance()._actions[*_stage].erase(this);
+  }
+}
 
 } // namespace loop
