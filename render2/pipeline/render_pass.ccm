@@ -77,8 +77,7 @@ public:
   static auto forRecord(
     VkCommandBuffer cmdbuf, VkPipeline pipeline, VkPipelineLayout layout, VkExtent2D extent
   ) -> PipelineDrawer;
-  static auto forGetResources(VkPipeline pipeline, VkPipelineLayout layout, VkExtent2D extent)
-    -> PipelineDrawer;
+  static auto forGetResources(std::vector<VkDescriptorSetLayout> dset_layouts) -> PipelineDrawer;
 
   void bindVertexBuffer(VertexBuffer* vertex_buffer);
   void bindIndexBuffer(IndexBuffer* index_buffer);
@@ -95,22 +94,27 @@ private:
     GET_RESOURCES,
   };
   PipelineDrawer(
-    VkCommandBuffer  cmdbuf,
-    VkPipeline       pipeline,
-    VkPipelineLayout layout,
-    VkExtent2D       extent,
-    ExecuteType      execute_type
+    VkCommandBuffer                    cmdbuf,
+    VkPipeline                         pipeline,
+    VkPipelineLayout                   layout,
+    VkExtent2D                         extent,
+    std::vector<VkDescriptorSetLayout> dset_layouts,
+    ExecuteType                        execute_type
   )
-    : _cmdbuf(cmdbuf), _pipeline(pipeline), _layout(layout), _extent(extent), _index_count(0),
-      _execute_type(execute_type) {}
+    : _cmdbuf(cmdbuf), _pipeline(pipeline), _layout(layout), _extent(extent),
+      _dset_layouts(std::move(dset_layouts)), _execute_type(execute_type), _index_count(0) {}
 
+  // only for RECORD
   VkCommandBuffer  _cmdbuf;
   VkPipeline       _pipeline;
   VkPipelineLayout _layout;
   VkExtent2D       _extent;
-  uint32           _index_count;
+  // only for GET_RESOURCES
+  std::vector<VkDescriptorSetLayout> _dset_layouts;
 
   ExecuteType _execute_type;
+
+  uint32 _index_count;
 
   std::vector<Buffer*>      _vertex_buffers;
   std::vector<Buffer*>      _index_buffers;
@@ -162,9 +166,10 @@ public:
   void recordDraw(std::span<FrameImageManager*> images, std::vector<VkClearValue> clear_values);
 
 private:
-  RenderPass                        _render_pass;
-  std::vector<Pipeline>             _pipelines;
-  std::vector<PipelineDrawRecorder> _recorders;
+  RenderPass                                      _render_pass;
+  std::vector<Pipeline>                           _pipelines;
+  std::vector<PipelineDrawRecorder>               _recorders;
+  std::vector<std::vector<VkDescriptorSetLayout>> _pipeline_dset_layouts;
 };
 
 } // namespace rd

@@ -43,6 +43,7 @@ public:
   void addWaitable(std::shared_ptr<Waitable> waitable);
   auto waitIdle(uint64 nano_timeout = max_timeout) -> bool;
   auto getInfo() -> std::span<DescriptorSetLayout::BindingInfo const> { return _layout->getInfo(); }
+  auto getLayout() -> VkDescriptorSetLayout { return _layout->get(); }
 
   auto valid() const -> bool { return get(); }
 

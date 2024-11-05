@@ -1,3 +1,5 @@
+module;
+#include <toy.h>
 module render.render_pass;
 
 import <vulkan_config.h>;
@@ -71,13 +73,14 @@ void RenderPass::record(
 auto PipelineDrawer::forRecord(
   VkCommandBuffer cmdbuf, VkPipeline pipeline, VkPipelineLayout layout, VkExtent2D extent
 ) -> PipelineDrawer {
-  return PipelineDrawer{ cmdbuf, pipeline, layout, extent, RECORD };
+  return PipelineDrawer{ cmdbuf, pipeline, layout, extent, {}, RECORD };
 }
 
-auto PipelineDrawer::forGetResources(
-  VkPipeline pipeline, VkPipelineLayout layout, VkExtent2D extent
+auto PipelineDrawer::forGetResources(std::vector<VkDescriptorSetLayout> dset_layouts
 ) -> PipelineDrawer {
-  return PipelineDrawer{ VK_NULL_HANDLE, pipeline, layout, extent, GET_RESOURCES };
+  return PipelineDrawer{
+    VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, {}, dset_layouts, GET_RESOURCES,
+  };
 }
 
 void PipelineDrawer::bindVertexBuffer(VertexBuffer* vertex_buffer) {
@@ -106,6 +109,7 @@ void PipelineDrawer::bindResourceSet(uint32 index, ResourceSet* resource_set) {
       _cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, _layout, index, 1, &handle, 0, nullptr
     );
   } else {
+    TOY_ASSERT(_dset_layouts[index] == resource_set->getLayout());
     _resource_sets.push_back(resource_set);
   }
 }
@@ -164,7 +168,7 @@ RenderPassPipeline::RenderPassPipeline(
       .subpass_i = subpass_i,
       .vertex_shader_name = subpass.vertex_shader_name,
       .frag_shader_name = subpass.frag_shader_name,
-      .dset_layouts = subpass.dset_layouts,
+      .dset_layouts = std::move(subpass.dset_layouts),
       .topology = subpass.topology,
       .sample_count =
         subpass.multi_sample ? subpass.multi_sample->sample_count : VK_SAMPLE_COUNT_1_BIT,
@@ -173,6 +177,7 @@ RenderPassPipeline::RenderPassPipeline(
       .vertex_info = subpass.vertex_info,
     };
     _pipelines.push_back(Pipeline{ pipeline_info });
+    _pipeline_dset_layouts.push_back(std::move(pipeline_info.dset_layouts));
   }
   _recorders.resize(subpasses.size());
 }
@@ -183,10 +188,8 @@ void RenderPassPipeline::recordDraw(
   auto& executor = _render_pass.getExecutor();
 
   auto drawers = std::vector<PipelineDrawer>{};
-  for (auto& info : _pipelines) {
-    drawers.push_back(
-      PipelineDrawer::forGetResources(info.getPipeline(), info.getLayout(), images[0]->getExtent())
-    );
+  for (auto [info, layouts] : views::zip(_pipelines, _pipeline_dset_layouts)) {
+    drawers.push_back(PipelineDrawer::forGetResources(layouts));
   }
   auto batches = std::vector<CommandBatch>{};
   auto waitables_keep_lifetime = std::list<Waitable>{};

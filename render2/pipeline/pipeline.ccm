@@ -53,7 +53,7 @@ struct PipelineInfo {
 
 struct Pipeline {
 public:
-  Pipeline(PipelineInfo info);
+  Pipeline(const PipelineInfo& info);
   auto getPipeline() -> VkPipeline { return _pipeline; }
   auto getLayout() -> VkPipelineLayout { return _layout; }
 

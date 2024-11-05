@@ -220,7 +220,7 @@ auto createGraphicsPipeline(
   );
 }
 
-Pipeline::Pipeline(PipelineInfo info) {
+Pipeline::Pipeline(const PipelineInfo& info) {
   _vertex_shader = createShaderModule(info.vertex_shader_name);
   _frag_shader = createShaderModule(info.frag_shader_name);
   _layout = createPipelineLayout(info.dset_layouts);
