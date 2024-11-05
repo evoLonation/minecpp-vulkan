@@ -17,8 +17,9 @@ Context::Context(const std::string& app_name, uint32 width, uint32 height) {
   _glfw_window = make_unique<glfw::Window>(width, height, app_name);
   auto instance_extensions = std::vector<std::string>{};
   instance_extensions.append_range(rd::extensions::surface);
-  _instance.reset(new rd::InstanceResource{ rd::createInstance("hello", instance_extensions) });
-  _surface.reset(new rd::rs::Surface{ rd::createSurface(*_glfw_window) });
+  _instance =
+    std::make_unique<rd::InstanceResource>(rd::createInstance(app_name, instance_extensions));
+  _surface = std::make_unique<rd::rs::Surface>(rd::createSurface(*_glfw_window));
   using namespace std::placeholders;
   auto queue_requestor = rd::QueueRequestor{ _surface->get() };
   auto device_checkers = std::vector<rd::DeviceCapabilityChecker>{
@@ -28,13 +29,13 @@ Context::Context(const std::string& app_name, uint32 width, uint32 height) {
     rd::device_checkers::vertex,
     rd::device_checkers::sync,
   };
-  _device.reset(new rd::Device{ rd::Device::create(device_checkers) });
+  _device = std::make_unique<rd::Device>(rd::Device::create(device_checkers));
   _executor_manager = queue_requestor.createExecutorManager();
-  _image_context.reset(new rd::ImageContext{});
-  _framebuffer_pool.reset(new rd::FramebufferPool{});
+  _image_context = std::make_unique<rd::ImageContext>();
+  _framebuffer_pool = std::make_unique<rd::FramebufferPool>();
   _presentation = std::make_unique<rd::Presentation>(_surface->get());
-  _input_processor.reset(new input::InputProcessor{});
-  _gui_ctx.reset(new gui::Context{});
+  _input_processor = std::make_unique<input::InputProcessor>();
+  _gui_ctx = std::make_unique<gui::Context>();
 }
 
 } // namespace ctx
