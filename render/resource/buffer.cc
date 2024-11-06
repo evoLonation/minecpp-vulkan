@@ -15,6 +15,19 @@ auto createBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage) -> rs::Buf
   return { buffer_info };
 }
 
+auto Buffer::operator=(Buffer&& e) noexcept -> Buffer& {
+  _tracker = std::move(e._tracker);
+  _memory = std::move(e._memory);
+  rs::Buffer::operator=(std::move(e));
+  return *this;
+}
+
+auto HostBuffer::operator=(HostBuffer&& e) noexcept -> HostBuffer& {
+  _memory = std::move(e._memory);
+  Buffer::operator=(std::move(e));
+  return *this;
+}
+
 DeviceLocalBuffer::DeviceLocalBuffer(
   std::span<std::byte const> buffer_data, VkBufferUsageFlags usage
 ): Buffer{

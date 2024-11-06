@@ -265,7 +265,7 @@ auto CommonBarrierTracker<IsImage>::syncScope(Scope scope, uint32 family, VkImag
     syncWithWrite();
     updateScopes();
   } else {
-    TOY_ASSERT(need_sync);
+    TOY_ASSERT(!need_sync);
     toy::debugf("no need to sync: {}", NAME_TUPLE_STRING(scope));
     updateScopes();
   }

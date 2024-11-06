@@ -15,6 +15,7 @@ class FramebufferPool;
 
 class FrameImageManager : toy::AutoMoveAssigner<FrameImageManager>, public ImageManager {
 public:
+  FrameImageManager() = default;
   FrameImageManager(
     VkImage image, VkImageView image_view, VkExtent2D extent, VkImageSubresourceRange sub_range
   )
@@ -110,20 +111,11 @@ private:
 
 class FrameImage : public ImageResource, public FrameImageManager {
 public:
+  FrameImage() = default;
   enum Type {
     COLOR,
     DEPTH_STENCIL,
   };
-  static auto toAspect(Type type, VkFormat format) -> VkImageAspectFlags {
-    // todo: format
-    switch (type) {
-    case Type::COLOR:
-      return VK_IMAGE_ASPECT_COLOR_BIT;
-    case Type::DEPTH_STENCIL:
-      // return (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
-      return VK_IMAGE_ASPECT_DEPTH_BIT;
-    }
-  }
 
   FrameImage(
     AttachmentFormat      format,
@@ -155,6 +147,18 @@ public:
     return *this;
   }
   FrameImage(FrameImage&& e) noexcept = default;
+
+private:
+  static auto toAspect(Type type, VkFormat format) -> VkImageAspectFlags {
+    // todo: format
+    switch (type) {
+    case Type::COLOR:
+      return VK_IMAGE_ASPECT_COLOR_BIT;
+    case Type::DEPTH_STENCIL:
+      // return (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
+      return VK_IMAGE_ASPECT_DEPTH_BIT;
+    }
+  }
 };
 
 } // namespace rd

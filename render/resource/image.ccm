@@ -42,6 +42,7 @@ private:
 
 class ImageManager {
 public:
+  ImageManager() = default;
   ImageManager(
     VkImage image, VkImageView image_view, VkExtent2D extent, VkImageSubresourceRange sub_range
   )
@@ -62,6 +63,7 @@ private:
 
 struct ImageResource {
 public:
+  ImageResource() = default;
   ImageResource(
     VkFormat              format,
     uint32                width,
@@ -71,6 +73,8 @@ public:
     uint32                mip_levels,
     VkSampleCountFlagBits sample_count
   );
+  ImageResource(ImageResource&&) noexcept = default;
+  auto operator=(ImageResource&& e) noexcept -> ImageResource&;
 
 protected:
   rs::Image     _image;
@@ -80,6 +84,7 @@ protected:
 
 struct Image : public ImageResource, public ImageManager {
 public:
+  Image() = default;
   Image(
     VkFormat              format,
     uint32                width,
@@ -89,6 +94,8 @@ public:
     uint32                mip_levels,
     VkSampleCountFlagBits sample_count
   );
+  Image(Image&&) noexcept = default;
+  auto operator=(Image&& e) noexcept -> Image&;
 };
 
 void copyBufferToImage(

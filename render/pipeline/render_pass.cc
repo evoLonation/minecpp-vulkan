@@ -73,13 +73,18 @@ void RenderPass::record(
 auto PipelineDrawer::forRecord(
   VkCommandBuffer cmdbuf, VkPipeline pipeline, VkPipelineLayout layout, VkExtent2D extent
 ) -> PipelineDrawer {
-  return PipelineDrawer{ cmdbuf, pipeline, layout, extent, {}, RECORD };
+  return PipelineDrawer{ cmdbuf, pipeline, layout, extent, {}, nullptr, nullptr, nullptr, RECORD };
 }
 
-auto PipelineDrawer::forGetResources(std::vector<VkDescriptorSetLayout> dset_layouts
+auto PipelineDrawer::forGetResources(
+  std::vector<VkDescriptorSetLayout> dset_layouts,
+  std::vector<Buffer*>*              vertex_buffers,
+  std::vector<Buffer*>*              index_buffers,
+  std::vector<ResourceSet*>*         resource_sets
 ) -> PipelineDrawer {
   return PipelineDrawer{
-    VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, {}, dset_layouts, GET_RESOURCES,
+    VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, {}, dset_layouts, vertex_buffers,
+    index_buffers,  resource_sets,  GET_RESOURCES,
   };
 }
 
@@ -89,7 +94,7 @@ void PipelineDrawer::bindVertexBuffer(VertexBuffer* vertex_buffer) {
     auto buffer = vertex_buffer->get();
     vkCmdBindVertexBuffers(_cmdbuf, 0, 1, &buffer, &offset);
   } else {
-    _vertex_buffers.push_back(vertex_buffer);
+    _vertex_buffers->push_back(vertex_buffer);
   }
 }
 
@@ -98,7 +103,7 @@ void PipelineDrawer::bindIndexBuffer(IndexBuffer* index_buffer) {
     vkCmdBindIndexBuffer(_cmdbuf, *index_buffer, 0, index_buffer->getIndexType());
     _index_count = index_buffer->getIndexNumber();
   } else {
-    _index_buffers.push_back(index_buffer);
+    _index_buffers->push_back(index_buffer);
   }
 }
 
@@ -110,7 +115,7 @@ void PipelineDrawer::bindResourceSet(uint32 index, ResourceSet* resource_set) {
     );
   } else {
     TOY_ASSERT(_dset_layouts[index] == resource_set->getLayout());
-    _resource_sets.push_back(resource_set);
+    _resource_sets->push_back(resource_set);
   }
 }
 
@@ -187,10 +192,6 @@ void RenderPassPipeline::recordDraw(
 ) {
   auto& executor = _render_pass.getExecutor();
 
-  auto drawers = std::vector<PipelineDrawer>{};
-  for (auto [info, layouts] : views::zip(_pipelines, _pipeline_dset_layouts)) {
-    drawers.push_back(PipelineDrawer::forGetResources(layouts));
-  }
   auto batches = std::vector<CommandBatch>{};
   auto waitables_keep_lifetime = std::list<Waitable>{};
   auto addSync = [&](SyncContext sync) {
@@ -202,9 +203,14 @@ void RenderPassPipeline::recordDraw(
       batches.push_back(ctx->toAcquireBatch(&waitables_keep_lifetime.back()));
     }
   };
-  for (auto [drawer, recorder] : views::zip(drawers, _recorders)) {
+  for (auto [layouts, recorder] : views::zip(_pipeline_dset_layouts, _recorders)) {
+    auto vertex_buffers = std::vector<Buffer*>{};
+    auto index_buffers = std::vector<Buffer*>{};
+    auto resource_sets = std::vector<ResourceSet*>{};
+    auto drawer =
+      PipelineDrawer::forGetResources(layouts, &vertex_buffers, &index_buffers, &resource_sets);
     recorder(drawer);
-    for (auto* vertex_buffer : drawer.getVertexBuffers()) {
+    for (auto* vertex_buffer : vertex_buffers) {
       auto sync = vertex_buffer->getTracker().syncScope(
         Scope{
           .stage_mask = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
@@ -214,7 +220,7 @@ void RenderPassPipeline::recordDraw(
       );
       addSync(std::move(sync));
     }
-    for (auto* index_buffer : drawer.getIndexBuffers()) {
+    for (auto* index_buffer : index_buffers) {
       auto sync = index_buffer->getTracker().syncScope(
         Scope{
           .stage_mask = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
@@ -224,7 +230,7 @@ void RenderPassPipeline::recordDraw(
       );
       addSync(std::move(sync));
     }
-    for (auto* resource_set : drawer.getResourceSets()) {
+    for (auto* resource_set : resource_sets) {
       for (auto resource : resource_set->getResources()) {
         auto ctx = resource.resource->getDescriptorContext();
         auto type = resource_set->getInfo()[resource.binding_i].type;

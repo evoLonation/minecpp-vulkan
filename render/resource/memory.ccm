@@ -39,6 +39,7 @@ public:
   DEFAULT_MOVEABLE(HostMemoryManager);
 
 private:
+  friend toy::AutoMoveAssigner<HostMemoryManager>;
   void beforeDestroy();
 
   toy::PtrManager<void*>          _data;

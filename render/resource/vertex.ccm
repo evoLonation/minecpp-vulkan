@@ -121,6 +121,7 @@ private:
 
 export class VertexBuffer : public DeviceLocalBuffer {
 public:
+  VertexBuffer() = default;
   template <ranges::contiguous_range R>
   VertexBuffer(R&& range) : VertexBuffer{ std::span<const ranges::range_value_t<R>>{ range } } {}
   template <toy::InstantiationOf<Vertex> VertexT>
@@ -134,12 +135,13 @@ private:
   VertexInfo _vertex_info;
 
   VertexBuffer(std::span<const std::byte> vertex_data, VertexInfo vertex_info)
-    : DeviceLocalBuffer(vertex_data, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT),
-      _vertex_info(vertex_info) {}
+    : DeviceLocalBuffer(vertex_data, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT), _vertex_info(vertex_info) {
+  }
 };
 
 export class IndexBuffer : public DeviceLocalBuffer {
 public:
+  IndexBuffer() = default;
   IndexBuffer(std::span<const uint16_t> indices)
     : DeviceLocalBuffer(std::as_bytes(indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT),
       _index_number(indices.size()) {}

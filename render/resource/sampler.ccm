@@ -1,3 +1,5 @@
+module;
+#include <toy.h>
 export module render.sampler;
 
 import <vulkan_config.h>;
@@ -12,8 +14,9 @@ import toy;
 
 export namespace rd {
 
-class SampledTexture : public DescriptorResource {
+class SampledTexture : toy::AutoMoveAssigner<SampledTexture>, public DescriptorResource {
 public:
+  SampledTexture() = default;
   static auto create(const std::string& path, bool mipmap, VkPipelineStageFlagBits use_stage)
     -> SampledTexture;
   auto getImage() -> Image& { return _image; }
@@ -22,19 +25,24 @@ public:
 
   auto getDescriptorContext() -> Context override;
 
+  ~SampledTexture() { beforeDestroy(); }
+  DEFAULT_MOVEABLE(SampledTexture);
+
 private:
   StagingBuffer _staging_buffer;
   Image         _image;
   rs::Sampler   _sampler;
 
-  SampledTexture(
-    StagingBuffer staging_buffer,
-    Image         image,
-    rs::Sampler   sampler,
-    MipRange      mip_range
-  )
+  SampledTexture(StagingBuffer staging_buffer, Image image, rs::Sampler sampler, MipRange mip_range)
     : _staging_buffer(std::move(staging_buffer)), _image(std::move(image)),
       _sampler(std::move(sampler)) {}
+
+  friend toy::AutoMoveAssigner<SampledTexture>;
+  void beforeDestroy() {
+    if (_image.valid()) {
+      _image.getTracker().waitIdle();
+    }
+  }
 
 private:
   static std::vector<VkFormat> _formats;

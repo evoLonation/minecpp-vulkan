@@ -37,6 +37,7 @@ private:
  */
 class DescriptorSet : toy::AutoMoveAssigner<DescriptorSet>, public rs::DescriptorSet {
 public:
+  DescriptorSet() = default;
   DescriptorSet(rs::DescriptorSet dset, DescriptorSetLayout* layout)
     : rs::DescriptorSet{ std::move(dset) }, _layout{ layout } {}
 
@@ -113,10 +114,8 @@ struct ResourceBinding {
 };
 
 class ResourceSet : public toy::RecyclableObject<DescriptorPool, DescriptorSet> {
-private:
-  using Base = toy::RecyclableObject<DescriptorPool, DescriptorSet>;
-
 public:
+  ResourceSet() = default;
   ResourceSet(DescriptorPool* pool, std::initializer_list<ResourceBinding> bindings);
   struct ResourceInfo {
     uint32              binding_i;

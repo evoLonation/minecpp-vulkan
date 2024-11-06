@@ -133,6 +133,13 @@ ImageResource::ImageResource(
     _memory(_image, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
     _image_view(createImageView(_image, format, aspect, mip_levels)) {}
 
+auto ImageResource::operator=(ImageResource&& e) noexcept -> ImageResource& {
+  _image_view = std::move(e._image_view);
+  _memory = std::move(e._memory);
+  _image = std::move(e._image);
+  return *this;
+}
+
 Image::Image(
   VkFormat              format,
   uint32                width,
@@ -149,6 +156,12 @@ Image::Image(
       VkExtent2D{ width, height },
       getSubresourceRange(aspect, MipRange{ 0, 1 })
     ) {}
+
+auto Image::operator=(Image&& e) noexcept -> Image& {
+  ImageManager::operator=(std::move(e));
+  ImageResource::operator=(std::move(e));
+  return *this;
+}
 
 void copyBufferToImage(
   VkCommandBuffer       cmdbuf,

@@ -77,16 +77,17 @@ public:
   static auto forRecord(
     VkCommandBuffer cmdbuf, VkPipeline pipeline, VkPipelineLayout layout, VkExtent2D extent
   ) -> PipelineDrawer;
-  static auto forGetResources(std::vector<VkDescriptorSetLayout> dset_layouts) -> PipelineDrawer;
+  static auto forGetResources(
+    std::vector<VkDescriptorSetLayout> dset_layouts,
+    std::vector<Buffer*>*              vertex_buffers,
+    std::vector<Buffer*>*              index_buffers,
+    std::vector<ResourceSet*>*         resource_sets
+  ) -> PipelineDrawer;
 
   void bindVertexBuffer(VertexBuffer* vertex_buffer);
   void bindIndexBuffer(IndexBuffer* index_buffer);
   void bindResourceSet(uint32 index, ResourceSet* resource_set);
   void draw();
-
-  auto getVertexBuffers() -> std::span<Buffer* const> { return _vertex_buffers; }
-  auto getIndexBuffers() -> std::span<Buffer* const> { return _index_buffers; }
-  auto getResourceSets() -> std::span<ResourceSet* const> { return _resource_sets; }
 
 private:
   enum ExecuteType {
@@ -99,10 +100,15 @@ private:
     VkPipelineLayout                   layout,
     VkExtent2D                         extent,
     std::vector<VkDescriptorSetLayout> dset_layouts,
+    std::vector<Buffer*>*              vertex_buffers,
+    std::vector<Buffer*>*              index_buffers,
+    std::vector<ResourceSet*>*         resource_sets,
     ExecuteType                        execute_type
   )
     : _cmdbuf(cmdbuf), _pipeline(pipeline), _layout(layout), _extent(extent),
-      _dset_layouts(std::move(dset_layouts)), _execute_type(execute_type), _index_count(0) {}
+      _dset_layouts(std::move(dset_layouts)), _execute_type(execute_type), _index_count(0),
+      _vertex_buffers(vertex_buffers), _index_buffers(index_buffers),
+      _resource_sets(resource_sets) {}
 
   // only for RECORD
   VkCommandBuffer  _cmdbuf;
@@ -116,9 +122,9 @@ private:
 
   uint32 _index_count;
 
-  std::vector<Buffer*>      _vertex_buffers;
-  std::vector<Buffer*>      _index_buffers;
-  std::vector<ResourceSet*> _resource_sets;
+  std::vector<Buffer*>*      _vertex_buffers;
+  std::vector<Buffer*>*      _index_buffers;
+  std::vector<ResourceSet*>* _resource_sets;
 };
 
 using PipelineDrawRecorder = std::function<void(PipelineDrawer)>;
@@ -156,6 +162,7 @@ struct SubpassPipelineInfo {
 
 class RenderPassPipeline {
 public:
+  RenderPassPipeline() = default;
   RenderPassPipeline(
     std::span<AttachmentInfo const> attachments, std::span<SubpassPipelineInfo const> subpasses
   );
@@ -164,6 +171,15 @@ public:
     _recorders[index] = std::move(recorder);
   }
   void recordDraw(std::span<FrameImageManager*> images, std::vector<VkClearValue> clear_values);
+
+  RenderPassPipeline(RenderPassPipeline&&) noexcept = default;
+  RenderPassPipeline& operator=(RenderPassPipeline&& e) noexcept {
+    _pipeline_dset_layouts = std::move(e._pipeline_dset_layouts);
+    _recorders = std::move(e._recorders);
+    _pipelines = std::move(e._pipelines);
+    _render_pass = std::move(e._render_pass);
+    return *this;
+  }
 
 private:
   RenderPass                                      _render_pass;

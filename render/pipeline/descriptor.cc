@@ -143,7 +143,7 @@ DescriptorPool::~DescriptorPool() {
 }
 
 ResourceSet::ResourceSet(DescriptorPool* pool, std::initializer_list<ResourceBinding> bindings)
-  : Base{ pool } {
+  : toy::RecyclableObject<DescriptorPool, DescriptorSet>{ pool } {
   auto write_infos = std::vector<VkWriteDescriptorSet>{};
   auto all_image_infos = std::vector<std::vector<VkDescriptorImageInfo>>{};
   auto all_buffer_infos = std::vector<std::vector<VkDescriptorBufferInfo>>{};

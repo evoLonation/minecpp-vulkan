@@ -15,11 +15,15 @@ auto createBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage) -> rs::Buf
 
 class Buffer : public rs::Buffer {
 public:
+  Buffer() = default;
   Buffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage, VkMemoryPropertyFlags property_flags)
     : rs::Buffer{ createBuffer(buffer_size, usage) }, _memory{ get(), property_flags },
       _tracker{ get() } {}
   auto getMemory() const -> VkDeviceMemory { return _memory; }
   auto getTracker() -> BufferBarrierTracker& { return _tracker; }
+
+  Buffer(Buffer&&) noexcept = default;
+  auto operator=(Buffer&& e) noexcept -> Buffer&;
 
 private:
   Memory               _memory;
@@ -28,6 +32,7 @@ private:
 
 class HostBuffer : public Buffer {
 public:
+  HostBuffer() = default;
   HostBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage)
     : Buffer(buffer_size, usage, HostMemoryManager::propreties), _memory(Buffer::getMemory()) {}
   HostBuffer(std::span<std::byte const> buffer_data, VkBufferUsageFlags usage)
@@ -36,12 +41,16 @@ public:
   }
   auto getMemory() -> HostMemoryManager& { return _memory; }
 
+  HostBuffer(HostBuffer&&) noexcept = default;
+  auto operator=(HostBuffer&& e) noexcept -> HostBuffer&;
+
 private:
   HostMemoryManager _memory;
 };
 
 class StagingBuffer : public HostBuffer {
 public:
+  StagingBuffer() = default;
   StagingBuffer(VkDeviceSize buffer_size)
     : HostBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT) {}
   StagingBuffer(std::span<std::byte const> buffer_data)
@@ -53,11 +62,9 @@ template <typename DataType>
 class UniformBuffer : public HostBuffer, public DescriptorResource {
 public:
   UniformBuffer() = default;
-  UniformBuffer(DataType& data)
-    : HostBuffer(
-        std::as_bytes(std::span<DataType>{ &data, 1 }), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
-      ),
-      _cache_data(data), _p_data(&data) {}
+  UniformBuffer(DataType* data)
+    : HostBuffer(std::as_bytes(std::span<DataType>{ data, 1 }), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT),
+      _cache_data(*data), _p_data(data) {}
 
   void update() {
     getTracker().waitIdle();
@@ -88,6 +95,7 @@ private:
 
 class DeviceLocalBuffer : public Buffer {
 public:
+  DeviceLocalBuffer() = default;
   DeviceLocalBuffer(std::span<std::byte const> buffer_data, VkBufferUsageFlags usage);
 
 private:
