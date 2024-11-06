@@ -19,5 +19,6 @@ sub_dir:
 - render
 - shader
 - framework
+- components
 target:
 - main.cc: hello_vulkan

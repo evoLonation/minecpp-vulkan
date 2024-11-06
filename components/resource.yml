@@ -1,2 +1,5 @@
-sub_dir:
-- manager
+module:
+- pipeline.ccm:
+    provide: pipeline
+# sub_dir:
+# - manager
