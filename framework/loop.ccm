@@ -1,3 +1,5 @@
+module;
+#include <toy.h>
 export module loop;
 
 import std;
@@ -25,11 +27,24 @@ struct ActionContext : rd::Presentation::Context {
 };
 
 class Action {
-public:
+private:
+  friend class Loop;
   virtual void runLoop(ActionContext const&) = 0;
 
+protected:
   Action() = default;
   Action(Stage stage) : _stage(stage) { add(); }
+
+  void setStage(Stage stage) {
+    remove();
+    _stage = stage;
+    add();
+  }
+  void reset() {
+    remove();
+    _stage.reset();
+  }
+
   Action(const Action& e) noexcept : _stage(e._stage) { add(); }
   Action(Action&& e) noexcept : Action(e) {}
   auto operator=(const Action& e) noexcept -> Action& {
@@ -50,7 +65,7 @@ private:
   void remove();
 };
 
-class Loop : public toy::ProactiveSingleton<Loop> {
+class Loop : public PROACTIVE_SINGLETON(Loop) {
 public:
   Loop() = default;
 

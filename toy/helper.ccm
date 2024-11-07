@@ -6,6 +6,13 @@ import toy.concepts;
 
 export namespace toy {
 
+// helper for string literal as non-type template parameter
+template <size_t N>
+struct StringLiteral {
+  constexpr StringLiteral(const char (&str)[N]) { std::copy_n(str, N, value); }
+  char value[N];
+};
+
 template <typename... Lambdas>
 struct OverloadLambda : public Lambdas... {
   using Lambdas::operator()...;
@@ -41,7 +48,7 @@ private:
  * @brief 需要主动构造，可含有参数，若在构造前调用getInstance()会抛异常
  * @tparam T
  */
-template <typename Derived>
+template <typename Derived, StringLiteral name = "unknown">
 class ProactiveSingleton {
 private:
   static inline Derived* _instance_ptr = nullptr;
@@ -51,7 +58,7 @@ private:
 public:
   ProactiveSingleton() {
     if (_instance_ptr != nullptr) {
-      toy::throwf("construct multi time!");
+      toy::throwf("construct {} multi time!", name.value);
     }
     _instance_ptr = &self();
   }
@@ -63,7 +70,7 @@ public:
 
   static auto getInstance() -> Derived& {
     if (_instance_ptr == nullptr) {
-      toy::throwf("need proactively construct first!");
+      toy::throwf("need proactively construct {} first!", name.value);
     }
     return *_instance_ptr;
   }
@@ -188,13 +195,6 @@ public:
   HookLoader(HookLoader&&) noexcept = delete;
   auto operator=(const HookLoader&) noexcept -> HookLoader& = delete;
   auto operator=(HookLoader&&) noexcept -> HookLoader& = delete;
-};
-
-// helper for string literal as non-type template parameter
-template <size_t N>
-struct StringLiteral {
-  constexpr StringLiteral(const char (&str)[N]) { std::copy_n(str, N, value); }
-  char value[N];
 };
 
 namespace test_refContainer {

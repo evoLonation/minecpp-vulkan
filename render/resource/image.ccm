@@ -1,3 +1,5 @@
+module;
+#include <toy.h>
 export module render.image;
 
 import std;
@@ -31,7 +33,7 @@ auto createImage(
 auto createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect, uint32 mip_levels)
   -> rs::ImageView;
 
-class ImageContext : public toy::ProactiveSingleton<ImageContext> {
+class ImageContext : public PROACTIVE_SINGLETON(ImageContext) {
 public:
   ImageContext();
   auto getAvailableSampleCounts() -> VkSampleCountFlags { return _available_sample_counts; }

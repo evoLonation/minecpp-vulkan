@@ -39,16 +39,15 @@ int main() {
     trans::test_trans();
     auto  ctx = ctx::Context{ "hello vulkan", 1920, 1080 };
     auto& input = input::InputProcessor::getInstance();
-    auto& gui_ctx = gui::Context::getInstance();
 
-    auto loop = loop::Loop{};
+    auto& gui_ctx = gui::Context::getInstance();
     auto dset_pools = pipeline::DescriptorPools{};
     auto pipeline = pipeline::Pipeline{};
     auto camera = pipeline::Camera{};
     auto draw_unit = pipeline::DrawUnit{};
     pipeline.setCamera(&camera);
     pipeline.addDrawUnit(&draw_unit);
-    loop.run();
+    loop::Loop::getInstance().run();
 
   } catch (const std::exception& e) {
     std::print("catch exception at root:\n{}\n", e.what());

@@ -53,4 +53,6 @@
     auto formatString(const type& e) const -> std::string { return func(e); }                      \
   };
 
+#define PROACTIVE_SINGLETON(cls) toy::ProactiveSingleton<cls, #cls>
+
 #endif

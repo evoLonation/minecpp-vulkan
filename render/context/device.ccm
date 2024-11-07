@@ -1,3 +1,5 @@
+module;
+#include <toy.h>
 export module render.device;
 
 import std;
@@ -98,7 +100,7 @@ private:
 };
 
 using DeviceCapabilityChecker = std::function<bool(DeviceCapabilityBuilder& request)>;
-class Device : public rs::Device, public toy::ProactiveSingleton<Device> {
+class Device : public rs::Device, public PROACTIVE_SINGLETON(Device) {
 private:
   Device(rs::Device device, PhysicalDevice pdevice, VkPhysicalDeviceFeatures features)
     : rs::Device{ std::move(device) }, _pdevice{ std::move(pdevice) }, _features{ features } {}
@@ -110,7 +112,7 @@ public:
   auto getEnabledFeatures() const -> const VkPhysicalDeviceFeatures& { return _features; }
   auto getEnabledExtensions() const -> std::span<std::string>;
 
-  using toy::ProactiveSingleton<Device>::getInstance;
+  using PROACTIVE_SINGLETON(Device)::getInstance;
 
 private:
   PhysicalDevice           _pdevice;

@@ -50,7 +50,7 @@ class MouseAction : public ActionInterface {};
 
 class CursorAction : public ActionInterface {};
 
-class ActionManager : public toy::ProactiveSingleton<ActionManager> {
+class ActionManager : public PROACTIVE_SINGLETON(ActionManager) {
 public:
   class Action : public ActionInterface {
   public:

@@ -35,6 +35,7 @@ Context::Context(const std::string& app_name, uint32 width, uint32 height) {
   _framebuffer_pool = std::make_unique<rd::FramebufferPool>();
   _presentation = std::make_unique<rd::Presentation>(_surface->get());
   _input_processor = std::make_unique<input::InputProcessor>();
+  _loop = std::make_unique<loop::Loop>();
   _gui_ctx = std::make_unique<gui::Context>();
 }
 

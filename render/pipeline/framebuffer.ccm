@@ -29,7 +29,7 @@ private:
   void beforeDestroy();
 };
 
-class FramebufferPool : public toy::ProactiveSingleton<FramebufferPool> {
+class FramebufferPool : public PROACTIVE_SINGLETON(FramebufferPool) {
 public:
   FramebufferPool() : _use_counter(0) {}
 
@@ -52,7 +52,7 @@ private:
   uint64                _use_counter;
   static constexpr auto _max_capacity = 10;
 
-  friend toy::ProactiveSingleton<FramebufferPool>;
+  friend PROACTIVE_SINGLETON(FramebufferPool);
   friend FrameImageManager;
 
   void check(std::source_location loc = std::source_location::current());

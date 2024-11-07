@@ -14,7 +14,7 @@ import render.swapchain;
 
 export namespace rd {
 
-class Presentation : public toy::ProactiveSingleton<Presentation> {
+class Presentation : public PROACTIVE_SINGLETON(Presentation) {
 public:
   Presentation(VkSurfaceKHR surface);
   ~Presentation();

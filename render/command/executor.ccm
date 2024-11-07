@@ -177,7 +177,7 @@ enum class FamilyType {
 
 // template <typename EnumT>
 using EnumT = FamilyType;
-class ExecutorManager : public toy::ProactiveSingleton<ExecutorManager> {
+class ExecutorManager : public PROACTIVE_SINGLETON(ExecutorManager) {
 public:
   ExecutorManager(std::span<std::pair<EnumT, FamilyQueueCount> const> family_infos);
 

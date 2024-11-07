@@ -23,8 +23,8 @@ import <vulkan_config.h>;
 
 export namespace pipeline {
 
-class DescriptorPools : private toy::ProactiveSingleton<DescriptorPools> {
-  friend toy::ProactiveSingleton<DescriptorPools>;
+class DescriptorPools : private PROACTIVE_SINGLETON(DescriptorPools) {
+  friend PROACTIVE_SINGLETON(DescriptorPools);
 
 public:
   DescriptorPools() {

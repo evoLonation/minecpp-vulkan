@@ -17,6 +17,8 @@ import render.render_pass;
 import render.framebuffer;
 import render.swapchain;
 
+import loop;
+
 export namespace gui {
 
 void slider(const std::string& name, float& value, const float min = -50, const float max = 50) {
@@ -155,9 +157,10 @@ public:
 /**
  * @brief must call after input processor
  */
-class Context : public toy::ProactiveSingleton<Context> {
+class Context : public PROACTIVE_SINGLETON(Context), public loop::Action {
 public:
   Context() {
+    setStage(loop::Stage::AFTER_RENDER);
     auto window = glfw::Window::getInstance().get();
     auto instance = rd::rs::Instance::getInstance().get();
     auto pdevice = rd::Device::getInstance().getPdevice().get();
@@ -300,6 +303,11 @@ public:
       ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmdbuf);
     };
     _render_pass.record({}, std::array{ image }, {}, recorder);
+  }
+
+  void runLoop(loop::ActionContext const& ctx) {
+    draw();
+    recordDraw(ctx.image_manager);
   }
 };
 

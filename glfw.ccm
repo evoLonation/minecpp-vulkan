@@ -1,3 +1,5 @@
+module;
+#include <toy.h>
 export module glfw;
 
 import <glfw_config.h>;
@@ -8,7 +10,7 @@ import render.instance;
 
 export namespace glfw {
 
-class Context : public toy::ProactiveSingleton<Context> {
+class Context : public PROACTIVE_SINGLETON(Context) {
 public:
   Context() {
     if (glfwInit() != GLFW_TRUE) {
@@ -20,7 +22,7 @@ public:
 
 void checkGlfwError();
 
-class Window : public toy::ProactiveSingleton<Window> {
+class Window : public PROACTIVE_SINGLETON(Window) {
 public:
   Window(uint32 width, uint32 height, const std::string& title);
   auto get() const -> GLFWwindow* { return _window.get(); }

@@ -33,7 +33,7 @@ struct CursorState {
   bool   visible;
 };
 
-class InputProcessor : public toy::ProactiveSingleton<InputProcessor> {
+class InputProcessor : public PROACTIVE_SINGLETON(InputProcessor) {
 private:
   std::map<Keyboard, ButtonState> _key_states;
   std::map<Mouse, ButtonState>    _mouse_states;
