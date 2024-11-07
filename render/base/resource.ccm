@@ -318,7 +318,8 @@ public:
         range,
         [&](auto& resource) { return resource.getPool() != (*range.begin()).getPool(); }
       ),
-      "cannot join AllocatedResources with different pools"
+      "cannot join AllocatedResources with different pools: {}",
+      ranges::size(range)
     );
     // resources._pool = range.begin()->getPool();
     resources._pool = (*range.begin()).getPool();

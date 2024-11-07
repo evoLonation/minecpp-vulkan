@@ -305,7 +305,7 @@ public:
     _render_pass.record({}, std::array{ image }, {}, recorder);
   }
 
-  void runLoop(loop::ActionContext const& ctx) {
+  void runLoop(loop::ActionContext const& ctx) override {
     draw();
     recordDraw(ctx.image_manager);
   }

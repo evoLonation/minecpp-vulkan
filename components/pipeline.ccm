@@ -13,6 +13,7 @@ import render.buffer;
 
 import model;
 import loop;
+import input;
 
 import std;
 import toy;
@@ -62,11 +63,10 @@ private:
   std::unique_ptr<rd::DescriptorPool> _dset_pool_texture;
 };
 
-class DrawUnit {
+class DrawUnit : public loop::Action {
 public:
-  DrawUnit()
-    : _vertex_buf(model::getModelInfo("model/viking_room.obj").first),
-      _index_buf(model::getModelInfo("model/viking_room.obj").second) {
+  DrawUnit() {
+    setStage(loop::Stage::BEFORE_RENDER);
     _texture = rd::SampledTexture::create(
       "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
     );
@@ -74,9 +74,9 @@ public:
     _model_trans = std::make_unique<glm::mat4>(trans::model::create(glm::vec3{ 0.0f, 0.0f, 0.0f }));
     _uniform_model = rd::UniformBuffer<glm::mat4>{ _model_trans.get() };
     _dset_model = rd::ResourceSet{ &DescriptorPools::getModel(), { &_uniform_model } };
-    // auto [vertexes, indices] = model::getModelInfo("model/viking_room.obj");
-    // _vertex_buf = rd::VertexBuffer{ vertexes };
-    // _index_buf = rd::IndexBuffer{ indices };
+    auto [vertexes, indices] = model::getModelInfo("model/viking_room.obj");
+    _vertex_buf = rd::VertexBuffer{ vertexes };
+    _index_buf = rd::IndexBuffer{ indices };
   }
 
   auto getModelTrans() -> glm::mat4& { return *_model_trans; }
@@ -99,6 +99,16 @@ public:
     return *this;
   }
 
+  void runLoop(loop::ActionContext const& ctx) override {
+    using Keyboard = input::Keyboard;
+    using ButtonState = input::ButtonState;
+    auto& input = input::InputProcessor::getInstance();
+    if (auto opt = input.getState(Keyboard::KEY_A); opt && opt->state == ButtonState::DOWN) {
+      *_model_trans = *_model_trans * trans::rotate<trans::Axis::Z>(90.0f);
+      _uniform_model.update();
+    }
+  }
+
 private:
   rd::SampledTexture           _texture;
   rd::ResourceSet              _dset_texture;
@@ -110,9 +120,10 @@ private:
   rd::IndexBuffer  _index_buf;
 };
 
-class Camera {
+class Camera : public loop::Action {
 public:
   Camera() {
+    setStage(loop::Stage::BEFORE_RENDER);
     _view = std::make_unique<glm::mat4>(trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f }));
     _uniform_view = { _view.get() };
     auto& swapchain = rd::Presentation::getInstance().getSwapchain();
@@ -132,6 +143,16 @@ public:
     _view = std::move(e._view);
     _projection = std::move(e._projection);
     return *this;
+  }
+  void runLoop(loop::ActionContext const& ctx) override {
+    if (ctx.recreated) {
+      auto& swapchain = rd::Presentation::getInstance().getSwapchain();
+      *_projection = trans::proj::perspective({
+        .width = swapchain.getExtent().width,
+        .height = swapchain.getExtent().height,
+      });
+      _uniform_proj.update();
+    }
   }
 
   auto getView() -> glm::mat4& { return *_view; }
