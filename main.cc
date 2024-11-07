@@ -30,6 +30,7 @@ import transform;
 import gui;
 import loop;
 import pipeline;
+import camera;
 
 int main() {
   try {
@@ -40,10 +41,10 @@ int main() {
     auto  ctx = ctx::Context{ "hello vulkan", 1920, 1080 };
     auto& input = input::InputProcessor::getInstance();
 
-    auto& gui_ctx = gui::Context::getInstance();
     auto dset_pools = pipeline::DescriptorPools{};
     auto pipeline = pipeline::Pipeline{};
     auto camera = pipeline::Camera{};
+    auto controller = camera::Controller{ &camera.getView() };
     auto draw_unit = pipeline::DrawUnit{};
     pipeline.setCamera(&camera);
     pipeline.addDrawUnit(&draw_unit);

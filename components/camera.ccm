@@ -1,0 +1,83 @@
+export module camera;
+
+import std;
+import toy;
+import glm;
+import loop;
+import input;
+import transform;
+import render.presentation;
+import <vulkan_config.h>;
+
+export namespace camera {
+
+class Controller : public loop::Action {
+public:
+  Controller(glm::mat4* view, glm::vec3 location = glm::vec3{ -5.0f, .0f, .0f }) : _view(view) {
+    _translate = trans::translate(-location);
+    setStage(loop::Stage::BEFORE_RENDER);
+  }
+  void computeView() {
+    *_view = trans::rotate<trans::Axis::Y>(_rotate_y) * //
+             trans::rotate<trans::Axis::Z>(_rotate_z) * _translate;
+  }
+
+  void move(glm::vec3 moved) {
+    _translate = trans::rotate<trans::Axis::Z>(-_rotate_z) * trans::translate(moved) *
+                 trans::rotate<trans::Axis::Z>(_rotate_z) * _translate;
+  }
+
+  void runLoop(loop::ActionContext const& ctx) override {
+    auto delta = ctx.interval;
+    using enum input::Keyboard;
+    auto& input = input::InputProcessor::getInstance();
+    if (input[KEY_S]) {
+      move(glm::vec3{ _move_speed * delta, 0.0f, 0.0f });
+    }
+    if (input[KEY_W]) {
+      move(glm::vec3{ -_move_speed * delta, 0.0f, 0.0f });
+    }
+    if (input[KEY_A]) {
+      move(glm::vec3{ 0.0f, -_move_speed * delta, 0.0f });
+    }
+    if (input[KEY_D]) {
+      move(glm::vec3{ 0.0f, _move_speed * delta, 0.0f });
+    }
+    if (input[KEY_Z]) {
+      move(glm::vec3{ 0.0f, 0.0f, -_move_speed * delta });
+    }
+    if (input[KEY_X]) {
+      move(glm::vec3{ 0.0f, 0.0f, _move_speed * delta });
+    }
+    if (auto res = input[ESCAPE]; res && res->state == input::ButtonState::DOWN) {
+      input.setCursorVisible(!input.getCursorState().visible);
+    }
+    // x: left, y: down
+    auto cursor = input.getCursorState();
+    if (!cursor.visible) {
+      auto x = cursor.x_move;
+      auto y = cursor.y_move;
+      auto [width, height] = rd::Presentation::getInstance().getSwapchain().getExtent();
+      // x为正 -> 鼠标右移 -> 所有坐标沿z轴正旋转
+      _rotate_z += x / static_cast<float>(width) * 360;
+      // y为正 -> 鼠标下移 -> 所有坐标沿y轴负旋转
+      _rotate_y -= y / static_cast<float>(height) * 360;
+      _rotate_y = std::clamp(_rotate_y, -90.0f, 90.0f);
+    }
+    computeView();
+    // *_view = trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f });
+  }
+
+private:
+  glm::mat4* _view;
+
+  glm::mat4 _translate;
+
+  float _move_speed = 1.0f;
+  float _rotate_speed = 0.2f;
+  // float _delta = 1.0f / 60.0f;
+  float _rotate_z = 0.0f;
+  float _rotate_y = 0.0f;
+};
+
+} // namespace camera

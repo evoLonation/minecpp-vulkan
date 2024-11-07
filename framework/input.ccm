@@ -115,6 +115,8 @@ public:
   auto getKeyboardStates() const -> std::map<Keyboard, ButtonState> const& { return _key_states; }
   auto getMouseStates() const -> std::map<Mouse, ButtonState> const& { return _mouse_states; }
 
+  auto operator[](auto key) const -> std::optional<ButtonState> { return getState(key); }
+
   void setCursorVisible(bool visible) {
     if (_cursor_state.visible == visible) {
       return;

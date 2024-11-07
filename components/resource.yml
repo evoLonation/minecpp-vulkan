@@ -1,5 +1,5 @@
 module:
 - pipeline.ccm:
     provide: pipeline
-# sub_dir:
-# - manager
+- camera.ccm:
+    provide: camera

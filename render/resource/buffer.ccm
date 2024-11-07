@@ -67,14 +67,14 @@ public:
       _cache_data(*data), _p_data(data) {}
 
   void update() {
-    getTracker().waitIdle();
     auto now_bytes = std::as_bytes(std::span<DataType>{ _p_data, 1 });
     auto cached_bytes = std::as_writable_bytes(std::span<DataType>{ &_cache_data, 1 });
     if (ranges::mismatch(now_bytes, cached_bytes).in1 != now_bytes.end()) {
       std::copy(now_bytes.begin(), now_bytes.end(), cached_bytes.begin());
+      getTracker().waitIdle();
       getMemory().fill(cached_bytes);
+      getTracker().clearScope();
     }
-    getTracker().clearScope();
   }
   auto getDescriptorContext() -> Context override {
     return BufferContext{

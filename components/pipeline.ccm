@@ -103,10 +103,10 @@ public:
     using Keyboard = input::Keyboard;
     using ButtonState = input::ButtonState;
     auto& input = input::InputProcessor::getInstance();
-    if (auto opt = input.getState(Keyboard::KEY_A); opt && opt->state == ButtonState::DOWN) {
-      *_model_trans = *_model_trans * trans::rotate<trans::Axis::Z>(90.0f);
-      _uniform_model.update();
-    }
+    // if (auto opt = input.getState(Keyboard::KEY_A); opt && opt->state == ButtonState::DOWN) {
+    //   *_model_trans = *_model_trans * trans::rotate<trans::Axis::Z>(90.0f);
+    //   _uniform_model.update();
+    // }
   }
 
 private:
@@ -153,6 +153,7 @@ public:
       });
       _uniform_proj.update();
     }
+    _uniform_view.update();
   }
 
   auto getView() -> glm::mat4& { return *_view; }
