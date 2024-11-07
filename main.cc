@@ -41,7 +41,6 @@ int main() {
     auto  ctx = ctx::Context{ "hello vulkan", 1920, 1080 };
     auto& input = input::InputProcessor::getInstance();
 
-    auto dset_pools = pipeline::DescriptorPools{};
     auto pipeline = pipeline::Pipeline{};
     auto camera = pipeline::Camera{};
     auto controller = camera::Controller{ &camera.getView() };

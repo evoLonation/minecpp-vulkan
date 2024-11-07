@@ -24,44 +24,51 @@ import <vulkan_config.h>;
 
 export namespace pipeline {
 
-class DescriptorPools : private PROACTIVE_SINGLETON(DescriptorPools) {
-  friend PROACTIVE_SINGLETON(DescriptorPools);
+namespace layouts {
 
-public:
-  DescriptorPools() {
-    using BindingInfo = rd::DescriptorSetLayout::BindingInfo;
-    _dset_pool_model = std::make_unique<rd::DescriptorPool>(std::vector{ BindingInfo{
+using BindingInfo = rd::DescriptorSetLayout::BindingInfo;
+auto getModel() -> rd::DescriptorPool& {
+  static auto dset_pool_model = rd::DescriptorPool{ std::vector{
+    BindingInfo{
       .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
       .stage = VK_SHADER_STAGE_VERTEX_BIT,
       .count = 1,
-    } });
-    _dset_pool_camera = std::make_unique<rd::DescriptorPool>(std::vector{
-      BindingInfo{
-        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .stage = VK_SHADER_STAGE_VERTEX_BIT,
-        .count = 1,
-      },
-      BindingInfo{
-        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .stage = VK_SHADER_STAGE_VERTEX_BIT,
-        .count = 1,
-      },
-    });
-    _dset_pool_texture = std::make_unique<rd::DescriptorPool>(std::vector{ BindingInfo{
+    },
+    BindingInfo{
       .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
       .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
       .count = 1,
-    } });
-  }
-  static auto getModel() -> rd::DescriptorPool& { return *getInstance()._dset_pool_model; }
-  static auto getCamera() -> rd::DescriptorPool& { return *getInstance()._dset_pool_camera; }
-  static auto getTexture() -> rd::DescriptorPool& { return *getInstance()._dset_pool_texture; }
+    },
+  } };
+  return dset_pool_model;
+}
+auto getModelTrans() -> rd::DescriptorPool& {
+  static auto dset_pool_model_trans = rd::DescriptorPool{ std::vector{ BindingInfo{
+    .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+    .stage = VK_SHADER_STAGE_VERTEX_BIT,
+    .count = 1,
+  } } };
+  return dset_pool_model_trans;
+}
+auto getCamera() -> rd::DescriptorPool& {
+  static auto dset_pool_camera = rd::DescriptorPool{ std::vector{
+    // view
+    BindingInfo{
+      .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+      .stage = VK_SHADER_STAGE_VERTEX_BIT,
+      .count = 1,
+    },
+    // proj
+    BindingInfo{
+      .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+      .stage = VK_SHADER_STAGE_VERTEX_BIT,
+      .count = 1,
+    },
+  } };
+  return dset_pool_camera;
+}
 
-private:
-  std::unique_ptr<rd::DescriptorPool> _dset_pool_model;
-  std::unique_ptr<rd::DescriptorPool> _dset_pool_camera;
-  std::unique_ptr<rd::DescriptorPool> _dset_pool_texture;
-};
+}; // namespace layouts
 
 class DrawUnit : public loop::Action {
 public:
@@ -70,27 +77,23 @@ public:
     _texture = rd::SampledTexture::create(
       "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
     );
-    _dset_texture = rd::ResourceSet{ &DescriptorPools::getTexture(), { &_texture } };
     _model_trans = std::make_unique<glm::mat4>(trans::model::create(glm::vec3{ 0.0f, 0.0f, 0.0f }));
     _uniform_model = rd::UniformBuffer<glm::mat4>{ _model_trans.get() };
-    _dset_model = rd::ResourceSet{ &DescriptorPools::getModel(), { &_uniform_model } };
+    _dset_model = rd::ResourceSet{ &layouts::getModel(), { &_uniform_model, &_texture } };
     auto [vertexes, indices] = model::getModelInfo("model/viking_room.obj");
     _vertex_buf = rd::VertexBuffer{ vertexes };
     _index_buf = rd::IndexBuffer{ indices };
   }
 
   auto getModelTrans() -> glm::mat4& { return *_model_trans; }
-  auto getDsetTexture() -> rd::ResourceSet& { return _dset_texture; }
   auto getDsetModel() -> rd::ResourceSet& { return _dset_model; }
   auto getVertexBuffer() -> rd::VertexBuffer& { return _vertex_buf; }
   auto getIndexBuffer() -> rd::IndexBuffer& { return _index_buf; }
 
   DrawUnit(DrawUnit&&) noexcept = default;
   auto operator=(DrawUnit&& e) noexcept -> DrawUnit& {
-    _dset_texture = std::move(e._dset_texture);
-    _texture = std::move(e._texture);
-
     _dset_model = std::move(e._dset_model);
+    _texture = std::move(e._texture);
     _uniform_model = std::move(e._uniform_model);
     _model_trans = std::move(e._model_trans);
 
@@ -111,7 +114,6 @@ public:
 
 private:
   rd::SampledTexture           _texture;
-  rd::ResourceSet              _dset_texture;
   std::unique_ptr<glm::mat4>   _model_trans;
   rd::UniformBuffer<glm::mat4> _uniform_model;
   rd::ResourceSet              _dset_model;
@@ -132,7 +134,7 @@ public:
       .height = swapchain.getExtent().height,
     }));
     _uniform_proj = { _projection.get() };
-    _dset = rd::ResourceSet{ &DescriptorPools::getCamera(), { &_uniform_view, &_uniform_proj } };
+    _dset = rd::ResourceSet{ &layouts::getCamera(), { &_uniform_view, &_uniform_proj } };
   }
 
   Camera(Camera&&) noexcept = default;
@@ -214,11 +216,7 @@ public:
         .frag_shader_name = "hello.frag",
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .vertex_info = model::Vertex::getVertexInfo(),
-        .dset_layouts = { 
-          DescriptorPools::getModel(), 
-          DescriptorPools::getCamera(), 
-          DescriptorPools::getTexture(), 
-        },
+        .dset_layouts = { layouts::getModel(), layouts::getCamera() },
       }
     };
     _render_pass = rd::RenderPassPipeline{ attachment_infos, subpass_infos };
@@ -254,7 +252,6 @@ public:
         drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
         drawer.bindResourceSet(0, &draw_unit->getDsetModel());
         drawer.bindResourceSet(1, &_camera->getDset());
-        drawer.bindResourceSet(2, &draw_unit->getDsetTexture());
         drawer.draw();
       });
       auto attachments = std::array<rd::FrameImageManager*, 3>{
