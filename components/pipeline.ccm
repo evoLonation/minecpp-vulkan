@@ -10,6 +10,7 @@ import render.vertex;
 import render.image;
 import render.sampler;
 import render.buffer;
+import render.device;
 
 import model;
 import loop;
@@ -24,62 +25,78 @@ import <vulkan_config.h>;
 
 export namespace pipeline {
 
-namespace layouts {
+class DescriptorPools : public PROACTIVE_SINGLETON(DescriptorPools) {
+  using BindingInfo = rd::DescriptorSetLayout::BindingInfo;
 
-using BindingInfo = rd::DescriptorSetLayout::BindingInfo;
-auto getModel() -> rd::DescriptorPool& {
-  static auto dset_pool_model = rd::DescriptorPool{ std::vector{
-    BindingInfo{
+#define DEFINE_POOL(name, ...)                                                                     \
+private:                                                                                           \
+  rd::DescriptorPool _dset_pool_##name;                                                            \
+                                                                                                   \
+public:                                                                                            \
+  static auto get##name()->rd::DescriptorPool& {                                                   \
+    auto&       instance = DescriptorPools::getInstance();                                         \
+    static auto call_once = [&]() -> int {                                                         \
+      instance._dset_pool_##name = __VA_ARGS__;                                                    \
+      return 0;                                                                                    \
+    }();                                                                                           \
+    return instance._dset_pool_##name;                                                             \
+  }
+
+  DEFINE_POOL(
+    Model,
+    rd::DescriptorPool{ std::vector{
+      BindingInfo{
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .count = 1,
+      },
+      BindingInfo{
+        .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .count = 1,
+      },
+    } }
+  );
+
+  DEFINE_POOL(
+    ModelTrans,
+    rd::DescriptorPool{ std::vector{ BindingInfo{
       .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
       .stage = VK_SHADER_STAGE_VERTEX_BIT,
       .count = 1,
-    },
-    BindingInfo{
-      .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-      .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-      .count = 1,
-    },
-  } };
-  return dset_pool_model;
-}
-auto getModelTrans() -> rd::DescriptorPool& {
-  static auto dset_pool_model_trans = rd::DescriptorPool{ std::vector{ BindingInfo{
-    .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-    .stage = VK_SHADER_STAGE_VERTEX_BIT,
-    .count = 1,
-  } } };
-  return dset_pool_model_trans;
-}
-auto getCamera() -> rd::DescriptorPool& {
-  static auto dset_pool_camera = rd::DescriptorPool{ std::vector{
-    // view
-    BindingInfo{
-      .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-      .stage = VK_SHADER_STAGE_VERTEX_BIT,
-      .count = 1,
-    },
-    // proj
-    BindingInfo{
-      .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-      .stage = VK_SHADER_STAGE_VERTEX_BIT,
-      .count = 1,
-    },
-  } };
-  return dset_pool_camera;
-}
+    } } }
+  );
+
+  DEFINE_POOL(
+    Camera,
+    rd::DescriptorPool{ std::vector{
+      // view
+      BindingInfo{
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .count = 1,
+      },
+      // projection
+      BindingInfo{
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .count = 1,
+      },
+    } }
+  );
 
 }; // namespace layouts
 
 class DrawUnit : public loop::Action {
 public:
-  DrawUnit() {
+  DrawUnit(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
     setStage(loop::Stage::BEFORE_RENDER);
     _texture = rd::SampledTexture::create(
       "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
     );
-    _model_trans = std::make_unique<glm::mat4>(trans::model::create(glm::vec3{ 0.0f, 0.0f, 0.0f }));
+    _model_trans = std::make_unique<glm::mat4>(trans::model::create(location));
     _uniform_model = rd::UniformBuffer<glm::mat4>{ _model_trans.get() };
-    _dset_model = rd::ResourceSet{ &layouts::getModel(), { &_uniform_model, &_texture } };
+    _dset_model = rd::ResourceSet{ &DescriptorPools::getModel(), { &_uniform_model, &_texture } };
     auto [vertexes, indices] = model::getModelInfo("model/viking_room.obj");
     _vertex_buf = rd::VertexBuffer{ vertexes };
     _index_buf = rd::IndexBuffer{ indices };
@@ -134,7 +151,7 @@ public:
       .height = swapchain.getExtent().height,
     }));
     _uniform_proj = { _projection.get() };
-    _dset = rd::ResourceSet{ &layouts::getCamera(), { &_uniform_view, &_uniform_proj } };
+    _dset = rd::ResourceSet{ &DescriptorPools::getCamera(), { &_uniform_view, &_uniform_proj } };
   }
 
   Camera(Camera&&) noexcept = default;
@@ -209,14 +226,14 @@ public:
           .attachment = 2,
           .depth_option = {
             .compare_op = VK_COMPARE_OP_LESS,
-            .overwrite = false,
+            .overwrite = true,
           },
         }},
         .vertex_shader_name = "hello.vert",
         .frag_shader_name = "hello.frag",
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .vertex_info = model::Vertex::getVertexInfo(),
-        .dset_layouts = { layouts::getModel(), layouts::getCamera() },
+        .dset_layouts = { DescriptorPools::getModel(), DescriptorPools::getCamera() },
       }
     };
     _render_pass = rd::RenderPassPipeline{ attachment_infos, subpass_infos };
@@ -246,26 +263,27 @@ public:
     if (ctx.recreated) {
       createFramebuffers();
     }
-    for (auto* draw_unit : _draw_units) {
-      _render_pass.setRecorder(0, [&](rd::PipelineDrawer drawer) {
+    vkDeviceWaitIdle(rd::Device::getInstance());
+    _render_pass.setRecorder(0, [&](rd::PipelineDrawer drawer) {
+      for (auto* draw_unit : _draw_units) {
         drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
         drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
         drawer.bindResourceSet(0, &draw_unit->getDsetModel());
         drawer.bindResourceSet(1, &_camera->getDset());
         drawer.draw();
-      });
-      auto attachments = std::array<rd::FrameImageManager*, 3>{
-        &_sample_image,
-        ctx.image_manager,
-        &_depth_image,
-      };
-      auto clear_values = std::vector{
-        VkClearValue{ .color = { .float32 = { 0.5f, 0.5f, 0.5f, 1.0f } } },
-        VkClearValue{ .color = { .float32 = { 1.0f, 1.0f, 1.0f, 1.0f } } },
-        VkClearValue{ .depthStencil = { .depth = 1.0f, } },
-      };
-      _render_pass.recordDraw(attachments, clear_values);
-    }
+      }
+    });
+    auto attachments = std::array<rd::FrameImageManager*, 3>{
+      &_sample_image,
+      ctx.image_manager,
+      &_depth_image,
+    };
+    auto clear_values = std::vector{
+      VkClearValue{ .color = { .float32 = { 0.5f, 0.5f, 0.5f, 1.0f } } },
+      VkClearValue{ .color = { .float32 = { 1.0f, 1.0f, 1.0f, 1.0f } } },
+      VkClearValue{ .depthStencil = { .depth = 1.0f, } },
+    };
+    _render_pass.recordDraw(attachments, clear_values);
   }
 
   void setCamera(Camera* camera) { _camera = camera; }

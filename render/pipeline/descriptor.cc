@@ -133,13 +133,15 @@ void DescriptorPool::workingToIdle() {
   _working_resources.erase(new_end, _working_resources.end());
 }
 
-DescriptorPool::~DescriptorPool() {
-  for (auto& resource : _working_resources) {
-    resource.waitIdle();
+void DescriptorPool::beforeDestroy() {
+  if (get()) {
+    for (auto& resource : _working_resources) {
+      resource.waitIdle();
+    }
+    // move _working_resources to _resources
+    // because dsets in _working_resources can not destroy directly
+    workingToIdle();
   }
-  // move _working_resources to _resources
-  // because dsets in _working_resources can not destroy directly
-  workingToIdle();
 }
 
 ResourceSet::ResourceSet(DescriptorPool* pool, std::initializer_list<ResourceBinding> bindings)

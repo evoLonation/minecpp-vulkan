@@ -123,6 +123,7 @@ auto createSubpassDescriptions(
     }
     auto depst_index = std::optional<uint32>{};
     if (subpass.depst) {
+      depst_index = static_cast<uint32>(attachment_refs.size());
       addAttachmentRef(subpass.depst.value(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     }
     auto input_index = static_cast<uint32>(attachment_refs.size());
@@ -409,6 +410,32 @@ RenderPass::RenderPass(
   auto attach_descs = createAttachmentDescriptions(attachments, initial_layouts, final_layouts);
   auto [_2, dependencies, initial_stages, final_stages] =
     createDependencies(attachments, subpasses);
+  // for (auto& desc : attach_descs) {
+  //   TOY_DEBUG(
+  //     desc.format,
+  //     desc.samples,
+  //     (int)desc.loadOp,
+  //     (int)desc.storeOp,
+  //     (int)desc.stencilLoadOp,
+  //     (int)desc.stencilStoreOp,
+  //     desc.initialLayout,
+  //     desc.finalLayout
+  //   );
+  // }
+  // for (auto& desc : subpass_descs) {
+  //   auto& ref = *desc.pDepthStencilAttachment;
+  //   TOY_DEBUG(ref.attachment, (int)ref.aspectMask, ref.layout);
+  // }
+  // for (auto& dep : dependencies) {
+  //   TOY_DEBUG(
+  //     dep.srcSubpass,
+  //     dep.dstSubpass,
+  //     (int)dep.srcStageMask,
+  //     (int)dep.dstStageMask,
+  //     (int)dep.srcAccessMask,
+  //     (int)dep.dstAccessMask
+  //   );
+  // }
   auto render_pass_create_info = VkRenderPassCreateInfo2{
     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2,
     .attachmentCount = static_cast<uint32>(attach_descs.size()),

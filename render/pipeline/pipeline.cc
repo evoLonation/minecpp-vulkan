@@ -1,4 +1,8 @@
+module;
+#include <toy.h>
 module render.pipeline;
+
+import toy;
 
 import render.shader_code;
 
@@ -159,6 +163,10 @@ auto createGraphicsPipeline(
   } else {
     depst_info.stencilTestEnable = VK_FALSE;
   }
+
+  // TOY_DEBUG(
+  //   depst_info.depthTestEnable, depst_info.depthWriteEnable, (int)depst_info.depthCompareOp
+  // );
 
   // 颜色混合：将片段着色器返回的颜色与缓冲区中的颜色进行混合
   /**

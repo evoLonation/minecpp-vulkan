@@ -70,7 +70,7 @@ void CommandBufferPool::expand() {
 }
 
 void CommandBufferPool::tryShrink() {
-  auto shrink_size = 20;
+  auto shrink_size = 50;
   if (_idle_cmdbufs.size() <= shrink_size) {
     return;
   }

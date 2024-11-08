@@ -39,14 +39,19 @@ int main() {
     toy::test_EnumSet::test();
     trans::test_trans();
     auto  ctx = ctx::Context{ "hello vulkan", 1920, 1080 };
+    auto  dset_pools = pipeline::DescriptorPools{};
     auto& input = input::InputProcessor::getInstance();
 
     auto pipeline = pipeline::Pipeline{};
     auto camera = pipeline::Camera{};
     auto controller = camera::Controller{ &camera.getView() };
-    auto draw_unit = pipeline::DrawUnit{};
+    auto draw_unit_0 = pipeline::DrawUnit{};
+    auto draw_unit_1 = pipeline::DrawUnit{ glm::vec3{ 1.0f, 1.0f, 1.0f } };
+    auto draw_unit_2 = pipeline::DrawUnit{ glm::vec3{ -1.0f, -1.0f, -1.0f } };
     pipeline.setCamera(&camera);
-    pipeline.addDrawUnit(&draw_unit);
+    pipeline.addDrawUnit(&draw_unit_0);
+    pipeline.addDrawUnit(&draw_unit_1);
+    pipeline.addDrawUnit(&draw_unit_2);
     loop::Loop::getInstance().run();
 
   } catch (const std::exception& e) {

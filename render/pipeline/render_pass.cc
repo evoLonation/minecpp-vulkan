@@ -155,9 +155,9 @@ void recordPipeline(
 RenderPassPipeline::RenderPassPipeline(
   std::span<AttachmentInfo const> attachments, std::span<SubpassPipelineInfo const> subpasses
 )
-  : _render_pass(
+  : _render_pass{
       attachments,
-      subpasses | ranges::views::transform([](auto x) {
+      subpasses | views::transform([](auto& x) {
         return SubpassInfo{
           .colors = x.colors,
           .multi_sample = x.multi_sample,
@@ -165,8 +165,8 @@ RenderPassPipeline::RenderPassPipeline(
           .inputs = x.inputs,
         };
       }) |
-        ranges::to<std::vector>()
-    ) {
+        ranges::to<std::vector>(),
+    } {
   for (auto [subpass_i, subpass] : subpasses | toy::enumerate) {
     auto pipeline_info = PipelineInfo{
       .render_pass = _render_pass,

@@ -15,6 +15,7 @@ export namespace rd {
 
 class DescriptorSetLayout : public rs::DescriptorSetLayout {
 public:
+  DescriptorSetLayout() = default;
   struct BindingInfo {
     VkDescriptorType   type;
     VkShaderStageFlags stage;
@@ -62,14 +63,15 @@ private:
   void beforeDestroy() { TOY_CHECK(!valid()); }
 };
 
-class DescriptorPool : public toy::ObjectPoolHelper<DescriptorSet>, public DescriptorSetLayout {
+class DescriptorPool : toy::AutoMoveAssigner<DescriptorPool>,
+                       public toy::ObjectPoolHelper<DescriptorSet>,
+                       public DescriptorSetLayout {
 public:
-  using Base = toy::ObjectPoolHelper<DescriptorSet>;
-  friend Base;
+  DescriptorPool() = default;
   DescriptorPool(std::vector<BindingInfo> infos);
 
-  UNCOPYABLE_MOVEABLE(DescriptorPool);
-  ~DescriptorPool();
+  DEFAULT_MOVEABLE(DescriptorPool);
+  ~DescriptorPool() { beforeDestroy(); }
 
   void recycle(DescriptorSet dset);
 
@@ -87,11 +89,15 @@ private:
 
   static constexpr auto _allocate_count = 5;
 
+  friend toy::ObjectPoolHelper<DescriptorSet>;
   auto extract() -> DescriptorSet;
   auto isEmpty() -> bool;
   void expand();
   void tryShrink();
   void workingToIdle();
+
+  friend toy::AutoMoveAssigner<DescriptorPool>;
+  void beforeDestroy();
 };
 
 struct DescriptorResource {

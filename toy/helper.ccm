@@ -10,8 +10,18 @@ export namespace toy {
 template <size_t N>
 struct StringLiteral {
   constexpr StringLiteral(const char (&str)[N]) { std::copy_n(str, N, value); }
+  static constexpr auto from(char const* str) {
+    char value[N];
+    std::copy_n(str, N, value);
+    return StringLiteral<N>{ value };
+  }
   char value[N];
 };
+
+template <auto sv_getter>
+constexpr auto stringView2Literal() {
+  return StringLiteral<sv_getter().size() + 1>::from(sv_getter().data());
+}
 
 template <typename... Lambdas>
 struct OverloadLambda : public Lambdas... {
@@ -245,7 +255,11 @@ namespace test_StringLiteral {
 template <StringLiteral a>
 void func() {}
 
-void test() { func<"abcd">(); }
+void test() {
+  func<"abcd">();
+  func<StringLiteral<5>::from("abcd")>();
+  func<stringView2Literal<[]() { return std::string_view{ "abcd" }; }>()>();
+}
 
 } // namespace test_StringLiteral
 

@@ -24,7 +24,8 @@ class SingletonResource;
 template <typename VkHandle, auto* Creator, auto* Destroyer, typename... ConstructorArgs>
 class SingletonResource<VkHandle, Creator, Destroyer, toy::TypePack<ConstructorArgs...>>
   : public toy::ProactiveSingleton<
-      SingletonResource<VkHandle, Creator, Destroyer, toy::TypePack<ConstructorArgs...>>> {
+      SingletonResource<VkHandle, Creator, Destroyer, toy::TypePack<ConstructorArgs...>>,
+      toy::stringView2Literal<[]() { return refl::resource<VkHandle>(); }>()> {
 public:
   SingletonResource() = default;
   SingletonResource(ConstructorArgs... args) {
@@ -312,13 +313,13 @@ public:
                std::same_as<ranges::range_reference_t<RangeT>, SingleResource&>
   static auto join(RangeT range) -> AllocatedResources {
     auto resources = AllocatedResources{};
-    toy::throwf(
+    toy::checkf(
       ranges::all_of(
         // range, [&](auto& resource) { return resource.getPool() != range.begin()->getPool(); }
         range,
-        [&](auto& resource) { return resource.getPool() != (*range.begin()).getPool(); }
+        [&](auto& resource) { return resource.getPool() == (*range.begin()).getPool(); }
       ),
-      "cannot join AllocatedResources with different pools: {}",
+      "error: cannot join AllocatedResources with different pools: {}",
       ranges::size(range)
     );
     // resources._pool = range.begin()->getPool();
