@@ -31,6 +31,7 @@ auto createGraphicsPipeline(
   VkShaderModule                                     frag_shader,
   VkPipelineLayout                                   layout,
   VkPrimitiveTopology                                topology,
+  VkCullModeFlagBits                                 cull_mode,
   VkSampleCountFlagBits                              sample_count,
   std::optional<StencilOption>                       stencil_option,
   std::optional<DepthOption>                         depth_option,
@@ -45,6 +46,7 @@ struct PipelineInfo {
   std::string                        frag_shader_name;
   std::vector<VkDescriptorSetLayout> dset_layouts;
   VkPrimitiveTopology                topology;
+  VkCullModeFlagBits                 cull_mode;
   VkSampleCountFlagBits              sample_count;
   std::optional<StencilOption>       stencil_option;
   std::optional<DepthOption>         depth_option;

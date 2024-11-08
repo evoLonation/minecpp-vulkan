@@ -39,6 +39,7 @@ auto createGraphicsPipeline(
   VkShaderModule                                     frag_shader,
   VkPipelineLayout                                   layout,
   VkPrimitiveTopology                                topology,
+  VkCullModeFlagBits                                 cull_mode,
   VkSampleCountFlagBits                              sample_count,
   std::optional<StencilOption>                       stencil_option,
   std::optional<DepthOption>                         depth_option,
@@ -71,9 +72,7 @@ auto createGraphicsPipeline(
     VK_DYNAMIC_STATE_VIEWPORT,
     VK_DYNAMIC_STATE_SCISSOR,
   };
-  if (stencil_option
-        .transform([](auto& x) { return x.dynamic_reference; }) //
-        .value_or(false)) {
+  if (stencil_option.transform([](auto& x) { return x.dynamic_reference; }).value_or(false)) {
     dynamic_states.push_back(VK_DYNAMIC_STATE_STENCIL_REFERENCE);
   }
 
@@ -122,7 +121,7 @@ auto createGraphicsPipeline(
     // 如何绘制多边形，除了FILL外皆需要 gpu 支持
     .polygonMode = VK_POLYGON_MODE_FILL,
     // 背面剔除, 指定要剔除的面
-    .cullMode = VK_CULL_MODE_BACK_BIT,
+    .cullMode = cull_mode,
     .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
     // 深度偏移
     .depthBiasEnable = VK_FALSE,
@@ -239,6 +238,7 @@ Pipeline::Pipeline(const PipelineInfo& info) {
     _frag_shader,
     _layout,
     info.topology,
+    info.cull_mode,
     info.sample_count,
     info.stencil_option,
     info.depth_option,

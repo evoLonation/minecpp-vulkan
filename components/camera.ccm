@@ -13,7 +13,8 @@ export namespace camera {
 
 class Controller : public loop::Action {
 public:
-  Controller(glm::mat4* view, glm::vec3 location = glm::vec3{ -5.0f, .0f, .0f }) : _view(view) {
+  Controller(glm::mat4* view, glm::vec3 location = glm::vec3{ 5.0f, .0f, .0f }) : _view(view) {
+    _rotate_z = 180.0f;
     _translate = trans::translate(-location);
     setStage(loop::Stage::BEFORE_RENDER);
   }

@@ -42,7 +42,7 @@ int main() {
     auto  dset_pools = pipeline::DescriptorPools{};
     auto& input = input::InputProcessor::getInstance();
 
-    auto pipeline = pipeline::Pipeline{};
+    auto pipeline = pipeline::OutlinePipeline{};
     auto camera = pipeline::Camera{};
     auto controller = camera::Controller{ &camera.getView() };
     auto draw_unit_0 = pipeline::DrawUnit{};

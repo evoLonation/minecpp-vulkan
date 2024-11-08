@@ -70,22 +70,22 @@ struct AttachmentFormat {
       "the format of attachment not support by renderpass"
     );
   }
-  enum FormatType {
+  enum Type {
     COLOR = 1 << 0,
     DEPTH = 1 << 1,
     STENCIL = 1 << 2,
     DEPTH_STENCIL = DEPTH | STENCIL,
   };
 
-  auto getType() const -> FormatType {
+  auto getType() const -> Type {
     if (ranges::contains(_color_formats, _format)) {
-      return FormatType::COLOR;
+      return Type::COLOR;
     } else if (ranges::contains(_depth_formats, _format)) {
-      return FormatType::DEPTH;
+      return Type::DEPTH;
     } else if (ranges::contains(_stencil_formats, _format)) {
-      return FormatType::STENCIL;
+      return Type::STENCIL;
     } else if (ranges::contains(_depth_stencil_formats, _format)) {
-      return FormatType::DEPTH_STENCIL;
+      return Type::DEPTH_STENCIL;
     }
     std::unreachable();
   }
@@ -112,25 +112,16 @@ private:
 class FrameImage : public ImageResource, public FrameImageManager {
 public:
   FrameImage() = default;
-  enum Type {
-    COLOR,
-    DEPTH_STENCIL,
-  };
 
   FrameImage(
-    AttachmentFormat      format,
-    uint32                width,
-    uint32                height,
-    Type                  type,
-    VkSampleCountFlagBits sample_count
+    AttachmentFormat format, uint32 width, uint32 height, VkSampleCountFlagBits sample_count
   )
     : ImageResource(
         format,
         width,
         height,
-        type == COLOR ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-                      : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-        toAspect(type, format),
+        toUsage(format.getType()),
+        toAspect(format.getType()),
         1,
         sample_count
       ),
@@ -138,7 +129,7 @@ public:
         ImageResource::_image,
         ImageResource::_image_view,
         VkExtent2D{ width, height },
-        getSubresourceRange(toAspect(type, format), MipRange{ 0, 1 })
+        getSubresourceRange(toAspect(format.getType()), MipRange{ 0, 1 })
       ) {}
 
   FrameImage& operator=(FrameImage&& e) noexcept {
@@ -149,14 +140,26 @@ public:
   FrameImage(FrameImage&& e) noexcept = default;
 
 private:
-  static auto toAspect(Type type, VkFormat format) -> VkImageAspectFlags {
-    // todo: format
+  static auto toUsage(AttachmentFormat::Type type) -> VkImageUsageFlags {
     switch (type) {
-    case Type::COLOR:
+    case AttachmentFormat::COLOR:
+      return VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    case AttachmentFormat::DEPTH:
+    case AttachmentFormat::STENCIL:
+    case AttachmentFormat::DEPTH_STENCIL:
+      return VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    }
+  }
+  static auto toAspect(AttachmentFormat::Type type) -> VkImageAspectFlags {
+    switch (type) {
+    case AttachmentFormat::COLOR:
       return VK_IMAGE_ASPECT_COLOR_BIT;
-    case Type::DEPTH_STENCIL:
-      // return (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
+    case AttachmentFormat::DEPTH:
       return VK_IMAGE_ASPECT_DEPTH_BIT;
+    case AttachmentFormat::STENCIL:
+      return VK_IMAGE_ASPECT_STENCIL_BIT;
+    case AttachmentFormat::DEPTH_STENCIL:
+      return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
     }
   }
 };

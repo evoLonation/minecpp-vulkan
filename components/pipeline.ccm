@@ -59,7 +59,7 @@ public:                                                                         
   );
 
   DEFINE_POOL(
-    ModelTrans,
+    ModelOutline,
     rd::DescriptorPool{ std::vector{ BindingInfo{
       .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
       .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -91,12 +91,20 @@ class DrawUnit : public loop::Action {
 public:
   DrawUnit(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
     setStage(loop::Stage::BEFORE_RENDER);
+
     _texture = rd::SampledTexture::create(
       "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
     );
     _model_trans = std::make_unique<glm::mat4>(trans::model::create(location));
     _uniform_model = rd::UniformBuffer<glm::mat4>{ _model_trans.get() };
     _dset_model = rd::ResourceSet{ &DescriptorPools::getModel(), { &_uniform_model, &_texture } };
+
+    _model_trans_outline =
+      std::make_unique<glm::mat4>(*_model_trans * trans::scale(glm::vec3{ 1.05f, 1.05f, 1.05f }));
+    _uniform_model_outline = rd::UniformBuffer<glm::mat4>{ _model_trans_outline.get() };
+    _dset_model_outline =
+      rd::ResourceSet{ &DescriptorPools::getModelOutline(), { &_uniform_model_outline } };
+
     auto [vertexes, indices] = model::getModelInfo("model/viking_room.obj");
     _vertex_buf = rd::VertexBuffer{ vertexes };
     _index_buf = rd::IndexBuffer{ indices };
@@ -104,11 +112,16 @@ public:
 
   auto getModelTrans() -> glm::mat4& { return *_model_trans; }
   auto getDsetModel() -> rd::ResourceSet& { return _dset_model; }
+  auto getDsetModelOutline() -> rd::ResourceSet& { return _dset_model_outline; }
   auto getVertexBuffer() -> rd::VertexBuffer& { return _vertex_buf; }
   auto getIndexBuffer() -> rd::IndexBuffer& { return _index_buf; }
 
   DrawUnit(DrawUnit&&) noexcept = default;
   auto operator=(DrawUnit&& e) noexcept -> DrawUnit& {
+    _dset_model_outline = std::move(e._dset_model_outline);
+    _uniform_model_outline = std::move(e._uniform_model_outline);
+    _model_trans_outline = std::move(e._model_trans_outline);
+
     _dset_model = std::move(e._dset_model);
     _texture = std::move(e._texture);
     _uniform_model = std::move(e._uniform_model);
@@ -134,6 +147,10 @@ private:
   std::unique_ptr<glm::mat4>   _model_trans;
   rd::UniformBuffer<glm::mat4> _uniform_model;
   rd::ResourceSet              _dset_model;
+
+  std::unique_ptr<glm::mat4>   _model_trans_outline;
+  rd::UniformBuffer<glm::mat4> _uniform_model_outline;
+  rd::ResourceSet              _dset_model_outline;
 
   rd::VertexBuffer _vertex_buf;
   rd::IndexBuffer  _index_buf;
@@ -232,6 +249,7 @@ public:
         .vertex_shader_name = "hello.vert",
         .frag_shader_name = "hello.frag",
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .cull_mode = VK_CULL_MODE_BACK_BIT,
         .vertex_info = model::Vertex::getVertexInfo(),
         .dset_layouts = { DescriptorPools::getModel(), DescriptorPools::getCamera() },
       }
@@ -247,14 +265,12 @@ public:
       swapchain.getFormat(),
       swapchain.getExtent().width,
       swapchain.getExtent().height,
-      rd::FrameImage::Type::COLOR,
       _sample_count,
     };
     _depth_image = rd::FrameImage{
       _depth_format,
       swapchain.getExtent().width,
       swapchain.getExtent().height,
-      rd::FrameImage::Type::DEPTH_STENCIL,
       _sample_count,
     };
   }
@@ -263,7 +279,6 @@ public:
     if (ctx.recreated) {
       createFramebuffers();
     }
-    vkDeviceWaitIdle(rd::Device::getInstance());
     _render_pass.setRecorder(0, [&](rd::PipelineDrawer drawer) {
       for (auto* draw_unit : _draw_units) {
         drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
@@ -301,6 +316,184 @@ private:
 
   static constexpr auto _sample_count = VK_SAMPLE_COUNT_8_BIT;
   static constexpr auto _depth_format = VK_FORMAT_D32_SFLOAT;
+};
+
+class OutlinePipeline : loop::Action {
+public:
+  OutlinePipeline() : loop::Action{ loop::Stage::RENDER } {
+    auto& swapchain = rd::Presentation::getInstance().getSwapchain();
+    TOY_ASSERT((rd::ImageContext::getInstance().getAvailableSampleCounts() & _sample_count) > 0);
+
+    auto attachment_infos = std::vector<rd::AttachmentInfo>{
+      rd::AttachmentInfo{
+        .format = swapchain.getFormat(),
+        .sample_count = _sample_count,
+        .keep_old_content = false,
+        .keep_new_content = false,
+      },
+      rd::AttachmentInfo{
+        .format = swapchain.getFormat(),
+        .sample_count = VK_SAMPLE_COUNT_1_BIT,
+        .keep_old_content = false,
+        .keep_new_content = true,
+      },
+      rd::AttachmentInfo{
+        .format = _depst_format,
+        // .sample_count = VK_SAMPLE_COUNT_1_BIT,
+        .sample_count = _sample_count,
+        .keep_old_content = false,
+        .keep_new_content = false,
+      },
+    };
+    auto subpass_infos = std::vector<rd::SubpassPipelineInfo>{
+      rd::SubpassPipelineInfo{
+        .colors = {0},
+        .inputs = {},
+        .multi_sample = {{
+          .resolves = {std::nullopt},
+          .sample_count = _sample_count,
+        }},
+        .depst = {{
+          .attachment = 2,
+          .depth_option = {
+            .compare_op = VK_COMPARE_OP_LESS,
+            .overwrite = true,
+          },
+          .stencil_option = {
+            // cull back, so set front stencil
+            .front = VkStencilOpState{
+              // set the dynamic reference to attachment used to compare by subpass[1]
+              .passOp = VK_STENCIL_OP_REPLACE,
+              .compareOp = VK_COMPARE_OP_ALWAYS,
+              .writeMask = 0xFFFFFFFF,
+            },
+            .dynamic_reference = true,
+          },
+        }},
+        .vertex_shader_name = "hello.vert",
+        .frag_shader_name = "hello.frag",
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .cull_mode = VK_CULL_MODE_BACK_BIT,
+        .vertex_info = model::Vertex::getVertexInfo(),
+        .dset_layouts = { DescriptorPools::getModel(), DescriptorPools::getCamera() },
+      },
+      rd::SubpassPipelineInfo{
+        .colors = {0},
+        .inputs = {},
+        .multi_sample = {{
+          .resolves = {1},
+          .sample_count = _sample_count,
+        }},
+        .depst = {{
+          .attachment = 2,
+          .depth_option = {
+            .compare_op = VK_COMPARE_OP_LESS,
+            .overwrite = true,
+          },
+          .stencil_option = {
+            .back = VkStencilOpState{
+              // fail the stencil test
+              .failOp = VK_STENCIL_OP_KEEP,
+              // pass both the depth and stencil tests
+              .passOp = VK_STENCIL_OP_KEEP,
+              // pass the stencil test and fail the depth test
+              .depthFailOp = VK_STENCIL_OP_KEEP,
+              .compareOp = VK_COMPARE_OP_NOT_EQUAL,
+              // used when compare attachment value and reference
+              .compareMask = 0xffffffff,
+              // used when write new value to attachment
+              .writeMask = 0xffffffff,
+              // .reference = 73,
+            },
+          .dynamic_reference = true,
+          },
+        }},
+        .vertex_shader_name = "outline.vert",
+        .frag_shader_name = "outline.frag",
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        // cull front
+        .cull_mode = VK_CULL_MODE_FRONT_BIT,
+        .vertex_info = model::Vertex::getVertexInfo(),
+        .dset_layouts = { DescriptorPools::getModelOutline(), DescriptorPools::getCamera() },
+      }
+    };
+    _render_pass = rd::RenderPassPipeline{ attachment_infos, subpass_infos };
+
+    createFramebuffers();
+  }
+
+  void createFramebuffers() {
+    auto& swapchain = rd::Presentation::getInstance().getSwapchain();
+    _sample_image = rd::FrameImage{
+      swapchain.getFormat(),
+      swapchain.getExtent().width,
+      swapchain.getExtent().height,
+      _sample_count,
+    };
+    _depth_image = rd::FrameImage{
+      _depst_format,
+      swapchain.getExtent().width,
+      swapchain.getExtent().height,
+      _sample_count,
+    };
+  }
+
+  void runLoop(loop::ActionContext const& ctx) override {
+    if (ctx.recreated) {
+      createFramebuffers();
+    }
+    _render_pass.setRecorder(0, [&](rd::PipelineDrawer drawer) {
+      // todo: easy to overflow
+      uint8 reference = 1;
+      for (auto* draw_unit : _draw_units) {
+        drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
+        drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
+        drawer.bindResourceSet(0, &draw_unit->getDsetModel());
+        drawer.bindResourceSet(1, &_camera->getDset());
+        drawer.setStencilReference(reference++);
+        drawer.draw();
+      }
+    });
+    _render_pass.setRecorder(1, [&](rd::PipelineDrawer drawer) {
+      // todo: easy to overflow
+      uint8 reference = 1;
+      for (auto* draw_unit : _draw_units) {
+        drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
+        drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
+        drawer.bindResourceSet(0, &draw_unit->getDsetModelOutline());
+        drawer.bindResourceSet(1, &_camera->getDset());
+        drawer.setStencilReference(reference++);
+        drawer.draw();
+      }
+    });
+    auto attachments = std::array<rd::FrameImageManager*, 3>{
+      &_sample_image,
+      ctx.image_manager,
+      &_depth_image,
+    };
+    auto clear_values = std::vector{
+      VkClearValue{ .color = { .float32 = { 0.5f, 0.5f, 0.5f, 1.0f } } },
+      VkClearValue{ .color = { .float32 = { 1.0f, 1.0f, 1.0f, 1.0f } } },
+      VkClearValue{ .depthStencil = { .depth = 1.0f, .stencil = 0, } },
+    };
+    _render_pass.recordDraw(attachments, clear_values);
+  }
+
+  void setCamera(Camera* camera) { _camera = camera; }
+  void addDrawUnit(DrawUnit* draw_unit) { _draw_units.insert(draw_unit); }
+  void removeDrawUnit(DrawUnit* draw_unit) { _draw_units.erase(draw_unit); }
+
+private:
+  rd::RenderPassPipeline _render_pass;
+
+  rd::FrameImage _sample_image;
+  rd::FrameImage _depth_image;
+
+  Camera*                       _camera;
+  std::unordered_set<DrawUnit*> _draw_units;
+
+  static constexpr auto _sample_count = VK_SAMPLE_COUNT_8_BIT;
+  static constexpr auto _depst_format = VK_FORMAT_D24_UNORM_S8_UINT;
 };
 
 } // namespace pipeline

@@ -87,6 +87,7 @@ public:
   void bindVertexBuffer(VertexBuffer* vertex_buffer);
   void bindIndexBuffer(IndexBuffer* index_buffer);
   void bindResourceSet(uint32 index, ResourceSet* resource_set);
+  void setStencilReference(uint32 reference);
   void draw();
 
 private:
@@ -156,6 +157,7 @@ struct SubpassPipelineInfo {
   std::string                        vertex_shader_name;
   std::string                        frag_shader_name;
   VkPrimitiveTopology                topology;
+  VkCullModeFlagBits                 cull_mode;
   VertexInfo                         vertex_info;
   std::vector<VkDescriptorSetLayout> dset_layouts;
 };

@@ -26,7 +26,7 @@ void recordRenderPass(
     .clearValueCount = static_cast<uint32>(clear_values.size()),
     .pClearValues = clear_values.data(),
   };
-  // VK_SUBPASS_CONTENTS_: render pass的command被嵌入主缓冲区
+  // VK_SUBPASS_CONTENTS_INLINE: render pass的command被嵌入主缓冲区
   // VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS: render pass 命令
   // 将会从次缓冲区执行
   vkCmdBeginRenderPass(cmdbuf, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
@@ -119,6 +119,12 @@ void PipelineDrawer::bindResourceSet(uint32 index, ResourceSet* resource_set) {
   }
 }
 
+void PipelineDrawer::setStencilReference(uint32 reference) {
+  if (_execute_type == RECORD) {
+    vkCmdSetStencilReference(_cmdbuf, VK_STENCIL_FACE_FRONT_AND_BACK, reference);
+  }
+}
+
 void PipelineDrawer::draw() {
   if (_execute_type == RECORD) {
     vkCmdDrawIndexed(_cmdbuf, _index_count, 1, 0, 0, 0);
@@ -175,6 +181,7 @@ RenderPassPipeline::RenderPassPipeline(
       .frag_shader_name = subpass.frag_shader_name,
       .dset_layouts = std::move(subpass.dset_layouts),
       .topology = subpass.topology,
+      .cull_mode = subpass.cull_mode,
       .sample_count =
         subpass.multi_sample ? subpass.multi_sample->sample_count : VK_SAMPLE_COUNT_1_BIT,
       .stencil_option = subpass.depst.transform([](auto x) { return x.stencil_option; }),
@@ -290,7 +297,11 @@ void RenderPassPipeline::recordDraw(
     }
   }
   auto pipeline_recorder = [&](VkCommandBuffer cmdbuf, VkExtent2D extent) {
-    for (auto [pipeline, recorder] : views::zip(_pipelines, _recorders)) {
+    for (auto [subpass_i, pipeline, recorder] :
+         views::zip(views::iota(0u), _pipelines, _recorders)) {
+      if (subpass_i != 0) {
+        vkCmdNextSubpass(cmdbuf, VK_SUBPASS_CONTENTS_INLINE);
+      }
       recordPipeline(cmdbuf, extent, pipeline.getPipeline(), pipeline.getLayout(), recorder);
     }
   };
