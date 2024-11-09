@@ -1,0 +1,16 @@
+export module render;
+
+export import render.sync;
+export import render.executor;
+export import render.tracker;
+export import render.device;
+export import render.descriptor;
+export import render.render_pass;
+export import render.framebuffer;
+export import render.swapchain;
+export import render.presentation;
+export import render.buffer;
+export import render.image;
+export import render.sampler;
+export import render.vertex;
+export import <vulkan_config.h>;

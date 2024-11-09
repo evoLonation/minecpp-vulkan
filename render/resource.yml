@@ -1,5 +1,8 @@
 include_dir:
 - base
+module:
+- total.ccm:
+    provide: render
 sub_dir:
 - base
 - context

@@ -54,6 +54,9 @@ class Resource:
         elif remain_member_size == 1:
             return {self.file: list(value.values())[0]}
         else:
+            for k in list(value.keys()):
+                if value[k] is None:
+                    value.pop(k)
             return {self.file: value}
 
 

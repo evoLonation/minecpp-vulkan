@@ -3,3 +3,7 @@ module:
     provide: pipeline
 - camera.ccm:
     provide: camera
+- dset_pools.ccm:
+    provide: dset_pools
+- drag.ccm:
+    provide: drag
