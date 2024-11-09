@@ -45,9 +45,9 @@ int main() {
     auto pipeline = pipeline::OutlinePipeline{};
     auto camera = pipeline::Camera{};
     auto controller = camera::Controller{ &camera.getView() };
-    auto draw_unit_0 = pipeline::DrawUnit{};
-    auto draw_unit_1 = pipeline::DrawUnit{ glm::vec3{ 1.0f, 1.0f, 1.0f } };
-    auto draw_unit_2 = pipeline::DrawUnit{ glm::vec3{ -1.0f, -1.0f, -1.0f } };
+    auto draw_unit_0 = pipeline::DrawUnit{ 1 };
+    auto draw_unit_1 = pipeline::DrawUnit{ 2, glm::vec3{ 1.0f, 1.0f, 1.0f } };
+    auto draw_unit_2 = pipeline::DrawUnit{ 3, glm::vec3{ -1.0f, -1.0f, -1.0f } };
     pipeline.setCamera(&camera);
     pipeline.addDrawUnit(&draw_unit_0);
     pipeline.addDrawUnit(&draw_unit_1);

@@ -85,11 +85,32 @@ public:                                                                         
     } }
   );
 
+  DEFINE_POOL(
+    ModelId,
+    rd::DescriptorPool{ std::vector{
+      BindingInfo{
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .count = 1,
+      },
+      BindingInfo{
+        .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .count = 1,
+      },
+      BindingInfo{
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .count = 1,
+      },
+    } }
+  );
+
 }; // namespace layouts
 
 class DrawUnit : public loop::Action {
 public:
-  DrawUnit(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
+  DrawUnit(uint32 id, glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
     setStage(loop::Stage::BEFORE_RENDER);
 
     _texture = rd::SampledTexture::create(
@@ -98,6 +119,13 @@ public:
     _model_trans = std::make_unique<glm::mat4>(trans::model::create(location));
     _uniform_model = rd::UniformBuffer<glm::mat4>{ _model_trans.get() };
     _dset_model = rd::ResourceSet{ &DescriptorPools::getModel(), { &_uniform_model, &_texture } };
+
+    _model_id = std::make_unique<uint32>(id);
+    _uniform_model_id = rd::UniformBuffer<glm::uint32>{ _model_id.get() };
+    _dset_model_id = rd::ResourceSet{
+      &DescriptorPools::getModelId(),
+      { &_uniform_model, &_texture, &_uniform_model_id },
+    };
 
     _model_trans_outline =
       std::make_unique<glm::mat4>(*_model_trans * trans::scale(glm::vec3{ 1.05f, 1.05f, 1.05f }));
@@ -111,7 +139,9 @@ public:
   }
 
   auto getModelTrans() -> glm::mat4& { return *_model_trans; }
+  auto getId() -> uint32 { return *_model_id; }
   auto getDsetModel() -> rd::ResourceSet& { return _dset_model; }
+  auto getDsetModelId() -> rd::ResourceSet& { return _dset_model_id; }
   auto getDsetModelOutline() -> rd::ResourceSet& { return _dset_model_outline; }
   auto getVertexBuffer() -> rd::VertexBuffer& { return _vertex_buf; }
   auto getIndexBuffer() -> rd::IndexBuffer& { return _index_buf; }
@@ -121,6 +151,10 @@ public:
     _dset_model_outline = std::move(e._dset_model_outline);
     _uniform_model_outline = std::move(e._uniform_model_outline);
     _model_trans_outline = std::move(e._model_trans_outline);
+
+    _dset_model_id = std::move(e._dset_model_id);
+    _uniform_model_id = std::move(e._uniform_model_id);
+    _model_id = std::move(e._model_id);
 
     _dset_model = std::move(e._dset_model);
     _texture = std::move(e._texture);
@@ -147,6 +181,10 @@ private:
   std::unique_ptr<glm::mat4>   _model_trans;
   rd::UniformBuffer<glm::mat4> _uniform_model;
   rd::ResourceSet              _dset_model;
+
+  std::unique_ptr<uint32>   _model_id;
+  rd::UniformBuffer<uint32> _uniform_model_id;
+  rd::ResourceSet           _dset_model_id;
 
   std::unique_ptr<glm::mat4>   _model_trans_outline;
   rd::UniformBuffer<glm::mat4> _uniform_model_outline;
@@ -342,13 +380,25 @@ public:
         .keep_old_content = false,
         .keep_new_content = false,
       },
+      rd::AttachmentInfo{
+        .format = _id_format,
+        .sample_count = _sample_count,
+        .keep_old_content = false,
+        .keep_new_content = false,
+      },
+      rd::AttachmentInfo{
+        .format = _id_format,
+        .sample_count = VK_SAMPLE_COUNT_1_BIT,
+        .keep_old_content = false,
+        .keep_new_content = true,
+      },
     };
     auto subpass_infos = std::vector<rd::SubpassPipelineInfo>{
       rd::SubpassPipelineInfo{
-        .colors = {0},
+        .colors = {0, 3},
         .inputs = {},
         .multi_sample = {{
-          .resolves = {std::nullopt},
+          .resolves = {std::nullopt, 4},
           .sample_count = _sample_count,
         }},
         .depst = {{
@@ -369,11 +419,11 @@ public:
           },
         }},
         .vertex_shader_name = "hello.vert",
-        .frag_shader_name = "hello.frag",
+        .frag_shader_name = "id.frag",
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .cull_mode = VK_CULL_MODE_BACK_BIT,
         .vertex_info = model::Vertex::getVertexInfo(),
-        .dset_layouts = { DescriptorPools::getModel(), DescriptorPools::getCamera() },
+        .dset_layouts = { DescriptorPools::getModelId(), DescriptorPools::getCamera() },
       },
       rd::SubpassPipelineInfo{
         .colors = {0},
@@ -432,7 +482,17 @@ public:
     _depth_image = rd::FrameImage{
       _depst_format, swapchain.getExtent().width, swapchain.getExtent().height, _sample_count, {},
     };
-    _image_reader = rd::ImageLocalReader{ swapchain.getFormat(), swapchain.getExtent() };
+    _id_image = rd::FrameImage{
+      _id_format, swapchain.getExtent().width, swapchain.getExtent().height, _sample_count, {},
+    };
+    _id_resolved_image = rd::FrameImage{
+      _id_format,
+      swapchain.getExtent().width,
+      swapchain.getExtent().height,
+      VK_SAMPLE_COUNT_1_BIT,
+      VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+    };
+    _image_reader = rd::ImageLocalReader{ _id_format, swapchain.getExtent() };
   }
 
   void runLoop(loop::ActionContext const& ctx) override {
@@ -445,7 +505,7 @@ public:
       for (auto* draw_unit : _draw_units) {
         drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
         drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
-        drawer.bindResourceSet(0, &draw_unit->getDsetModel());
+        drawer.bindResourceSet(0, &draw_unit->getDsetModelId());
         drawer.bindResourceSet(1, &_camera->getDset());
         drawer.setStencilReference(reference++);
         drawer.draw();
@@ -455,30 +515,41 @@ public:
       // todo: easy to overflow
       uint8 reference = 1;
       for (auto* draw_unit : _draw_units) {
-        drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
-        drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
-        drawer.bindResourceSet(0, &draw_unit->getDsetModelOutline());
-        drawer.bindResourceSet(1, &_camera->getDset());
-        drawer.setStencilReference(reference++);
-        drawer.draw();
+        if (draw_unit->getId() == _last_id) {
+          drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
+          drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
+          drawer.bindResourceSet(0, &draw_unit->getDsetModelOutline());
+          drawer.bindResourceSet(1, &_camera->getDset());
+          drawer.setStencilReference(reference);
+          drawer.draw();
+        }
+        reference++;
       }
     });
-    auto attachments = std::array<rd::FrameImageManager*, 3>{
-      &_sample_image,
-      ctx.image_manager,
-      &_depth_image,
+    auto attachments = std::array<rd::FrameImageManager*, 5>{
+      &_sample_image, ctx.image_manager, &_depth_image, &_id_image, &_id_resolved_image,
     };
     auto clear_values = std::vector{
       VkClearValue{ .color = { .float32 = { 0.1f, 0.1f, 0.1f, 1.0f } } },
-      VkClearValue{ .color = { .float32 = { 1.0f, 1.0f, 1.0f, 1.0f } } },
+      {}, // whatever
       VkClearValue{ .depthStencil = { .depth = 1.0f, .stencil = 0, } },
+      VkClearValue{ .color = { .float32 = { 0.0f, 0.0f, 0.0f, 0.0f } } },
+      {}, // whatever
     };
     _render_pass.recordDraw(attachments, clear_values);
     _image_reader.loadImage(
-      *ctx.image_manager, VK_IMAGE_ASPECT_COLOR_BIT, VkOffset2D{ 0, 0 }, _depth_image.getExtent(), 0
+      _id_resolved_image,
+      VK_IMAGE_ASPECT_COLOR_BIT,
+      VkOffset2D{ 0, 0 },
+      _id_resolved_image.getExtent(),
+      0
     );
-    auto pixel = *reinterpret_cast<uint32 const*>(_image_reader.readPixel(0, 0));
-    toy::debugf("pixel: {:x}", pixel);
+    auto cursor = input::InputProcessor::getInstance().getCursorState();
+    if (cursor.visible) {
+      auto pixel = *reinterpret_cast<uint32 const*>(_image_reader.readPixel(cursor.x, cursor.y));
+      toy::debugf("pixel: {:x}", pixel);
+      _last_id = pixel;
+    }
   }
 
   void setCamera(Camera* camera) { _camera = camera; }
@@ -490,13 +561,18 @@ private:
 
   rd::FrameImage       _sample_image;
   rd::FrameImage       _depth_image;
+  rd::FrameImage       _id_image;
+  rd::FrameImage       _id_resolved_image;
   rd::ImageLocalReader _image_reader;
 
   Camera*                       _camera;
   std::unordered_set<DrawUnit*> _draw_units;
 
+  uint32 _last_id = 0;
+
   static constexpr auto _sample_count = VK_SAMPLE_COUNT_8_BIT;
   static constexpr auto _depst_format = VK_FORMAT_D24_UNORM_S8_UINT;
+  static constexpr auto _id_format = VK_FORMAT_R32_UINT;
 };
 
 } // namespace pipeline

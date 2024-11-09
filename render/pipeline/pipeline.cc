@@ -31,7 +31,6 @@ auto createPipelineLayout(std::span<VkDescriptorSetLayout const> dset_layouts) /
   return rs::PipelineLayout{ pipeline_layout_info };
 }
 
-// todo: add depth option
 auto createGraphicsPipeline(
   VkRenderPass                                       render_pass,
   uint32                                             subpass_i,
@@ -41,6 +40,7 @@ auto createGraphicsPipeline(
   VkPrimitiveTopology                                topology,
   VkCullModeFlagBits                                 cull_mode,
   VkSampleCountFlagBits                              sample_count,
+  uint32                                             output_n,
   std::optional<StencilOption>                       stencil_option,
   std::optional<DepthOption>                         depth_option,
   std::span<VkVertexInputBindingDescription const>   vertex_bindings,
@@ -177,20 +177,24 @@ auto createGraphicsPipeline(
    * }
    * finalColor = finalColor & colorWriteMask;
    */
-  auto color_blend_attachment = VkPipelineColorBlendAttachmentState{
-    .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                      VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-  };
-  if constexpr (enable_blending_color) {
-    color_blend_attachment.blendEnable = VK_TRUE;
-    color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    color_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
-    color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
-  } else {
-    color_blend_attachment.blendEnable = VK_FALSE;
+  auto color_blend_attachs = std::vector<VkPipelineColorBlendAttachmentState>{};
+  while (output_n--) {
+    auto color_blend_attachment = VkPipelineColorBlendAttachmentState{
+      .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+    };
+    if constexpr (enable_blending_color) {
+      color_blend_attachment.blendEnable = VK_TRUE;
+      color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+      color_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+      color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
+      color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+      color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+      color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+    } else {
+      color_blend_attachment.blendEnable = VK_FALSE;
+    }
+    color_blend_attachs.push_back(color_blend_attachment);
   }
 
   auto color_blend_state_info = VkPipelineColorBlendStateCreateInfo{
@@ -198,8 +202,8 @@ auto createGraphicsPipeline(
     // 启用第二种混合方法
     // Combine the old and new value using a bitwise operation
     .logicOpEnable = VK_FALSE,
-    .attachmentCount = 1,
-    .pAttachments = &color_blend_attachment,
+    .attachmentCount = static_cast<uint32>(color_blend_attachs.size()),
+    .pAttachments = color_blend_attachs.data(),
   };
 
   auto pipeline_create_info = VkGraphicsPipelineCreateInfo{
@@ -240,6 +244,7 @@ Pipeline::Pipeline(const PipelineInfo& info) {
     info.topology,
     info.cull_mode,
     info.sample_count,
+    info.output_n,
     info.stencil_option,
     info.depth_option,
     std::array{ *info.vertex_info.binding_description },

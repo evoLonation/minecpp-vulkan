@@ -184,6 +184,7 @@ RenderPassPipeline::RenderPassPipeline(
       .cull_mode = subpass.cull_mode,
       .sample_count =
         subpass.multi_sample ? subpass.multi_sample->sample_count : VK_SAMPLE_COUNT_1_BIT,
+      .output_n = static_cast<uint32_t>(subpass.colors.size()),
       .stencil_option = subpass.depst.transform([](auto x) { return x.stencil_option; }),
       .depth_option = subpass.depst.transform([](auto x) { return x.depth_option; }),
       .vertex_info = subpass.vertex_info,

@@ -5,3 +5,4 @@ shader:
 - hello.vert
 - outline.vert
 - outline.frag
+- id.frag

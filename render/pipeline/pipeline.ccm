@@ -33,6 +33,7 @@ auto createGraphicsPipeline(
   VkPrimitiveTopology                                topology,
   VkCullModeFlagBits                                 cull_mode,
   VkSampleCountFlagBits                              sample_count,
+  uint32                                             output_n,
   std::optional<StencilOption>                       stencil_option,
   std::optional<DepthOption>                         depth_option,
   std::span<VkVertexInputBindingDescription const>   vertex_bindings,
@@ -48,6 +49,7 @@ struct PipelineInfo {
   VkPrimitiveTopology                topology;
   VkCullModeFlagBits                 cull_mode;
   VkSampleCountFlagBits              sample_count;
+  uint32                             output_n;
   std::optional<StencilOption>       stencil_option;
   std::optional<DepthOption>         depth_option;
   VertexInfo                         vertex_info;

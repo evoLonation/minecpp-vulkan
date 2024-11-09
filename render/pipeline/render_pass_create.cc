@@ -423,8 +423,25 @@ RenderPass::RenderPass(
   //   );
   // }
   // for (auto& desc : subpass_descs) {
-  //   auto& ref = *desc.pDepthStencilAttachment;
-  //   TOY_DEBUG(ref.attachment, (int)ref.aspectMask, ref.layout);
+  //   toy::debugf("color attachments:");
+  //   for (auto& ref : std::span{ desc.pColorAttachments, desc.colorAttachmentCount }) {
+  //     TOY_DEBUG(ref.attachment, (int)ref.aspectMask, ref.layout);
+  //   }
+  //   toy::debugf("input attachments:");
+  //   for (auto& ref : std::span{ desc.pInputAttachments, desc.inputAttachmentCount }) {
+  //     TOY_DEBUG(ref.attachment, (int)ref.aspectMask, ref.layout);
+  //   }
+  //   if (desc.pResolveAttachments) {
+  //     toy::debugf("resolve attachments:");
+  //     for (auto& ref : std::span{ desc.pResolveAttachments, desc.colorAttachmentCount }) {
+  //       TOY_DEBUG(ref.attachment, (int)ref.aspectMask, ref.layout);
+  //     }
+  //   }
+  //   if (desc.pDepthStencilAttachment) {
+  //     toy::debugf("depth attachments:");
+  //     auto& ref = *desc.pDepthStencilAttachment;
+  //     TOY_DEBUG(ref.attachment, (int)ref.aspectMask, ref.layout);
+  //   }
   // }
   // for (auto& dep : dependencies) {
   //   TOY_DEBUG(
