@@ -17,15 +17,17 @@ class Buffer : public rs::Buffer {
 public:
   Buffer() = default;
   Buffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage, VkMemoryPropertyFlags property_flags)
-    : rs::Buffer{ createBuffer(buffer_size, usage) }, _memory{ get(), property_flags },
-      _tracker{ get() } {}
+    : _size(buffer_size), rs::Buffer{ createBuffer(buffer_size, usage) },
+      _memory{ get(), property_flags }, _tracker{ get() } {}
   auto getMemory() const -> VkDeviceMemory { return _memory; }
   auto getTracker() -> BufferBarrierTracker& { return _tracker; }
+  auto size() const -> VkDeviceSize { return _size; }
 
   Buffer(Buffer&&) noexcept = default;
   auto operator=(Buffer&& e) noexcept -> Buffer&;
 
 private:
+  VkDeviceSize         _size;
   Memory               _memory;
   BufferBarrierTracker _tracker;
 };
@@ -71,6 +73,7 @@ public:
     auto cached_bytes = std::as_writable_bytes(std::span<DataType>{ &_cache_data, 1 });
     if (ranges::mismatch(now_bytes, cached_bytes).in1 != now_bytes.end()) {
       std::copy(now_bytes.begin(), now_bytes.end(), cached_bytes.begin());
+      // because uniform is read only, so no need to execute available operation from device to host
       getTracker().waitIdle();
       getMemory().fill(cached_bytes);
       getTracker().clearScope();

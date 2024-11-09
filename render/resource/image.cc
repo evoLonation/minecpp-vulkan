@@ -154,6 +154,8 @@ Image::Image(
       ImageResource::_image,
       ImageResource::_image_view,
       VkExtent2D{ width, height },
+      format,
+      sample_count,
       getSubresourceRange(aspect, MipRange{ 0, 1 })
     ) {}
 
@@ -163,16 +165,11 @@ auto Image::operator=(Image&& e) noexcept -> Image& {
   return *this;
 }
 
-void copyBufferToImage(
-  VkCommandBuffer       cmdbuf,
-  VkBuffer              buffer,
-  VkImage               image,
-  VkImageAspectFlagBits aspect,
-  uint32                width,
-  uint32                height,
-  uint32                mip_level
-) {
-  auto image_copy = VkBufferImageCopy{
+// must only one bit of aspect (by specification)
+auto getBufferImageCopy(
+  VkImageAspectFlagBits aspect, uint32 mip_level, VkOffset2D offset, VkExtent2D extent
+) -> VkBufferImageCopy {
+  return VkBufferImageCopy{
     .bufferOffset = 0,
     // bufferRowLength and bufferImageHeight
     // 用于更详细的定义buffer的内存如何映射到image
@@ -181,19 +178,46 @@ void copyBufferToImage(
     .imageSubresource = getSubresourceLayers(aspect, mip_level),
     .imageOffset =
       VkOffset3D{
-        .x = 0,
-        .y = 0,
+        .x = offset.x,
+        .y = offset.y,
         .z = 0,
       },
     .imageExtent =
       VkExtent3D{
-        .width = (uint32)width,
-        .height = (uint32)height,
+        .width = extent.width,
+        .height = extent.height,
         .depth = 1,
       },
   };
+}
+
+void copyBufferToImage(
+  VkCommandBuffer       cmdbuf,
+  VkBuffer              buffer,
+  VkImage               image,
+  VkImageAspectFlagBits aspect,
+  VkOffset2D            offset,
+  VkExtent2D            extent,
+  uint32                mip_level
+) {
+  auto image_copy = getBufferImageCopy(aspect, mip_level, offset, extent);
   vkCmdCopyBufferToImage(
     cmdbuf, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_copy
+  );
+}
+
+void copyImageToBuffer(
+  VkCommandBuffer       cmdbuf,
+  VkImage               image,
+  VkBuffer              buffer,
+  VkImageAspectFlagBits aspect,
+  VkOffset2D            offset,
+  VkExtent2D            extent,
+  uint32                mip_level
+) {
+  auto image_copy = getBufferImageCopy(aspect, mip_level, offset, extent);
+  vkCmdCopyImageToBuffer(
+    cmdbuf, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1, &image_copy
   );
 }
 

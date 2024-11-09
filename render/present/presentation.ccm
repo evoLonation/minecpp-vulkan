@@ -78,7 +78,7 @@ public:
    * images that need_release is true
    */
   struct ImageContext : FrameImageManager {
-    ImageContext(VkImage image, VkImageView image_view, VkExtent2D extent);
+    ImageContext(VkImage image, VkImageView image_view, VkExtent2D extent, VkFormat format);
     ~ImageContext() {
       TOY_ASSERT(!valid(), "must not destory using destructor, use destroy() instead");
     }

@@ -2,6 +2,8 @@ module render.swapchain;
 
 import <vulkan_config.h>;
 
+import render.reflections;
+
 namespace rd {
 
 VkFormat         Swapchain::_format = VK_FORMAT_R8G8B8A8_SRGB;
@@ -95,6 +97,7 @@ auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& requ
   }
   auto& pdevice = request.getPdevice();
   auto  formats = getVkResources(vkGetPhysicalDeviceSurfaceFormatsKHR, pdevice.get(), surface);
+  toy::debugf("formats: {}", formats | views::transform([](auto a) { return a.format; }));
   if (!toy::findIf(formats, [&](auto format) {
         return format.format == _format && format.colorSpace == _color_space;
       })) {

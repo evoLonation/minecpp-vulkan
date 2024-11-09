@@ -172,16 +172,25 @@ auto Presentation::recreate() -> bool {
     return false;
   }
   for (auto [image, image_view] : views::zip(_swapchain.getImages(), _swapchain.getImageViews())) {
-    _image_ctxs.push_back(ImageContext{ image, image_view, _swapchain.getExtent() });
+    _image_ctxs.push_back(ImageContext{
+      image,
+      image_view,
+      _swapchain.getExtent(),
+      _swapchain.getFormat(),
+    });
   }
   _need_recreate = false;
   return true;
 }
 
-Presentation::ImageContext::ImageContext(VkImage image, VkImageView image_view, VkExtent2D extent)
+Presentation::ImageContext::ImageContext(
+  VkImage image, VkImageView image_view, VkExtent2D extent, VkFormat format
+)
   : FrameImageManager{ image,
                        image_view,
                        extent,
+                       format,
+                       VK_SAMPLE_COUNT_1_BIT,
                        getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, MipRange{ 0, 1 }) },
     present_wait_sema(createSemaphore()), present_signal_fence{ false }, fence_waitable(false),
     need_release(false) {}

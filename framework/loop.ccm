@@ -22,7 +22,7 @@ enum Stage {
 
 struct ActionContext : rd::Presentation::Context {
   bool recreated;
-  // milli
+  // second
   float interval;
 };
 
@@ -98,8 +98,9 @@ public:
         }
       }
       count++;
-      if (count % 1000 == 0) {
+      if (count % 500 == 0) {
         toy::debug(count);
+        toy::debugf("fps: {}", 1.0f / interval);
       }
     }
   }

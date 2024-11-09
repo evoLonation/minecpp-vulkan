@@ -68,6 +68,9 @@ auto accessFlag(VkAccessFlagBits2 access) -> std::string_view {
 auto format(VkFormat format) -> std::string_view {
   switch (format) {
     CASE(VK_FORMAT_R8G8B8A8_SRGB);
+    CASE(VK_FORMAT_B8G8R8A8_SRGB);
+    CASE(VK_FORMAT_B8G8R8A8_UNORM);
+    CASE(VK_FORMAT_R8G8B8A8_UNORM);
 
     CASE(VK_FORMAT_D16_UNORM);
     CASE(VK_FORMAT_D32_SFLOAT);
@@ -82,8 +85,11 @@ auto format(VkFormat format) -> std::string_view {
     CASE(VK_FORMAT_R64G64B64_SFLOAT);
     CASE(VK_FORMAT_R64G64B64A64_SFLOAT);
     CASE(VK_FORMAT_R64_SFLOAT);
+
+    CASE(VK_FORMAT_A2B10G10R10_UNORM_PACK32);
   default:
-    toy::throwf("unknown VkFormat: {}", static_cast<size_t>(format));
+    toy::debugf("error: unknown VkFormat: {}", static_cast<size_t>(format));
+    return "unknown";
   }
 }
 

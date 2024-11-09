@@ -116,7 +116,13 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
     );
 
     copyBufferToImage(
-      cmdbuf, texture._staging_buffer, texture._image.getImage(), _aspect, width, height, 0
+      cmdbuf,
+      texture._staging_buffer,
+      texture._image.getImage(),
+      _aspect,
+      { 0, 0 },
+      { width, height },
+      0
     );
 
     recordImageBarrier(
@@ -159,9 +165,7 @@ auto SampledTexture::create(const std::string& path, bool mipmap, VkPipelineStag
         recordImageBarrier(
           cmdbuf,
           texture._image.getImage(),
-          getSubresourceRange(
-            _aspect, MipRange{ .base_level = dst_mip_level - 1, .count = 1 }
-          ),
+          getSubresourceRange(_aspect, MipRange{ .base_level = dst_mip_level - 1, .count = 1 }),
           { VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL },
           { Scope{
               .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,

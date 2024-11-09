@@ -9,6 +9,9 @@ import <vulkan_config.h>;
 import render.resource;
 import render.memory;
 import render.tracker;
+import render.buffer;
+import render.executor;
+import render.sync;
 
 export namespace rd {
 
@@ -46,21 +49,31 @@ class ImageManager {
 public:
   ImageManager() = default;
   ImageManager(
-    VkImage image, VkImageView image_view, VkExtent2D extent, VkImageSubresourceRange sub_range
+    VkImage                 image,
+    VkImageView             image_view,
+    VkExtent2D              extent,
+    VkFormat                format,
+    VkSampleCountFlagBits   sample_count,
+    VkImageSubresourceRange sub_range
   )
-    : _image(image), _image_view(image_view), _tracker(image, sub_range), _extent(extent) {}
+    : _image(image), _image_view(image_view), _tracker(image, sub_range), _extent(extent),
+      _format(format), _sample_count(sample_count) {}
 
   auto getImage() -> VkImage { return _image; }
   auto getImageView() -> VkImageView { return _image_view; }
   auto getTracker() -> ImageBarrierTracker& { return _tracker; }
   auto getExtent() -> VkExtent2D { return _extent; }
+  auto getFormat() -> VkFormat { return _format; }
+  auto getSampleCount() -> VkSampleCountFlagBits { return _sample_count; }
   auto valid() -> bool { return _tracker.valid(); }
 
 private:
-  VkImage             _image;
-  VkImageView         _image_view;
-  ImageBarrierTracker _tracker;
-  VkExtent2D          _extent;
+  VkImage               _image;
+  VkImageView           _image_view;
+  ImageBarrierTracker   _tracker;
+  VkExtent2D            _extent;
+  VkFormat              _format;
+  VkSampleCountFlagBits _sample_count;
 };
 
 struct ImageResource {
@@ -105,8 +118,18 @@ void copyBufferToImage(
   VkBuffer              buffer,
   VkImage               image,
   VkImageAspectFlagBits aspect,
-  uint32                width,
-  uint32                height,
+  VkOffset2D            offset,
+  VkExtent2D            extent,
+  uint32                mip_level
+);
+
+void copyImageToBuffer(
+  VkCommandBuffer       cmdbuf,
+  VkImage               image,
+  VkBuffer              buffer,
+  VkImageAspectFlagBits aspect,
+  VkOffset2D            offset,
+  VkExtent2D            extent,
   uint32                mip_level
 );
 
@@ -121,5 +144,101 @@ struct ImageBlit {
 void blitImage(VkCommandBuffer cmdbuf, ImageBlit src, ImageBlit dst);
 
 auto computeMipExtents(VkExtent2D extent) -> std::vector<VkExtent2D>;
+
+constexpr auto getFormatSize(VkFormat format) -> uint32 {
+  switch (format) {
+  case VK_FORMAT_R8G8B8A8_SRGB:
+  case VK_FORMAT_B8G8R8A8_SRGB:
+  case VK_FORMAT_D24_UNORM_S8_UINT:
+    return 4;
+  default:
+    toy::throwf("unsupported format: {}", format);
+  }
+}
+
+class ImageLocalReader {
+public:
+  ImageLocalReader() = default;
+  /**
+   * @brief
+   * @param max_extent the max sub range read from image
+   */
+  ImageLocalReader(VkFormat format, VkExtent2D max_extent)
+    : _format(format), _max_extent(max_extent) {
+    _buffer = HostBuffer{
+      getFormatSize(format) * max_extent.width * max_extent.height,
+      VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+    };
+  }
+  void loadImage(
+    ImageManager&         manager,
+    VkImageAspectFlagBits aspect,
+    VkOffset2D            offset,
+    VkExtent2D            extent,
+    uint32                mip_level
+  ) {
+    TOY_ASSERT(_format == manager.getFormat());
+    TOY_ASSERT(extent.width <= _max_extent.width && extent.height <= _max_extent.height);
+    TOY_ASSERT(manager.getSampleCount() == VK_SAMPLE_COUNT_1_BIT);
+
+    auto& executor = ExecutorManager::getInstance()[FamilyType::TRANSFER];
+
+    auto batches = std::vector<CommandBatch>{};
+    auto waitable_keep_lifetime = std::list<Waitable>{};
+    auto syncDealer = [&](SyncContext sync) {
+      if (auto* recorder = std::get_if<BarrierRecorder>(&sync)) {
+        batches.push_back(CommandBatch{ std::move(*recorder) });
+      } else if (auto* recorder = std::get_if<FamilyTransferRecorder>(&sync)) {
+        auto waitable = recorder->executeRelease();
+        waitable_keep_lifetime.push_back(std::move(waitable));
+        batches.push_back(recorder->toAcquireBatch(&waitable_keep_lifetime.back()));
+      }
+    };
+    syncDealer(manager.getTracker().syncScope(
+      Scope{
+        .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+        .access_mask = VK_ACCESS_TRANSFER_READ_BIT,
+      },
+      executor.getFamily(),
+      VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+    ));
+    syncDealer(_buffer.getTracker().syncScope(
+      Scope{
+        .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+        .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
+      },
+      executor.getFamily()
+    ));
+    batches.push_back(CommandBatch{ [&](VkCommandBuffer cmdbuf) {
+      copyImageToBuffer(
+        cmdbuf, manager.getImage(), _buffer.get(), aspect, offset, extent, mip_level
+      );
+    } });
+    // need make device access is available to host access
+    syncDealer(_buffer.getTracker().syncScope(
+      Scope{
+        .stage_mask = VK_PIPELINE_STAGE_HOST_BIT,
+        .access_mask = VK_ACCESS_HOST_READ_BIT | VK_ACCESS_HOST_WRITE_BIT,
+      },
+      executor.getFamily()
+    ));
+    executor.submit(batches).back().wait();
+    _buffer.getTracker().clearScope();
+    _local_extent = extent;
+  }
+  auto readPixel(uint32 x, uint32 y) -> void const* {
+    auto* data = reinterpret_cast<std::byte*>(_buffer.getMemory().data());
+    auto  unit = getFormatSize(_format);
+    return data + _local_extent.width * unit * y + unit * x;
+  }
+
+private:
+  VkFormat   _format;
+  VkExtent2D _max_extent;
+
+  HostBuffer _buffer;
+  // the sub image extent store in host_buffer
+  VkExtent2D _local_extent;
+};
 
 } // namespace rd

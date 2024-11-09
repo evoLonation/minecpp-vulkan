@@ -266,12 +266,10 @@ public:
       swapchain.getExtent().width,
       swapchain.getExtent().height,
       _sample_count,
+      {},
     };
     _depth_image = rd::FrameImage{
-      _depth_format,
-      swapchain.getExtent().width,
-      swapchain.getExtent().height,
-      _sample_count,
+      _depth_format, swapchain.getExtent().width, swapchain.getExtent().height, _sample_count, {},
     };
   }
 
@@ -429,13 +427,12 @@ public:
       swapchain.getExtent().width,
       swapchain.getExtent().height,
       _sample_count,
+      {},
     };
     _depth_image = rd::FrameImage{
-      _depst_format,
-      swapchain.getExtent().width,
-      swapchain.getExtent().height,
-      _sample_count,
+      _depst_format, swapchain.getExtent().width, swapchain.getExtent().height, _sample_count, {},
     };
+    _image_reader = rd::ImageLocalReader{ swapchain.getFormat(), swapchain.getExtent() };
   }
 
   void runLoop(loop::ActionContext const& ctx) override {
@@ -472,11 +469,16 @@ public:
       &_depth_image,
     };
     auto clear_values = std::vector{
-      VkClearValue{ .color = { .float32 = { 0.5f, 0.5f, 0.5f, 1.0f } } },
+      VkClearValue{ .color = { .float32 = { 0.1f, 0.1f, 0.1f, 1.0f } } },
       VkClearValue{ .color = { .float32 = { 1.0f, 1.0f, 1.0f, 1.0f } } },
       VkClearValue{ .depthStencil = { .depth = 1.0f, .stencil = 0, } },
     };
     _render_pass.recordDraw(attachments, clear_values);
+    _image_reader.loadImage(
+      *ctx.image_manager, VK_IMAGE_ASPECT_COLOR_BIT, VkOffset2D{ 0, 0 }, _depth_image.getExtent(), 0
+    );
+    auto pixel = *reinterpret_cast<uint32 const*>(_image_reader.readPixel(0, 0));
+    toy::debugf("pixel: {:x}", pixel);
   }
 
   void setCamera(Camera* camera) { _camera = camera; }
@@ -486,8 +488,9 @@ public:
 private:
   rd::RenderPassPipeline _render_pass;
 
-  rd::FrameImage _sample_image;
-  rd::FrameImage _depth_image;
+  rd::FrameImage       _sample_image;
+  rd::FrameImage       _depth_image;
+  rd::ImageLocalReader _image_reader;
 
   Camera*                       _camera;
   std::unordered_set<DrawUnit*> _draw_units;

@@ -17,9 +17,14 @@ class FrameImageManager : toy::AutoMoveAssigner<FrameImageManager>, public Image
 public:
   FrameImageManager() = default;
   FrameImageManager(
-    VkImage image, VkImageView image_view, VkExtent2D extent, VkImageSubresourceRange sub_range
+    VkImage                 image,
+    VkImageView             image_view,
+    VkExtent2D              extent,
+    VkFormat                format,
+    VkSampleCountFlagBits   sample_count,
+    VkImageSubresourceRange sub_range
   )
-    : ImageManager(image, image_view, extent, sub_range) {}
+    : ImageManager(image, image_view, extent, format, sample_count, sub_range) {}
 
   ~FrameImageManager() { beforeDestroy(); }
   DEFAULT_MOVEABLE(FrameImageManager);
@@ -114,13 +119,17 @@ public:
   FrameImage() = default;
 
   FrameImage(
-    AttachmentFormat format, uint32 width, uint32 height, VkSampleCountFlagBits sample_count
+    AttachmentFormat      format,
+    uint32                width,
+    uint32                height,
+    VkSampleCountFlagBits sample_count,
+    VkImageUsageFlags     usage
   )
     : ImageResource(
         format,
         width,
         height,
-        toUsage(format.getType()),
+        toUsage(format.getType()) | usage,
         toAspect(format.getType()),
         1,
         sample_count
@@ -129,6 +138,8 @@ public:
         ImageResource::_image,
         ImageResource::_image_view,
         VkExtent2D{ width, height },
+        format,
+        sample_count,
         getSubresourceRange(toAspect(format.getType()), MipRange{ 0, 1 })
       ) {}
 
