@@ -1,0 +1,75 @@
+module;
+#include <toy.h>
+export module drag;
+
+import std;
+import toy;
+
+import loop;
+import transform;
+import input;
+import glm;
+
+import render;
+
+export namespace drag {
+
+auto cursor2Plane(
+  float            pos_x,
+  float            pos_y,
+  const glm::mat4& perspective_iv,
+  const glm::mat4& view,
+  const glm::mat4& model
+) -> std::optional<glm::mat4> {
+  auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
+  auto ndc_x = pos_x / extent.width * 2 - 1;
+  auto ndc_y = pos_y / extent.height * 2 - 1;
+  auto start = glm::vec3{ ndc_x, ndc_y, -1.0f };
+  auto end = glm::vec3{ ndc_x, ndc_y, 1.0f };
+  auto start_2 =
+    trans::inverse(model) * trans::inverse(view) * perspective_iv * glm::vec4{ start, 1.0f };
+  start = start_2 / start_2.w;
+  auto end_2 =
+    trans::inverse(model) * trans::inverse(view) * perspective_iv * glm::vec4{ end, 1.0f };
+  end = end_2 / end_2.w;
+  auto inter = trans::intersection(
+    trans::Line{
+      .direction = end - start,
+      .point = start,
+    },
+    trans::Surface{
+      .normal = glm::vec3{ 1.0f, 0.0f, 0.0f },
+      .dot = 0.0f,
+    }
+  );
+  if (inter.index() == 0) {
+    auto inter_point = std::get<0>(inter);
+    if (glm::dot(inter_point - start, inter_point - end) < 0) {
+      toy::debug(std::tuple{ inter_point.x, inter_point.y, inter_point.z });
+      return model * trans::translate(inter_point);
+    }
+  }
+  return std::nullopt;
+}
+
+class CursorDragger : private loop::Action {
+private:
+  const glm::mat4* _perspective_iv;
+  const glm::mat4* _view;
+  glm::mat4*       _model;
+
+public:
+  CursorDragger(const glm::mat4& perspective_iv, const glm::mat4& view, glm::mat4& model)
+    : loop::Action(loop::Stage::BEFORE_RENDER), _perspective_iv(&perspective_iv), _view(&view),
+      _model(&model) {}
+  void runLoop(const loop::ActionContext& ctx) override {
+    auto& cursor = input::InputProcessor::getInstance().getCursorState();
+    if (cursor.visible) {
+      if (auto opt = cursor2Plane(cursor.x, cursor.y, *_perspective_iv, *_view, *_model)) {
+        *_model = opt.value();
+      }
+    }
+  }
+};
+
+} // namespace drag

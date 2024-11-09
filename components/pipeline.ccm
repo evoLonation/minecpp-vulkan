@@ -2,6 +2,8 @@ module;
 #include <toy.h>
 export module pipeline;
 
+export import dset_pools;
+
 import render.render_pass;
 import render.descriptor;
 import render.framebuffer;
@@ -23,90 +25,7 @@ import transform;
 
 import <vulkan_config.h>;
 
-export namespace pipeline {
-
-class DescriptorPools : public PROACTIVE_SINGLETON(DescriptorPools) {
-  using BindingInfo = rd::DescriptorSetLayout::BindingInfo;
-
-#define DEFINE_POOL(name, ...)                                                                     \
-private:                                                                                           \
-  rd::DescriptorPool _dset_pool_##name;                                                            \
-                                                                                                   \
-public:                                                                                            \
-  static auto get##name()->rd::DescriptorPool& {                                                   \
-    auto&       instance = DescriptorPools::getInstance();                                         \
-    static auto call_once = [&]() -> int {                                                         \
-      instance._dset_pool_##name = __VA_ARGS__;                                                    \
-      return 0;                                                                                    \
-    }();                                                                                           \
-    return instance._dset_pool_##name;                                                             \
-  }
-
-  DEFINE_POOL(
-    Model,
-    rd::DescriptorPool{ std::vector{
-      BindingInfo{
-        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .stage = VK_SHADER_STAGE_VERTEX_BIT,
-        .count = 1,
-      },
-      BindingInfo{
-        .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-        .count = 1,
-      },
-    } }
-  );
-
-  DEFINE_POOL(
-    ModelOutline,
-    rd::DescriptorPool{ std::vector{ BindingInfo{
-      .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-      .stage = VK_SHADER_STAGE_VERTEX_BIT,
-      .count = 1,
-    } } }
-  );
-
-  DEFINE_POOL(
-    Camera,
-    rd::DescriptorPool{ std::vector{
-      // view
-      BindingInfo{
-        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .stage = VK_SHADER_STAGE_VERTEX_BIT,
-        .count = 1,
-      },
-      // projection
-      BindingInfo{
-        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .stage = VK_SHADER_STAGE_VERTEX_BIT,
-        .count = 1,
-      },
-    } }
-  );
-
-  DEFINE_POOL(
-    ModelId,
-    rd::DescriptorPool{ std::vector{
-      BindingInfo{
-        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .stage = VK_SHADER_STAGE_VERTEX_BIT,
-        .count = 1,
-      },
-      BindingInfo{
-        .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-        .count = 1,
-      },
-      BindingInfo{
-        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-        .count = 1,
-      },
-    } }
-  );
-
-}; // namespace layouts
+export namespace pl {
 
 class DrawUnit : public loop::Action {
 public:
@@ -170,6 +89,7 @@ public:
     using Keyboard = input::Keyboard;
     using ButtonState = input::ButtonState;
     auto& input = input::InputProcessor::getInstance();
+    _uniform_model.update();
     // if (auto opt = input.getState(Keyboard::KEY_A); opt && opt->state == ButtonState::DOWN) {
     //   *_model_trans = *_model_trans * trans::rotate<trans::Axis::Z>(90.0f);
     //   _uniform_model.update();
@@ -575,4 +495,4 @@ private:
   static constexpr auto _id_format = VK_FORMAT_R32_UINT;
 };
 
-} // namespace pipeline
+} // namespace pl

@@ -5,23 +5,8 @@ import std;
 
 import <vulkan_config.h>;
 import <glfw_config.h>;
-import render.instance;
-import render.device;
-import render.surface;
-import render.resource;
-import render.executor;
-import render.queue_requestor;
-import render.image;
-import render.render_pass;
-import render.descriptor;
-import render.buffer;
-import render.framebuffer;
-import render.presentation;
+import render;
 import context;
-import render.sync;
-import render.tracker;
-import render.sampler;
-import render.vertex;
 import glm;
 import input;
 import model;
@@ -31,6 +16,7 @@ import gui;
 import loop;
 import pipeline;
 import camera;
+import drag;
 
 int main() {
   try {
@@ -39,15 +25,20 @@ int main() {
     toy::test_EnumSet::test();
     trans::test_trans();
     auto  ctx = ctx::Context{ "hello vulkan", 1920, 1080 };
-    auto  dset_pools = pipeline::DescriptorPools{};
+    auto  dset_pools = pl::DescriptorPools{};
     auto& input = input::InputProcessor::getInstance();
 
-    auto pipeline = pipeline::OutlinePipeline{};
-    auto camera = pipeline::Camera{};
+    auto pipeline = pl::OutlinePipeline{};
+    auto camera = pl::Camera{};
     auto controller = camera::Controller{ &camera.getView() };
-    auto draw_unit_0 = pipeline::DrawUnit{ 1 };
-    auto draw_unit_1 = pipeline::DrawUnit{ 2, glm::vec3{ 1.0f, 1.0f, 1.0f } };
-    auto draw_unit_2 = pipeline::DrawUnit{ 3, glm::vec3{ -1.0f, -1.0f, -1.0f } };
+    auto draw_unit_0 = pl::DrawUnit{ 1 };
+    auto draw_unit_1 = pl::DrawUnit{ 2, glm::vec3{ 1.0f, 1.0f, 1.0f } };
+    auto draw_unit_2 = pl::DrawUnit{ 3, glm::vec3{ -1.0f, -1.0f, -1.0f } };
+    auto dragger = drag::CursorDragger{
+      trans::proj::perspectiveInverse({ .width = 1920, .height = 1080 }),
+      camera.getView(),
+      draw_unit_0.getModelTrans(),
+    };
     pipeline.setCamera(&camera);
     pipeline.addDrawUnit(&draw_unit_0);
     pipeline.addDrawUnit(&draw_unit_1);

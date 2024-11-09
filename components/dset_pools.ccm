@@ -1,0 +1,96 @@
+module;
+#include <toy.h>
+export module dset_pools;
+
+import <vulkan_config.h>;
+
+import std;
+import toy;
+
+import render.descriptor;
+
+export namespace pl {
+
+class DescriptorPools : public PROACTIVE_SINGLETON(DescriptorPools) {
+  using BindingInfo = rd::DescriptorSetLayout::BindingInfo;
+
+#define DEFINE_POOL(name, ...)                                                                     \
+private:                                                                                           \
+  rd::DescriptorPool _dset_pool_##name;                                                            \
+                                                                                                   \
+public:                                                                                            \
+  static auto get##name()->rd::DescriptorPool& {                                                   \
+    auto&       instance = DescriptorPools::getInstance();                                         \
+    static auto call_once = [&]() -> int {                                                         \
+      instance._dset_pool_##name = __VA_ARGS__;                                                    \
+      return 0;                                                                                    \
+    }();                                                                                           \
+    return instance._dset_pool_##name;                                                             \
+  }
+
+  DEFINE_POOL(
+    Model,
+    rd::DescriptorPool{ std::vector{
+      BindingInfo{
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .count = 1,
+      },
+      BindingInfo{
+        .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .count = 1,
+      },
+    } }
+  );
+
+  DEFINE_POOL(
+    ModelOutline,
+    rd::DescriptorPool{ std::vector{ BindingInfo{
+      .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+      .stage = VK_SHADER_STAGE_VERTEX_BIT,
+      .count = 1,
+    } } }
+  );
+
+  DEFINE_POOL(
+    Camera,
+    rd::DescriptorPool{ std::vector{
+      // view
+      BindingInfo{
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .count = 1,
+      },
+      // projection
+      BindingInfo{
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .count = 1,
+      },
+    } }
+  );
+
+  DEFINE_POOL(
+    ModelId,
+    rd::DescriptorPool{ std::vector{
+      BindingInfo{
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .count = 1,
+      },
+      BindingInfo{
+        .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .count = 1,
+      },
+      BindingInfo{
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .count = 1,
+      },
+    } }
+  );
+};
+
+} // namespace pl
