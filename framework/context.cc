@@ -6,6 +6,7 @@ import render.sampler;
 import render.vertex;
 import render.presentation;
 import render.swapchain;
+import render.alignment;
 
 import <vulkan_config.h>;
 
@@ -28,6 +29,7 @@ Context::Context(const std::string& app_name, uint32 width, uint32 height) {
     rd::SampledTexture::checkPdevice,
     rd::device_checkers::vertex,
     rd::device_checkers::sync,
+    rd::align::device_checkers::alignment,
   };
   _device = std::make_unique<rd::Device>(rd::Device::create(device_checkers));
   _executor_manager = queue_requestor.createExecutorManager();

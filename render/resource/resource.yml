@@ -19,3 +19,5 @@ module:
     implement: render.sampler
 - sampler.ccm:
     provide: render.sampler
+- alignment.ccm:
+    provide: render.alignment

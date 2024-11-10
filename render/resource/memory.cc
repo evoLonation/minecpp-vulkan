@@ -1,5 +1,6 @@
 module;
 #include <vulkan_tool.h>
+#include <toy.h>
 module render.memory;
 
 import <vulkan_config.h>;
@@ -62,17 +63,17 @@ Memory::Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property
   rs::Memory::operator=(allocate_info);
 }
 
-auto HostMemoryManager::data() -> void* {
+auto HostMemoryManager::data() -> std::span<std::byte> {
   if (!_data.get()) {
     void* data;
     CHECK_VK_RESULT(vkMapMemory(Device::getInstance(), _memory.get(), 0, VK_WHOLE_SIZE, 0, &data));
     _data.reset(data);
   }
-  return _data.get();
+  return std::span<std::byte>{ reinterpret_cast<std::byte*>(_data.get()), _size };
 }
 void HostMemoryManager::fill(std::span<const std::byte> buffer_data) {
-  auto buffer_size = buffer_data.size();
-  std::copy(buffer_data.begin(), buffer_data.end(), reinterpret_cast<std::byte*>(data()));
+  TOY_ASSERT(buffer_data.size() <= _size);
+  std::copy(buffer_data.begin(), buffer_data.end(), data().begin());
 }
 
 void HostMemoryManager::beforeDestroy() {

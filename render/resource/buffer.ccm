@@ -36,7 +36,8 @@ class HostBuffer : public Buffer {
 public:
   HostBuffer() = default;
   HostBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage)
-    : Buffer(buffer_size, usage, HostMemoryManager::propreties), _memory(Buffer::getMemory()) {}
+    : Buffer(buffer_size, usage, HostMemoryManager::propreties),
+      _memory(Buffer::getMemory(), buffer_size) {}
   HostBuffer(std::span<std::byte const> buffer_data, VkBufferUsageFlags usage)
     : HostBuffer(buffer_data.size(), usage) {
     getMemory().fill(buffer_data);
@@ -59,25 +60,31 @@ public:
     : HostBuffer(buffer_data, VK_BUFFER_USAGE_TRANSFER_SRC_BIT) {}
 };
 
+/**
+ * @tparam DataType : all vec and matrix member must be from rd::align
+ */
 template <typename DataType>
-  requires std::is_trivially_copyable_v<DataType>
-class UniformBuffer : public HostBuffer, public DescriptorResource {
+  requires std::is_trivially_copyable_v<DataType> &&
+             std::is_trivially_default_constructible_v<DataType>
+class UniformBuffer : private HostBuffer, public DescriptorResource {
 public:
-  UniformBuffer() = default;
-  UniformBuffer(DataType* data)
-    : HostBuffer(std::as_bytes(std::span<DataType>{ data, 1 }), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT),
-      _cache_data(*data), _p_data(data) {}
+  UniformBuffer() : UniformBuffer(DataType{}) {}
+  UniformBuffer(DataType const& data)
+    : HostBuffer(
+        std::as_bytes(std::span<DataType const>{ &data, 1 }), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
+      ) {}
 
-  void update() {
-    auto now_bytes = std::as_bytes(std::span<DataType>{ _p_data, 1 });
-    auto cached_bytes = std::as_writable_bytes(std::span<DataType>{ &_cache_data, 1 });
-    if (ranges::mismatch(now_bytes, cached_bytes).in1 != now_bytes.end()) {
-      std::copy(now_bytes.begin(), now_bytes.end(), cached_bytes.begin());
-      // because uniform is read only, so no need to execute available operation from device to host
-      getTracker().waitIdle();
-      getMemory().fill(cached_bytes);
-      getTracker().clearScope();
-    }
+  void update(DataType const& data) {
+    // because uniform is read only, so no need to execute available operation from device to host
+    getTracker().waitIdle();
+    getMemory().fill(std::as_bytes(std::span<DataType const>{ &data, 1 }));
+    getTracker().clearScope();
+  }
+  auto read() -> DataType {
+    DataType data;
+    auto     writable = std::as_writable_bytes(std::span<DataType>{ &data, 1 });
+    ranges::copy(getMemory().data(), writable.begin());
+    return data;
   }
   auto getDescriptorContext() -> Context override {
     return BufferContext{
@@ -90,10 +97,6 @@ public:
       .tracker = &getTracker(),
     };
   }
-
-private:
-  DataType  _cache_data;
-  DataType* _p_data;
 };
 
 class DeviceLocalBuffer : public Buffer {

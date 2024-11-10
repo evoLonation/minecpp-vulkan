@@ -71,7 +71,7 @@ auto getModelInfo(const std::string& path
     attrib.face_num_verts[0],
     attrib.num_face_num_verts
   );
-  toy::debug(std::span{ attrib.face_num_verts, attrib.num_face_num_verts });
+  // toy::debug(std::span{ attrib.face_num_verts, attrib.num_face_num_verts });
   bool method = true;
   if (!method) {
     for (auto face : std::span{ attrib.faces, attrib.num_faces }) {

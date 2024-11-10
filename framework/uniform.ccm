@@ -1,0 +1,43 @@
+export module uniform;
+
+import std;
+import toy;
+import render;
+import loop;
+import glm;
+
+import <vulkan_config.h>;
+
+export namespace uni {
+
+template <typename DataType>
+class UniformBuffer : public loop::Action, public rd::UniformBuffer<DataType> {
+  using Base = rd::UniformBuffer<DataType>;
+
+public:
+  UniformBuffer() : UniformBuffer(DataType{}) {}
+  UniformBuffer(DataType const& data)
+    : loop::Action(loop::Stage::UNIFORM_UPDATE), Base(data), _cache_data(data) {}
+
+  void runLoop(loop::ActionContext const&) override {
+    auto cache_bytes = std::as_bytes(std::span{ &_cache_data, 1 });
+    auto buffer_data = Base::read();
+    auto buffer_bytes = std::as_bytes(std::span{ &buffer_data, 1 });
+    if (ranges::mismatch(cache_bytes, buffer_bytes).in1 != cache_bytes.end()) {
+      toy::debugf("update uniform buffer");
+      Base::update(_cache_data);
+    }
+  }
+
+  auto operator=(DataType const& data) -> UniformBuffer& {
+    _cache_data = data;
+    return *this;
+  }
+  operator DataType&() { return _cache_data; }
+  auto get() -> DataType& { return _cache_data; }
+
+private:
+  DataType _cache_data;
+};
+
+} // namespace uni

@@ -11,3 +11,5 @@ module:
     provide: context
 - context.cc:
     implement: context
+- uniform.ccm:
+    provide: uniform

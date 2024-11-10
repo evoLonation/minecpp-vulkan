@@ -27,9 +27,9 @@ public:
 class HostMemoryManager : toy::AutoMoveAssigner<HostMemoryManager> {
 public:
   HostMemoryManager() = default;
-  HostMemoryManager(VkDeviceMemory memory) : _memory(memory) {}
+  HostMemoryManager(VkDeviceMemory memory, VkDeviceSize size) : _memory(memory), _size(size) {}
 
-  auto data() -> void*;
+  auto data() -> std::span<std::byte>;
   void fill(std::span<const std::byte> buffer_data);
 
   static constexpr auto propreties =
@@ -44,6 +44,7 @@ private:
 
   toy::PtrManager<void*>          _data;
   toy::PtrManager<VkDeviceMemory> _memory;
+  VkDeviceSize                    _size;
 };
 
 } // namespace rd

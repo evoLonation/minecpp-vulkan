@@ -1,0 +1,74 @@
+export module render.alignment;
+
+import <vulkan_config.h>;
+
+import glm;
+import toy;
+import std;
+
+import render.device;
+
+export namespace rd::align {
+
+namespace device_checkers {
+
+auto alignment(DeviceCapabilityBuilder& builder) -> bool {
+  return builder.enableFeature(&VkPhysicalDeviceVulkan12Features::uniformBufferStandardLayout);
+}
+
+} // namespace device_checkers
+
+#define DEFINE_VEC(name, align)                                                                    \
+  struct alignas(align) name {                                                                     \
+    glm::name data;                                                                                \
+    name() = default;                                                                              \
+    name(const glm::name& v) : data{ v } {}                                                        \
+    auto operator=(const glm::name& v) -> name& {                                                  \
+      data = v;                                                                                    \
+      return *this;                                                                                \
+    }                                                                                              \
+  };
+
+#define DEFINE_VECS(prefix)                                                                        \
+  DEFINE_VEC(prefix##2, sizeof(glm::prefix##2))                                                    \
+  DEFINE_VEC(prefix##3, sizeof(glm::prefix##3) / 3 * 4)                                            \
+  DEFINE_VEC(prefix##4, sizeof(glm::prefix##4))
+
+DEFINE_VECS(vec);
+DEFINE_VECS(dvec);
+DEFINE_VECS(ivec);
+DEFINE_VECS(uvec);
+
+/**
+ * @brief max[n]x[m] means n columns and m rows
+ *
+ */
+
+#define INITIALIZER_COLUMN_2 m[0], m[1]
+#define INITIALIZER_COLUMN_3 m[0], m[1], m[2]
+#define INITIALIZER_COLUMN_4 m[0], m[1], m[2], m[3]
+#define DEFINE_MAT(prefix, vec, suffix, row_n, col_n)                                              \
+  struct prefix##suffix {                                                                          \
+    std::array<vec##row_n, col_n> columns;                                                         \
+    prefix##suffix() = default;                                                                    \
+    prefix##suffix(const glm::prefix##suffix& m) : columns{ INITIALIZER_COLUMN_##col_n } {}        \
+    auto operator=(const glm::prefix##suffix& m) -> prefix##suffix& {                              \
+      columns = { INITIALIZER_COLUMN_##col_n };                                                    \
+      return *this;                                                                                \
+    }                                                                                              \
+  };
+#define DEFINE_MATS(prefix, vec)                                                                   \
+  DEFINE_MAT(prefix, vec, 2, 2, 2)                                                                 \
+  DEFINE_MAT(prefix, vec, 2x3, 3, 2)                                                               \
+  DEFINE_MAT(prefix, vec, 2x4, 4, 2)                                                               \
+  DEFINE_MAT(prefix, vec, 3x2, 2, 3)                                                               \
+  DEFINE_MAT(prefix, vec, 3, 3, 3)                                                                 \
+  DEFINE_MAT(prefix, vec, 3x4, 4, 3)                                                               \
+  DEFINE_MAT(prefix, vec, 4x2, 2, 4)                                                               \
+  DEFINE_MAT(prefix, vec, 4x3, 3, 4)                                                               \
+  DEFINE_MAT(prefix, vec, 4, 4, 4)
+
+DEFINE_MATS(mat, vec)
+DEFINE_MATS(dmat, dvec)
+
+} // namespace rd::align

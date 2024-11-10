@@ -22,6 +22,7 @@ import std;
 import toy;
 import glm;
 import transform;
+import uniform;
 
 import <vulkan_config.h>;
 
@@ -35,20 +36,18 @@ public:
     _texture = rd::SampledTexture::create(
       "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
     );
-    _model_trans = std::make_unique<glm::mat4>(trans::model::create(location));
-    _uniform_model = rd::UniformBuffer<glm::mat4>{ _model_trans.get() };
+    _uniform_model = uni::UniformBuffer<glm::mat4>{ trans::model::create(location) };
     _dset_model = rd::ResourceSet{ &DescriptorPools::getModel(), { &_uniform_model, &_texture } };
 
-    _model_id = std::make_unique<uint32>(id);
-    _uniform_model_id = rd::UniformBuffer<glm::uint32>{ _model_id.get() };
+    _uniform_model_id = uni::UniformBuffer<glm::uint32>{ id };
     _dset_model_id = rd::ResourceSet{
       &DescriptorPools::getModelId(),
       { &_uniform_model, &_texture, &_uniform_model_id },
     };
 
-    _model_trans_outline =
-      std::make_unique<glm::mat4>(*_model_trans * trans::scale(glm::vec3{ 1.05f, 1.05f, 1.05f }));
-    _uniform_model_outline = rd::UniformBuffer<glm::mat4>{ _model_trans_outline.get() };
+    _uniform_model_outline = uni::UniformBuffer<glm::mat4>{
+      _uniform_model.get() * trans::scale(glm::vec3{ 1.05f, 1.05f, 1.05f }),
+    };
     _dset_model_outline =
       rd::ResourceSet{ &DescriptorPools::getModelOutline(), { &_uniform_model_outline } };
 
@@ -57,8 +56,8 @@ public:
     _index_buf = rd::IndexBuffer{ indices };
   }
 
-  auto getModelTrans() -> glm::mat4& { return *_model_trans; }
-  auto getId() -> uint32 { return *_model_id; }
+  auto getModelTrans() -> glm::mat4& { return _uniform_model.get(); }
+  auto getId() -> uint32 { return _uniform_model_id.get(); }
   auto getDsetModel() -> rd::ResourceSet& { return _dset_model; }
   auto getDsetModelId() -> rd::ResourceSet& { return _dset_model_id; }
   auto getDsetModelOutline() -> rd::ResourceSet& { return _dset_model_outline; }
@@ -67,18 +66,13 @@ public:
 
   DrawUnit(DrawUnit&&) noexcept = default;
   auto operator=(DrawUnit&& e) noexcept -> DrawUnit& {
-    _dset_model_outline = std::move(e._dset_model_outline);
-    _uniform_model_outline = std::move(e._uniform_model_outline);
-    _model_trans_outline = std::move(e._model_trans_outline);
-
+    toy::debugf("moved!");
     _dset_model_id = std::move(e._dset_model_id);
     _uniform_model_id = std::move(e._uniform_model_id);
-    _model_id = std::move(e._model_id);
 
     _dset_model = std::move(e._dset_model);
     _texture = std::move(e._texture);
     _uniform_model = std::move(e._uniform_model);
-    _model_trans = std::move(e._model_trans);
 
     _vertex_buf = std::move(e._vertex_buf);
     _index_buf = std::move(e._index_buf);
@@ -89,7 +83,6 @@ public:
     using Keyboard = input::Keyboard;
     using ButtonState = input::ButtonState;
     auto& input = input::InputProcessor::getInstance();
-    _uniform_model.update();
     // if (auto opt = input.getState(Keyboard::KEY_A); opt && opt->state == ButtonState::DOWN) {
     //   *_model_trans = *_model_trans * trans::rotate<trans::Axis::Z>(90.0f);
     //   _uniform_model.update();
@@ -97,18 +90,15 @@ public:
   }
 
 private:
-  rd::SampledTexture           _texture;
-  std::unique_ptr<glm::mat4>   _model_trans;
-  rd::UniformBuffer<glm::mat4> _uniform_model;
-  rd::ResourceSet              _dset_model;
+  rd::SampledTexture            _texture;
+  uni::UniformBuffer<glm::mat4> _uniform_model;
+  rd::ResourceSet               _dset_model;
 
-  std::unique_ptr<uint32>   _model_id;
-  rd::UniformBuffer<uint32> _uniform_model_id;
-  rd::ResourceSet           _dset_model_id;
+  uni::UniformBuffer<uint32> _uniform_model_id;
+  rd::ResourceSet            _dset_model_id;
 
-  std::unique_ptr<glm::mat4>   _model_trans_outline;
-  rd::UniformBuffer<glm::mat4> _uniform_model_outline;
-  rd::ResourceSet              _dset_model_outline;
+  uni::UniformBuffer<glm::mat4> _uniform_model_outline;
+  rd::ResourceSet               _dset_model_outline;
 
   rd::VertexBuffer _vertex_buf;
   rd::IndexBuffer  _index_buf;
@@ -118,14 +108,12 @@ class Camera : public loop::Action {
 public:
   Camera() {
     setStage(loop::Stage::BEFORE_RENDER);
-    _view = std::make_unique<glm::mat4>(trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f }));
-    _uniform_view = { _view.get() };
+    _uniform_view = { trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f }) };
     auto& swapchain = rd::Presentation::getInstance().getSwapchain();
-    _projection = std::make_unique<glm::mat4>(trans::proj::perspective({
+    _uniform_proj = { trans::proj::perspective({
       .width = swapchain.getExtent().width,
       .height = swapchain.getExtent().height,
-    }));
-    _uniform_proj = { _projection.get() };
+    }) };
     _dset = rd::ResourceSet{ &DescriptorPools::getCamera(), { &_uniform_view, &_uniform_proj } };
   }
 
@@ -134,32 +122,26 @@ public:
     _dset = std::move(e._dset);
     _uniform_view = std::move(e._uniform_view);
     _uniform_proj = std::move(e._uniform_proj);
-    _view = std::move(e._view);
-    _projection = std::move(e._projection);
     return *this;
   }
   void runLoop(loop::ActionContext const& ctx) override {
     if (ctx.recreated) {
       auto& swapchain = rd::Presentation::getInstance().getSwapchain();
-      *_projection = trans::proj::perspective({
+      _uniform_proj = trans::proj::perspective({
         .width = swapchain.getExtent().width,
         .height = swapchain.getExtent().height,
       });
-      _uniform_proj.update();
     }
-    _uniform_view.update();
   }
 
-  auto getView() -> glm::mat4& { return *_view; }
-  auto getProj() -> glm::mat4& { return *_projection; }
+  auto getView() -> glm::mat4& { return _uniform_view.get(); }
+  auto getProj() -> glm::mat4& { return _uniform_proj.get(); }
   auto getDset() -> rd::ResourceSet& { return _dset; }
 
 private:
-  std::unique_ptr<glm::mat4>   _view;
-  rd::UniformBuffer<glm::mat4> _uniform_view;
-  std::unique_ptr<glm::mat4>   _projection;
-  rd::UniformBuffer<glm::mat4> _uniform_proj;
-  rd::ResourceSet              _dset;
+  uni::UniformBuffer<glm::mat4> _uniform_view;
+  uni::UniformBuffer<glm::mat4> _uniform_proj;
+  rd::ResourceSet               _dset;
 };
 
 class Pipeline : loop::Action {

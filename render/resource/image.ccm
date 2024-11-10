@@ -231,10 +231,9 @@ public:
     _buffer.getTracker().clearScope();
     _local_extent = extent;
   }
-  auto readPixel(uint32 x, uint32 y) -> void const* {
-    auto* data = reinterpret_cast<std::byte*>(_buffer.getMemory().data());
-    auto  unit = getFormatSize(_format);
-    return data + _local_extent.width * unit * y + unit * x;
+  auto readPixel(uint32 x, uint32 y) -> std::byte* {
+    auto unit = getFormatSize(_format);
+    return _buffer.getMemory().data().begin().base() + _local_extent.width * unit * y + unit * x;
   }
 
 private:
