@@ -9,8 +9,10 @@ import std;
 export namespace rd {
 
 auto createShaderModule(std::string_view filename) -> rs::ShaderModule;
-auto createPipelineLayout(std::span<VkDescriptorSetLayout const> dset_layouts) //
-  -> rs::PipelineLayout;
+auto createPipelineLayout(
+  std::span<VkDescriptorSetLayout const> dset_layouts,
+  std::span<VkPushConstantRange const>   push_constants
+) -> rs::PipelineLayout;
 
 struct StencilOption {
   VkStencilOpState front;
@@ -46,6 +48,7 @@ struct PipelineInfo {
   std::string                        vertex_shader_name;
   std::string                        frag_shader_name;
   std::vector<VkDescriptorSetLayout> dset_layouts;
+  std::vector<VkPushConstantRange>   push_constants;
   VkPrimitiveTopology                topology;
   VkCullModeFlagBits                 cull_mode;
   VkSampleCountFlagBits              sample_count;

@@ -45,7 +45,7 @@ auto cursor2Plane(
   if (inter.index() == 0) {
     auto inter_point = std::get<0>(inter);
     if (glm::dot(inter_point - start, inter_point - end) < 0) {
-      toy::debug(std::tuple{ inter_point.x, inter_point.y, inter_point.z });
+      // toy::debug(std::tuple{ inter_point.x, inter_point.y, inter_point.z });
       return model * trans::translate(inter_point);
     }
   }
@@ -54,12 +54,12 @@ auto cursor2Plane(
 
 class CursorDragger : private loop::Action {
 private:
-  const glm::mat4* _perspective_iv;
-  const glm::mat4* _view;
-  glm::mat4*       _model;
+  const glm::mat4*       _perspective_iv;
+  const rd::align::mat4* _view;
+  glm::mat4*             _model;
 
 public:
-  CursorDragger(const glm::mat4& perspective_iv, const glm::mat4& view, glm::mat4& model)
+  CursorDragger(const glm::mat4& perspective_iv, const rd::align::mat4& view, glm::mat4& model)
     : loop::Action(loop::Stage::BEFORE_RENDER), _perspective_iv(&perspective_iv), _view(&view),
       _model(&model) {}
   void runLoop(const loop::ActionContext& ctx) override {

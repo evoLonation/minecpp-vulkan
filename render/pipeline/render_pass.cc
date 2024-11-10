@@ -71,9 +71,15 @@ void RenderPass::record(
 }
 
 auto PipelineDrawer::forRecord(
-  VkCommandBuffer cmdbuf, VkPipeline pipeline, VkPipelineLayout layout, VkExtent2D extent
+  VkCommandBuffer                  cmdbuf,
+  VkPipeline                       pipeline,
+  VkPipelineLayout                 layout,
+  VkExtent2D                       extent,
+  std::vector<VkPushConstantRange> push_constants
 ) -> PipelineDrawer {
-  return PipelineDrawer{ cmdbuf, pipeline, layout, extent, {}, nullptr, nullptr, nullptr, RECORD };
+  return PipelineDrawer{
+    cmdbuf, pipeline, layout, extent, push_constants, {}, nullptr, nullptr, nullptr, RECORD,
+  };
 }
 
 auto PipelineDrawer::forGetResources(
@@ -83,7 +89,7 @@ auto PipelineDrawer::forGetResources(
   std::vector<ResourceSet*>*         resource_sets
 ) -> PipelineDrawer {
   return PipelineDrawer{
-    VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, {}, dset_layouts, vertex_buffers,
+    VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, {}, {}, dset_layouts, vertex_buffers,
     index_buffers,  resource_sets,  GET_RESOURCES,
   };
 }
@@ -119,6 +125,15 @@ void PipelineDrawer::bindResourceSet(uint32 index, ResourceSet* resource_set) {
   }
 }
 
+void PipelineDrawer::bindPushConstant(VkShaderStageFlags stage, std::span<std::byte const> data) {
+  if (_execute_type == RECORD) {
+    auto opt = toy::findIf(_push_constants, [&](auto& range) { return range.stageFlags == stage; });
+    TOY_ASSERT(opt);
+    TOY_ASSERT(data.size() == opt->size, data.size(), opt->size);
+    vkCmdPushConstants(_cmdbuf, _layout, opt->stageFlags, opt->offset, opt->size, data.data());
+  }
+}
+
 void PipelineDrawer::setStencilReference(uint32 reference) {
   if (_execute_type == RECORD) {
     vkCmdSetStencilReference(_cmdbuf, VK_STENCIL_FACE_FRONT_AND_BACK, reference);
@@ -132,11 +147,12 @@ void PipelineDrawer::draw() {
 }
 
 void recordPipeline(
-  VkCommandBuffer      cmdbuf,
-  VkExtent2D           extent,
-  VkPipeline           pipeline,
-  VkPipelineLayout     layout,
-  PipelineDrawRecorder recorder
+  VkCommandBuffer                  cmdbuf,
+  VkExtent2D                       extent,
+  VkPipeline                       pipeline,
+  VkPipelineLayout                 layout,
+  std::vector<VkPushConstantRange> push_constants,
+  PipelineDrawRecorder             recorder
 ) {
   vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
   // 定义了 viewport 到缓冲区的变换
@@ -155,7 +171,7 @@ void recordPipeline(
     .extent = extent,
   };
   vkCmdSetScissor(cmdbuf, 0, 1, &scissor);
-  recorder(PipelineDrawer::forRecord(cmdbuf, pipeline, layout, extent));
+  recorder(PipelineDrawer::forRecord(cmdbuf, pipeline, layout, extent, std::move(push_constants)));
 }
 
 RenderPassPipeline::RenderPassPipeline(
@@ -174,12 +190,14 @@ RenderPassPipeline::RenderPassPipeline(
         ranges::to<std::vector>(),
     } {
   for (auto [subpass_i, subpass] : subpasses | toy::enumerate) {
+    auto push_constant_ranges = getPushConstantRanges(subpass.push_constants);
     auto pipeline_info = PipelineInfo{
       .render_pass = _render_pass,
       .subpass_i = subpass_i,
       .vertex_shader_name = subpass.vertex_shader_name,
       .frag_shader_name = subpass.frag_shader_name,
       .dset_layouts = std::move(subpass.dset_layouts),
+      .push_constants = std::move(push_constant_ranges),
       .topology = subpass.topology,
       .cull_mode = subpass.cull_mode,
       .sample_count =
@@ -191,6 +209,7 @@ RenderPassPipeline::RenderPassPipeline(
     };
     _pipelines.push_back(Pipeline{ pipeline_info });
     _pipeline_dset_layouts.push_back(std::move(pipeline_info.dset_layouts));
+    _pipeline_push_constants.push_back(std::move(pipeline_info.push_constants));
   }
   _recorders.resize(subpasses.size());
 }
@@ -298,12 +317,14 @@ void RenderPassPipeline::recordDraw(
     }
   }
   auto pipeline_recorder = [&](VkCommandBuffer cmdbuf, VkExtent2D extent) {
-    for (auto [subpass_i, pipeline, recorder] :
-         views::zip(views::iota(0u), _pipelines, _recorders)) {
+    for (auto [subpass_i, pipeline, recorder, push_constants] :
+         views::zip(views::iota(0u), _pipelines, _recorders, _pipeline_push_constants)) {
       if (subpass_i != 0) {
         vkCmdNextSubpass(cmdbuf, VK_SUBPASS_CONTENTS_INLINE);
       }
-      recordPipeline(cmdbuf, extent, pipeline.getPipeline(), pipeline.getLayout(), recorder);
+      recordPipeline(
+        cmdbuf, extent, pipeline.getPipeline(), pipeline.getLayout(), push_constants, recorder
+      );
     }
   };
   _render_pass.record(batches, images, clear_values, pipeline_recorder);

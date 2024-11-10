@@ -6,11 +6,10 @@ layout(location = 1) in dvec2 in_tex_coord;
 
 // layout(location = 0) out vec3 frag_color;
 
-layout(set = 1, binding = 0) uniform ViewBlock{mat4 data;} view;
-layout(set = 1, binding = 1) uniform ProjBlock{mat4 data;} proj;
 layout(set = 0, binding = 0) uniform ModelBlock{mat4 data;} model;
+layout(push_constant) uniform CameraData{mat4 view; mat4 proj;} camera;
 
 void main() {
-  gl_Position = proj.data * view.data * model.data * vec4(in_position, 1.0);
+  gl_Position = camera.proj * camera.view * model.data * vec4(in_position, 1.0);
   // frag_color = in_color;
 }

@@ -75,7 +75,11 @@ void recordRenderPass(
 class PipelineDrawer {
 public:
   static auto forRecord(
-    VkCommandBuffer cmdbuf, VkPipeline pipeline, VkPipelineLayout layout, VkExtent2D extent
+    VkCommandBuffer                  cmdbuf,
+    VkPipeline                       pipeline,
+    VkPipelineLayout                 layout,
+    VkExtent2D                       extent,
+    std::vector<VkPushConstantRange> push_constants
   ) -> PipelineDrawer;
   static auto forGetResources(
     std::vector<VkDescriptorSetLayout> dset_layouts,
@@ -87,6 +91,7 @@ public:
   void bindVertexBuffer(VertexBuffer* vertex_buffer);
   void bindIndexBuffer(IndexBuffer* index_buffer);
   void bindResourceSet(uint32 index, ResourceSet* resource_set);
+  void bindPushConstant(VkShaderStageFlags stage, std::span<std::byte const> data);
   void setStencilReference(uint32 reference);
   void draw();
 
@@ -100,6 +105,7 @@ private:
     VkPipeline                         pipeline,
     VkPipelineLayout                   layout,
     VkExtent2D                         extent,
+    std::vector<VkPushConstantRange>   push_constants,
     std::vector<VkDescriptorSetLayout> dset_layouts,
     std::vector<Buffer*>*              vertex_buffers,
     std::vector<Buffer*>*              index_buffers,
@@ -107,15 +113,17 @@ private:
     ExecuteType                        execute_type
   )
     : _cmdbuf(cmdbuf), _pipeline(pipeline), _layout(layout), _extent(extent),
-      _dset_layouts(std::move(dset_layouts)), _execute_type(execute_type), _index_count(0),
-      _vertex_buffers(vertex_buffers), _index_buffers(index_buffers),
-      _resource_sets(resource_sets) {}
+      _push_constants(push_constants), _dset_layouts(std::move(dset_layouts)),
+      _execute_type(execute_type), _index_count(0), _vertex_buffers(vertex_buffers),
+      _index_buffers(index_buffers), _resource_sets(resource_sets) {}
 
   // only for RECORD
   VkCommandBuffer  _cmdbuf;
   VkPipeline       _pipeline;
   VkPipelineLayout _layout;
   VkExtent2D       _extent;
+
+  std::vector<VkPushConstantRange> _push_constants;
   // only for GET_RESOURCES
   std::vector<VkDescriptorSetLayout> _dset_layouts;
 
@@ -136,11 +144,12 @@ struct PipelineDrawInfo {
   PipelineDrawRecorder recorder;
 };
 void recordPipeline(
-  VkCommandBuffer      cmdbuf,
-  VkExtent2D           extent,
-  VkPipeline           pipeline,
-  VkPipelineLayout     layout,
-  PipelineDrawRecorder recorder
+  VkCommandBuffer                  cmdbuf,
+  VkExtent2D                       extent,
+  VkPipeline                       pipeline,
+  VkPipelineLayout                 layout,
+  std::vector<VkPushConstantRange> push_constants,
+  PipelineDrawRecorder             recorder
 );
 
 struct SubpassPipelineInfo {
@@ -160,6 +169,7 @@ struct SubpassPipelineInfo {
   VkCullModeFlagBits                 cull_mode;
   VertexInfo                         vertex_info;
   std::vector<VkDescriptorSetLayout> dset_layouts;
+  std::vector<PushConstantInfo>      push_constants;
 };
 
 class RenderPassPipeline {
@@ -176,6 +186,7 @@ public:
 
   RenderPassPipeline(RenderPassPipeline&&) noexcept = default;
   RenderPassPipeline& operator=(RenderPassPipeline&& e) noexcept {
+    _pipeline_push_constants = std::move(e._pipeline_push_constants);
     _pipeline_dset_layouts = std::move(e._pipeline_dset_layouts);
     _recorders = std::move(e._recorders);
     _pipelines = std::move(e._pipelines);
@@ -188,6 +199,7 @@ private:
   std::vector<Pipeline>                           _pipelines;
   std::vector<PipelineDrawRecorder>               _recorders;
   std::vector<std::vector<VkDescriptorSetLayout>> _pipeline_dset_layouts;
+  std::vector<std::vector<VkPushConstantRange>>   _pipeline_push_constants;
 };
 
 } // namespace rd

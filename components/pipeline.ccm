@@ -4,15 +4,7 @@ export module pipeline;
 
 export import dset_pools;
 
-import render.render_pass;
-import render.descriptor;
-import render.framebuffer;
-import render.presentation;
-import render.vertex;
-import render.image;
-import render.sampler;
-import render.buffer;
-import render.device;
+import render;
 
 import model;
 import loop;
@@ -104,44 +96,41 @@ private:
   rd::IndexBuffer  _index_buf;
 };
 
+struct CameraData {
+  rd::align::mat4 view;
+  rd::align::mat4 proj;
+};
+
 class Camera : public loop::Action {
 public:
   Camera() {
     setStage(loop::Stage::BEFORE_RENDER);
-    _uniform_view = { trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f }) };
-    auto& swapchain = rd::Presentation::getInstance().getSwapchain();
-    _uniform_proj = { trans::proj::perspective({
-      .width = swapchain.getExtent().width,
-      .height = swapchain.getExtent().height,
-    }) };
-    _dset = rd::ResourceSet{ &DescriptorPools::getCamera(), { &_uniform_view, &_uniform_proj } };
+    auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
+    _data = {
+      .view = trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f }),
+      .proj = trans::proj::perspective({
+        .width = extent.width,
+        .height = extent.height,
+      }),
+    };
   }
 
-  Camera(Camera&&) noexcept = default;
-  auto operator=(Camera&& e) noexcept -> Camera& {
-    _dset = std::move(e._dset);
-    _uniform_view = std::move(e._uniform_view);
-    _uniform_proj = std::move(e._uniform_proj);
-    return *this;
-  }
   void runLoop(loop::ActionContext const& ctx) override {
     if (ctx.recreated) {
-      auto& swapchain = rd::Presentation::getInstance().getSwapchain();
-      _uniform_proj = trans::proj::perspective({
-        .width = swapchain.getExtent().width,
-        .height = swapchain.getExtent().height,
+      auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
+      _data.proj = trans::proj::perspective({
+        .width = extent.width,
+        .height = extent.height,
       });
     }
   }
 
-  auto getView() -> glm::mat4& { return _uniform_view.get(); }
-  auto getProj() -> glm::mat4& { return _uniform_proj.get(); }
-  auto getDset() -> rd::ResourceSet& { return _dset; }
+  auto getView() -> rd::align::mat4& { return _data.view; }
+  auto getProj() -> rd::align::mat4& { return _data.proj; }
+  auto getData() -> CameraData& { return _data; }
 
 private:
-  uni::UniformBuffer<glm::mat4> _uniform_view;
-  uni::UniformBuffer<glm::mat4> _uniform_proj;
-  rd::ResourceSet               _dset;
+  CameraData _data;
 };
 
 class Pipeline : loop::Action {
@@ -191,7 +180,14 @@ public:
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .cull_mode = VK_CULL_MODE_BACK_BIT,
         .vertex_info = model::Vertex::getVertexInfo(),
-        .dset_layouts = { DescriptorPools::getModel(), DescriptorPools::getCamera() },
+        .dset_layouts = { DescriptorPools::getModel() },
+        .push_constants = { 
+          rd::PushConstantInfo{ 
+            .stage = VK_SHADER_STAGE_VERTEX_BIT, 
+            .size = sizeof(CameraData), 
+            .alignment = alignof(CameraData),
+          },
+        },
       }
     };
     _render_pass = rd::RenderPassPipeline{ attachment_infos, subpass_infos };
@@ -218,11 +214,13 @@ public:
       createFramebuffers();
     }
     _render_pass.setRecorder(0, [&](rd::PipelineDrawer drawer) {
+      drawer.bindPushConstant(
+        VK_SHADER_STAGE_VERTEX_BIT, std::as_bytes(std::span{ &_camera->getData(), 1 })
+      );
       for (auto* draw_unit : _draw_units) {
         drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
         drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
         drawer.bindResourceSet(0, &draw_unit->getDsetModel());
-        drawer.bindResourceSet(1, &_camera->getDset());
         drawer.draw();
       }
     });
@@ -325,7 +323,14 @@ public:
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .cull_mode = VK_CULL_MODE_BACK_BIT,
         .vertex_info = model::Vertex::getVertexInfo(),
-        .dset_layouts = { DescriptorPools::getModelId(), DescriptorPools::getCamera() },
+        .dset_layouts = { DescriptorPools::getModelId() },
+        .push_constants = { 
+          rd::PushConstantInfo{ 
+            .stage = VK_SHADER_STAGE_VERTEX_BIT, 
+            .size = sizeof(CameraData), 
+            .alignment = alignof(CameraData),
+          },
+        },
       },
       rd::SubpassPipelineInfo{
         .colors = {0},
@@ -364,7 +369,14 @@ public:
         // cull front
         .cull_mode = VK_CULL_MODE_FRONT_BIT,
         .vertex_info = model::Vertex::getVertexInfo(),
-        .dset_layouts = { DescriptorPools::getModelOutline(), DescriptorPools::getCamera() },
+        .dset_layouts = { DescriptorPools::getModelOutline() },
+        .push_constants = { 
+          rd::PushConstantInfo{ 
+            .stage = VK_SHADER_STAGE_VERTEX_BIT, 
+            .size = sizeof(CameraData), 
+            .alignment = alignof(CameraData),
+          },
+        },
       }
     };
     _render_pass = rd::RenderPassPipeline{ attachment_infos, subpass_infos };
@@ -404,11 +416,13 @@ public:
     _render_pass.setRecorder(0, [&](rd::PipelineDrawer drawer) {
       // todo: easy to overflow
       uint8 reference = 1;
+      drawer.bindPushConstant(
+        VK_SHADER_STAGE_VERTEX_BIT, std::as_bytes(std::span{ &_camera->getData(), 1 })
+      );
       for (auto* draw_unit : _draw_units) {
         drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
         drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
         drawer.bindResourceSet(0, &draw_unit->getDsetModelId());
-        drawer.bindResourceSet(1, &_camera->getDset());
         drawer.setStencilReference(reference++);
         drawer.draw();
       }
@@ -416,12 +430,14 @@ public:
     _render_pass.setRecorder(1, [&](rd::PipelineDrawer drawer) {
       // todo: easy to overflow
       uint8 reference = 1;
+      drawer.bindPushConstant(
+        VK_SHADER_STAGE_VERTEX_BIT, std::as_bytes(std::span{ &_camera->getData(), 1 })
+      );
       for (auto* draw_unit : _draw_units) {
         if (draw_unit->getId() == _last_id) {
           drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
           drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
           drawer.bindResourceSet(0, &draw_unit->getDsetModelOutline());
-          drawer.bindResourceSet(1, &_camera->getDset());
           drawer.setStencilReference(reference);
           drawer.draw();
         }
@@ -449,7 +465,7 @@ public:
     auto cursor = input::InputProcessor::getInstance().getCursorState();
     if (cursor.visible) {
       auto pixel = *reinterpret_cast<uint32 const*>(_image_reader.readPixel(cursor.x, cursor.y));
-      toy::debugf("pixel: {:x}", pixel);
+      // toy::debugf("pixel: {:x}", pixel);
       _last_id = pixel;
     }
   }

@@ -194,4 +194,26 @@ ResourceSet::ResourceSet(DescriptorPool* pool, std::initializer_list<ResourceBin
   vkUpdateDescriptorSets(Device::getInstance(), write_infos.size(), write_infos.data(), 0, nullptr);
 }
 
+auto getPushConstantRanges(std::span<PushConstantInfo const> infos) //
+  -> std::vector<VkPushConstantRange> {
+  auto   max_size = Device::getInstance().getPdevice().getProperties().limits.maxPushConstantsSize;
+  auto   ranges = std::vector<VkPushConstantRange>{};
+  uint32 offset = 0;
+  auto   appeared = VkShaderStageFlags{};
+  for (auto& info : infos) {
+    offset = (offset + info.alignment - 1) / info.alignment * info.alignment;
+    TOY_ASSERT(!(appeared & info.stage), appeared, info.stage);
+    appeared |= info.stage;
+    ranges.push_back(VkPushConstantRange{
+      .stageFlags = info.stage,
+      .offset = offset,
+      .size = info.size,
+    });
+    offset += info.size;
+  }
+  TOY_DEBUG(max_size);
+  TOY_ASSERT(offset <= max_size, offset, max_size);
+  return ranges;
+}
+
 } // namespace rd

@@ -134,4 +134,13 @@ private:
   std::vector<ResourceInfo> _resources;
 };
 
+struct PushConstantInfo {
+  VkShaderStageFlags stage;
+  uint32             size;
+  uint32             alignment;
+};
+
+auto getPushConstantRanges(std::span<PushConstantInfo const> infos) //
+  -> std::vector<VkPushConstantRange>;
+
 } // namespace rd

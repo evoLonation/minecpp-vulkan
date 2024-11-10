@@ -20,13 +20,17 @@ auto createShaderModule(std::string_view filename) -> rs::ShaderModule {
   return rs::ShaderModule{ create_info };
 }
 
-auto createPipelineLayout(std::span<VkDescriptorSetLayout const> dset_layouts) //
-  -> rs::PipelineLayout {
+auto createPipelineLayout(
+  std::span<VkDescriptorSetLayout const> dset_layouts,
+  std::span<VkPushConstantRange const>   push_constants
+) -> rs::PipelineLayout {
   // 指定 uniform 全局变量
   auto pipeline_layout_info = VkPipelineLayoutCreateInfo{
     .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
     .setLayoutCount = static_cast<uint32>(dset_layouts.size()),
     .pSetLayouts = dset_layouts.data(),
+    .pushConstantRangeCount = static_cast<uint32>(push_constants.size()),
+    .pPushConstantRanges = push_constants.data(),
   };
   return rs::PipelineLayout{ pipeline_layout_info };
 }
@@ -234,7 +238,7 @@ auto createGraphicsPipeline(
 Pipeline::Pipeline(const PipelineInfo& info) {
   _vertex_shader = createShaderModule(info.vertex_shader_name);
   _frag_shader = createShaderModule(info.frag_shader_name);
-  _layout = createPipelineLayout(info.dset_layouts);
+  _layout = createPipelineLayout(info.dset_layouts, info.push_constants);
   _pipeline = createGraphicsPipeline(
     info.render_pass,
     info.subpass_i,

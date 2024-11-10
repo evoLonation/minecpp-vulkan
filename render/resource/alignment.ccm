@@ -27,6 +27,8 @@ auto alignment(DeviceCapabilityBuilder& builder) -> bool {
       data = v;                                                                                    \
       return *this;                                                                                \
     }                                                                                              \
+    operator glm::name&() { return data; }                                                         \
+    operator glm::name const&() const { return data; }                                             \
   };
 
 #define DEFINE_VECS(prefix)                                                                        \
@@ -47,6 +49,9 @@ DEFINE_VECS(uvec);
 #define INITIALIZER_COLUMN_2 m[0], m[1]
 #define INITIALIZER_COLUMN_3 m[0], m[1], m[2]
 #define INITIALIZER_COLUMN_4 m[0], m[1], m[2], m[3]
+#define CONVERT_COLUMN_2 columns[0], columns[1]
+#define CONVERT_COLUMN_3 columns[0], columns[1], columns[2]
+#define CONVERT_COLUMN_4 columns[0], columns[1], columns[2], columns[3]
 #define DEFINE_MAT(prefix, vec, suffix, row_n, col_n)                                              \
   struct prefix##suffix {                                                                          \
     std::array<vec##row_n, col_n> columns;                                                         \
@@ -56,6 +61,7 @@ DEFINE_VECS(uvec);
       columns = { INITIALIZER_COLUMN_##col_n };                                                    \
       return *this;                                                                                \
     }                                                                                              \
+    operator glm::prefix##suffix() const { return { CONVERT_COLUMN_##col_n }; }                    \
   };
 #define DEFINE_MATS(prefix, vec)                                                                   \
   DEFINE_MAT(prefix, vec, 2, 2, 2)                                                                 \
