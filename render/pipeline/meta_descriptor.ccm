@@ -1,0 +1,194 @@
+export module render.meta_descriptor;
+
+import std;
+import toy;
+import glm;
+
+import <vulkan_config.h>;
+
+import render.alignment;
+
+export namespace rd::meta {
+
+enum Stage { VERTEX, FRAGMENT };
+
+enum Type { UNIFORM, SAMPLED_IMAGE };
+
+template <typename DataType, Stage stage, uint32 count = 1>
+struct UniformBindingInfo {
+  static constexpr Type type = Type::UNIFORM;
+  using Data = DataType;
+  static constexpr uint32 _count = count;
+  static constexpr Stage  _stage = stage;
+};
+
+template <Stage stage, uint32 count = 1>
+struct SamplerImageBindingInfo {
+  static constexpr Type   type = Type::SAMPLED_IMAGE;
+  static constexpr uint32 _count = count;
+  static constexpr Stage  _stage = stage;
+};
+
+template <typename DataType>
+struct UniformBuffer {};
+template <typename DataType>
+struct StorageBuffer {};
+template <typename DataType>
+struct PushConstant {};
+
+struct SampledImage {};
+
+template <typename Binding>
+consteval auto bindingToResource_() {
+  if constexpr (Binding::type == Type::UNIFORM) {
+    return std::type_identity<UniformBuffer<typename Binding::Data>>();
+  } else if constexpr (Binding::type == Type::SAMPLED_IMAGE) {
+    return std::type_identity<SampledImage>();
+  }
+};
+
+template <typename Binding>
+using bindingToResource = decltype(bindingToResource_<Binding>())::type;
+
+template <typename Resource, typename ResourcePack>
+struct _ResourceBinding;
+template <typename Resource, typename... Resources>
+struct _ResourceBinding<Resource, toy::TypePack<Resources...>> {
+  _ResourceBinding(Resources*... resources) : _resources{ resources... } {}
+  std::array<Resource*, sizeof...(Resources)> _resources;
+};
+template <typename Binding>
+using ResourceBinding = _ResourceBinding<
+  bindingToResource<Binding>,
+  toy::Repeat<bindingToResource<Binding>, Binding::_count>>;
+
+template <typename Layout>
+struct DescriptorSet;
+// lazy loading
+template <typename... Bindings>
+struct DescriptorLayout {
+  DescriptorLayout();
+};
+
+template <typename... Bindings>
+struct DescriptorSet<DescriptorLayout<Bindings...>> {
+  DescriptorSet(ResourceBinding<Bindings>... bindings);
+};
+
+template <typename VertexInfo>
+class VertexBuffer {};
+
+template <typename DataType, Stage... stages>
+struct PushConstantInfo {
+  using Data = DataType;
+  static constexpr auto stage_set = []() {
+    auto set = std::bitset<2>{};
+    (set.set(stages), ...);
+    return set;
+  }();
+};
+
+template <typename LayoutPack>
+struct DescriptorSetBinder {
+  template <uint32 binding>
+    requires(binding < LayoutPack::size)
+  void bindDescriptorSet(
+    toy::TypedIndex<binding>, DescriptorSet<typename LayoutPack::template at<binding>>* dset
+  );
+};
+template <typename PushConstantPack>
+struct PushConstantBinder {
+  template <uint32 binding>
+    requires(binding < PushConstantPack::size)
+  void pushConstant(
+    toy::TypedIndex<binding>, PushConstantPack::template at<binding>::Data const& data
+  );
+};
+
+template <typename VertexInfo, typename LayoutPack, typename PushConstantPack>
+struct PipelineDrawer : DescriptorSetBinder<LayoutPack>, PushConstantBinder<PushConstantPack> {
+  void bindVertexBuffer(VertexBuffer<VertexInfo>* vertex_buffer);
+  void setStencilReference(uint32 reference);
+  void draw();
+};
+
+template <typename VertexInfo_, typename LayoutPack_, typename PushConstantPack_>
+struct SubpassInfo {
+  using VertexInfo = VertexInfo_;
+  using LayoutPack = LayoutPack_;
+  using PushConstantPack = PushConstantPack_;
+};
+
+template <typename DrawerPack>
+struct RenderPass {
+  template <uint32 index>
+    requires(index < DrawerPack::size)
+  using Drawer = typename DrawerPack::template at<index>;
+
+  template <typename... SubpassInfos>
+  RenderPass(SubpassInfos... subpasses);
+  template <uint32 index>
+  void setRecorder(toy::TypedIndex<index>, std::function<void(Drawer<index>)> recorder);
+};
+template <typename... SubpassInfos>
+RenderPass(SubpassInfos... subpasses) -> RenderPass<toy::TypePack<PipelineDrawer<
+                                        typename SubpassInfos::VertexInfo,
+                                        typename SubpassInfos::LayoutPack,
+                                        typename SubpassInfos::PushConstantPack>...>>;
+
+// using Layout = toy::TypePack<
+//   UniformBinding<Camera, Stage::VERTEX, 2>,
+//   SamplerImageBinding<Stage::VERTEX>,
+//   SamplerImageBinding<Stage::FRAGMENT>>;
+
+template <typename... Bindings>
+struct PipelineLayout {
+  using Data = toy::TypePack<Bindings...>;
+};
+struct Camera {
+  align::mat4 view;
+  align::mat4 proj;
+};
+void test() {
+
+  using CameraLayout = DescriptorLayout<
+    UniformBindingInfo<Camera, Stage::VERTEX, 2>,
+    SamplerImageBindingInfo<Stage::VERTEX>,
+    SamplerImageBindingInfo<Stage::FRAGMENT>>;
+
+  using CameraPushConstants = toy::TypePack<PushConstantInfo<Camera, Stage::VERTEX>>;
+
+  using VertexInfo = int;
+
+  auto camera = Camera{};
+  auto uniform = UniformBuffer<Camera>{};
+  auto image = SampledImage{};
+
+  auto binding =
+    ResourceBinding<UniformBindingInfo<Camera, Stage::VERTEX, 2>>{ &uniform, &uniform };
+  auto dset = DescriptorSet<CameraLayout>({ &uniform, &uniform }, &image, &image);
+
+  auto vertex_buf = VertexBuffer<VertexInfo>{};
+
+  using Binder1 = PipelineDrawer<VertexInfo, toy::TypePack<CameraLayout>, CameraPushConstants>;
+  using namespace toy::literals;
+  auto recorder = [&](Binder1 binder) {
+    binder.bindDescriptorSet(0_i, &dset);
+    binder.pushConstant(0_i, camera);
+    binder.bindVertexBuffer(&vertex_buf);
+  };
+
+  auto subpass1 = SubpassInfo<VertexInfo, toy::TypePack<CameraLayout>, CameraPushConstants>{
+    // ...
+  };
+
+  auto render_pass = RenderPass{ subpass1 };
+  render_pass.setRecorder(0_i, [&](decltype(render_pass)::Drawer<0> binder) {
+    binder.bindDescriptorSet(0_i, &dset);
+    binder.pushConstant(0_i, camera);
+    binder.bindVertexBuffer(&vertex_buf);
+    return;
+  });
+}
+
+} // namespace rd::meta

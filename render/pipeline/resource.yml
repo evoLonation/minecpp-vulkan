@@ -19,3 +19,5 @@ module:
     implement: render.render_pass
 - framebuffer.cc:
     implement: render.framebuffer
+- meta_descriptor.ccm:
+    provide: render.meta_descriptor

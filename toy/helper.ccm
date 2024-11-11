@@ -6,6 +6,23 @@ import toy.concepts;
 
 export namespace toy {
 
+template <uint32 I>
+struct TypedIndex {};
+
+namespace literals {
+
+template <char... chars>
+constexpr auto operator""_i() {
+  struct acc {
+    std::size_t   val{ 0 };
+    constexpr acc operator<<(char dig) const { return { val * 10 + dig - '0' }; }
+    constexpr     operator std::size_t() const { return val; }
+  };
+  return TypedIndex<(acc{} << ... << chars)>{};
+}
+
+} // namespace literals
+
 // helper for string literal as non-type template parameter
 template <size_t N>
 struct StringLiteral {
