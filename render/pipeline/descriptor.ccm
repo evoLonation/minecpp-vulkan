@@ -140,6 +140,9 @@ struct PushConstantInfo {
   uint32             alignment;
 };
 
+/**
+ * @brief guaranteed at least 128 bytes on all devices
+ */
 auto getPushConstantRanges(std::span<PushConstantInfo const> infos) //
   -> std::vector<VkPushConstantRange>;
 

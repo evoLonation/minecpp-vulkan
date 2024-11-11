@@ -51,10 +51,10 @@ public:
   auto getSyncInfos() const -> std::span<AttachmentSyncInfo const> { return _attachment_syncs; }
   auto getExecutor() -> CommandExecutor& { return *_executor; }
   void record(
-    std::vector<CommandBatch>                        batches,
-    std::span<FrameImageManager* const>              images,
-    std::vector<VkClearValue>                        clear_values,
-    std::function<void(VkCommandBuffer, VkExtent2D)> pipeline_recorder
+    std::vector<CommandBatch>                                         batches,
+    std::span<FrameImageManager* const>                               images,
+    std::vector<VkClearValue>                                         clear_values,
+    std::span<std::function<void(VkCommandBuffer, VkExtent2D)> const> pipeline_recorders
   );
 
 private:
@@ -63,12 +63,12 @@ private:
 };
 
 void recordRenderPass(
-  VkCommandBuffer                      cmdbuf,
-  VkRenderPass                         render_pass,
-  VkFramebuffer                        framebuffer,
-  VkExtent2D                           extent,
-  std::span<VkClearValue const>        clear_values,
-  std::function<void(VkCommandBuffer)> recorder
+  VkCommandBuffer                                       cmdbuf,
+  VkRenderPass                                          render_pass,
+  VkFramebuffer                                         framebuffer,
+  VkExtent2D                                            extent,
+  std::span<VkClearValue const>                         clear_values,
+  std::span<std::function<void(VkCommandBuffer)> const> recorders
 );
 
 // todo: change to abstract class

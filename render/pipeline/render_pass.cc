@@ -11,12 +11,12 @@ import render.tracker;
 namespace rd {
 
 void recordRenderPass(
-  VkCommandBuffer                      cmdbuf,
-  VkRenderPass                         render_pass,
-  VkFramebuffer                        framebuffer,
-  VkExtent2D                           extent,
-  std::span<VkClearValue const>        clear_values,
-  std::function<void(VkCommandBuffer)> recorder
+  VkCommandBuffer                                       cmdbuf,
+  VkRenderPass                                          render_pass,
+  VkFramebuffer                                         framebuffer,
+  VkExtent2D                                            extent,
+  std::span<VkClearValue const>                         clear_values,
+  std::span<std::function<void(VkCommandBuffer)> const> recorders
 ) {
   auto render_pass_begin_info = VkRenderPassBeginInfo{
     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -30,15 +30,20 @@ void recordRenderPass(
   // VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS: render pass 命令
   // 将会从次缓冲区执行
   vkCmdBeginRenderPass(cmdbuf, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-  recorder(cmdbuf);
+  for (auto [subpass_i, recorder] : recorders | toy::enumerate) {
+    if (subpass_i != 0) {
+      vkCmdNextSubpass(cmdbuf, VK_SUBPASS_CONTENTS_INLINE);
+    }
+    recorder(cmdbuf);
+  }
   vkCmdEndRenderPass(cmdbuf);
 }
 
 void RenderPass::record(
-  std::vector<CommandBatch>                        batches,
-  std::span<FrameImageManager* const>              images,
-  std::vector<VkClearValue>                        clear_values,
-  std::function<void(VkCommandBuffer, VkExtent2D)> pipeline_recorder
+  std::vector<CommandBatch>                                         batches,
+  std::span<FrameImageManager* const>                               images,
+  std::vector<VkClearValue>                                         clear_values,
+  std::span<std::function<void(VkCommandBuffer, VkExtent2D)> const> pipeline_recorders
 ) {
   auto [framebuffer, extent] = FramebufferPool::getInstance().getFramebuffer(get(), images);
 
@@ -58,7 +63,17 @@ void RenderPass::record(
   using namespace std::placeholders;
   batches.push_back(CommandBatch{ [&](VkCommandBuffer cmdbuf) {
     recordRenderPass(
-      cmdbuf, get(), framebuffer, extent, clear_values, std::bind(pipeline_recorder, _1, extent)
+      cmdbuf,
+      get(),
+      framebuffer,
+      extent,
+      clear_values,
+      pipeline_recorders | views::transform([&](auto& recorder) {
+        return std::function<void(VkCommandBuffer)>{ [&](auto cmdbuf) {
+          recorder(cmdbuf, extent);
+        } };
+      }) |
+        ranges::to<std::vector>()
     );
   } });
   _executor->submit(batches);
@@ -316,18 +331,16 @@ void RenderPassPipeline::recordDraw(
       }
     }
   }
-  auto pipeline_recorder = [&](VkCommandBuffer cmdbuf, VkExtent2D extent) {
-    for (auto [subpass_i, pipeline, recorder, push_constants] :
-         views::zip(views::iota(0u), _pipelines, _recorders, _pipeline_push_constants)) {
-      if (subpass_i != 0) {
-        vkCmdNextSubpass(cmdbuf, VK_SUBPASS_CONTENTS_INLINE);
-      }
+  auto pipeline_recorders = std::vector<std::function<void(VkCommandBuffer, VkExtent2D)>>{};
+  for (auto [subpass_i, pipeline, recorder, push_constants] :
+       views::zip(views::iota(0u), _pipelines, _recorders, _pipeline_push_constants)) {
+    pipeline_recorders.push_back([&](VkCommandBuffer cmdbuf, VkExtent2D extent) {
       recordPipeline(
         cmdbuf, extent, pipeline.getPipeline(), pipeline.getLayout(), push_constants, recorder
       );
-    }
-  };
-  _render_pass.record(batches, images, clear_values, pipeline_recorder);
+    });
+  }
+  _render_pass.record(batches, images, clear_values, pipeline_recorders);
 }
 
 } // namespace rd

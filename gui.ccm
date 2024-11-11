@@ -299,10 +299,11 @@ public:
     ImGui::Render();
   }
   void recordDraw(rd::FrameImageManager* image) {
-    auto recorder = [&](VkCommandBuffer cmdbuf, auto) {
-      ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmdbuf);
-    };
-    _render_pass.record({}, std::array{ image }, {}, recorder);
+    auto recorder =
+      std::function<void(VkCommandBuffer, VkExtent2D)>{ [&](VkCommandBuffer cmdbuf, auto) {
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmdbuf);
+      } };
+    _render_pass.record({}, std::array{ image }, {}, std::span{ &recorder, 1 });
   }
 
   void runLoop(loop::ActionContext const& ctx) override {
