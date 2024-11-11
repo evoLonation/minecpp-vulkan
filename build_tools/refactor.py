@@ -1,4 +1,5 @@
 from os import path
+import textwrap
 from build_ninja import build_ninja
 from clangd_remove_invalid import (
     get_compile_commands_content,
@@ -9,19 +10,55 @@ from resources import Module, Resources, get_config_file, touch_config_file
 import argparse
 
 
-def add_module_interface(file: str, module: str) -> bool:
+def add_module_interface(file: str, module: str, new_file: bool) -> bool:
     config_file = touch_config_file(path.dirname(file))
     resources = Resources.from_file(config_file)
     resources.modules.append(Module(file=path.basename(file), provide=module))
     resources.to_file(config_file)
+    if new_file:
+        assert path.exists(file), f"file not found: {file}"
+        with open(file, "rt") as f:
+            assert f.read().strip() == ""
+        with open(file, "wt") as f:
+            template = textwrap.dedent(
+                f"""\
+            module;
+            #include <toy.h>
+            export module {module};
+            
+            import std;
+            import toy;
+
+            export namespace {module.split('.')[0]} {{
+                
+            }}
+            """
+            )
+            f.write(template)
     return True
 
 
-def add_module_implement(file: str, module: str) -> bool:
+def add_module_implement(file: str, module: str, new_file: bool) -> bool:
     config_file = touch_config_file(path.dirname(file))
     resources = Resources.from_file(config_file)
     resources.modules.append(Module(file=path.basename(file), implement=module))
     resources.to_file(config_file)
+    if new_file:
+        assert path.exists(file), f"file not found: {file}"
+        with open(file, "rt") as f:
+            assert f.read().strip() == ""
+        with open(file, "wt") as f:
+            template = textwrap.dedent(
+                f"""\
+            module;
+            #include <toy.h>
+            module {module};
+            
+            namespace {module.split('.')[0]} {{
+                
+            }}"""
+            )
+            f.write(template)
     return True
 
 
@@ -102,6 +139,11 @@ if __name__ == "__main__":
     )
     add_task.add_argument("file", type=str)
     add_task.add_argument("module_name", type=str)
+    add_task.add_argument(
+        "--new-file",
+        action="store_true",
+        help="generate interface file template content",
+    )
 
     add_task = subparsers.add_parser(
         "add_impl",
@@ -109,6 +151,11 @@ if __name__ == "__main__":
     )
     add_task.add_argument("file", type=str)
     add_task.add_argument("module_name", type=str)
+    add_task.add_argument(
+        "--new-file",
+        action="store_true",
+        help="generate implement file template content",
+    )
 
     rename_task = subparsers.add_parser(
         "rename",
@@ -129,9 +176,9 @@ if __name__ == "__main__":
 
     success = False
     if args.task == "add_interface":
-        success = add_module_interface(args.file, args.module_name)
+        success = add_module_interface(args.file, args.module_name, args.new_file)
     elif args.task == "add_impl":
-        success = add_module_implement(args.file, args.module_name)
+        success = add_module_implement(args.file, args.module_name, args.new_file)
     elif args.task == "rename":
         success = rename_resource(args.old_path, args.new_path)
     elif args.task == "delete":

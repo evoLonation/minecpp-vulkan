@@ -359,7 +359,7 @@ def build_complete_dep(modules: list[Module], sources: list[Source]):
                     "phony": Phony.module(module),
                 },
             )
-        for source in sources:
+        for source in sources + modules:
             file = source.file
             writer.build(
                 outputs=Phony.source(file),

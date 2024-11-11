@@ -35,11 +35,13 @@ class Workspace(Enum):
 
 
 class Root:
-    dir = path.abspath("./")
+    # add norm case to norm standardize the capitalization of paths from __file__
+    dir = path.normcase(path.abspath("./"))
 
     @staticmethod
     def set_dir(root_dir: str):
-        Root.dir = path.abspath(root_dir)
+        # add norm case to norm standardize the capitalization of paths from __file__
+        Root.dir = path.normcase(path.abspath(root_dir))
 
     @staticmethod
     def relpath(file: str):
@@ -205,7 +207,8 @@ class Script(Enum):
 
     @staticmethod
     def get_command(script: "Script", args: list[str]) -> str:
-        abspath = path.join(path.dirname(path.abspath(__file__)), script.value)
+        # add norm case to norm standardize the capitalization of paths from __file__
+        abspath = path.join(path.dirname(path.normcase(path.abspath(__file__))), script.value)
         command = ["python", abspath] + args
         return sp.list2cmdline(command)
 
