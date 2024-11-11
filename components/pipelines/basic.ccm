@@ -14,38 +14,9 @@ import transform;
 import uniform;
 
 import pipeline.resources;
+import pipeline.drawunit;
 
 export namespace pl {
-
-struct BasicDrawUnit {
-  virtual auto getModelTrans() -> uni::UniformBuffer<ModelTrans>& = 0;
-  virtual auto getTexture() -> rd::SampledTexture& = 0;
-  virtual auto getVertexBuffer() -> rd::VertexBuffer& = 0;
-  virtual auto getIndexBuffer() -> rd::IndexBuffer& = 0;
-};
-
-class DrawUnit : public BasicDrawUnit {
-public:
-  DrawUnit(uint32 id, glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
-    _texture = rd::SampledTexture::create(
-      "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
-    );
-    _uniform_model = uni::UniformBuffer<ModelTrans>{ { trans::model::create(location) } };
-    auto [vertexes, indices] = model::getModelInfo("model/viking_room.obj");
-    _vertex_buf = rd::VertexBuffer{ vertexes };
-    _index_buf = rd::IndexBuffer{ indices };
-  }
-  auto getModelTrans() -> uni::UniformBuffer<ModelTrans>& override { return _uniform_model; }
-  auto getTexture() -> rd::SampledTexture& override { return _texture; }
-  auto getVertexBuffer() -> rd::VertexBuffer& override { return _vertex_buf; }
-  auto getIndexBuffer() -> rd::IndexBuffer& override { return _index_buf; }
-
-private:
-  rd::SampledTexture             _texture;
-  uni::UniformBuffer<ModelTrans> _uniform_model;
-  rd::VertexBuffer               _vertex_buf;
-  rd::IndexBuffer                _index_buf;
-};
 
 class BasicPipeline : loop::Action {
 public:
@@ -105,6 +76,8 @@ public:
       }
     };
     _render_pass = rd::RenderPassPipeline{ attachment_infos, subpass_infos };
+    _render_pass.setClearValue(0, VkClearColorValue{ .float32 = { 0.5f, 0.5f, 0.5f, 1.0f } });
+    _render_pass.setClearValue(2, VkClearDepthStencilValue{ .depth = 1.0f });
 
     createFramebuffers();
   }
@@ -141,12 +114,7 @@ public:
       ctx.image_manager,
       &_depth_image,
     };
-    auto clear_values = std::vector{
-      VkClearValue{ .color = { .float32 = { 0.5f, 0.5f, 0.5f, 1.0f } } },
-      VkClearValue{ .color = { .float32 = { 1.0f, 1.0f, 1.0f, 1.0f } } },
-      VkClearValue{ .depthStencil = { .depth = 1.0f, } },
-    };
-    _render_pass.recordDraw(attachments, clear_values);
+    _render_pass.recordDraw(attachments);
   }
 
   void setCamera(CameraData* camera) { _camera = camera; }

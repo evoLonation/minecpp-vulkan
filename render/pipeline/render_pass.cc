@@ -227,11 +227,10 @@ RenderPassPipeline::RenderPassPipeline(
     _pipeline_push_constants.push_back(std::move(pipeline_info.push_constants));
   }
   _recorders.resize(subpasses.size());
+  _clear_values.resize(attachments.size());
 }
 
-void RenderPassPipeline::recordDraw(
-  std::span<FrameImageManager*> images, std::vector<VkClearValue> clear_values
-) {
+void RenderPassPipeline::recordDraw(std::span<FrameImageManager*> images) {
   auto& executor = _render_pass.getExecutor();
 
   auto batches = std::vector<CommandBatch>{};
@@ -340,7 +339,7 @@ void RenderPassPipeline::recordDraw(
       );
     });
   }
-  _render_pass.record(batches, images, clear_values, pipeline_recorders);
+  _render_pass.record(batches, images, _clear_values, pipeline_recorders);
 }
 
 } // namespace rd

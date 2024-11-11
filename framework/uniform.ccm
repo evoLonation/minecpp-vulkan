@@ -35,6 +35,7 @@ public:
   }
   operator DataType&() { return _cache_data; }
   auto get() -> DataType& { return _cache_data; }
+  auto operator->() -> DataType* { return &_cache_data; }
 
 private:
   DataType _cache_data;

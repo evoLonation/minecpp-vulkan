@@ -1,6 +1,4 @@
 module:
-- pipeline.ccm:
-    provide: pipeline
 - camera.ccm:
     provide: camera
 - drag.ccm:

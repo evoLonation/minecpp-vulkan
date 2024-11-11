@@ -14,8 +14,9 @@ import glfw;
 import transform;
 import gui;
 import loop;
-import pipeline.basic;
+import pipeline.outline;
 import pipeline.resources;
+import pipeline.drawunit;
 import camera;
 import drag;
 
@@ -29,7 +30,7 @@ int main() {
     auto  dset_pools = pl::DescriptorPools{};
     auto& input = input::InputProcessor::getInstance();
 
-    auto pipeline = pl::BasicPipeline{};
+    auto pipeline = pl::OutlinePipeline{};
     auto camera = camera::Camera{};
     auto controller = camera::Controller{ &camera.getView() };
     auto draw_unit_0 = pl::DrawUnit{ 1 };

@@ -3,3 +3,7 @@ module:
     provide: pipeline.basic
 - resource.ccm:
     provide: pipeline.resources
+- outline.ccm:
+    provide: pipeline.outline
+- drawunit.ccm:
+    provide: pipeline.drawunit

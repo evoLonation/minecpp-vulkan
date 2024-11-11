@@ -182,10 +182,17 @@ public:
   void setRecorder(uint32 index, PipelineDrawRecorder recorder) {
     _recorders[index] = std::move(recorder);
   }
-  void recordDraw(std::span<FrameImageManager*> images, std::vector<VkClearValue> clear_values);
+  void setClearValue(uint32 index, VkClearDepthStencilValue clear_value) {
+    _clear_values[index] = VkClearValue{ .depthStencil = clear_value };
+  }
+  void setClearValue(uint32 index, VkClearColorValue clear_value) {
+    _clear_values[index] = VkClearValue{ .color = clear_value };
+  }
+  void recordDraw(std::span<FrameImageManager*> images);
 
   RenderPassPipeline(RenderPassPipeline&&) noexcept = default;
   RenderPassPipeline& operator=(RenderPassPipeline&& e) noexcept {
+    _clear_values = std::move(e._clear_values);
     _pipeline_push_constants = std::move(e._pipeline_push_constants);
     _pipeline_dset_layouts = std::move(e._pipeline_dset_layouts);
     _recorders = std::move(e._recorders);
@@ -195,11 +202,16 @@ public:
   }
 
 private:
-  RenderPass                                      _render_pass;
+  RenderPass _render_pass;
+
+  // same size of subpasses
   std::vector<Pipeline>                           _pipelines;
   std::vector<PipelineDrawRecorder>               _recorders;
   std::vector<std::vector<VkDescriptorSetLayout>> _pipeline_dset_layouts;
   std::vector<std::vector<VkPushConstantRange>>   _pipeline_push_constants;
+
+  // same size of attachments
+  std::vector<VkClearValue> _clear_values;
 };
 
 } // namespace rd
