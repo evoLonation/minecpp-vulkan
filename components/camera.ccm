@@ -7,18 +7,51 @@ import loop;
 import input;
 import transform;
 import render;
-import render.presentation;
 import <vulkan_config.h>;
+import pipeline.basic;
+import pipeline.resources;
 
 export namespace camera {
 
+class Camera : public loop::Action {
+public:
+  Camera() {
+    setStage(loop::Stage::BEFORE_RENDER);
+    auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
+    _data = {
+      .view = trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f }),
+      .proj = trans::proj::perspective({
+        .width = extent.width,
+        .height = extent.height,
+      }),
+    };
+  }
+
+  void runLoop(loop::ActionContext const& ctx) override {
+    if (ctx.recreated) {
+      auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
+      _data.proj = trans::proj::perspective({
+        .width = extent.width,
+        .height = extent.height,
+      });
+    }
+  }
+
+  auto getView() -> glm::mat4& { return _data.view; }
+  auto getProj() -> glm::mat4& { return _data.proj; }
+  auto getData() -> pl::CameraData& { return _data; }
+
+private:
+  pl::CameraData _data;
+};
+
 class Controller : public loop::Action {
 public:
-  Controller(rd::align::mat4* view, glm::vec3 location = glm::vec3{ 5.0f, .0f, .0f })
-    : _view(view) {
+  Controller(glm::mat4* view, glm::vec3 location = glm::vec3{ 5.0f, .0f, .0f }) : _view(view) {
     _rotate_z = 180.0f;
     _translate = trans::translate(-location);
     setStage(loop::Stage::BEFORE_RENDER);
+    computeView();
   }
   void computeView() {
     *_view = trans::rotate<trans::Axis::Y>(_rotate_y) * //
@@ -72,7 +105,7 @@ public:
   }
 
 private:
-  rd::align::mat4* _view;
+  glm::mat4* _view;
 
   glm::mat4 _translate;
 

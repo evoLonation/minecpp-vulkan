@@ -1,0 +1,5 @@
+module:
+- basic.ccm:
+    provide: pipeline.basic
+- resource.ccm:
+    provide: pipeline.resources

@@ -143,8 +143,8 @@ void PipelineDrawer::bindResourceSet(uint32 index, ResourceSet* resource_set) {
 void PipelineDrawer::bindPushConstant(VkShaderStageFlags stage, std::span<std::byte const> data) {
   if (_execute_type == RECORD) {
     auto opt = toy::findIf(_push_constants, [&](auto& range) { return range.stageFlags == stage; });
-    TOY_ASSERT(opt);
-    TOY_ASSERT(data.size() == opt->size, data.size(), opt->size);
+    TOY_CHECK_ASSERT(opt.has_value());
+    TOY_CHECK_ASSERT(data.size() == opt->size, data.size(), opt->size);
     vkCmdPushConstants(_cmdbuf, _layout, opt->stageFlags, opt->offset, opt->size, data.data());
   }
 }

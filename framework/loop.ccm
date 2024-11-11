@@ -72,13 +72,15 @@ public:
   Loop() = default;
 
   void run() {
+    using timer = std::chrono::high_resolution_clock;
     auto& presentation = rd::Presentation::getInstance();
     auto  count = 0;
-    auto  last_time = chrono::high_resolution_clock::now();
+    auto  last_time = timer::now();
+    auto  last_report_time = timer::now();
     float interval;
     bool  recreated;
     while (!glfwWindowShouldClose(glfw::Window::getInstance())) {
-      auto interval_ = chrono::high_resolution_clock::now() - last_time;
+      auto interval_ = timer::now() - last_time;
       last_time += interval_;
       interval = chrono::duration_cast<chrono::microseconds>(interval_).count() / 1'000'000.0f;
       input::InputProcessor::getInstance().processInput(interval);
@@ -100,9 +102,10 @@ public:
         }
       }
       count++;
-      if (count % 500 == 0) {
-        toy::debug(count);
-        toy::debugf("fps: {}", 1.0f / interval);
+      if (chrono::duration_cast<chrono::seconds>(timer::now() - last_report_time).count() >= 2) {
+        toy::debugf("fps: {}", count / 2.0f);
+        count = 0;
+        last_report_time = timer::now();
       }
     }
   }

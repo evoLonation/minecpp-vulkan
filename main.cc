@@ -14,7 +14,8 @@ import glfw;
 import transform;
 import gui;
 import loop;
-import pipeline;
+import pipeline.basic;
+import pipeline.resources;
 import camera;
 import drag;
 
@@ -28,18 +29,17 @@ int main() {
     auto  dset_pools = pl::DescriptorPools{};
     auto& input = input::InputProcessor::getInstance();
 
-    auto pipeline = pl::OutlinePipeline{};
-    auto camera = pl::Camera{};
+    auto pipeline = pl::BasicPipeline{};
+    auto camera = camera::Camera{};
     auto controller = camera::Controller{ &camera.getView() };
     auto draw_unit_0 = pl::DrawUnit{ 1 };
     auto draw_unit_1 = pl::DrawUnit{ 2, glm::vec3{ 1.0f, 1.0f, 1.0f } };
     auto draw_unit_2 = pl::DrawUnit{ 3, glm::vec3{ -1.0f, -1.0f, -1.0f } };
     auto dragger = drag::CursorDragger{
-      trans::proj::perspectiveInverse({ .width = 1920, .height = 1080 }),
-      camera.getView(),
-      draw_unit_0.getModelTrans(),
+      &camera.getView(),
+      &draw_unit_1.getModelTrans().get().model,
     };
-    pipeline.setCamera(&camera);
+    pipeline.setCamera(&camera.getData());
     pipeline.addDrawUnit(&draw_unit_0);
     pipeline.addDrawUnit(&draw_unit_1);
     pipeline.addDrawUnit(&draw_unit_2);

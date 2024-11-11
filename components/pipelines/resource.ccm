@@ -1,13 +1,13 @@
 module;
 #include <toy.h>
-export module dset_pools;
+export module pipeline.resources;
 
 import <vulkan_config.h>;
 
 import std;
 import toy;
 
-import render.descriptor;
+import render;
 
 export namespace pl {
 
@@ -91,6 +91,15 @@ public:                                                                         
       },
     } }
   );
+};
+
+struct CameraData {
+  rd::align::mat4 view;
+  rd::align::mat4 proj;
+};
+
+struct ModelTrans {
+  rd::align::mat4 model;
 };
 
 } // namespace pl

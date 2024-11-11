@@ -1,0 +1,177 @@
+module;
+#include <toy.h>
+export module pipeline.basic;
+
+import std;
+import toy;
+import glm;
+
+import render;
+import model;
+import loop;
+import input;
+import transform;
+import uniform;
+
+import pipeline.resources;
+
+export namespace pl {
+
+struct BasicDrawUnit {
+  virtual auto getModelTrans() -> uni::UniformBuffer<ModelTrans>& = 0;
+  virtual auto getTexture() -> rd::SampledTexture& = 0;
+  virtual auto getVertexBuffer() -> rd::VertexBuffer& = 0;
+  virtual auto getIndexBuffer() -> rd::IndexBuffer& = 0;
+};
+
+class DrawUnit : public BasicDrawUnit {
+public:
+  DrawUnit(uint32 id, glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
+    _texture = rd::SampledTexture::create(
+      "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+    );
+    _uniform_model = uni::UniformBuffer<ModelTrans>{ { trans::model::create(location) } };
+    auto [vertexes, indices] = model::getModelInfo("model/viking_room.obj");
+    _vertex_buf = rd::VertexBuffer{ vertexes };
+    _index_buf = rd::IndexBuffer{ indices };
+  }
+  auto getModelTrans() -> uni::UniformBuffer<ModelTrans>& override { return _uniform_model; }
+  auto getTexture() -> rd::SampledTexture& override { return _texture; }
+  auto getVertexBuffer() -> rd::VertexBuffer& override { return _vertex_buf; }
+  auto getIndexBuffer() -> rd::IndexBuffer& override { return _index_buf; }
+
+private:
+  rd::SampledTexture             _texture;
+  uni::UniformBuffer<ModelTrans> _uniform_model;
+  rd::VertexBuffer               _vertex_buf;
+  rd::IndexBuffer                _index_buf;
+};
+
+class BasicPipeline : loop::Action {
+public:
+  BasicPipeline() : loop::Action{ loop::Stage::RENDER } {
+    auto& swapchain = rd::Presentation::getInstance().getSwapchain();
+    TOY_ASSERT((rd::ImageContext::getInstance().getAvailableSampleCounts() & _sample_count) > 0);
+
+    auto attachment_infos = std::vector<rd::AttachmentInfo>{
+      rd::AttachmentInfo{
+        .format = swapchain.getFormat(),
+        .sample_count = _sample_count,
+        .keep_old_content = false,
+        .keep_new_content = false,
+      },
+      rd::AttachmentInfo{
+        .format = swapchain.getFormat(),
+        .sample_count = VK_SAMPLE_COUNT_1_BIT,
+        .keep_old_content = false,
+        .keep_new_content = true,
+      },
+      rd::AttachmentInfo{
+        .format = _depth_format,
+        // .sample_count = VK_SAMPLE_COUNT_1_BIT,
+        .sample_count = _sample_count,
+        .keep_old_content = false,
+        .keep_new_content = false,
+      },
+    };
+    auto subpass_infos = std::vector<rd::SubpassPipelineInfo>{
+      rd::SubpassPipelineInfo{
+        .colors = {0},
+        .inputs = {},
+        .multi_sample = {{
+          .resolves = {1},
+          .sample_count = _sample_count,
+        }},
+        .depst = {{
+          .attachment = 2,
+          .depth_option = {
+            .compare_op = VK_COMPARE_OP_LESS,
+            .overwrite = true,
+          },
+        }},
+        .vertex_shader_name = "hello.vert",
+        .frag_shader_name = "hello.frag",
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .cull_mode = VK_CULL_MODE_BACK_BIT,
+        .vertex_info = model::Vertex::getVertexInfo(),
+        .dset_layouts = { DescriptorPools::getModel() },
+        .push_constants = { 
+          rd::PushConstantInfo{ 
+            .stage = VK_SHADER_STAGE_VERTEX_BIT, 
+            .size = sizeof(CameraData), 
+            .alignment = alignof(CameraData),
+          },
+        },
+      }
+    };
+    _render_pass = rd::RenderPassPipeline{ attachment_infos, subpass_infos };
+
+    createFramebuffers();
+  }
+
+  void createFramebuffers() {
+    auto& swapchain = rd::Presentation::getInstance().getSwapchain();
+    _sample_image = rd::FrameImage{
+      swapchain.getFormat(),
+      swapchain.getExtent().width,
+      swapchain.getExtent().height,
+      _sample_count,
+      {},
+    };
+    _depth_image = rd::FrameImage{
+      _depth_format, swapchain.getExtent().width, swapchain.getExtent().height, _sample_count, {},
+    };
+  }
+
+  void runLoop(loop::ActionContext const& ctx) override {
+    if (ctx.recreated) {
+      createFramebuffers();
+    }
+    _render_pass.setRecorder(0, [&](rd::PipelineDrawer drawer) {
+      drawer.bindPushConstant(VK_SHADER_STAGE_VERTEX_BIT, std::as_bytes(std::span{ _camera, 1 }));
+      for (auto& [draw_unit, resource_set] : _draw_units) {
+        drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
+        drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
+        drawer.bindResourceSet(0, &resource_set);
+        drawer.draw();
+      }
+    });
+    auto attachments = std::array<rd::FrameImageManager*, 3>{
+      &_sample_image,
+      ctx.image_manager,
+      &_depth_image,
+    };
+    auto clear_values = std::vector{
+      VkClearValue{ .color = { .float32 = { 0.5f, 0.5f, 0.5f, 1.0f } } },
+      VkClearValue{ .color = { .float32 = { 1.0f, 1.0f, 1.0f, 1.0f } } },
+      VkClearValue{ .depthStencil = { .depth = 1.0f, } },
+    };
+    _render_pass.recordDraw(attachments, clear_values);
+  }
+
+  void setCamera(CameraData* camera) { _camera = camera; }
+  void addDrawUnit(BasicDrawUnit* draw_unit) {
+    _draw_units.emplace(
+      draw_unit,
+      rd::ResourceSet{
+        &DescriptorPools::getModel(),
+        { &draw_unit->getModelTrans(), &draw_unit->getTexture() },
+      }
+    );
+  }
+  void removeDrawUnit(BasicDrawUnit* draw_unit) { _draw_units.erase(draw_unit); }
+
+private:
+  rd::RenderPassPipeline _render_pass;
+
+  rd::FrameImage _sample_image;
+  rd::FrameImage _depth_image;
+
+  CameraData*                                         _camera;
+  std::unordered_map<BasicDrawUnit*, rd::ResourceSet> _draw_units;
+
+  static constexpr auto _sample_count = VK_SAMPLE_COUNT_8_BIT;
+  static constexpr auto _depth_format = VK_FORMAT_D32_SFLOAT;
+};
+
+} // namespace pl

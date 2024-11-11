@@ -54,19 +54,28 @@ auto cursor2Plane(
 
 class CursorDragger : private loop::Action {
 private:
-  const glm::mat4*       _perspective_iv;
-  const rd::align::mat4* _view;
-  glm::mat4*             _model;
+  glm::mat4        _perspective_iv;
+  const glm::mat4* _view_trans;
+  glm::mat4*       _model_trans;
 
 public:
-  CursorDragger(const glm::mat4& perspective_iv, const rd::align::mat4& view, glm::mat4& model)
-    : loop::Action(loop::Stage::BEFORE_RENDER), _perspective_iv(&perspective_iv), _view(&view),
-      _model(&model) {}
+  CursorDragger(const glm::mat4* view_trans, glm::mat4* model_trans)
+    : loop::Action(loop::Stage::BEFORE_RENDER), _view_trans(view_trans), _model_trans(model_trans) {
+    auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
+    _perspective_iv =
+      trans::proj::perspectiveInverse({ .width = extent.width, .height = extent.height });
+  }
   void runLoop(const loop::ActionContext& ctx) override {
+    if (ctx.recreated) {
+      auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
+      _perspective_iv =
+        trans::proj::perspectiveInverse({ .width = extent.width, .height = extent.height });
+    }
     auto& cursor = input::InputProcessor::getInstance().getCursorState();
     if (cursor.visible) {
-      if (auto opt = cursor2Plane(cursor.x, cursor.y, *_perspective_iv, *_view, *_model)) {
-        *_model = opt.value();
+      if (auto opt =
+            cursor2Plane(cursor.x, cursor.y, _perspective_iv, *_view_trans, *_model_trans)) {
+        *_model_trans = opt.value();
       }
     }
   }

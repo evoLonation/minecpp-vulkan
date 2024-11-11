@@ -19,16 +19,10 @@ auto alignment(DeviceCapabilityBuilder& builder) -> bool {
 } // namespace device_checkers
 
 #define DEFINE_VEC(name, align)                                                                    \
-  struct alignas(align) name {                                                                     \
-    glm::name data;                                                                                \
-    name() = default;                                                                              \
-    name(const glm::name& v) : data{ v } {}                                                        \
-    auto operator=(const glm::name& v) -> name& {                                                  \
-      data = v;                                                                                    \
-      return *this;                                                                                \
-    }                                                                                              \
-    operator glm::name&() { return data; }                                                         \
-    operator glm::name const&() const { return data; }                                             \
+  struct alignas(align) name : glm::name {                                                         \
+    name(const glm::name& v) : glm::name(v) {}                                                     \
+    using glm::name::name;                                                                         \
+    using glm::name::operator=;                                                                    \
   };
 
 #define DEFINE_VECS(prefix)                                                                        \
@@ -52,9 +46,9 @@ DEFINE_VECS(uvec);
 #define CONVERT_COLUMN_2 columns[0], columns[1]
 #define CONVERT_COLUMN_3 columns[0], columns[1], columns[2]
 #define CONVERT_COLUMN_4 columns[0], columns[1], columns[2], columns[3]
-#define DEFINE_MAT(prefix, vec, suffix, row_n, col_n)                                              \
+#define DEFINE_MAT_ROW3(prefix, vec, suffix, col_n)                                                \
   struct prefix##suffix {                                                                          \
-    std::array<vec##row_n, col_n> columns;                                                         \
+    std::array<vec##3, col_n> columns;                                                             \
     prefix##suffix() = default;                                                                    \
     prefix##suffix(const glm::prefix##suffix& m) : columns{ INITIALIZER_COLUMN_##col_n } {}        \
     auto operator=(const glm::prefix##suffix& m) -> prefix##suffix& {                              \
@@ -63,16 +57,22 @@ DEFINE_VECS(uvec);
     }                                                                                              \
     operator glm::prefix##suffix() const { return { CONVERT_COLUMN_##col_n }; }                    \
   };
+#define DEFINE_MAT(name)                                                                           \
+  struct alignas(sizeof(glm::name::col_type)) name : glm::name {                                   \
+    using glm::name::name;                                                                         \
+    name(const glm::name& v) : glm::name(v) {}                                                     \
+    using glm::name::operator=;                                                                    \
+  };
 #define DEFINE_MATS(prefix, vec)                                                                   \
-  DEFINE_MAT(prefix, vec, 2, 2, 2)                                                                 \
-  DEFINE_MAT(prefix, vec, 2x3, 3, 2)                                                               \
-  DEFINE_MAT(prefix, vec, 2x4, 4, 2)                                                               \
-  DEFINE_MAT(prefix, vec, 3x2, 2, 3)                                                               \
-  DEFINE_MAT(prefix, vec, 3, 3, 3)                                                                 \
-  DEFINE_MAT(prefix, vec, 3x4, 4, 3)                                                               \
-  DEFINE_MAT(prefix, vec, 4x2, 2, 4)                                                               \
-  DEFINE_MAT(prefix, vec, 4x3, 3, 4)                                                               \
-  DEFINE_MAT(prefix, vec, 4, 4, 4)
+  DEFINE_MAT(prefix##2)                                                                            \
+  DEFINE_MAT(prefix##3x2)                                                                          \
+  DEFINE_MAT(prefix##4x2)                                                                          \
+  DEFINE_MAT_ROW3(prefix, vec, 2x3, 2)                                                             \
+  DEFINE_MAT_ROW3(prefix, vec, 3, 3)                                                               \
+  DEFINE_MAT_ROW3(prefix, vec, 4x3, 4)                                                             \
+  DEFINE_MAT(prefix##2x4)                                                                          \
+  DEFINE_MAT(prefix##3x4)                                                                          \
+  DEFINE_MAT(prefix##4)
 
 DEFINE_MATS(mat, vec)
 DEFINE_MATS(dmat, dvec)
