@@ -5,3 +5,4 @@ module:
     provide: drag
 sub_dir:
 - pipelines
+- tools

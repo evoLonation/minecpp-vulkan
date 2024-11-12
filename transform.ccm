@@ -23,6 +23,12 @@ auto matrix(const std::array<glm::vec4, 4>& vecs) -> glm::mat4 {
   return glm::transpose(glm::mat4{ vecs[0], vecs[1], vecs[2], vecs[3] });
 }
 
+auto transform(const glm::mat4& matrix, const glm::vec3& vec) -> glm::vec3 {
+  auto vec4 = matrix * glm::vec4{ vec, 1 };
+  vec4 /= vec4.w;
+  return vec4;
+}
+
 auto translate(const glm::vec3& vec) -> glm::mat4 {
   return matrix({
     glm::vec4{ 1.0f, 0.0f, 0.0f, vec.x },
@@ -210,9 +216,9 @@ auto perspective(float near, float far, float left, float right, float bottom, f
 struct ProjectionInfo {
   uint32 width;
   uint32 height;
-  float    fovy_degree = 45.0f;
-  float    near = 0.1f;
-  float    far = 100.f;
+  float  fovy_degree = 45.0f;
+  float  near = 0.1f;
+  float  far = 100.f;
 };
 
 auto perspective(const ProjectionInfo& info) -> glm::mat4 {

@@ -100,10 +100,17 @@ public:
   VertexBuffer() = default;
   template <ranges::contiguous_range R>
   VertexBuffer(R&& range) : VertexBuffer{ std::span<const ranges::range_value_t<R>>{ range } } {}
-  template <toy::InstantiationOf<Vertex> VertexT>
-  // using VertexT = Vertex<glm::vec3>;
+  template <typename VertexT>
+    requires toy::InstantiationOf<VertexT, Vertex>
   VertexBuffer(std::span<const VertexT> vertex_data)
     : VertexBuffer(std::as_bytes(vertex_data), VertexT::getVertexInfo()) {}
+  template <typename DataT>
+    requires(!toy::InstantiationOf<DataT, Vertex>)
+  VertexBuffer(std::span<const DataT> vertex_data)
+    : VertexBuffer{
+        vertex_data | views::transform([](auto& data) { return Vertex<DataT>{ data }; }) |
+          ranges::to<std::vector>(),
+      } {}
 
   auto getVertexInfo() const -> VertexInfo { return _vertex_info; }
 

@@ -8,6 +8,8 @@ import std;
 import toy;
 
 import render;
+import model;
+import glm;
 
 export namespace pl {
 
@@ -45,7 +47,7 @@ public:                                                                         
   );
 
   DEFINE_POOL(
-    ModelOutline,
+    ModelTrans,
     rd::DescriptorPool{ std::vector{ BindingInfo{
       .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
       .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -101,5 +103,9 @@ struct CameraData {
 struct ModelTrans {
   rd::align::mat4 model;
 };
+
+using Vertex = rd::Vertex<glm::vec3>;
+
+using VertexTexture = model::Vertex;
 
 } // namespace pl

@@ -6,3 +6,5 @@ shader:
 - outline.vert
 - outline.frag
 - id.frag
+- solid_color.frag
+- solid_color.vert

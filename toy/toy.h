@@ -17,8 +17,17 @@
   )
 #define TOY_CHECK_ASSERT(condition, ...)                                                           \
   do {                                                                                             \
-    TOY_CHECK(condition, __VA_ARGS__);                                                             \
-    TOY_ASSERT(condition, __VA_ARGS__);                                                            \
+    auto condition_ = static_cast<bool>(condition);                                                \
+    toy::checkf(                                                                                   \
+      condition_,                                                                                  \
+      "{}",                                                                                        \
+      toy::macro::nextLineIfExist("check error: " #condition, NAME_TUPLE_STRING(__VA_ARGS__))      \
+    );                                                                                             \
+    toy::throwf(                                                                                   \
+      condition_,                                                                                  \
+      "{}",                                                                                        \
+      toy::macro::nextLineIfExist("assert error: " #condition, NAME_TUPLE_STRING(__VA_ARGS__))     \
+    );                                                                                             \
   } while (0)
 
 #define TOY_DEBUG(...) toy::debug(NAME_TUPLE_STRING(__VA_ARGS__))

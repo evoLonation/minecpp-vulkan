@@ -131,7 +131,7 @@ public:
         // cull front
         .cull_mode = VK_CULL_MODE_FRONT_BIT,
         .vertex_info = model::Vertex::getVertexInfo(),
-        .dset_layouts = { DescriptorPools::getModelOutline() },
+        .dset_layouts = { DescriptorPools::getModelTrans() },
         .push_constants = { 
           rd::PushConstantInfo{ 
             .stage = VK_SHADER_STAGE_VERTEX_BIT, 
@@ -238,7 +238,7 @@ public:
       { &draw_unit->getModelTrans(), &draw_unit->getTexture(), &info.id },
     };
     info.dset_2 = {
-      &DescriptorPools::getModelOutline(),
+      &DescriptorPools::getModelTrans(),
       { &_draw_units[draw_unit].scaled_model },
     };
   }

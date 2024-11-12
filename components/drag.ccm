@@ -15,23 +15,19 @@ import render;
 export namespace drag {
 
 auto cursor2Plane(
-  float            pos_x,
-  float            pos_y,
+  uint32           pos_x,
+  uint32           pos_y,
   const glm::mat4& perspective_iv,
   const glm::mat4& view,
   const glm::mat4& model
 ) -> std::optional<glm::mat4> {
   auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
-  auto ndc_x = pos_x / extent.width * 2 - 1;
-  auto ndc_y = pos_y / extent.height * 2 - 1;
+  auto ndc_x = float(pos_x) / extent.width * 2 - 1;
+  auto ndc_y = float(pos_y) / extent.height * 2 - 1;
   auto start = glm::vec3{ ndc_x, ndc_y, -1.0f };
   auto end = glm::vec3{ ndc_x, ndc_y, 1.0f };
-  auto start_2 =
-    trans::inverse(model) * trans::inverse(view) * perspective_iv * glm::vec4{ start, 1.0f };
-  start = start_2 / start_2.w;
-  auto end_2 =
-    trans::inverse(model) * trans::inverse(view) * perspective_iv * glm::vec4{ end, 1.0f };
-  end = end_2 / end_2.w;
+  start = trans::transform(trans::inverse(model) * trans::inverse(view) * perspective_iv, start);
+  end = trans::transform(trans::inverse(model) * trans::inverse(view) * perspective_iv, end);
   auto inter = trans::intersection(
     trans::Line{
       .direction = end - start,

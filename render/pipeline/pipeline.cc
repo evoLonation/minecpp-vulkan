@@ -126,6 +126,7 @@ auto createGraphicsPipeline(
     .polygonMode = VK_POLYGON_MODE_FILL,
     // 背面剔除, 指定要剔除的面
     .cullMode = cull_mode,
+    // 逆时针 (从 ndc 平面看)
     .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
     // 深度偏移
     .depthBiasEnable = VK_FALSE,

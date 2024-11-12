@@ -21,6 +21,13 @@ struct BasicDrawUnit {
   virtual auto getIndexBuffer() -> rd::IndexBuffer& = 0;
 };
 
+struct SolidColorDrawUnit {
+  virtual auto getModelTrans() -> uni::UniformBuffer<ModelTrans>& = 0;
+  virtual auto getVertexBuffer() -> rd::VertexBuffer& = 0;
+  virtual auto getIndexBuffer() -> rd::IndexBuffer& = 0;
+  virtual auto getColor() -> glm::vec3 = 0;
+};
+
 class DrawUnit : public BasicDrawUnit {
 public:
   DrawUnit(uint32 id, glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {

@@ -30,13 +30,18 @@ if __name__ == "__main__":
             pair_decl += f'{{"{name}", std::as_bytes(std::span{{{module2namespace(module)}::shader_code_data}})}},\n'
         code = f"""module {args.module};
             import std;
+            import toy;
             {import_decl}
             namespace rd{{
             auto get_shader_code(std::string_view shader) -> std::span<const std::byte> {{
-              auto shader_code_map = std::map<std::string_view, std::span<const std::byte>> {{
-                {pair_decl}
-              }};
-              return shader_code_map.at(shader);
+              try{{
+                auto shader_code_map = std::map<std::string_view, std::span<const std::byte>> {{
+                  {pair_decl}
+                }};
+                return shader_code_map.at(shader);
+              }} catch(std::exception const& e){{
+                toy::throwf("shader not found: {{}}", shader);
+              }}
             }}
             }}"""
         with open(args.output, "wt") as f:

@@ -1,0 +1,3 @@
+module:
+- move.ccm:
+    provide: tool.move

@@ -211,6 +211,9 @@ auto getPushConstantRanges(std::span<PushConstantInfo const> infos) //
     });
     offset += info.size;
   }
+  toy::debugf("Push constant ranges: {}", ranges | views::transform([&](auto& range) {
+                                            return std::tuple{ range.size, range.offset };
+                                          }));
   TOY_DEBUG(max_size);
   TOY_ASSERT(offset <= max_size, offset, max_size);
   return ranges;
