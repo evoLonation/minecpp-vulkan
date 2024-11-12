@@ -4,6 +4,8 @@ module render.framebuffer;
 
 import <vulkan_config.h>;
 
+import render.device;
+
 namespace rd {
 
 void FrameImageManager::beforeDestroy() {
@@ -118,5 +120,56 @@ void FramebufferPool::destroyRelativeFramebuf(FrameImageManager& image) {
   }
   check();
 }
+
+auto device_checkers::attachment(DeviceCapabilityBuilder& builder) -> bool {
+  auto& pdevice = builder.getPdevice();
+  if (!pdevice.checkFormatSupport(
+        FormatTarget::OPTIMAL_TILING,
+        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
+        AttachmentFormat::_color_formats
+      )) {
+    return false;
+  }
+  if (!pdevice.checkFormatSupport(
+        FormatTarget::OPTIMAL_TILING,
+        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        AttachmentFormat::_depth_formats
+      )) {
+    return false;
+  }
+  if (!pdevice.checkFormatSupport(
+        FormatTarget::OPTIMAL_TILING,
+        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        AttachmentFormat::_stencil_formats
+      )) {
+    return false;
+  }
+  if (!pdevice.checkFormatSupport(
+        FormatTarget::OPTIMAL_TILING,
+        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        AttachmentFormat::_depth_stencil_formats
+      )) {
+    return false;
+  }
+  return true;
+}
+
+auto AttachmentFormat::_color_formats = std::vector{
+  VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM, //
+  VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_B8G8R8A8_UNORM, //
+  VK_FORMAT_R32_UINT,      VK_FORMAT_R8G8B8A8_UINT,
+};
+auto AttachmentFormat::_depth_formats = std::vector{
+  VK_FORMAT_D16_UNORM,
+  VK_FORMAT_D32_SFLOAT,
+};
+auto AttachmentFormat::_stencil_formats = std::vector{
+  VK_FORMAT_S8_UINT,
+};
+auto AttachmentFormat::_depth_stencil_formats = std::vector{
+  // VK_FORMAT_D16_UNORM_S8_UINT,
+  VK_FORMAT_D24_UNORM_S8_UINT,
+  VK_FORMAT_D32_SFLOAT_S8_UINT,
+};
 
 } // namespace rd

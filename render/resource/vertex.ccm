@@ -5,36 +5,19 @@ import render.device;
 import render.buffer;
 import render.sync;
 import render.tracker;
+import render.format;
 
 import std;
 import glm;
 import toy;
 
-namespace rd {
+export namespace rd {
 
-template <VkFormat format_, typename T>
-  requires std::is_trivially_copyable_v<T>
-struct FormatTypeInfo {
-  static constexpr auto format = format_;
-  using type = T;
-};
-
-using FormatTypeInfos = toy::TypePack<
-  FormatTypeInfo<VK_FORMAT_R32G32_SFLOAT, glm::vec2>,        //
-  FormatTypeInfo<VK_FORMAT_R32G32B32_SFLOAT, glm::vec3>,     //
-  FormatTypeInfo<VK_FORMAT_R32G32B32A32_SFLOAT, glm::vec4>,  //
-  FormatTypeInfo<VK_FORMAT_R32_SFLOAT, float>,               //
-  FormatTypeInfo<VK_FORMAT_R64G64_SFLOAT, glm::dvec2>,       //
-  FormatTypeInfo<VK_FORMAT_R64G64B64_SFLOAT, glm::dvec3>,    //
-  FormatTypeInfo<VK_FORMAT_R64G64B64A64_SFLOAT, glm::dvec4>, //
-  FormatTypeInfo<VK_FORMAT_R64_SFLOAT, double>               //
-  >;
-
-export namespace device_checkers {
+namespace device_checkers {
 auto vertex(DeviceCapabilityBuilder&) -> bool;
 }
 
-export struct VertexInfo {
+struct VertexInfo {
   const VkVertexInputBindingDescription*             binding_description;
   std::span<const VkVertexInputAttributeDescription> attribute_descriptions;
   friend auto operator==(const VertexInfo& a, const VertexInfo& b) -> bool;
@@ -46,14 +29,7 @@ export struct VertexInfo {
     : binding_description(binding_description), attribute_descriptions(attribute_descriptions) {}
 };
 
-template <typename Type>
-consteval auto formatMapper() -> VkFormat {
-  return FormatTypeInfos::filter<[]<typename T>() {
-    return std::same_as<typename T::type, Type>;
-  }>::template at<0>::format;
-}
-
-export template <typename... DataTypes>
+template <typename... DataTypes>
   requires(std::is_trivially_copyable_v<DataTypes> && ...)
 struct Vertex {
 public:
@@ -110,7 +86,7 @@ private:
         VkVertexInputAttributeDescription{
           .location = i,
           .binding = 0,
-          .format = formatMapper<DataTypes>(),
+          .format = typeToFormat<DataTypes>(),
           .offset = align_info.second[i],
         },
       i++),
@@ -119,7 +95,7 @@ private:
   }();
 };
 
-export class VertexBuffer : public DeviceLocalBuffer {
+class VertexBuffer : public DeviceLocalBuffer {
 public:
   VertexBuffer() = default;
   template <ranges::contiguous_range R>
@@ -139,7 +115,7 @@ private:
   }
 };
 
-export class IndexBuffer : public DeviceLocalBuffer {
+class IndexBuffer : public DeviceLocalBuffer {
 public:
   IndexBuffer() = default;
   IndexBuffer(std::span<const uint16_t> indices)

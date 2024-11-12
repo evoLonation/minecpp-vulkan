@@ -16,6 +16,8 @@ auto accessFlag(VkAccessFlagBits2 access) -> std::string_view;
 
 auto format(VkFormat format) -> std::string_view;
 
+auto colorSpace(VkColorSpaceKHR color_space) -> std::string_view;
+
 auto result(VkResult result) -> std::string_view;
 
 auto sampleCount(VkSampleCountFlagBits sample_count) -> std::string_view;
@@ -27,6 +29,7 @@ consteval auto resource() -> std::string_view;
 
 CUSTOM_FORMATTER(VkImageLayout, [](auto e) { return std::string{ rd::refl::imageLayout(e) }; });
 CUSTOM_FORMATTER(VkFormat, [](auto e) { return std::string{ rd::refl::format(e) }; });
+CUSTOM_FORMATTER(VkColorSpaceKHR, [](auto e) { return std::string{ rd::refl::colorSpace(e) }; });
 CUSTOM_FORMATTER(VkResult, [](auto e) { return std::string{ rd::refl::result(e) }; });
 CUSTOM_FORMATTER(VkSampleCountFlagBits, [](auto e) {
   return std::string{ rd::refl::sampleCount(e) };

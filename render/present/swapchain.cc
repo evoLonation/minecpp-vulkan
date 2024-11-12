@@ -6,9 +6,18 @@ import render.reflections;
 
 namespace rd {
 
-VkFormat         Swapchain::_format = VK_FORMAT_R8G8B8A8_SRGB;
-VkPresentModeKHR Swapchain::_present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
-VkColorSpaceKHR  Swapchain::_color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+/*
+ * VK_PRESENT_MODE_IMMEDIATE_KHR: 图像提交后直接渲染到屏幕上
+ * VK_PRESENT_MODE_FIFO_KHR:
+ * 有一个队列，队列以刷新率的速度消耗图像显示在屏幕上，图像提交后入队，队列满时等待（也即只能在
+ * "vertical blank" 时刻提交图像）
+ * VK_PRESENT_MODE_FIFO_RELAXED_KHR: 当图像提交时，若队列为空，就直接渲染到屏幕上，否则同上
+ * VK_PRESENT_MODE_MAILBOX_KHR: 有一个 single-entry queue, 当队列满时,
+ * 不阻塞而是直接将队中图像替换为提交的图像
+ */
+auto Swapchain::_present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
+auto Swapchain::_format = VK_FORMAT_R8G8B8A8_SRGB;
+auto Swapchain::_color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 
 Swapchain::Swapchain(
   VkSurfaceKHR              surface,
@@ -97,7 +106,9 @@ auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& requ
   }
   auto& pdevice = request.getPdevice();
   auto  formats = getVkResources(vkGetPhysicalDeviceSurfaceFormatsKHR, pdevice.get(), surface);
-  toy::debugf("formats: {}", formats | views::transform([](auto a) { return a.format; }));
+  toy::debugf("surface formats: {}", formats | views::transform([](auto a) {
+                                       return std::pair{ a.format, a.colorSpace };
+                                     }));
   if (!toy::findIf(formats, [&](auto format) {
         return format.format == _format && format.colorSpace == _color_space;
       })) {
@@ -111,15 +122,7 @@ auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& requ
       )) {
     return false;
   }
-  /*
-   * VK_PRESENT_MODE_IMMEDIATE_KHR: 图像提交后直接渲染到屏幕上
-   * VK_PRESENT_MODE_FIFO_KHR:
-   * 有一个队列，队列以刷新率的速度消耗图像显示在屏幕上，图像提交后入队，队列满时等待（也即只能在
-   * "vertical blank" 时刻提交图像）
-   * VK_PRESENT_MODE_FIFO_RELAXED_KHR: 当图像提交时，若队列为空，就直接渲染到屏幕上，否则同上
-   * VK_PRESENT_MODE_MAILBOX_KHR: 有一个 single-entry queue, 当队列满时,
-   * 不阻塞而是直接将队中图像替换为提交的图像
-   */
+
   auto present_modes =
     getVkResources(vkGetPhysicalDeviceSurfacePresentModesKHR, pdevice.get(), surface);
   if (!ranges::contains(present_modes, _present_mode)) {

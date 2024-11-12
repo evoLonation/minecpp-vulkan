@@ -178,9 +178,9 @@ auto PhysicalDevice::checkFormatSupport(
       support_features = properties.linearTilingFeatures;
       break;
     }
+    TOY_CHECK((support_features & features) == features, features, format);
     return (support_features & features) == features;
   });
-  return true;
 }
 
 } // namespace rd

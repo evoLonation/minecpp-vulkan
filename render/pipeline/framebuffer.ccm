@@ -5,6 +5,7 @@ export module render.framebuffer;
 import <vulkan_config.h>;
 import render.resource;
 import render.image;
+import render.device;
 
 import std;
 import toy;
@@ -65,6 +66,10 @@ private:
   void destroyRelativeFramebuf(FrameImageManager& image);
 };
 
+namespace device_checkers {
+auto attachment(DeviceCapabilityBuilder&) -> bool;
+} // namespace device_checkers
+
 struct AttachmentFormat {
   AttachmentFormat(VkFormat format) : _format(format) {
     auto info = "the format of attachment not support by renderpass";
@@ -100,26 +105,12 @@ struct AttachmentFormat {
 private:
   VkFormat _format;
 
-  static constexpr auto _color_formats = std::array{
-    VK_FORMAT_R8G8B8A8_SRGB,
-    VK_FORMAT_R8G8B8A8_UNORM,
-    VK_FORMAT_R8G8B8A8_UINT,
-    VK_FORMAT_B8G8R8A8_SRGB,
-    VK_FORMAT_B8G8R8A8_UNORM,
-    VK_FORMAT_B8G8R8A8_UINT,
+  static std::vector<VkFormat> _color_formats;
+  static std::vector<VkFormat> _depth_formats;
+  static std::vector<VkFormat> _stencil_formats;
+  static std::vector<VkFormat> _depth_stencil_formats;
 
-    VK_FORMAT_R32_UINT,
-  };
-  static constexpr auto _depth_formats = std::array{
-    VK_FORMAT_D16_UNORM,
-    VK_FORMAT_D32_SFLOAT,
-  };
-  static constexpr auto _stencil_formats = std::array{
-    VK_FORMAT_S8_UINT,
-  };
-  static constexpr auto _depth_stencil_formats = std::array{
-    VK_FORMAT_D24_UNORM_S8_UINT,
-  };
+  friend auto device_checkers::attachment(DeviceCapabilityBuilder&) -> bool;
 };
 
 class FrameImage : public ImageResource, public FrameImageManager {

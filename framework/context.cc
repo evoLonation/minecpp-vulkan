@@ -29,6 +29,7 @@ Context::Context(const std::string& app_name, uint32 width, uint32 height) {
     rd::SampledTexture::checkPdevice,
     rd::device_checkers::vertex,
     rd::device_checkers::sync,
+    rd::device_checkers::attachment,
     rd::align::device_checkers::alignment,
   };
   _device = std::make_unique<rd::Device>(rd::Device::create(device_checkers));

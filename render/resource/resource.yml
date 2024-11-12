@@ -21,3 +21,5 @@ module:
     provide: render.sampler
 - alignment.ccm:
     provide: render.alignment
+- format.ccm:
+    provide: render.format

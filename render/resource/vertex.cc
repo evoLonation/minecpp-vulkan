@@ -13,9 +13,7 @@ auto operator==(const VertexInfo& a, const VertexInfo& b) -> bool {
 auto device_checkers::vertex(DeviceCapabilityBuilder& builder) -> bool {
   auto formats =
     FormatTypeInfos::applyFunc([]<typename... Info> { return std::array{ Info::format... }; });
-  toy::debugf("the vertex formats: {::}", formats | views::transform([](auto a) {
-                                            return static_cast<uint32>(a);
-                                          }));
+  toy::debugf("the vertex formats: {::}", formats);
   if (!builder.enableFeature(&VkPhysicalDeviceFeatures::shaderFloat64)) {
     return false;
   }
