@@ -9,7 +9,7 @@ import render;
 import loop;
 import pipeline.resources;
 import pipeline.drawunit;
-import uniform;
+import pipeline.uniform;
 import model;
 import input;
 import transform;
@@ -255,10 +255,10 @@ private:
 
   CameraData* _camera;
   struct DrawUnitInfo {
-    uni::UniformBuffer<uint32>     id;
-    rd::ResourceSet                dset_1;
-    uni::UniformBuffer<ModelTrans> scaled_model;
-    rd::ResourceSet                dset_2;
+    pl::UniformBuffer<uint32>     id;
+    rd::ResourceSet               dset_1;
+    pl::UniformBuffer<ModelTrans> scaled_model;
+    rd::ResourceSet               dset_2;
   };
   std::unordered_map<DrawUnit*, DrawUnitInfo> _draw_units;
 

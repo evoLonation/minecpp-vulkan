@@ -1,4 +1,4 @@
-export module uniform;
+export module pipeline.uniform;
 
 import std;
 import toy;
@@ -8,7 +8,7 @@ import glm;
 
 import <vulkan_config.h>;
 
-export namespace uni {
+export namespace pl {
 
 template <typename DataType>
 class UniformBuffer : public loop::Action, public rd::UniformBuffer<DataType> {

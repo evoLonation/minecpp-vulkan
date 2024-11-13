@@ -386,10 +386,13 @@ auto createDependencies(
       .dstSubpass = subpass_info.second,
     });
   }
-
-  TOY_ASSERT(ranges::all_of(views::iota(0u, static_cast<uint32>(attachments.size())), [&](auto i) {
-    return attachment_initial_stages.contains(i) && attachment_final_stages.contains(i);
-  }));
+  for (auto i : views::iota(0u, attachments.size())) {
+    toy::throwf(
+      attachment_initial_stages.contains(i) && attachment_final_stages.contains(i),
+      "seems like the attachment {} is not used in the renderpass",
+      i
+    );
+  }
   auto initial_stages = attachment_initial_stages | views::values | ranges::to<std::vector>();
   auto final_stages = attachment_final_stages | views::values | ranges::to<std::vector>();
   auto attachment_syncs = std::vector<AttachmentSyncInfo>{};
@@ -410,49 +413,47 @@ RenderPass::RenderPass(
   auto attach_descs = createAttachmentDescriptions(attachments, initial_layouts, final_layouts);
   auto [_2, dependencies, initial_stages, final_stages] =
     createDependencies(attachments, subpasses);
-  // for (auto& desc : attach_descs) {
-  //   TOY_DEBUG(
-  //     desc.format,
-  //     desc.samples,
-  //     (int)desc.loadOp,
-  //     (int)desc.storeOp,
-  //     (int)desc.stencilLoadOp,
-  //     (int)desc.stencilStoreOp,
-  //     desc.initialLayout,
-  //     desc.finalLayout
-  //   );
-  // }
-  // for (auto& desc : subpass_descs) {
-  //   toy::debugf("color attachments:");
-  //   for (auto& ref : std::span{ desc.pColorAttachments, desc.colorAttachmentCount }) {
-  //     TOY_DEBUG(ref.attachment, (int)ref.aspectMask, ref.layout);
-  //   }
-  //   toy::debugf("input attachments:");
-  //   for (auto& ref : std::span{ desc.pInputAttachments, desc.inputAttachmentCount }) {
-  //     TOY_DEBUG(ref.attachment, (int)ref.aspectMask, ref.layout);
-  //   }
-  //   if (desc.pResolveAttachments) {
-  //     toy::debugf("resolve attachments:");
-  //     for (auto& ref : std::span{ desc.pResolveAttachments, desc.colorAttachmentCount }) {
-  //       TOY_DEBUG(ref.attachment, (int)ref.aspectMask, ref.layout);
-  //     }
-  //   }
-  //   if (desc.pDepthStencilAttachment) {
-  //     toy::debugf("depth attachments:");
-  //     auto& ref = *desc.pDepthStencilAttachment;
-  //     TOY_DEBUG(ref.attachment, (int)ref.aspectMask, ref.layout);
-  //   }
-  // }
-  // for (auto& dep : dependencies) {
-  //   TOY_DEBUG(
-  //     dep.srcSubpass,
-  //     dep.dstSubpass,
-  //     (int)dep.srcStageMask,
-  //     (int)dep.dstStageMask,
-  //     (int)dep.srcAccessMask,
-  //     (int)dep.dstAccessMask
-  //   );
-  // }
+  for (auto& desc : attach_descs) {
+    TOY_DEBUG(
+      desc.format,
+      desc.samples,
+      (int)desc.loadOp,
+      (int)desc.storeOp,
+      (int)desc.stencilLoadOp,
+      (int)desc.stencilStoreOp,
+      desc.initialLayout,
+      desc.finalLayout
+    );
+  }
+  for (auto& desc : subpass_descs) {
+    toy::debugf("color attachments:");
+    for (auto& ref : std::span{ desc.pColorAttachments, desc.colorAttachmentCount }) {
+      TOY_DEBUG(ref.attachment, (int)ref.aspectMask, ref.layout);
+    }
+    toy::debugf("input attachments:");
+    for (auto& ref : std::span{ desc.pInputAttachments, desc.inputAttachmentCount }) {
+      TOY_DEBUG(ref.attachment, (int)ref.aspectMask, ref.layout);
+    }
+    if (desc.pResolveAttachments) {
+      toy::debugf("resolve attachments:");
+      for (auto& ref : std::span{ desc.pResolveAttachments, desc.colorAttachmentCount }) {
+        TOY_DEBUG(ref.attachment, (int)ref.aspectMask, ref.layout);
+      }
+    }
+    if (desc.pDepthStencilAttachment) {
+      toy::debugf("depth attachments:");
+      auto& ref = *desc.pDepthStencilAttachment;
+      TOY_DEBUG(ref.attachment, (int)ref.aspectMask, ref.layout);
+    }
+  }
+  for (auto& dep : dependencies) {
+    auto barrier = static_cast<VkMemoryBarrier2 const*>(dep.pNext);
+    auto src_scope =
+      Scope{ .stage_mask = barrier->srcStageMask, .access_mask = barrier->srcAccessMask };
+    auto dst_scope =
+      Scope{ .stage_mask = barrier->dstStageMask, .access_mask = barrier->dstAccessMask };
+    TOY_DEBUG(dep.srcSubpass, dep.dstSubpass, src_scope, dst_scope);
+  }
   auto render_pass_create_info = VkRenderPassCreateInfo2{
     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2,
     .attachmentCount = static_cast<uint32>(attach_descs.size()),
