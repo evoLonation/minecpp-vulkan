@@ -6,6 +6,7 @@ import <vulkan_config.h>;
 import render.resource;
 import render.image;
 import render.device;
+import render.format;
 
 import std;
 import toy;
@@ -66,59 +67,12 @@ private:
   void destroyRelativeFramebuf(FrameImageManager& image);
 };
 
-namespace device_checkers {
-auto attachment(DeviceCapabilityBuilder&) -> bool;
-} // namespace device_checkers
-
-struct AttachmentFormat {
-  AttachmentFormat(VkFormat format) : _format(format) {
-    auto info = "the format of attachment not support by renderpass";
-    TOY_ASSERT(
-      ranges::contains(_color_formats, _format) ||     //
-        ranges::contains(_depth_formats, _format) ||   //
-        ranges::contains(_stencil_formats, _format) || //
-        ranges::contains(_depth_stencil_formats, _format),
-      info
-    );
-  }
-  enum Type {
-    COLOR = 1 << 0,
-    DEPTH = 1 << 1,
-    STENCIL = 1 << 2,
-    DEPTH_STENCIL = DEPTH | STENCIL,
-  };
-
-  auto getType() const -> Type {
-    if (ranges::contains(_color_formats, _format)) {
-      return Type::COLOR;
-    } else if (ranges::contains(_depth_formats, _format)) {
-      return Type::DEPTH;
-    } else if (ranges::contains(_stencil_formats, _format)) {
-      return Type::STENCIL;
-    } else if (ranges::contains(_depth_stencil_formats, _format)) {
-      return Type::DEPTH_STENCIL;
-    }
-    std::unreachable();
-  }
-  operator VkFormat() const { return _format; }
-
-private:
-  VkFormat _format;
-
-  static std::vector<VkFormat> _color_formats;
-  static std::vector<VkFormat> _depth_formats;
-  static std::vector<VkFormat> _stencil_formats;
-  static std::vector<VkFormat> _depth_stencil_formats;
-
-  friend auto device_checkers::attachment(DeviceCapabilityBuilder&) -> bool;
-};
-
 class FrameImage : public ImageResource, public FrameImageManager {
 public:
   FrameImage() = default;
 
   FrameImage(
-    AttachmentFormat      format,
+    VkFormat              format,
     uint32                width,
     uint32                height,
     VkSampleCountFlagBits sample_count,
@@ -128,8 +82,8 @@ public:
         format,
         width,
         height,
-        toUsage(format.getType()) | usage,
-        toAspect(format.getType()),
+        toUsage(getFormatInfo(format).type) | usage,
+        toAspect(getFormatInfo(format).type),
         1,
         sample_count
       ),
@@ -139,7 +93,7 @@ public:
         VkExtent2D{ width, height },
         format,
         sample_count,
-        getSubresourceRange(toAspect(format.getType()), MipRange{ 0, 1 })
+        getSubresourceRange(toAspect(getFormatInfo(format).type), MipRange{ 0, 1 })
       ) {}
 
   FrameImage& operator=(FrameImage&& e) noexcept {
@@ -150,25 +104,27 @@ public:
   FrameImage(FrameImage&& e) noexcept = default;
 
 private:
-  static auto toUsage(AttachmentFormat::Type type) -> VkImageUsageFlags {
+  static auto toUsage(FormatType type) -> VkImageUsageFlags {
+    using enum FormatType;
     switch (type) {
-    case AttachmentFormat::COLOR:
+    case COLOR:
       return VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    case AttachmentFormat::DEPTH:
-    case AttachmentFormat::STENCIL:
-    case AttachmentFormat::DEPTH_STENCIL:
+    case DEPTH:
+    case STENCIL:
+    case DEPTH_STENCIL:
       return VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     }
   }
-  static auto toAspect(AttachmentFormat::Type type) -> VkImageAspectFlags {
+  static auto toAspect(FormatType type) -> VkImageAspectFlags {
+    using enum FormatType;
     switch (type) {
-    case AttachmentFormat::COLOR:
+    case COLOR:
       return VK_IMAGE_ASPECT_COLOR_BIT;
-    case AttachmentFormat::DEPTH:
+    case DEPTH:
       return VK_IMAGE_ASPECT_DEPTH_BIT;
-    case AttachmentFormat::STENCIL:
+    case STENCIL:
       return VK_IMAGE_ASPECT_STENCIL_BIT;
-    case AttachmentFormat::DEPTH_STENCIL:
+    case DEPTH_STENCIL:
       return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
     }
   }

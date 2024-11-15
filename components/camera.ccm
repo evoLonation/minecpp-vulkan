@@ -8,10 +8,13 @@ import input;
 import transform;
 import render;
 import <vulkan_config.h>;
-import pipeline.basic;
-import pipeline.resources;
 
 export namespace camera {
+
+struct CameraData {
+  rd::align::mat4 view;
+  rd::align::mat4 proj;
+};
 
 class Camera : public loop::Action {
 public:
@@ -39,10 +42,10 @@ public:
 
   auto getView() -> glm::mat4& { return _data.view; }
   auto getProj() -> glm::mat4& { return _data.proj; }
-  auto getData() -> pl::CameraData& { return _data; }
+  auto getData() -> CameraData& { return _data; }
 
 private:
-  pl::CameraData _data;
+  CameraData _data;
 };
 
 class Controller : public loop::Action {

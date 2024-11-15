@@ -13,14 +13,15 @@ import <vulkan_config.h>;
 
 export namespace rd {
 
+struct BindingInfo {
+  VkDescriptorType   type;
+  VkShaderStageFlags stage;
+  uint32             count;
+};
+
 class DescriptorSetLayout : public rs::DescriptorSetLayout {
 public:
   DescriptorSetLayout() = default;
-  struct BindingInfo {
-    VkDescriptorType   type;
-    VkShaderStageFlags stage;
-    uint32             count;
-  };
   DescriptorSetLayout(std::vector<BindingInfo> infos);
   auto getInfo() const -> std::span<BindingInfo const> { return _infos; }
 
@@ -44,7 +45,7 @@ public:
 
   void addWaitable(std::shared_ptr<Waitable> waitable);
   auto waitIdle(uint64 nano_timeout = max_timeout) -> bool;
-  auto getInfo() -> std::span<DescriptorSetLayout::BindingInfo const> { return _layout->getInfo(); }
+  auto getInfo() -> std::span<BindingInfo const> { return _layout->getInfo(); }
   auto getLayout() -> VkDescriptorSetLayout { return _layout->get(); }
 
   auto valid() const -> bool { return get(); }
@@ -100,7 +101,10 @@ private:
   void beforeDestroy();
 };
 
-struct DescriptorResource {
+class DescriptorResource {
+public:
+  DescriptorResource() = default;
+  DescriptorResource(VkDescriptorType type) : type{ type } {}
   struct ImageContext {
     VkDescriptorImageInfo dscriptor_info;
     ImageBarrierTracker*  tracker;
@@ -111,10 +115,16 @@ struct DescriptorResource {
   };
   using Context = std::variant<BufferContext, ImageContext>;
   virtual auto getDescriptorContext() -> Context = 0;
+  auto         getType() const -> VkDescriptorType { return type; }
+
+private:
+  VkDescriptorType type;
 };
 
 struct ResourceBinding {
   ResourceBinding(std::initializer_list<DescriptorResource*> resources) : resources{ resources } {}
+  ResourceBinding(std::span<DescriptorResource* const> resources)
+    : resources{ resources.begin(), resources.end() } {}
   ResourceBinding(DescriptorResource* resource) : resources{ resource } {}
   std::vector<DescriptorResource*> resources;
 };

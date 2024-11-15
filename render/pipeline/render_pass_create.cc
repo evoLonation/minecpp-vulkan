@@ -7,13 +7,55 @@ import <vulkan_config.h>;
 import render.reflections;
 import render.sync;
 import render.executor;
+import render.format;
 
 namespace rd {
+
+auto color_formats = std::array{
+  VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM, //
+  VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_B8G8R8A8_UNORM, //
+  VK_FORMAT_R32_UINT,      VK_FORMAT_R8G8B8A8_UINT,
+};
+auto depst_formats = std::array{
+  // VK_FORMAT_D16_UNORM_S8_UINT,
+  VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_S8_UINT,
+  VK_FORMAT_D16_UNORM,         VK_FORMAT_D32_SFLOAT,
+};
+
+auto device_checkers::attachment(DeviceCapabilityBuilder& builder) -> bool {
+  auto& pdevice = builder.getPdevice();
+  if (!pdevice.checkFormatSupport(
+        FormatTarget::OPTIMAL_TILING, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT, color_formats
+      )) {
+    return false;
+  }
+  if (!pdevice.checkFormatSupport(
+        FormatTarget::OPTIMAL_TILING, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT, depst_formats
+      )) {
+    return false;
+  }
+  return true;
+}
 
 void checkSubpassAttachmentMatch(
   std::span<AttachmentInfo const> attachments, std::span<SubpassInfo const> subpasses
 ) {
+  // check attachment format is in legel formats
+  TOY_ASSERT(ranges::all_of(attachments, [&](auto x) {
+    return toy::find(color_formats, x.format) || toy::find(depst_formats, x.format);
+  }));
   for (auto& subpass : subpasses) {
+    // check attachment ref is in range
+    TOY_ASSERT(ranges::all_of(subpass.colors, [&](auto x) { return x < attachments.size(); }));
+    if (subpass.multi_sample) {
+      TOY_ASSERT(ranges::all_of(subpass.multi_sample->resolves, [&](auto x) {
+        return x ? x.value() < attachments.size() : true;
+      }));
+    }
+    TOY_ASSERT(ranges::all_of(subpass.inputs, [&](auto x) { return x < attachments.size(); }));
+    if (subpass.depst) {
+      TOY_ASSERT(subpass.depst.value() < attachments.size());
+    }
     auto sample_count =
       subpass.multi_sample ? subpass.multi_sample->sample_count : VK_SAMPLE_COUNT_1_BIT;
 
@@ -27,7 +69,7 @@ void checkSubpassAttachmentMatch(
       colors | views::transform([](auto x) { return static_cast<uint32>(x.sample_count); })
     );
     TOY_ASSERT(ranges::all_of(colors, [&](auto x) {
-      return x.format.getType() == AttachmentFormat::COLOR;
+      return getFormatInfo(x.format).type == FormatType::COLOR;
     }));
 
     // check resolves
@@ -45,7 +87,7 @@ void checkSubpassAttachmentMatch(
         resolves | views::transform([](auto x) { return static_cast<uint32>(x.sample_count); })
       );
       TOY_ASSERT(ranges::all_of(resolves, [&](auto x) {
-        return x.format.getType() == AttachmentFormat::COLOR;
+        return getFormatInfo(x.format).type == FormatType::COLOR;
       }));
     }
     // check depst
@@ -53,7 +95,7 @@ void checkSubpassAttachmentMatch(
       current_outputs.push_back(subpass.depst.value());
       auto depst = attachments[subpass.depst.value()];
       TOY_ASSERT(depst.sample_count == sample_count);
-      TOY_ASSERT(depst.format.getType() & AttachmentFormat::DEPTH_STENCIL);
+      TOY_ASSERT(getFormatInfo(depst.format).type & FormatType::DEPTH_STENCIL);
     }
     // check inputs
     auto inputs = subpass.inputs | views::transform([&](auto x) { return attachments[x]; }) |
@@ -128,7 +170,7 @@ auto createSubpassDescriptions(
     }
     auto input_index = static_cast<uint32>(attachment_refs.size());
     for (auto input_i : subpass.inputs) {
-      if (attachments[input_i].format.getType() == AttachmentFormat::COLOR) {
+      if (getFormatInfo(attachments[input_i].format).type == FormatType::COLOR) {
         addAttachmentRef(
           input_i, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT
         );
@@ -175,6 +217,18 @@ auto createAttachmentDescriptions(
 ) -> std::vector<VkAttachmentDescription2> {
   auto attachment_descs = std::vector<VkAttachmentDescription2>{};
   for (auto [i, attachment] : attachments | toy::enumerate) {
+    auto load_op = [&]() {
+      switch (attachment.load_op) {
+      case LoadOp::DONT_CARE:
+        return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+      case LoadOp::LOAD:
+        return VK_ATTACHMENT_LOAD_OP_LOAD;
+      case LoadOp::CLEAR:
+        return VK_ATTACHMENT_LOAD_OP_CLEAR;
+      };
+    }();
+    auto store_op =
+      attachment.is_store ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
     auto desc = VkAttachmentDescription2{
       .sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2,
       /**
@@ -192,8 +246,7 @@ auto createAttachmentDescriptions(
       // VK_ATTACHMENT_LOAD_OP_LOAD: 保留 attachment 中现有内容
       // VK_ATTACHMENT_LOAD_OP_CLEAR: 将其中内容清理为一个常量
       // VK_ATTACHMENT_LOAD_OP_DONT_CARE: 不在乎
-      .loadOp =
-        attachment.keep_old_content ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .loadOp = load_op,
       /**
        * @brief store op: define store operation behavior of color and depth
        * the store op happen in VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT(color
@@ -202,13 +255,9 @@ auto createAttachmentDescriptions(
        */
       // VK_ATTACHMENT_STORE_OP_STORE: 渲染后内容存入内存稍后使用
       // VK_ATTACHMENT_STORE_OP_DONT_CARE: 不在乎
-      .storeOp = attachment.keep_new_content ? VK_ATTACHMENT_STORE_OP_STORE
-                                             : VK_ATTACHMENT_STORE_OP_DONT_CARE,
-
-      .stencilLoadOp =
-        attachment.keep_old_content ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR,
-      .stencilStoreOp = attachment.keep_new_content ? VK_ATTACHMENT_STORE_OP_STORE
-                                                    : VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      .storeOp = store_op,
+      .stencilLoadOp = load_op,
+      .stencilStoreOp = store_op,
       // 开启及结束时 要求 的图像布局
       // UNDEINFED init layout use with CLEAR load op together
       .initialLayout = initial_layouts[i],

@@ -11,17 +11,28 @@ import render.pipeline;
 import render.framebuffer;
 import render.vertex;
 import render.executor;
+import render.device;
 
 import std;
 import toy;
 
 export namespace rd {
 
+namespace device_checkers {
+auto attachment(DeviceCapabilityBuilder&) -> bool;
+} // namespace device_checkers
+
+enum LoadOp {
+  DONT_CARE,
+  LOAD,
+  CLEAR,
+};
+
 struct AttachmentInfo {
-  AttachmentFormat      format;
+  VkFormat              format;
   VkSampleCountFlagBits sample_count;
-  bool                  keep_old_content;
-  bool                  keep_new_content;
+  LoadOp                load_op = LoadOp::DONT_CARE;
+  bool                  is_store = true;
 };
 
 struct SubpassInfo {
@@ -157,10 +168,9 @@ struct SubpassPipelineInfo {
   std::vector<uint32>                     inputs;
   std::optional<SubpassInfo::MultiSample> multi_sample;
   struct DepthStencil {
-    uint32 attachment;
-    // if has value, depth_option and stencil_option is used depend on attachment format
-    DepthOption   depth_option;
-    StencilOption stencil_option;
+    uint32                       attachment;
+    std::optional<DepthOption>   depth_option;
+    std::optional<StencilOption> stencil_option;
   };
   std::optional<DepthStencil>        depst;
   std::string                        vertex_shader_name;

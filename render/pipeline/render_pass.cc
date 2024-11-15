@@ -218,8 +218,8 @@ RenderPassPipeline::RenderPassPipeline(
       .sample_count =
         subpass.multi_sample ? subpass.multi_sample->sample_count : VK_SAMPLE_COUNT_1_BIT,
       .output_n = static_cast<uint32_t>(subpass.colors.size()),
-      .stencil_option = subpass.depst.transform([](auto x) { return x.stencil_option; }),
-      .depth_option = subpass.depst.transform([](auto x) { return x.depth_option; }),
+      .stencil_option = subpass.depst ? subpass.depst->stencil_option : std::nullopt,
+      .depth_option = subpass.depst ? subpass.depst->depth_option : std::nullopt,
       .vertex_info = subpass.vertex_info,
     };
     _pipelines.push_back(Pipeline{ pipeline_info });

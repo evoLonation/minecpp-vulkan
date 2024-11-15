@@ -7,6 +7,7 @@ import toy;
 import glm;
 import <vulkan_config.h>;
 import render.device;
+import render.reflections;
 
 export namespace rd {
 
@@ -24,7 +25,7 @@ export namespace rd {
 
 template <VkFormat format_, typename T>
   requires std::is_trivially_copyable_v<T>
-struct FormatTypeInfo {
+struct FormatTypePair {
   static constexpr auto format = format_;
   using type = T;
 };
@@ -35,22 +36,22 @@ struct FormatTypeInfo {
  *
  */
 using FormatTypeInfos = toy::TypePack<
-  FormatTypeInfo<VK_FORMAT_R32_SFLOAT, float>,               //
-  FormatTypeInfo<VK_FORMAT_R32G32_SFLOAT, glm::vec2>,        //
-  FormatTypeInfo<VK_FORMAT_R32G32B32_SFLOAT, glm::vec3>,     //
-  FormatTypeInfo<VK_FORMAT_R32G32B32A32_SFLOAT, glm::vec4>,  //
-  FormatTypeInfo<VK_FORMAT_R64_SFLOAT, double>,              //
-  FormatTypeInfo<VK_FORMAT_R64G64_SFLOAT, glm::dvec2>,       //
-  FormatTypeInfo<VK_FORMAT_R64G64B64_SFLOAT, glm::dvec3>,    //
-  FormatTypeInfo<VK_FORMAT_R64G64B64A64_SFLOAT, glm::dvec4>, //
-  FormatTypeInfo<VK_FORMAT_R32_SINT, int>,                   //
-  FormatTypeInfo<VK_FORMAT_R32G32_SINT, glm::ivec2>,         //
-  FormatTypeInfo<VK_FORMAT_R32G32B32_SINT, glm::ivec3>,      //
-  FormatTypeInfo<VK_FORMAT_R32G32B32A32_SINT, glm::ivec4>,   //
-  FormatTypeInfo<VK_FORMAT_R32_UINT, uint32>,                //
-  FormatTypeInfo<VK_FORMAT_R32G32_UINT, glm::uvec2>,         //
-  FormatTypeInfo<VK_FORMAT_R32G32B32_UINT, glm::uvec3>,      //
-  FormatTypeInfo<VK_FORMAT_R32G32B32A32_UINT, glm::uvec4>>;
+  FormatTypePair<VK_FORMAT_R32_SFLOAT, float>,               //
+  FormatTypePair<VK_FORMAT_R32G32_SFLOAT, glm::vec2>,        //
+  FormatTypePair<VK_FORMAT_R32G32B32_SFLOAT, glm::vec3>,     //
+  FormatTypePair<VK_FORMAT_R32G32B32A32_SFLOAT, glm::vec4>,  //
+  FormatTypePair<VK_FORMAT_R64_SFLOAT, double>,              //
+  FormatTypePair<VK_FORMAT_R64G64_SFLOAT, glm::dvec2>,       //
+  FormatTypePair<VK_FORMAT_R64G64B64_SFLOAT, glm::dvec3>,    //
+  FormatTypePair<VK_FORMAT_R64G64B64A64_SFLOAT, glm::dvec4>, //
+  FormatTypePair<VK_FORMAT_R32_SINT, int>,                   //
+  FormatTypePair<VK_FORMAT_R32G32_SINT, glm::ivec2>,         //
+  FormatTypePair<VK_FORMAT_R32G32B32_SINT, glm::ivec3>,      //
+  FormatTypePair<VK_FORMAT_R32G32B32A32_SINT, glm::ivec4>,   //
+  FormatTypePair<VK_FORMAT_R32_UINT, uint32>,                //
+  FormatTypePair<VK_FORMAT_R32G32_UINT, glm::uvec2>,         //
+  FormatTypePair<VK_FORMAT_R32G32B32_UINT, glm::uvec3>,      //
+  FormatTypePair<VK_FORMAT_R32G32B32A32_UINT, glm::uvec4>>;
 
 template <typename Type>
 consteval auto typeToFormat() -> VkFormat {
@@ -120,5 +121,308 @@ constexpr auto _stencil_formats = std::array{
 constexpr auto _depth_stencil_formats = std::array{
   VK_FORMAT_D24_UNORM_S8_UINT,
 };
+
+enum ScalarType {
+  SFLOAT,
+  SINT,
+  UINT,
+  UNORM,
+  SNORM,
+  USCALED,
+  SSCALED,
+  SRGB,
+};
+
+enum ComponentType {
+  R,
+  RG,
+  RGB,
+  BGR,
+  RGBA,
+  BGRA,
+};
+
+enum FormatType {
+  COLOR = 0x000,
+  DEPTH = 0x010,
+  STENCIL = 0x100,
+  DEPTH_STENCIL = 0x110,
+};
+
+struct ColorFormatInfo {
+  uint32        color_size;
+  ComponentType component_type;
+  ScalarType    scalar_type;
+};
+
+struct DepstFormatInfo {
+  uint32     depth_size;
+  ScalarType depth_type;
+  uint32     stencil_size;
+  ScalarType stencil_type;
+};
+
+struct FormatInfo {
+  FormatType type;
+  union {
+    ColorFormatInfo color;
+    DepstFormatInfo depst;
+  } info;
+};
+
+consteval auto computeFormatInfo(VkFormat format) -> FormatInfo {
+  auto str = refl::format(format);
+  using namespace std::string_literals;
+  using enum FormatType;
+  str = str.substr("VK_FORMAT_"s.size());
+  auto forwardCompare = [](std::string_view& str, auto str2) -> bool {
+    if (str.starts_with(str2)) {
+      if constexpr (std::is_same_v<decltype(str2), char>) {
+        str = str.substr(1);
+      } else {
+        str = str.substr(std::string_view{ str2 }.size());
+      }
+      return true;
+    } else {
+      return false;
+    }
+  };
+  auto skip = [&]() {
+    while (str.size() && str[0] == '_') {
+      str = str.substr(1);
+    }
+  };
+  auto getSize = [&]() -> uint32 {
+    skip();
+    if (forwardCompare(str, "8")) {
+      return 8;
+    } else if (forwardCompare(str, "16")) {
+      return 16;
+    } else if (forwardCompare(str, "24")) {
+      return 24;
+    } else if (forwardCompare(str, "32")) {
+      return 32;
+    } else if (forwardCompare(str, "64")) {
+      return 64;
+    }
+    toy::throwf("unsupported format: {}", format);
+  };
+  auto getScalarType = [&]() -> ScalarType {
+    skip();
+    using enum ScalarType;
+    if (forwardCompare(str, "SFLOAT")) {
+      return SFLOAT;
+    } else if (forwardCompare(str, "SINT")) {
+      return SINT;
+    } else if (forwardCompare(str, "UINT")) {
+      return ScalarType::UINT;
+    } else if (forwardCompare(str, "UNORM")) {
+      return UNORM;
+    } else if (forwardCompare(str, "SNORM")) {
+      return SNORM;
+    } else if (forwardCompare(str, "SRGB")) {
+      return SRGB;
+    } else if (forwardCompare(str, "USCALED")) {
+      return USCALED;
+    } else if (forwardCompare(str, "SSCALED")) {
+      return SSCALED;
+    }
+    toy::throwf("unsupported format: {}", format);
+  };
+  auto compareWith = [&](char c) -> bool {
+    skip();
+    return forwardCompare(str, c);
+  };
+  if (compareWith('D')) {
+    auto depth_size = getSize();
+    auto depth_type = getScalarType();
+    if (str.size() == 0) {
+      auto info = DepstFormatInfo{
+        .depth_size = depth_size,
+        .depth_type = depth_type,
+      };
+      return { .type = DEPTH, .info = { .depst = info } };
+    } else {
+      TOY_ASSERT(compareWith('S'));
+      auto stencil_size = getSize();
+      auto stencil_type = getScalarType();
+      auto info = DepstFormatInfo{
+        .depth_size = depth_size,
+        .depth_type = depth_type,
+        .stencil_size = stencil_size,
+        .stencil_type = stencil_type,
+      };
+      return { .type = DEPTH_STENCIL, .info = { .depst = info } };
+    }
+  } else if (compareWith('S')) {
+    auto stencil_size = getSize();
+    auto stencil_type = getScalarType();
+    auto info = DepstFormatInfo{
+      .stencil_size = stencil_size,
+      .stencil_type = stencil_type,
+    };
+    return { .type = STENCIL, .info = { .depst = info } };
+  } else if (compareWith('R')) {
+    uint32 r_size{}, g_size{}, b_size{}, a_size{};
+    r_size = getSize();
+    auto component = ComponentType::R;
+    if (compareWith('G')) {
+      g_size = getSize();
+      component = ComponentType::RG;
+      if (compareWith('B')) {
+        b_size = getSize();
+        component = ComponentType::RGB;
+        if (compareWith('A')) {
+          a_size = getSize();
+          component = ComponentType::RGBA;
+        }
+      }
+    }
+    auto type = getScalarType();
+    auto info = ColorFormatInfo{
+      .color_size = r_size,
+      .component_type = component,
+      .scalar_type = type,
+    };
+    return { .type = COLOR, .info = { .color = info } };
+  } else if (compareWith('B')) {
+    uint32 b_size = getSize();
+    TOY_ASSERT(compareWith('G'));
+    uint32 g_size = getSize();
+    TOY_ASSERT(compareWith('R'));
+    uint32 r_size = getSize();
+    uint32 a_size{};
+    auto   component = ComponentType::BGR;
+    if (compareWith('A')) {
+      uint32 a_size = getSize();
+      component = ComponentType::BGRA;
+    }
+    auto type = getScalarType();
+    auto info = ColorFormatInfo{
+      .color_size = b_size,
+      .component_type = component,
+      .scalar_type = type,
+    };
+    return { .type = COLOR, .info = { .color = info } };
+  }
+  toy::throwf("unsupported format");
+}
+consteval auto computeFormatInfos(std::initializer_list<VkFormat> formats
+) -> std::array<std::optional<FormatInfo>, 200> {
+  auto ret = std::array<std::optional<FormatInfo>, 200>{};
+  for (auto format : formats) {
+    ret[format] = computeFormatInfo(format);
+  }
+  return ret;
+}
+
+constexpr auto format_infos = computeFormatInfos({
+  VK_FORMAT_R8_UNORM,
+  VK_FORMAT_R8_SNORM,
+  VK_FORMAT_R8_USCALED,
+  VK_FORMAT_R8_SSCALED,
+  VK_FORMAT_R8_UINT,
+  VK_FORMAT_R8_SINT,
+  VK_FORMAT_R8_SRGB,
+  VK_FORMAT_R8G8_UNORM,
+  VK_FORMAT_R8G8_SNORM,
+  VK_FORMAT_R8G8_USCALED,
+  VK_FORMAT_R8G8_SSCALED,
+  VK_FORMAT_R8G8_UINT,
+  VK_FORMAT_R8G8_SINT,
+  VK_FORMAT_R8G8_SRGB,
+  VK_FORMAT_R8G8B8_UNORM,
+  VK_FORMAT_R8G8B8_SNORM,
+  VK_FORMAT_R8G8B8_USCALED,
+  VK_FORMAT_R8G8B8_SSCALED,
+  VK_FORMAT_R8G8B8_UINT,
+  VK_FORMAT_R8G8B8_SINT,
+  VK_FORMAT_R8G8B8_SRGB,
+  VK_FORMAT_B8G8R8_UNORM,
+  VK_FORMAT_B8G8R8_SNORM,
+  VK_FORMAT_B8G8R8_USCALED,
+  VK_FORMAT_B8G8R8_SSCALED,
+  VK_FORMAT_B8G8R8_UINT,
+  VK_FORMAT_B8G8R8_SINT,
+  VK_FORMAT_B8G8R8_SRGB,
+  VK_FORMAT_R8G8B8A8_UNORM,
+  VK_FORMAT_R8G8B8A8_SNORM,
+  VK_FORMAT_R8G8B8A8_USCALED,
+  VK_FORMAT_R8G8B8A8_SSCALED,
+  VK_FORMAT_R8G8B8A8_UINT,
+  VK_FORMAT_R8G8B8A8_SINT,
+  VK_FORMAT_R8G8B8A8_SRGB,
+  VK_FORMAT_B8G8R8A8_UNORM,
+  VK_FORMAT_B8G8R8A8_SNORM,
+  VK_FORMAT_B8G8R8A8_USCALED,
+  VK_FORMAT_B8G8R8A8_SSCALED,
+  VK_FORMAT_B8G8R8A8_UINT,
+  VK_FORMAT_B8G8R8A8_SINT,
+  VK_FORMAT_B8G8R8A8_SRGB,
+  VK_FORMAT_R16_UNORM,
+  VK_FORMAT_R16_SNORM,
+  VK_FORMAT_R16_USCALED,
+  VK_FORMAT_R16_SSCALED,
+  VK_FORMAT_R16_UINT,
+  VK_FORMAT_R16_SINT,
+  VK_FORMAT_R16_SFLOAT,
+  VK_FORMAT_R16G16_UNORM,
+  VK_FORMAT_R16G16_SNORM,
+  VK_FORMAT_R16G16_USCALED,
+  VK_FORMAT_R16G16_SSCALED,
+  VK_FORMAT_R16G16_UINT,
+  VK_FORMAT_R16G16_SINT,
+  VK_FORMAT_R16G16_SFLOAT,
+  VK_FORMAT_R16G16B16_UNORM,
+  VK_FORMAT_R16G16B16_SNORM,
+  VK_FORMAT_R16G16B16_USCALED,
+  VK_FORMAT_R16G16B16_SSCALED,
+  VK_FORMAT_R16G16B16_UINT,
+  VK_FORMAT_R16G16B16_SINT,
+  VK_FORMAT_R16G16B16_SFLOAT,
+  VK_FORMAT_R16G16B16A16_UNORM,
+  VK_FORMAT_R16G16B16A16_SNORM,
+  VK_FORMAT_R16G16B16A16_USCALED,
+  VK_FORMAT_R16G16B16A16_SSCALED,
+  VK_FORMAT_R16G16B16A16_UINT,
+  VK_FORMAT_R16G16B16A16_SINT,
+  VK_FORMAT_R16G16B16A16_SFLOAT,
+  VK_FORMAT_R32_UINT,
+  VK_FORMAT_R32_SINT,
+  VK_FORMAT_R32_SFLOAT,
+  VK_FORMAT_R32G32_UINT,
+  VK_FORMAT_R32G32_SINT,
+  VK_FORMAT_R32G32_SFLOAT,
+  VK_FORMAT_R32G32B32_UINT,
+  VK_FORMAT_R32G32B32_SINT,
+  VK_FORMAT_R32G32B32_SFLOAT,
+  VK_FORMAT_R32G32B32A32_UINT,
+  VK_FORMAT_R32G32B32A32_SINT,
+  VK_FORMAT_R32G32B32A32_SFLOAT,
+  VK_FORMAT_R64_UINT,
+  VK_FORMAT_R64_SINT,
+  VK_FORMAT_R64_SFLOAT,
+  VK_FORMAT_R64G64_UINT,
+  VK_FORMAT_R64G64_SINT,
+  VK_FORMAT_R64G64_SFLOAT,
+  VK_FORMAT_R64G64B64_UINT,
+  VK_FORMAT_R64G64B64_SINT,
+  VK_FORMAT_R64G64B64_SFLOAT,
+  VK_FORMAT_R64G64B64A64_UINT,
+  VK_FORMAT_R64G64B64A64_SINT,
+  VK_FORMAT_R64G64B64A64_SFLOAT,
+  VK_FORMAT_D16_UNORM,
+  VK_FORMAT_D32_SFLOAT,
+  VK_FORMAT_S8_UINT,
+  VK_FORMAT_D16_UNORM_S8_UINT,
+  VK_FORMAT_D24_UNORM_S8_UINT,
+  VK_FORMAT_D32_SFLOAT_S8_UINT,
+});
+
+constexpr auto getFormatInfo(VkFormat format) -> FormatInfo {
+  auto opt = format_infos.at(format);
+  TOY_ASSERT(opt);
+  return opt.value();
+}
 
 } // namespace rd

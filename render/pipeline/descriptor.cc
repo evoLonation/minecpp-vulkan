@@ -144,8 +144,21 @@ void DescriptorPool::beforeDestroy() {
   }
 }
 
+void checkResourceBinding(
+  std::span<BindingInfo const> binding_infos, std::span<ResourceBinding const> bindings
+) {
+  TOY_ASSERT(binding_infos.size() == bindings.size(), binding_infos.size(), bindings.size());
+  for (auto [info, resource] : views::zip(binding_infos, bindings)) {
+    TOY_ASSERT(info.count == resource.resources.size(), info.count, resource.resources.size());
+    TOY_ASSERT(ranges::all_of(resource.resources, [&](auto* r) {
+      return r->getType() == info.type;
+    }));
+  }
+}
+
 ResourceSet::ResourceSet(DescriptorPool* pool, std::initializer_list<ResourceBinding> bindings)
   : toy::RecyclableObject<DescriptorPool, DescriptorSet>{ pool } {
+  checkResourceBinding(pool->getInfo(), bindings);
   auto write_infos = std::vector<VkWriteDescriptorSet>{};
   auto all_image_infos = std::vector<std::vector<VkDescriptorImageInfo>>{};
   auto all_buffer_infos = std::vector<std::vector<VkDescriptorBufferInfo>>{};

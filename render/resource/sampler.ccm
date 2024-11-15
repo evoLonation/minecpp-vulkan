@@ -35,7 +35,8 @@ private:
 
   SampledTexture(StagingBuffer staging_buffer, Image image, rs::Sampler sampler, MipRange mip_range)
     : _staging_buffer(std::move(staging_buffer)), _image(std::move(image)),
-      _sampler(std::move(sampler)) {}
+      _sampler(std::move(sampler)),
+      DescriptorResource{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER } {}
 
   friend toy::AutoMoveAssigner<SampledTexture>;
   void beforeDestroy() {

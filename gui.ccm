@@ -169,8 +169,6 @@ public:
     auto attachment_info = rd::AttachmentInfo{
       .format = rd::Swapchain::getFormat(),
       .sample_count = sample_count,
-      .keep_old_content = true,
-      .keep_new_content = true,
     };
     auto subpass_info = rd::SubpassInfo{ .colors = { 0 } };
     auto render_pass = rd::RenderPass{ std::array{ attachment_info }, std::array{ subpass_info } };

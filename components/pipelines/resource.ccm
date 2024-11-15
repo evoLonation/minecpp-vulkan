@@ -14,7 +14,7 @@ import glm;
 export namespace pl {
 
 class DescriptorPools : public PROACTIVE_SINGLETON(DescriptorPools) {
-  using BindingInfo = rd::DescriptorSetLayout::BindingInfo;
+  using BindingInfo = rd::BindingInfo;
 
 #define DEFINE_POOL(name, ...)                                                                     \
 private:                                                                                           \

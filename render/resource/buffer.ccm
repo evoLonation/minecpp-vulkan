@@ -72,7 +72,8 @@ public:
   UniformBuffer(DataType const& data)
     : HostBuffer(
         std::as_bytes(std::span<DataType const>{ &data, 1 }), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
-      ) {}
+      ),
+      DescriptorResource{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER } {}
 
   void update(DataType const& data) {
     // because uniform is read only, so no need to execute available operation from device to host

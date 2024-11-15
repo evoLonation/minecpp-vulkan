@@ -69,4 +69,7 @@
 
 #define PROACTIVE_SINGLETON(cls) toy::ProactiveSingleton<cls, #cls>
 
+#define APPLY_INDEX_SEQUENCE_TYPE(size, ...)                                                       \
+  decltype(toy::applyIndexSequence<size>([]<size_t... indices>() __VA_ARGS__))::type;
+
 #endif

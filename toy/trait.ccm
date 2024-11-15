@@ -12,8 +12,7 @@ decltype(auto) constexpr applyIndexSequence(Func&& func) {
 }
 
 template <size_t size, typename Func>
-  requires(size == 0) || requires(Func&& func) { func.template operator()<0>(); }
-void templateForEach(Func&& func) {
+constexpr void templateForEach(Func&& func) {
   if constexpr (size != 0) {
     applyIndexSequence<size>([&]<size_t... indices>() {
       (func.template operator()<indices>(), ...);
@@ -21,16 +20,28 @@ void templateForEach(Func&& func) {
   }
 }
 
-void test_templateForEachAndapplyIndexSequence() {
-  templateForEach<10>([]<size_t indice>() {
-    if constexpr (indice == 0) {
-    }
-  });
-  auto test = [](int, int, int) { return 1; };
-  toy::applyIndexSequence<3>([&]<size_t... index>() { test(index...); });
-  // error
-  // toy::applyIndexSequence<1>([&]<size_t... index>() { test(index...); });
-}
+/**
+ * @brief tuple which can be non-type template parameter and can be converted to std::tuple
+ */
+template <typename... Ts>
+struct Tuple;
+template <typename T, typename... Ts>
+struct Tuple<T, Ts...> {
+  T            head;
+  Tuple<Ts...> tail;
+
+  constexpr auto toTuple() const -> std::tuple<T, Ts...> {
+    return std::tuple_cat(std::tuple{ head }, tail.toTuple());
+  }
+};
+template <typename T>
+struct Tuple<T> {
+  T head;
+
+  constexpr auto toTuple() const -> std::tuple<T> { return std::tuple{ head }; }
+};
+template <typename... Ts>
+Tuple(Ts&&... ts) -> Tuple<Ts...>;
 
 template <typename T, typename Seq>
 struct RepeatS;
@@ -304,6 +315,17 @@ void test() {
   static_assert(std::same_as<int, FuncRet<decltype(&A::foo)>>);
   static_assert(std::same_as<std::string_view, FuncRet<A>>);
   static_assert(std::same_as<float, FuncRet<decltype(&A::bar)>>);
+}
+
+void test_templateForEachAndapplyIndexSequence() {
+  templateForEach<10>([]<size_t indice>() {
+    if constexpr (indice == 0) {
+    }
+  });
+  auto test = [](int, int, int) { return 1; };
+  toy::applyIndexSequence<3>([&]<size_t... index>() { test(index...); });
+  // error
+  // toy::applyIndexSequence<1>([&]<size_t... index>() { test(index...); });
 }
 
 } // namespace test_FuncArgRet

@@ -146,7 +146,7 @@ template <typename... Args>
 
 template <typename Condition, typename... Args>
   requires std::same_as<std::decay_t<Condition>, bool>
-void throwf(
+constexpr void throwf(
   std::optional<std::source_location> tag,
   Condition                           condition,
   std::format_string<Args...>         fmt,
@@ -164,7 +164,7 @@ template <typename... Args>
 }
 template <typename First, typename... Args>
   requires std::same_as<std::decay_t<First>, bool>
-void throwf(First condition, FormatWithLocation<Args...> fmt_location, Args&&... args) {
+constexpr void throwf(First condition, FormatWithLocation<Args...> fmt_location, Args&&... args) {
   auto& [fmt, location] = fmt_location;
   throwf(location, condition, std::move(fmt), std::forward<Args>(args)...);
 }
@@ -172,12 +172,12 @@ void throwf(First condition, FormatWithLocation<Args...> fmt_location, Args&&...
 namespace macro {
 
 template <typename... Args>
-auto getTuple(Args&&... args) -> std::tuple<Args&&...> {
+constexpr auto getTuple(Args&&... args) -> std::tuple<Args&&...> {
   return std::tuple<Args&&...>{ std::forward<Args>(args)... };
 }
 
 template <typename... Args>
-auto nameTupleFormat(std::string_view names, std::tuple<Args...> args) -> std::string {
+constexpr auto nameTupleFormat(std::string_view names, std::tuple<Args...> args) -> std::string {
   auto splited_names = //
     names | views::split(',') | views::transform([&](auto str) {
       // trim left
@@ -194,7 +194,8 @@ auto nameTupleFormat(std::string_view names, std::tuple<Args...> args) -> std::s
   return str;
 }
 
-auto nextLineIfExist(std::string current_line, std::string_view next_line) -> std::string {
+constexpr auto nextLineIfExist(std::string current_line, std::string_view next_line)
+  -> std::string {
   if (next_line.empty()) {
     return current_line;
   }
