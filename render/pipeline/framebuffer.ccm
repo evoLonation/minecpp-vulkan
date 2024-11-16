@@ -28,10 +28,10 @@ public:
   )
     : ImageManager(image, image_view, extent, format, sample_count, sub_range) {}
 
-  REGISTER_BEFORE_DESTROY(FrameImageManager);
+  REGISTER_BEFORE_DESTROY(FrameImageManager, { beforeDestroy_(); })
 
 private:
-  void beforeDestroy();
+  void beforeDestroy_();
 };
 
 class FramebufferPool : public PROACTIVE_SINGLETON(FramebufferPool) {
@@ -57,7 +57,6 @@ private:
   uint64                _use_counter;
   static constexpr auto _max_capacity = 10;
 
-  friend PROACTIVE_SINGLETON(FramebufferPool);
   friend FrameImageManager;
 
   void check(std::source_location loc = std::source_location::current());

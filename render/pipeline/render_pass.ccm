@@ -184,16 +184,11 @@ public:
   using RenderPass::setDepstClear;
   void recordDraw(std::span<FrameImageManager*> images);
 
-  REGISTER_BEFORE_DESTROY(RenderPassPipeline);
+  REGISTER_BEFORE_DESTROY(RenderPassPipeline, { _pipelines.clear(); })
 
 private:
   std::vector<Pipeline>         _pipelines;
   std::vector<PipelineRecorder> _recorders;
-
-  void beforeDestroy() {
-    _pipelines.clear();
-    RenderPass::operator=({});
-  }
 };
 
 } // namespace rd

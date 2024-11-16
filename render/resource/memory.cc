@@ -1,6 +1,7 @@
 module;
-#include <vulkan_tool.h>
 #include <toy.h>
+#include <vulkan_tool.h>
+
 module render.memory;
 
 import <vulkan_config.h>;
@@ -76,7 +77,7 @@ void HostMemoryManager::fill(std::span<const std::byte> buffer_data) {
   std::copy(buffer_data.begin(), buffer_data.end(), data().begin());
 }
 
-void HostMemoryManager::beforeDestroy() {
+void HostMemoryManager::beforeDestroy_() {
   if (_data.get()) {
     vkUnmapMemory(Device::getInstance(), _memory.get());
   }

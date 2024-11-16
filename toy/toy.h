@@ -72,9 +72,12 @@
 #define APPLY_INDEX_SEQUENCE_TYPE(size, ...)                                                       \
   decltype(toy::applyIndexSequence<size>([]<size_t... indices>() __VA_ARGS__))::type;
 
-#define REGISTER_BEFORE_DESTROY(cls)                                                               \
+#define REGISTER_BEFORE_DESTROY(cls, ...)                                                          \
   friend toy::AutoMoveAssigner<cls>;                                                               \
   DEFAULT_MOVEABLE(cls);                                                                           \
-  ~cls() { beforeDestroy(); }
+  ~cls() { beforeDestroy(); }                                                                      \
+                                                                                                   \
+private:                                                                                           \
+  void beforeDestroy() __VA_ARGS__ public:
 
 #endif

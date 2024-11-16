@@ -66,6 +66,15 @@ public:
   auto getPipeline() -> VkPipeline { return _pipeline; }
   auto getLayout() -> VkPipelineLayout { return _layout; }
 
+  PipelineResource(PipelineResource&&) noexcept = default;
+  auto operator=(PipelineResource&& e) noexcept -> PipelineResource& {
+    _vertex_shader = std::move(e._vertex_shader);
+    _frag_shader = std::move(e._frag_shader);
+    _layout = std::move(e._layout);
+    _pipeline = std::move(e._pipeline);
+    return *this;
+  }
+
 private:
   rs::ShaderModule   _vertex_shader;
   rs::ShaderModule   _frag_shader;

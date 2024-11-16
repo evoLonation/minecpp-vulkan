@@ -296,7 +296,11 @@ class CommonWaitableTracker : toy::AutoMoveAssigner<CommonWaitableTracker<IsImag
 public:
   using CommonBarrierTracker<IsImage>::CommonBarrierTracker;
 
-  REGISTER_BEFORE_DESTROY(CommonWaitableTracker);
+  REGISTER_BEFORE_DESTROY(CommonWaitableTracker, {
+    if (this->valid()) {
+      waitIdle();
+    }
+  })
 
   /**
    * @brief submit a barrier to sync with previous scope and wait
@@ -320,12 +324,6 @@ public:
 
 private:
   bool _idle = true;
-
-  void beforeDestroy() {
-    if (this->valid()) {
-      waitIdle();
-    }
-  }
 };
 
 template <bool IsImage>

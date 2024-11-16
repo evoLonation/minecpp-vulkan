@@ -8,7 +8,7 @@ import render.device;
 
 namespace rd {
 
-void FrameImageManager::beforeDestroy() {
+void FrameImageManager::beforeDestroy_() {
   if (valid()) {
     getTracker().waitIdle();
     FramebufferPool::getInstance().destroyRelativeFramebuf(*this);

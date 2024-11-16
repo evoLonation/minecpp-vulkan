@@ -25,7 +25,11 @@ public:
 
   auto getDescriptorContext() -> Context override;
 
-  REGISTER_BEFORE_DESTROY(SampledTexture);
+  REGISTER_BEFORE_DESTROY(SampledTexture, {
+    if (_image.valid()) {
+      _image.getTracker().waitIdle();
+    }
+  })
 
 private:
   StagingBuffer _staging_buffer;
@@ -36,12 +40,6 @@ private:
     : _staging_buffer(std::move(staging_buffer)), _image(std::move(image)),
       _sampler(std::move(sampler)),
       DescriptorResource{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER } {}
-
-  void beforeDestroy() {
-    if (_image.valid()) {
-      _image.getTracker().waitIdle();
-    }
-  }
 
 private:
   static std::vector<VkFormat> _formats;

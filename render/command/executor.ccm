@@ -16,7 +16,7 @@ export namespace rd {
  * @brief a command buffer bind to a timeline semaphore
  * note: must exeucte one record and submit (with signal info) before each reset
  */
-class CommandBuffer : public rs::CommandBuffer {
+class CommandBuffer : toy::AutoMoveAssigner<CommandBuffer>, public rs::CommandBuffer {
 public:
   /**
    * @param cmdbuf must is a newly created command buffer
@@ -25,15 +25,13 @@ public:
 
   void record(std::function<void(VkCommandBuffer cmdbuf)> const& recorder);
   auto getSema() -> IncrementalSemaphore& { return _sema; }
-
   auto valid() const -> bool { return get(); }
 
-  CommandBuffer(CommandBuffer&&) noexcept = default;
-  auto operator=(CommandBuffer&&) noexcept -> CommandBuffer& {
-    _sema = std::move(_sema);
-    CommandBuffer::operator=(std::move(*this));
-    return *this;
-  }
+  REGISTER_BEFORE_DESTROY(CommandBuffer, {
+    if (_sema.valid()) {
+      _sema.wait();
+    }
+  })
 
 private:
   IncrementalSemaphore _sema;

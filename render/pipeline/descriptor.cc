@@ -133,7 +133,7 @@ void DescriptorPool::workingToIdle() {
   _working_resources.erase(new_end, _working_resources.end());
 }
 
-void DescriptorPool::beforeDestroy() {
+void DescriptorPool::beforeDestroy_() {
   if (get()) {
     for (auto& resource : _working_resources) {
       resource.waitIdle();

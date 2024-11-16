@@ -35,10 +35,10 @@ public:
   static constexpr auto propreties =
     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
-  REGISTER_BEFORE_DESTROY(HostMemoryManager);
+  REGISTER_BEFORE_DESTROY(HostMemoryManager, { beforeDestroy_(); })
 
 private:
-  void beforeDestroy();
+  void beforeDestroy_();
 
   toy::PtrManager<void*>          _data;
   toy::PtrManager<VkDeviceMemory> _memory;
