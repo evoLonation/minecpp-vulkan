@@ -309,7 +309,7 @@ public:
         subpass_info.depst = subpass.depst;
         subpass_info.depst->attachment +=
           pipeline_layout.color_n + (info.multi_sampling ? pipeline_layout.color_n : 0);
-        dynamic_reference = subpass.depst.stencil_option->dynamic_reference;
+        dynamic_reference = subpass.depst.stencil_option->dyn_ref;
       }
       subpass_infos.push_back(subpass_info);
       _dynamic_references.push_back(dynamic_reference);
