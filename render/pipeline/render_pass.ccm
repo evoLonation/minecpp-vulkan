@@ -73,23 +73,24 @@ private:
   CommandExecutor*                _executor;
 };
 
+struct DepstOption {
+  uint32                       attachment;
+  std::optional<DepthOption>   depth;
+  std::optional<StencilOption> stencil;
+};
+
 struct SubpassPipelineInfo {
   std::vector<uint32>                     colors;
   std::vector<uint32>                     inputs;
   std::optional<SubpassInfo::MultiSample> multi_sample;
-  struct DepthStencil {
-    uint32                       attachment;
-    std::optional<DepthOption>   depth_option;
-    std::optional<StencilOption> stencil_option;
-  };
-  std::optional<DepthStencil>        depst;
-  std::string                        vertex_shader_name;
-  std::string                        frag_shader_name;
-  VkPrimitiveTopology                topology;
-  VkCullModeFlagBits                 cull_mode;
-  VertexInfo                         vertex_info;
-  std::vector<VkDescriptorSetLayout> dset_layouts;
-  std::vector<PushConstantInfo>      push_constants;
+  std::optional<DepstOption>              depst;
+  std::string                             vertex_shader_name;
+  std::string                             frag_shader_name;
+  VkPrimitiveTopology                     topology;
+  VkCullModeFlagBits                      cull_mode;
+  VertexInfo                              vertex_info;
+  std::vector<VkDescriptorSetLayout>      dset_layouts;
+  std::vector<PushConstantInfo>           push_constants;
 };
 
 class RenderPassPipeline {
