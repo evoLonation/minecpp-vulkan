@@ -25,8 +25,7 @@ public:
 
   auto getDescriptorContext() -> Context override;
 
-  ~SampledTexture() { beforeDestroy(); }
-  DEFAULT_MOVEABLE(SampledTexture);
+  REGISTER_BEFORE_DESTROY(SampledTexture);
 
 private:
   StagingBuffer _staging_buffer;
@@ -38,7 +37,6 @@ private:
       _sampler(std::move(sampler)),
       DescriptorResource{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER } {}
 
-  friend toy::AutoMoveAssigner<SampledTexture>;
   void beforeDestroy() {
     if (_image.valid()) {
       _image.getTracker().waitIdle();

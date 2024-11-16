@@ -12,6 +12,7 @@ import render.framebuffer;
 import render.vertex;
 import render.executor;
 import render.device;
+import render.format;
 
 import std;
 import toy;
@@ -55,22 +56,98 @@ struct AttachmentSyncInfo {
   VkImageLayout            final_layout;
 };
 
+struct ColorClearValue {
+  VkClearColorValue clear_value;
+  ComponentType     component_n;
+  ScalarType        scalar_type;
+  ColorClearValue(uint32 r)
+    : clear_value({ .uint32 = { r } }), component_n(ComponentType::NUM_1),
+      scalar_type(ScalarType::UINT) {}
+  ColorClearValue(float r)
+    : clear_value({ .float32 = { r } }), component_n(ComponentType::NUM_1),
+      scalar_type(ScalarType::DEST_FLOAT) {}
+  ColorClearValue(int32 r)
+    : clear_value({ .int32 = { r } }), component_n(ComponentType::NUM_1),
+      scalar_type(ScalarType::SINT) {}
+  ColorClearValue(uint32 r, uint32 g)
+    : clear_value({ .uint32 = { r, g } }), component_n(ComponentType::NUM_2),
+      scalar_type(ScalarType::UINT) {}
+  ColorClearValue(float r, float g)
+    : clear_value({ .float32 = { r, g } }), component_n(ComponentType::NUM_2),
+      scalar_type(ScalarType::DEST_FLOAT) {}
+  ColorClearValue(int32 r, int32 g)
+    : clear_value({ .int32 = { r, g } }), component_n(ComponentType::NUM_2),
+      scalar_type(ScalarType::SINT) {}
+  ColorClearValue(uint32 r, uint32 g, uint32 b)
+    : clear_value({ .uint32 = { r, g, b } }), component_n(ComponentType::NUM_3),
+      scalar_type(ScalarType::UINT) {}
+  ColorClearValue(float r, float g, float b)
+    : clear_value({ .float32 = { r, g, b } }), component_n(ComponentType::NUM_3),
+      scalar_type(ScalarType::DEST_FLOAT) {}
+  ColorClearValue(int32 r, int32 g, int32 b)
+    : clear_value({ .int32 = { r, g, b } }), component_n(ComponentType::NUM_3),
+      scalar_type(ScalarType::SINT) {}
+  ColorClearValue(uint32 r, uint32 g, uint32 b, uint32 a)
+    : clear_value({ .uint32 = { r, g, b, a } }), component_n(ComponentType::NUM_4),
+      scalar_type(ScalarType::UINT) {}
+  ColorClearValue(float r, float g, float b, float a)
+    : clear_value({ .float32 = { r, g, b, a } }), component_n(ComponentType::NUM_4),
+      scalar_type(ScalarType::DEST_FLOAT) {}
+  ColorClearValue(int32 r, int32 g, int32 b, int32 a)
+    : clear_value({ .int32 = { r, g, b, a } }), component_n(ComponentType::NUM_4),
+      scalar_type(ScalarType::SINT) {}
+
+  void checkFormat(VkFormat format) {
+    auto info = getFormatInfo(format);
+    TOY_ASSERT(info.type == FormatType::COLOR && (info.info.color.scalar_type & scalar_type));
+    TOY_ASSERT(component_n & info.info.color.component_type);
+  }
+};
+
+struct DepstClearValue {
+  VkClearDepthStencilValue clear_value;
+  FormatType               type;
+  DepstClearValue(float depth, uint32 stencil)
+    : clear_value(depth, stencil), type(FormatType::DEPTH_STENCIL) {}
+  DepstClearValue(float depth) : clear_value{ .depth = depth }, type(FormatType::DEPTH) {}
+  DepstClearValue(uint32 stencil) : clear_value{ .stencil = stencil }, type(FormatType::STENCIL) {}
+
+  void checkFormat(VkFormat format) {
+    auto info = getFormatInfo(format);
+    TOY_ASSERT(info.type == type, (int)info.type, (int)type);
+  }
+};
+
 class RenderPass : public rs::RenderPass {
 public:
   RenderPass() = default;
   RenderPass(std::span<AttachmentInfo const> attachments, std::span<SubpassInfo const> subpasses);
   auto getSyncInfos() const -> std::span<AttachmentSyncInfo const> { return _attachment_syncs; }
   auto getExecutor() -> CommandExecutor& { return *_executor; }
+  void setDepstClear(uint32 index, DepstClearValue value) {
+    value.checkFormat(_formats.at(index));
+    _clear_values[index] = VkClearValue{ .depthStencil = value.clear_value };
+    _is_set_clears[index] = true;
+  }
+  void setColorClear(uint32 index, ColorClearValue value) {
+    value.checkFormat(_formats.at(index));
+    _clear_values[index] = VkClearValue{ .color = value.clear_value };
+    _is_set_clears[index] = true;
+  }
   void record(
     std::vector<CommandBatch>                                         batches,
     std::span<FrameImageManager* const>                               images,
-    std::vector<VkClearValue>                                         clear_values,
     std::span<std::function<void(VkCommandBuffer, VkExtent2D)> const> pipeline_recorders
   );
 
 private:
-  std::vector<AttachmentSyncInfo> _attachment_syncs;
-  CommandExecutor*                _executor;
+  CommandExecutor*                   _executor;
+  std::vector<VkFormat>              _formats;
+  std::vector<VkSampleCountFlagBits> _sample_counts;
+  std::vector<bool>                  _need_clears;
+  std::vector<bool>                  _is_set_clears;
+  std::vector<AttachmentSyncInfo>    _attachment_syncs;
+  std::vector<VkClearValue>          _clear_values;
 };
 
 struct DepstOption {
@@ -93,7 +170,7 @@ struct SubpassPipelineInfo {
   std::vector<PushConstantInfo>           push_constants;
 };
 
-class RenderPassPipeline {
+class RenderPassPipeline : toy::AutoMoveAssigner<RenderPassPipeline>, private RenderPass {
 public:
   RenderPassPipeline() = default;
   RenderPassPipeline(
@@ -101,34 +178,22 @@ public:
   );
 
   void setRecorder(uint32 index, PipelineRecorder recorder) {
-    _recorders[index] = std::move(recorder);
+    _recorders.at(index) = std::move(recorder);
   }
-  void setClearValue(uint32 index, VkClearDepthStencilValue clear_value) {
-    _clear_values[index] = VkClearValue{ .depthStencil = clear_value };
-  }
-  void setClearValue(uint32 index, VkClearColorValue clear_value) {
-    _clear_values[index] = VkClearValue{ .color = clear_value };
-  }
+  using RenderPass::setColorClear;
+  using RenderPass::setDepstClear;
   void recordDraw(std::span<FrameImageManager*> images);
 
-  RenderPassPipeline(RenderPassPipeline&&) noexcept = default;
-  RenderPassPipeline& operator=(RenderPassPipeline&& e) noexcept {
-    _clear_values = std::move(e._clear_values);
-    _recorders = std::move(e._recorders);
-    _pipelines = std::move(e._pipelines);
-    _render_pass = std::move(e._render_pass);
-    return *this;
-  }
+  REGISTER_BEFORE_DESTROY(RenderPassPipeline);
 
 private:
-  RenderPass _render_pass;
-
-  // same size of subpasses
   std::vector<Pipeline>         _pipelines;
   std::vector<PipelineRecorder> _recorders;
 
-  // same size of attachments
-  std::vector<VkClearValue> _clear_values;
+  void beforeDestroy() {
+    _pipelines.clear();
+    RenderPass::operator=({});
+  }
 };
 
 } // namespace rd

@@ -35,11 +35,9 @@ public:
   static constexpr auto propreties =
     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
-  ~HostMemoryManager() { beforeDestroy(); }
-  DEFAULT_MOVEABLE(HostMemoryManager);
+  REGISTER_BEFORE_DESTROY(HostMemoryManager);
 
 private:
-  friend toy::AutoMoveAssigner<HostMemoryManager>;
   void beforeDestroy();
 
   toy::PtrManager<void*>          _data;

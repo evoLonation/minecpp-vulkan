@@ -50,8 +50,7 @@ public:
 
   auto valid() const -> bool { return get(); }
 
-  ~DescriptorSet() { beforeDestroy(); }
-  DEFAULT_MOVEABLE(DescriptorSet);
+  REGISTER_BEFORE_DESTROY(DescriptorSet);
 
 private:
   DescriptorSetLayout* _layout;
@@ -60,7 +59,6 @@ private:
 
   void removeIdles();
 
-  friend toy::AutoMoveAssigner<DescriptorSet>;
   void beforeDestroy() { TOY_CHECK(!valid()); }
 };
 
@@ -71,10 +69,9 @@ public:
   DescriptorPool() = default;
   DescriptorPool(std::vector<BindingInfo> infos);
 
-  DEFAULT_MOVEABLE(DescriptorPool);
-  ~DescriptorPool() { beforeDestroy(); }
-
   void recycle(DescriptorSet dset);
+
+  REGISTER_BEFORE_DESTROY(DescriptorPool);
 
 private:
   std::set<std::pair<size_t, VkDescriptorPool>, std::greater<>> _pool_counts;
@@ -97,7 +94,6 @@ private:
   void tryShrink();
   void workingToIdle();
 
-  friend toy::AutoMoveAssigner<DescriptorPool>;
   void beforeDestroy();
 };
 

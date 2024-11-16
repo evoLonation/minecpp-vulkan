@@ -296,8 +296,7 @@ class CommonWaitableTracker : toy::AutoMoveAssigner<CommonWaitableTracker<IsImag
 public:
   using CommonBarrierTracker<IsImage>::CommonBarrierTracker;
 
-  ~CommonWaitableTracker() { beforeDestroy(); }
-  DEFAULT_MOVEABLE(CommonWaitableTracker);
+  REGISTER_BEFORE_DESTROY(CommonWaitableTracker);
 
   /**
    * @brief submit a barrier to sync with previous scope and wait
@@ -322,7 +321,6 @@ public:
 private:
   bool _idle = true;
 
-  friend toy::AutoMoveAssigner<CommonWaitableTracker>;
   void beforeDestroy() {
     if (this->valid()) {
       waitIdle();

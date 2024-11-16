@@ -530,8 +530,15 @@ RenderPass::RenderPass(
     );
   }
   rs::RenderPass::operator=({ render_pass_create_info });
-  _attachment_syncs = std::move(attachment_sync_infos);
   _executor = &ExecutorManager::getInstance()[FamilyType::GRAPHICS];
+  for (auto& attachment : attachments) {
+    _formats.push_back(attachment.format);
+    _sample_counts.push_back(attachment.sample_count);
+    _need_clears.push_back(attachment.load_op == LoadOp::CLEAR);
+    _is_set_clears.push_back(false);
+  }
+  _attachment_syncs = std::move(attachment_sync_infos);
+  _clear_values.resize(attachments.size());
 }
 
 } // namespace rd

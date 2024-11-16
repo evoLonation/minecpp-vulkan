@@ -42,9 +42,12 @@ void recordRenderPass(
 void RenderPass::record(
   std::vector<CommandBatch>                                         batches,
   std::span<FrameImageManager* const>                               images,
-  std::vector<VkClearValue>                                         clear_values,
   std::span<std::function<void(VkCommandBuffer, VkExtent2D)> const> pipeline_recorders
 ) {
+  for (auto [image, format, sample] : views::zip(images, _formats, _sample_counts)) {
+    TOY_ASSERT(image->getFormat() == format && image->getSampleCount() == sample);
+  }
+  TOY_ASSERT(_need_clears == _is_set_clears, _need_clears, _is_set_clears);
   auto [framebuffer, extent] = FramebufferPool::getInstance().getFramebuffer(get(), images);
 
   auto waitables_keep_lifetime = std::list<Waitable>{};
@@ -67,7 +70,7 @@ void RenderPass::record(
       get(),
       framebuffer,
       extent,
-      clear_values,
+      _clear_values,
       pipeline_recorders | views::transform([&](auto& recorder) {
         return std::function<void(VkCommandBuffer)>{ [&](auto cmdbuf) {
           recorder(cmdbuf, extent);
@@ -88,7 +91,7 @@ void RenderPass::record(
 RenderPassPipeline::RenderPassPipeline(
   std::span<AttachmentInfo const> attachments, std::span<SubpassPipelineInfo const> subpasses
 )
-  : _render_pass{
+  : RenderPass{
       attachments,
       subpasses | views::transform([](auto& x) {
         return SubpassInfo{
@@ -103,7 +106,7 @@ RenderPassPipeline::RenderPassPipeline(
   for (auto [subpass_i, subpass] : subpasses | toy::enumerate) {
     auto push_constant_ranges = getPushConstantRanges(subpass.push_constants);
     auto pipeline_info = PipelineInfo{
-      .render_pass = _render_pass,
+      .render_pass = get(),
       .subpass_i = subpass_i,
       .vertex_shader_name = subpass.vertex_shader_name,
       .frag_shader_name = subpass.frag_shader_name,
@@ -121,11 +124,10 @@ RenderPassPipeline::RenderPassPipeline(
     _pipelines.push_back(Pipeline{ pipeline_info });
   }
   _recorders.resize(subpasses.size());
-  _clear_values.resize(attachments.size());
 }
 
 void RenderPassPipeline::recordDraw(std::span<FrameImageManager*> images) {
-  auto& executor = _render_pass.getExecutor();
+  auto& executor = getExecutor();
 
   auto batches = std::vector<CommandBatch>{};
   auto waitables_keep_lifetime = std::list<Waitable>{};
@@ -229,7 +231,7 @@ void RenderPassPipeline::recordDraw(std::span<FrameImageManager*> images) {
       pipeline.record(cmdbuf, extent, recorder);
     });
   }
-  _render_pass.record(batches, images, _clear_values, pipeline_recorders);
+  record(batches, images, pipeline_recorders);
 }
 
 } // namespace rd

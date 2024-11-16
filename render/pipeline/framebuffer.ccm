@@ -28,11 +28,9 @@ public:
   )
     : ImageManager(image, image_view, extent, format, sample_count, sub_range) {}
 
-  ~FrameImageManager() { beforeDestroy(); }
-  DEFAULT_MOVEABLE(FrameImageManager);
+  REGISTER_BEFORE_DESTROY(FrameImageManager);
 
 private:
-  friend toy::AutoMoveAssigner<FrameImageManager>;
   void beforeDestroy();
 };
 

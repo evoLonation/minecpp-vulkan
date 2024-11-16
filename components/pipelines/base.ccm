@@ -326,19 +326,13 @@ public:
     }
   }
   auto getDepstAttachment(uint32 index) -> rd::FrameImageManager& { return _depst_images[index]; }
-  void setColorClearValue(uint32 index, VkClearColorValue clear_value) {
-    if (_present_color_image.valid()) {
-      _render_pass.setClearValue(2 * index, clear_value);
-    } else {
-      _render_pass.setClearValue(index, clear_value);
-    }
+  void setColorClearValue(uint32 index, rd::ColorClearValue clear_value) {
+    index = _present_color_image.valid() ? index * 2 : index;
+    _render_pass.setColorClear(index, clear_value);
   }
-  void setDepstClearValue(uint32 index, VkClearDepthStencilValue clear_value) {
-    if (_present_color_image.valid()) {
-      _render_pass.setClearValue(2 * _color_images.size() + 2 + index, clear_value);
-    } else {
-      _render_pass.setClearValue(_color_images.size() + 1 + index, clear_value);
-    }
+  void setDepstClearValue(uint32 index, rd::DepstClearValue clear_value) {
+    index += _present_color_image.valid() ? 2 * _color_images.size() + 2 : _color_images.size() + 1;
+    _render_pass.setDepstClear(index, clear_value);
   }
   void setCamera(camera::CameraData* camera) { _camera = camera; }
 

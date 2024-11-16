@@ -58,11 +58,9 @@ public:
   ) -> bool;
   auto waitIdle(uint64 nano_timeout = max_timeout) -> bool;
 
-  ~TimelineSemaphore() { beforeDestroy(); }
-  DEFAULT_MOVEABLE(TimelineSemaphore);
+  REGISTER_BEFORE_DESTROY(TimelineSemaphore);
 
 private:
-  friend toy::AutoMoveAssigner<TimelineSemaphore>;
   void beforeDestroy() {
     if (get()) {
       waitIdle();

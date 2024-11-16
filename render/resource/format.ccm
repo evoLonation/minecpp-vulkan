@@ -11,18 +11,6 @@ import render.reflections;
 
 export namespace rd {
 
-/**
- * @brief
- * 1. follow formats map to float types
- * SRGB: The R, G, and B components are unsigned normalized values that represent values using sRGB
- * nonlinear encoding, while the A component (if one exists) is a regular unsigned normalized value
- * U/S NORM: The components are unsigned/signed normalized values in the range [0,1]/[-1,1].
- * U/S SCALED: The components are unsigned/signed integer values that get converted to
- * floating-point in the range [0,2^n-1]/[-2^(n-1),2^(n-1)-1].
- * U/S FLOAT: directly map to float
- * 2. folow formats map to integer types: U/S INT
- */
-
 template <VkFormat format_, typename T>
   requires std::is_trivially_copyable_v<T>
 struct FormatTypePair {
@@ -122,31 +110,50 @@ constexpr auto _depth_stencil_formats = std::array{
   VK_FORMAT_D24_UNORM_S8_UINT,
 };
 
+/**
+ * @brief
+ * 1. follow formats map to float types
+ * SRGB: The R, G, and B components are unsigned normalized values that represent values using sRGB
+ * nonlinear encoding, while the A component (if one exists) is a regular unsigned normalized value
+ * U/S NORM: The components are unsigned/signed normalized values in the range [0,1]/[-1,1].
+ * U/S SCALED: The components are unsigned/signed integer values that get converted to
+ * floating-point in the range [0,2^n-1]/[-2^(n-1),2^(n-1)-1].
+ * U/S FLOAT: directly map to float
+ * 2. folow formats map to integer types: U/S INT
+ */
 enum ScalarType {
-  SFLOAT,
-  SINT,
-  UINT,
-  UNORM,
-  SNORM,
-  USCALED,
-  SSCALED,
-  SRGB,
+  SINT = 0b00000001,
+  UINT = 0b00000010,
+  SFLOAT = 0b00000100,
+  UNORM = 0b00001000,
+  SNORM = 0b00010000,
+  USCALED = 0b00100000,
+  SSCALED = 0b01000000,
+  SRGB = 0b10000000,
+  DEST_SFLOAT = SFLOAT | SNORM | SSCALED,
+  DEST_UFLOAT = UNORM | USCALED | SRGB,
+  DEST_FLOAT = DEST_SFLOAT | DEST_UFLOAT,
+  DEST_INTEGER = SINT | UINT,
 };
 
 enum ComponentType {
-  R,
-  RG,
-  RGB,
-  BGR,
-  RGBA,
-  BGRA,
+  R = 0b000001,
+  RG = 0b000010,
+  RGB = 0b000100,
+  BGR = 0b001000,
+  RGBA = 0b010000,
+  BGRA = 0b100000,
+  NUM_1 = R,
+  NUM_2 = RG,
+  NUM_3 = RGB | BGR,
+  NUM_4 = RGBA | BGRA,
 };
 
 enum FormatType {
-  COLOR = 0x000,
-  DEPTH = 0x010,
-  STENCIL = 0x100,
-  DEPTH_STENCIL = 0x110,
+  COLOR = 0b001,
+  DEPTH = 0b010,
+  STENCIL = 0b100,
+  DEPTH_STENCIL = 0b110,
 };
 
 struct ColorFormatInfo {
