@@ -73,96 +73,6 @@ private:
   CommandExecutor*                _executor;
 };
 
-void recordRenderPass(
-  VkCommandBuffer                                       cmdbuf,
-  VkRenderPass                                          render_pass,
-  VkFramebuffer                                         framebuffer,
-  VkExtent2D                                            extent,
-  std::span<VkClearValue const>                         clear_values,
-  std::span<std::function<void(VkCommandBuffer)> const> recorders
-);
-
-// todo: change to abstract class
-class PipelineDrawer {
-public:
-  static auto forRecord(
-    VkCommandBuffer                  cmdbuf,
-    VkPipeline                       pipeline,
-    VkPipelineLayout                 layout,
-    VkExtent2D                       extent,
-    std::vector<VkPushConstantRange> push_constants
-  ) -> PipelineDrawer;
-  static auto forGetResources(
-    std::vector<VkDescriptorSetLayout> dset_layouts,
-    std::vector<Buffer*>*              vertex_buffers,
-    std::vector<Buffer*>*              index_buffers,
-    std::vector<ResourceSet*>*         resource_sets
-  ) -> PipelineDrawer;
-
-  void bindVertexBuffer(VertexBuffer* vertex_buffer);
-  void bindIndexBuffer(IndexBuffer* index_buffer);
-  void bindResourceSet(uint32 index, ResourceSet* resource_set);
-  void bindPushConstant(VkShaderStageFlags stage, std::span<std::byte const> data);
-  void setStencilReference(uint32 reference);
-  void draw();
-
-private:
-  enum ExecuteType {
-    RECORD,
-    GET_RESOURCES,
-  };
-  PipelineDrawer(
-    VkCommandBuffer                    cmdbuf,
-    VkPipeline                         pipeline,
-    VkPipelineLayout                   layout,
-    VkExtent2D                         extent,
-    std::vector<VkPushConstantRange>   push_constants,
-    std::vector<VkDescriptorSetLayout> dset_layouts,
-    std::vector<Buffer*>*              vertex_buffers,
-    std::vector<Buffer*>*              index_buffers,
-    std::vector<ResourceSet*>*         resource_sets,
-    ExecuteType                        execute_type
-  )
-    : _cmdbuf(cmdbuf), _pipeline(pipeline), _layout(layout), _extent(extent),
-      _push_constants(push_constants), _dset_layouts(std::move(dset_layouts)),
-      _execute_type(execute_type), _index_count(0), _vertex_buffers(vertex_buffers),
-      _index_buffers(index_buffers), _resource_sets(resource_sets) {}
-
-  // only for RECORD
-  VkCommandBuffer  _cmdbuf;
-  VkPipeline       _pipeline;
-  VkPipelineLayout _layout;
-  VkExtent2D       _extent;
-
-  std::vector<VkPushConstantRange> _push_constants;
-  // only for GET_RESOURCES
-  std::vector<VkDescriptorSetLayout> _dset_layouts;
-
-  ExecuteType _execute_type;
-
-  uint32 _index_count;
-
-  std::vector<Buffer*>*      _vertex_buffers;
-  std::vector<Buffer*>*      _index_buffers;
-  std::vector<ResourceSet*>* _resource_sets;
-};
-
-using PipelineDrawRecorder = std::function<void(PipelineDrawer)>;
-
-struct PipelineDrawInfo {
-  VkPipeline           pipeline;
-  VkPipelineLayout     layout;
-  PipelineDrawRecorder recorder;
-};
-void recordPipeline(
-  VkCommandBuffer                  cmdbuf,
-  VkExtent2D                       extent,
-  VkPipeline                       pipeline,
-  VkPipelineLayout                 layout,
-  std::vector<VkPushConstantRange> push_constants,
-  PipelineDrawRecorder             recorder
-);
-
 struct SubpassPipelineInfo {
   std::vector<uint32>                     colors;
   std::vector<uint32>                     inputs;
@@ -189,7 +99,7 @@ public:
     std::span<AttachmentInfo const> attachments, std::span<SubpassPipelineInfo const> subpasses
   );
 
-  void setRecorder(uint32 index, PipelineDrawRecorder recorder) {
+  void setRecorder(uint32 index, PipelineRecorder recorder) {
     _recorders[index] = std::move(recorder);
   }
   void setClearValue(uint32 index, VkClearDepthStencilValue clear_value) {
@@ -203,8 +113,6 @@ public:
   RenderPassPipeline(RenderPassPipeline&&) noexcept = default;
   RenderPassPipeline& operator=(RenderPassPipeline&& e) noexcept {
     _clear_values = std::move(e._clear_values);
-    _pipeline_push_constants = std::move(e._pipeline_push_constants);
-    _pipeline_dset_layouts = std::move(e._pipeline_dset_layouts);
     _recorders = std::move(e._recorders);
     _pipelines = std::move(e._pipelines);
     _render_pass = std::move(e._render_pass);
@@ -215,10 +123,8 @@ private:
   RenderPass _render_pass;
 
   // same size of subpasses
-  std::vector<Pipeline>                           _pipelines;
-  std::vector<PipelineDrawRecorder>               _recorders;
-  std::vector<std::vector<VkDescriptorSetLayout>> _pipeline_dset_layouts;
-  std::vector<std::vector<VkPushConstantRange>>   _pipeline_push_constants;
+  std::vector<Pipeline>         _pipelines;
+  std::vector<PipelineRecorder> _recorders;
 
   // same size of attachments
   std::vector<VkClearValue> _clear_values;

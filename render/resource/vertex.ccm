@@ -103,7 +103,7 @@ public:
   template <typename VertexT>
     requires toy::InstantiationOf<VertexT, Vertex>
   VertexBuffer(std::span<const VertexT> vertex_data)
-    : VertexBuffer(std::as_bytes(vertex_data), VertexT::getVertexInfo()) {}
+    : VertexBuffer(std::as_bytes(vertex_data), VertexT::getVertexInfo(), vertex_data.size()) {}
   template <typename DataT>
     requires(!toy::InstantiationOf<DataT, Vertex>)
   VertexBuffer(std::span<const DataT> vertex_data)
@@ -113,13 +113,15 @@ public:
       } {}
 
   auto getVertexInfo() const -> VertexInfo { return _vertex_info; }
+  auto getVertexNumber() const -> uint32 { return _vertex_number; }
 
 private:
   VertexInfo _vertex_info;
+  uint32     _vertex_number;
 
-  VertexBuffer(std::span<const std::byte> vertex_data, VertexInfo vertex_info)
-    : DeviceLocalBuffer(vertex_data, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT), _vertex_info(vertex_info) {
-  }
+  VertexBuffer(std::span<const std::byte> vertex_data, VertexInfo vertex_info, uint32 vertex_number)
+    : DeviceLocalBuffer(vertex_data, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT), _vertex_info(vertex_info),
+      _vertex_number(vertex_number) {}
 };
 
 class IndexBuffer : public DeviceLocalBuffer {
@@ -133,7 +135,7 @@ public:
   auto getIndexType() -> VkIndexType { return VK_INDEX_TYPE_UINT16; }
 
 private:
-  int _index_number;
+  uint32 _index_number;
 };
 
 } // namespace rd

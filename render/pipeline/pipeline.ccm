@@ -3,8 +3,11 @@ export module render.pipeline;
 import <vulkan_config.h>;
 import render.resource;
 import render.vertex;
+import render.buffer;
+import render.descriptor;
 
 import std;
+import toy;
 
 export namespace rd {
 
@@ -17,8 +20,7 @@ auto createPipelineLayout(
 struct StencilOption {
   VkStencilOpState front;
   VkStencilOpState back;
-
-  bool dynamic_reference;
+  bool             dyn_ref;
 };
 
 struct DepthOption {
@@ -58,9 +60,9 @@ struct PipelineInfo {
   VertexInfo                         vertex_info;
 };
 
-struct Pipeline {
+struct PipelineResource {
 public:
-  Pipeline(const PipelineInfo& info);
+  PipelineResource(const PipelineInfo& info);
   auto getPipeline() -> VkPipeline { return _pipeline; }
   auto getLayout() -> VkPipelineLayout { return _layout; }
 
@@ -69,6 +71,88 @@ private:
   rs::ShaderModule   _frag_shader;
   rs::PipelineLayout _layout;
   rs::Pipeline       _pipeline;
+};
+
+// todo: change to abstract class
+class PipelineDrawer {
+public:
+  static auto forRecord(
+    VkCommandBuffer                  cmdbuf,
+    VkPipeline                       pipeline,
+    VkPipelineLayout                 layout,
+    VkExtent2D                       extent,
+    VertexInfo                       vertex_info,
+    std::span<VkPushConstantRange>   push_constants,
+    std::span<VkDescriptorSetLayout> dset_layouts
+  ) -> PipelineDrawer;
+  static auto forCollect(
+    std::vector<Buffer*>*      vertex_buffers,
+    std::vector<Buffer*>*      index_buffers,
+    std::vector<ResourceSet*>* resource_sets
+  ) -> PipelineDrawer;
+
+  void bindVertexBuffer(VertexBuffer* vertex_buffer);
+  void bindIndexBuffer(IndexBuffer* index_buffer);
+  void bindResourceSet(uint32 index, ResourceSet* resource_set);
+  void bindPushConstant(VkShaderStageFlags stage, std::span<std::byte const> data);
+  void setStencilReference(uint32 reference);
+  void draw();
+
+private:
+  enum ExecuteType {
+    RECORD,
+    GET_RESOURCES,
+  };
+  PipelineDrawer(
+    VkCommandBuffer                  cmdbuf,
+    VkPipeline                       pipeline,
+    VkPipelineLayout                 layout,
+    VkExtent2D                       extent,
+    VertexInfo                       vertex_info,
+    std::span<VkPushConstantRange>   push_constants,
+    std::span<VkDescriptorSetLayout> dset_layouts,
+    std::vector<Buffer*>*            vertex_buffers,
+    std::vector<Buffer*>*            index_buffers,
+    std::vector<ResourceSet*>*       resource_sets,
+    ExecuteType                      execute_type
+  )
+    : _cmdbuf(cmdbuf), _pipeline(pipeline), _layout(layout), _extent(extent),
+      _vertex_info(vertex_info), _push_constants(push_constants), _dset_layouts(dset_layouts),
+      _execute_type(execute_type), _vertex_count(0), _index(false), _vertex_buffers(vertex_buffers),
+      _index_buffers(index_buffers), _resource_sets(resource_sets) {}
+
+  // only for RECORD
+  VkCommandBuffer                  _cmdbuf;
+  VkPipeline                       _pipeline;
+  VkPipelineLayout                 _layout;
+  VkExtent2D                       _extent;
+  VertexInfo                       _vertex_info;
+  std::span<VkPushConstantRange>   _push_constants;
+  std::span<VkDescriptorSetLayout> _dset_layouts;
+
+  ExecuteType _execute_type;
+
+  uint32 _vertex_count;
+  bool   _index;
+
+  std::vector<Buffer*>*      _vertex_buffers;
+  std::vector<Buffer*>*      _index_buffers;
+  std::vector<ResourceSet*>* _resource_sets;
+};
+
+using PipelineRecorder = std::function<void(PipelineDrawer)>;
+
+class Pipeline : public PipelineResource {
+public:
+  Pipeline(const PipelineInfo& info)
+    : PipelineResource(info), _vertex_info(info.vertex_info), _push_constants(info.push_constants),
+      _dset_layouts(info.dset_layouts) {}
+  void record(VkCommandBuffer cmdbuf, VkExtent2D extent, PipelineRecorder recorder);
+
+private:
+  VertexInfo                         _vertex_info;
+  std::vector<VkPushConstantRange>   _push_constants;
+  std::vector<VkDescriptorSetLayout> _dset_layouts;
 };
 
 } // namespace rd

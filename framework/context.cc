@@ -7,6 +7,7 @@ import render.vertex;
 import render.presentation;
 import render.swapchain;
 import render.alignment;
+import render.render_pass;
 
 import <vulkan_config.h>;
 

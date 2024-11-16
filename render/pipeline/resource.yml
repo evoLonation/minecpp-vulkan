@@ -13,7 +13,7 @@ module:
     implement: render.render_pass
 - framebuffer.ccm:
     provide: render.framebuffer
-- pipeline.cc:
+- pipeline_create.cc:
     implement: render.pipeline
 - render_pass.cc:
     implement: render.render_pass
@@ -21,3 +21,5 @@ module:
     implement: render.framebuffer
 - meta_descriptor.ccm:
     provide: render.meta_descriptor
+- pipeline.cc:
+    implement: render.pipeline

@@ -85,110 +85,6 @@ void RenderPass::record(
   }
 }
 
-auto PipelineDrawer::forRecord(
-  VkCommandBuffer                  cmdbuf,
-  VkPipeline                       pipeline,
-  VkPipelineLayout                 layout,
-  VkExtent2D                       extent,
-  std::vector<VkPushConstantRange> push_constants
-) -> PipelineDrawer {
-  return PipelineDrawer{
-    cmdbuf, pipeline, layout, extent, push_constants, {}, nullptr, nullptr, nullptr, RECORD,
-  };
-}
-
-auto PipelineDrawer::forGetResources(
-  std::vector<VkDescriptorSetLayout> dset_layouts,
-  std::vector<Buffer*>*              vertex_buffers,
-  std::vector<Buffer*>*              index_buffers,
-  std::vector<ResourceSet*>*         resource_sets
-) -> PipelineDrawer {
-  return PipelineDrawer{
-    VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, {}, {}, dset_layouts, vertex_buffers,
-    index_buffers,  resource_sets,  GET_RESOURCES,
-  };
-}
-
-void PipelineDrawer::bindVertexBuffer(VertexBuffer* vertex_buffer) {
-  if (_execute_type == RECORD) {
-    auto offset = VkDeviceSize{ 0 };
-    auto buffer = vertex_buffer->get();
-    vkCmdBindVertexBuffers(_cmdbuf, 0, 1, &buffer, &offset);
-  } else {
-    _vertex_buffers->push_back(vertex_buffer);
-  }
-}
-
-void PipelineDrawer::bindIndexBuffer(IndexBuffer* index_buffer) {
-  if (_execute_type == RECORD) {
-    vkCmdBindIndexBuffer(_cmdbuf, *index_buffer, 0, index_buffer->getIndexType());
-    _index_count = index_buffer->getIndexNumber();
-  } else {
-    _index_buffers->push_back(index_buffer);
-  }
-}
-
-void PipelineDrawer::bindResourceSet(uint32 index, ResourceSet* resource_set) {
-  if (_execute_type == RECORD) {
-    auto handle = resource_set->get();
-    vkCmdBindDescriptorSets(
-      _cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, _layout, index, 1, &handle, 0, nullptr
-    );
-  } else {
-    TOY_ASSERT(_dset_layouts[index] == resource_set->getLayout());
-    _resource_sets->push_back(resource_set);
-  }
-}
-
-void PipelineDrawer::bindPushConstant(VkShaderStageFlags stage, std::span<std::byte const> data) {
-  if (_execute_type == RECORD) {
-    auto opt = toy::findIf(_push_constants, [&](auto& range) { return range.stageFlags == stage; });
-    TOY_CHECK_ASSERT(opt.has_value());
-    TOY_CHECK_ASSERT(data.size() == opt->size, data.size(), opt->size);
-    vkCmdPushConstants(_cmdbuf, _layout, opt->stageFlags, opt->offset, opt->size, data.data());
-  }
-}
-
-void PipelineDrawer::setStencilReference(uint32 reference) {
-  if (_execute_type == RECORD) {
-    vkCmdSetStencilReference(_cmdbuf, VK_STENCIL_FACE_FRONT_AND_BACK, reference);
-  }
-}
-
-void PipelineDrawer::draw() {
-  if (_execute_type == RECORD) {
-    vkCmdDrawIndexed(_cmdbuf, _index_count, 1, 0, 0, 0);
-  }
-}
-
-void recordPipeline(
-  VkCommandBuffer                  cmdbuf,
-  VkExtent2D                       extent,
-  VkPipeline                       pipeline,
-  VkPipelineLayout                 layout,
-  std::vector<VkPushConstantRange> push_constants,
-  PipelineDrawRecorder             recorder
-) {
-  vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-  // 定义了 viewport 到缓冲区的变换
-  auto viewport = VkViewport{
-    .x = 0,
-    .y = 0,
-    .width = static_cast<float>(extent.width),
-    .height = static_cast<float>(extent.height),
-    .minDepth = 0.0f,
-    .maxDepth = 1.0f,
-  };
-  vkCmdSetViewport(cmdbuf, 0, 1, &viewport);
-  // 定义了缓冲区实际存储像素的区域
-  auto scissor = VkRect2D{
-    .offset = { .x = 0, .y = 0 },
-    .extent = extent,
-  };
-  vkCmdSetScissor(cmdbuf, 0, 1, &scissor);
-  recorder(PipelineDrawer::forRecord(cmdbuf, pipeline, layout, extent, std::move(push_constants)));
-}
-
 RenderPassPipeline::RenderPassPipeline(
   std::span<AttachmentInfo const> attachments, std::span<SubpassPipelineInfo const> subpasses
 )
@@ -223,8 +119,6 @@ RenderPassPipeline::RenderPassPipeline(
       .vertex_info = subpass.vertex_info,
     };
     _pipelines.push_back(Pipeline{ pipeline_info });
-    _pipeline_dset_layouts.push_back(std::move(pipeline_info.dset_layouts));
-    _pipeline_push_constants.push_back(std::move(pipeline_info.push_constants));
   }
   _recorders.resize(subpasses.size());
   _clear_values.resize(attachments.size());
@@ -244,12 +138,11 @@ void RenderPassPipeline::recordDraw(std::span<FrameImageManager*> images) {
       batches.push_back(ctx->toAcquireBatch(&waitables_keep_lifetime.back()));
     }
   };
-  for (auto [layouts, recorder] : views::zip(_pipeline_dset_layouts, _recorders)) {
+  for (auto recorder : _recorders) {
     auto vertex_buffers = std::vector<Buffer*>{};
     auto index_buffers = std::vector<Buffer*>{};
     auto resource_sets = std::vector<ResourceSet*>{};
-    auto drawer =
-      PipelineDrawer::forGetResources(layouts, &vertex_buffers, &index_buffers, &resource_sets);
+    auto drawer = PipelineDrawer::forCollect(&vertex_buffers, &index_buffers, &resource_sets);
     recorder(drawer);
     for (auto* vertex_buffer : vertex_buffers) {
       auto sync = vertex_buffer->getTracker().syncScope(
@@ -331,12 +224,9 @@ void RenderPassPipeline::recordDraw(std::span<FrameImageManager*> images) {
     }
   }
   auto pipeline_recorders = std::vector<std::function<void(VkCommandBuffer, VkExtent2D)>>{};
-  for (auto [subpass_i, pipeline, recorder, push_constants] :
-       views::zip(views::iota(0u), _pipelines, _recorders, _pipeline_push_constants)) {
+  for (auto [pipeline, recorder] : views::zip(_pipelines, _recorders)) {
     pipeline_recorders.push_back([&](VkCommandBuffer cmdbuf, VkExtent2D extent) {
-      recordPipeline(
-        cmdbuf, extent, pipeline.getPipeline(), pipeline.getLayout(), push_constants, recorder
-      );
+      pipeline.record(cmdbuf, extent, recorder);
     });
   }
   _render_pass.record(batches, images, _clear_values, pipeline_recorders);
