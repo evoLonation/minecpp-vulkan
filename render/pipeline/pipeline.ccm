@@ -18,14 +18,14 @@ auto createPipelineLayout(
 ) -> rs::PipelineLayout;
 
 struct StencilOption {
-  VkStencilOpState front;
-  VkStencilOpState back;
+  VkStencilOpState front = VkStencilOpState{ .compareOp = VK_COMPARE_OP_ALWAYS };
+  VkStencilOpState back = VkStencilOpState{ .compareOp = VK_COMPARE_OP_ALWAYS };
   bool             dyn_ref;
 };
 
 struct DepthOption {
-  VkCompareOp compare_op;
-  bool        overwrite;
+  VkCompareOp compare_op = VK_COMPARE_OP_LESS;
+  bool        overwrite = true;
 };
 
 auto createGraphicsPipeline(

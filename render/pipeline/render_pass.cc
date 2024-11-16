@@ -121,6 +121,18 @@ RenderPassPipeline::RenderPassPipeline(
       .depth_option = subpass.depst ? subpass.depst->depth : std::nullopt,
       .vertex_info = subpass.vertex_info,
     };
+    if (subpass.depst) {
+      auto format = attachments[subpass.depst->attachment].format;
+      TOY_ASSERT(
+        subpass.depst->depth.has_value() == bool(getFormatInfo(format).type & FormatType::DEPTH),
+        format
+      );
+      TOY_ASSERT(
+        subpass.depst->stencil.has_value() ==
+          bool(getFormatInfo(format).type & FormatType::STENCIL),
+        format
+      );
+    }
     _pipelines.push_back(Pipeline{ pipeline_info });
   }
   _recorders.resize(subpasses.size());

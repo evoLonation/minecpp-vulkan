@@ -7,14 +7,13 @@ import toy;
 import glm;
 import loop;
 import render;
-import pipeline.resources;
-import pipeline.drawunit;
+import pipeline.basic;
 import transform;
 import pipeline.uniform;
 
 export namespace tool {
 
-using Vertex = pl::Vertex;
+using Vertex = pl::ColorVertex;
 
 const auto cube_vertices = std::array{
   Vertex{ glm::vec3{ 0.0f, 0.0f, 0.0f } }, Vertex{ glm::vec3{ 0.0f, 0.0f, 1.0f } },
@@ -25,26 +24,6 @@ const auto cube_vertices = std::array{
 const auto cube_index = std::array<uint16, 36>{
   0, 1, 2, 2, 3, 0, 4, 7, 6, 6, 5, 4, 1, 5, 6, 6, 2, 1,
   0, 3, 7, 7, 4, 0, 7, 3, 2, 2, 6, 7, 5, 1, 0, 0, 4, 5,
-};
-
-class Cube : public pl::SolidColorDrawUnit {
-public:
-  Cube(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
-    _uniform_model = pl::UniformBuffer<pl::ModelTrans>{ { trans::model::create(location) } };
-    _vertex_buf = rd::VertexBuffer{ cube_vertices };
-    _index_buf = rd::IndexBuffer{ cube_index };
-    _color = glm::vec3{ 0.7f, 0.2f, 0.5f };
-  }
-  auto getModelTrans() -> pl::UniformBuffer<pl::ModelTrans>& override { return _uniform_model; }
-  auto getVertexBuffer() -> rd::VertexBuffer& override { return _vertex_buf; }
-  auto getIndexBuffer() -> rd::IndexBuffer& override { return _index_buf; }
-  auto getColor() -> glm::vec3 override { return _color; }
-
-private:
-  pl::UniformBuffer<pl::ModelTrans> _uniform_model;
-  rd::VertexBuffer                  _vertex_buf;
-  rd::IndexBuffer                   _index_buf;
-  glm::vec3                         _color;
 };
 
 auto generateCone(float radius = 1.0f, float height = 2.0f)
@@ -67,27 +46,6 @@ auto generateCone(float radius = 1.0f, float height = 2.0f)
   }
   return { std::move(vertices), std::move(indices) };
 }
-
-class Cone : public pl::SolidColorDrawUnit {
-public:
-  Cone(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
-    _uniform_model = pl::UniformBuffer<pl::ModelTrans>{ { trans::model::create(location) } };
-    auto [vertices, indices] = generateCone();
-    _vertex_buf = rd::VertexBuffer{ vertices };
-    _index_buf = rd::IndexBuffer{ indices };
-    _color = glm::vec3{ 0.7f, 0.2f, 0.5f };
-  }
-  auto getModelTrans() -> pl::UniformBuffer<pl::ModelTrans>& override { return _uniform_model; }
-  auto getVertexBuffer() -> rd::VertexBuffer& override { return _vertex_buf; }
-  auto getIndexBuffer() -> rd::IndexBuffer& override { return _index_buf; }
-  auto getColor() -> glm::vec3 override { return _color; }
-
-private:
-  pl::UniformBuffer<pl::ModelTrans> _uniform_model;
-  rd::VertexBuffer                  _vertex_buf;
-  rd::IndexBuffer                   _index_buf;
-  glm::vec3                         _color;
-};
 
 auto generateAxis() -> std::pair<std::vector<Vertex>, std::vector<uint16>> {
   auto vertices = std::vector<Vertex>{};
@@ -127,25 +85,52 @@ auto generateAxis() -> std::pair<std::vector<Vertex>, std::vector<uint16>> {
   return { vertices, indices };
 }
 
-class Axis : public pl::SolidColorDrawUnit {
+class SimpleShape : public pl::BasicColorUnit {
 public:
-  Axis(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
-    _uniform_model = pl::UniformBuffer<pl::ModelTrans>{ { trans::model::create(location) } };
-    auto [vertices, indices] = generateAxis();
-    _vertex_buf = rd::VertexBuffer{ vertices };
-    _index_buf = rd::IndexBuffer{ indices };
-    _color = glm::vec3{ 0.7f, 0.2f, 0.5f };
+  SimpleShape() = default;
+  SimpleShape(
+    auto&& vertices, auto&& indices, glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }
+  ) {
+    _uniform_model = trans::model::create(location);
+    _vertex_buf = { FORWARD(vertices) };
+    _index_buf = { FORWARD(indices) };
+    _uniform_color = glm::vec3{ 0.7f, 0.2f, 0.5f };
+    pl::BasicColorUnit::operator=(
+      { &_vertex_buf, &_index_buf, { &_uniform_model, &_uniform_color } }
+    );
   }
-  auto getModelTrans() -> pl::UniformBuffer<pl::ModelTrans>& override { return _uniform_model; }
-  auto getVertexBuffer() -> rd::VertexBuffer& override { return _vertex_buf; }
-  auto getIndexBuffer() -> rd::IndexBuffer& override { return _index_buf; }
-  auto getColor() -> glm::vec3 override { return _color; }
+  auto getModelTrans() -> glm::mat4& { return _uniform_model; }
+  auto getColor() -> glm::vec3& { return _uniform_color; }
 
 private:
-  pl::UniformBuffer<pl::ModelTrans> _uniform_model;
-  rd::VertexBuffer                  _vertex_buf;
-  rd::IndexBuffer                   _index_buf;
-  glm::vec3                         _color;
+  pl::UniformBuffer<rd::align::mat4> _uniform_model;
+  rd::VertexBuffer                   _vertex_buf;
+  rd::IndexBuffer                    _index_buf;
+  pl::UniformBuffer<rd::align::vec3> _uniform_color;
+};
+
+class Cone : public SimpleShape {
+public:
+  // Cone(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
+  //   auto [vertices, indices] = generateCone();
+  //   SimpleShape::operator=({ std::move(vertices), std::move(indices), location });
+  // }
+  Cone(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f })
+    : SimpleShape{ generateCone().first, generateCone().second, location } {}
+};
+
+class Cube : public SimpleShape {
+public:
+  Cube(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f })
+    : SimpleShape{ cube_vertices, cube_index, location } {}
+};
+
+class Axis : public SimpleShape {
+public:
+  Axis(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
+    auto [vertices, indices] = generateAxis();
+    SimpleShape::operator=({ std::move(vertices), std::move(indices), location });
+  }
 };
 
 } // namespace tool

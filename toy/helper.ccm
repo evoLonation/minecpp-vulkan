@@ -83,11 +83,13 @@ private:
   auto self() -> Derived& { return static_cast<Derived&>(*this); }
 
 public:
-  ProactiveSingleton() {
-    if (_instance_ptr != nullptr) {
-      toy::throwf("construct {} multi time!", name.value);
+  ProactiveSingleton(bool init = true) {
+    if (init) {
+      if (_instance_ptr != nullptr) {
+        toy::throwf("construct {} multi time!", name.value);
+      }
+      _instance_ptr = &self();
     }
-    _instance_ptr = &self();
   }
   ~ProactiveSingleton() {
     if (_instance_ptr == this) {
@@ -104,7 +106,10 @@ public:
 
   ProactiveSingleton& operator=(const ProactiveSingleton&) = delete;
   ProactiveSingleton(const ProactiveSingleton&) = delete;
-  ProactiveSingleton& operator=(ProactiveSingleton&&) = delete;
+  ProactiveSingleton& operator=(ProactiveSingleton&&) {
+    _instance_ptr = &self();
+    return *this;
+  }
   ProactiveSingleton(ProactiveSingleton&&) noexcept { _instance_ptr = &self(); }
 };
 

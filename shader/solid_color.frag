@@ -1,8 +1,8 @@
 #version 450
 
 layout(location = 0) out vec4 out_color;
-layout(push_constant) uniform ColorBlock{
-  layout(offset=128) vec3 data;
+layout(set = 0, binding = 1) uniform ColorBlock{
+  vec3 data;
 } color;
 
 void main() {

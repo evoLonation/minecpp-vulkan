@@ -11,189 +11,61 @@ import model;
 import loop;
 import input;
 import transform;
-import pipeline.uniform;
-
-import pipeline.resources;
-import pipeline.drawunit;
+import pipeline.base2;
 
 export namespace pl {
 
-class BasicPipeline : loop::Action {
-public:
-  BasicPipeline() : loop::Action{ loop::Stage::RENDER } {
-    auto& swapchain = rd::Presentation::getInstance().getSwapchain();
-    TOY_ASSERT((rd::ImageContext::getInstance().getAvailableSampleCounts() & _sample_count) > 0);
+constexpr auto layout_model_texture = rd::meta::DescriptorLayout{
+  rd::meta::UniformBinding{ rd::meta::type<rd::align::mat4>(), rd::meta::Stage::VERTEX },
+  rd::meta::TextureBinding{ rd::meta::Stage::FRAGMENT },
+};
 
-    auto attachment_infos = std::vector<rd::AttachmentInfo>{
-      rd::AttachmentInfo{
-        .format = swapchain.getFormat(),
-        .sample_count = _sample_count,
-        .keep_old_content = false,
-        .keep_new_content = false,
-      },
-      rd::AttachmentInfo{
-        .format = swapchain.getFormat(),
-        .sample_count = VK_SAMPLE_COUNT_1_BIT,
-        .keep_old_content = false,
-        .keep_new_content = true,
-      },
-      rd::AttachmentInfo{
-        .format = _depth_format,
-        // .sample_count = VK_SAMPLE_COUNT_1_BIT,
-        .sample_count = _sample_count,
-        .keep_old_content = false,
-        .keep_new_content = false,
-      },
-    };
-    auto subpass_infos = std::vector<rd::SubpassPipelineInfo>{
-      rd::SubpassPipelineInfo{
-        .colors = {0},
-        .inputs = {},
-        .multi_sample = {{
-          .resolves = {1},
-          .sample_count = _sample_count,
-        }},
-        .depst = {{
-          .attachment = 2,
-          .depth_option = {
-            .compare_op = VK_COMPARE_OP_LESS,
-            .overwrite = true,
-          },
-        }},
+constexpr auto layout_model_color = rd::meta::DescriptorLayout{
+  rd::meta::UniformBinding{ rd::meta::type<rd::align::mat4>(), rd::meta::Stage::VERTEX },
+  rd::meta::UniformBinding{ rd::meta::type<rd::align::vec3>(), rd::meta::Stage::FRAGMENT },
+};
+
+using ColorVertex = rd::Vertex<glm::vec3>;
+
+using BasicTextureUnit = DrawUnitTemplate<layout_model_texture, 0>;
+using BasicColorUnit = DrawUnitTemplate<layout_model_color, 1>;
+
+class BasicPipeline : public RenderPass {
+public:
+  BasicPipeline() {
+    auto& swapchain = rd::Presentation::getInstance().getSwapchain();
+
+    auto pipeline_infos = std::vector<PipelineInfo>{
+      PipelineInfo{
+        .colors = { 0 },
+        .depst = { { .depth = { {} } } },
         .vertex_shader_name = "hello.vert",
         .frag_shader_name = "hello.frag",
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .cull_mode = VK_CULL_MODE_BACK_BIT,
         .vertex_info = model::Vertex::getVertexInfo(),
-        .dset_layouts = { DescriptorPools::getModel() },
-        .push_constants = { 
-          rd::PushConstantInfo{ 
-            .stage = VK_SHADER_STAGE_VERTEX_BIT, 
-            .size = sizeof(CameraData), 
-            .alignment = alignof(CameraData),
-          },
-        },
+        .dset_layout = getLayoutHandle<layout_model_texture>(),
       },
-      rd::SubpassPipelineInfo{
-        .colors = {0},
-        .inputs = {},
-        .multi_sample = {{
-          .resolves = {1},
-          .sample_count = _sample_count,
-        }},
-        .depst = {{
-          .attachment = 2,
-          .depth_option = {
-            .compare_op = VK_COMPARE_OP_LESS,
-            .overwrite = true,
-          },
-        }},
+      PipelineInfo{
+        .colors = { 0 },
+        .depst = { { .depth = { {} } } },
         .vertex_shader_name = "solid_color.vert",
         .frag_shader_name = "solid_color.frag",
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .cull_mode = VK_CULL_MODE_BACK_BIT,
-        .vertex_info = Vertex::getVertexInfo(),
-        .dset_layouts = { DescriptorPools::getModelTrans(), },
-        .push_constants = { 
-          rd::PushConstantInfo{ 
-            .stage = VK_SHADER_STAGE_VERTEX_BIT, 
-            .size = sizeof(CameraData), 
-            .alignment = alignof(CameraData),
-          },
-          rd::PushConstantInfo{ 
-            .stage = VK_SHADER_STAGE_FRAGMENT_BIT, 
-            .size = sizeof(rd::align::vec3), 
-            .alignment = alignof(rd::align::vec3),
-          },
-        },
-      }
+        .vertex_info = ColorVertex::getVertexInfo(),
+        .dset_layout = getLayoutHandle<layout_model_color>(),
+      },
     };
-    _render_pass = rd::RenderPassPipeline{ attachment_infos, subpass_infos };
-    _render_pass.setClearValue(0, VkClearColorValue{ .float32 = { 0.5f, 0.5f, 0.5f, 1.0f } });
-    _render_pass.setClearValue(2, VkClearDepthStencilValue{ .depth = 1.0f });
-
-    createFramebuffers();
-  }
-
-  void createFramebuffers() {
-    auto& swapchain = rd::Presentation::getInstance().getSwapchain();
-    _sample_image = rd::FrameImage{
-      swapchain.getFormat(),
-      swapchain.getExtent().width,
-      swapchain.getExtent().height,
-      _sample_count,
-      {},
+    auto info = RenderPassInfo{
+      .depst_formats = { VK_FORMAT_D32_SFLOAT },
+      .multi_sampling = VK_SAMPLE_COUNT_8_BIT,
+      .pipelines = std::move(pipeline_infos),
     };
-    _depth_image = rd::FrameImage{
-      _depth_format, swapchain.getExtent().width, swapchain.getExtent().height, _sample_count, {},
-    };
+    RenderPass::operator=(RenderPass{ info });
+    setColorClearValue(0, { 0.5f, 0.5f, 0.5f, 1.0f });
+    setDepstClearValue(0, 1.0f);
   }
-
-  void runLoop(loop::ActionContext const& ctx) override {
-    if (ctx.recreated) {
-      createFramebuffers();
-    }
-    _render_pass.setRecorder(0, [&](rd::PipelineDrawer drawer) {
-      drawer.bindPushConstant(VK_SHADER_STAGE_VERTEX_BIT, std::as_bytes(std::span{ _camera, 1 }));
-      for (auto& [draw_unit, resource_set] : _draw_units) {
-        drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
-        drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
-        drawer.bindResourceSet(0, &resource_set);
-        drawer.draw();
-      }
-    });
-    _render_pass.setRecorder(1, [&](rd::PipelineDrawer drawer) {
-      drawer.bindPushConstant(VK_SHADER_STAGE_VERTEX_BIT, std::as_bytes(std::span{ _camera, 1 }));
-      for (auto& [draw_unit, resource_set] : _solid_color_draw_units) {
-        drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
-        drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
-        drawer.bindResourceSet(0, &resource_set);
-        auto color = rd::align::vec3{ draw_unit->getColor() };
-        drawer.bindPushConstant(
-          VK_SHADER_STAGE_FRAGMENT_BIT, std::as_bytes(std::span{ &color, 1 })
-        );
-        drawer.draw();
-      }
-    });
-    auto attachments = std::array<rd::FrameImageManager*, 3>{
-      &_sample_image,
-      ctx.image_manager,
-      &_depth_image,
-    };
-    _render_pass.recordDraw(attachments);
-  }
-
-  void setCamera(CameraData* camera) { _camera = camera; }
-  void addDrawUnit(BasicDrawUnit* draw_unit) {
-    _draw_units.emplace(
-      draw_unit,
-      rd::ResourceSet{
-        &DescriptorPools::getModel(),
-        { &draw_unit->getModelTrans(), &draw_unit->getTexture() },
-      }
-    );
-  }
-  void addDrawUnit(SolidColorDrawUnit* draw_unit) {
-    _solid_color_draw_units.emplace(
-      draw_unit,
-      rd::ResourceSet{ &DescriptorPools::getModelTrans(), { &draw_unit->getModelTrans() } }
-    );
-  }
-  void removeDrawUnit(BasicDrawUnit* draw_unit) { _draw_units.erase(draw_unit); }
-  void removeDrawUnit(SolidColorDrawUnit* draw_unit) { _solid_color_draw_units.erase(draw_unit); }
-
-private:
-  rd::RenderPassPipeline _render_pass;
-
-  rd::FrameImage _sample_image;
-  rd::FrameImage _depth_image;
-
-  CameraData*                                              _camera;
-  std::unordered_map<BasicDrawUnit*, rd::ResourceSet>      _draw_units;
-  std::unordered_map<SolidColorDrawUnit*, rd::ResourceSet> _solid_color_draw_units;
-
-  static constexpr auto _sample_count = VK_SAMPLE_COUNT_8_BIT;
-  static constexpr auto _depth_format = VK_FORMAT_D32_SFLOAT;
 };
 
 } // namespace pl

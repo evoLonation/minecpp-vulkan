@@ -1,6 +1,8 @@
 #ifndef TOY_H
 #define TOY_H
 
+#define FORWARD(v) std::forward<decltype(v)>(v)
+
 #define NAME_TUPLE_STRING(...)                                                                     \
   toy::macro::nameTupleFormat({ #__VA_ARGS__ }, toy::macro::getTuple(__VA_ARGS__))
 #define TOY_ASSERT(condition, ...)                                                                 \

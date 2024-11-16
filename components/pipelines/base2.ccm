@@ -34,6 +34,7 @@ struct RenderPassInfo {
 template <typename Derived>
 class DrawUnitLoader {
 public:
+  DrawUnitLoader() = default;
   DrawUnitLoader(uint32 subpass_n) : _subpass_n(subpass_n) { add(); }
   ~DrawUnitLoader() { remove(); }
   DrawUnitLoader(const DrawUnitLoader&) noexcept = delete;
@@ -54,11 +55,12 @@ private:
   void add();
   void remove();
 
-  uint32 _subpass_n;
+  std::optional<uint32> _subpass_n;
 };
 
 class DrawUnit : public DrawUnitLoader<DrawUnit> {
 public:
+  DrawUnit() = default;
   DrawUnit(
     uint32               subpass_n,
     rd::VertexBuffer*    vertex_buffer,
@@ -89,6 +91,7 @@ private:
 
 class RenderPass : public PROACTIVE_SINGLETON(RenderPass), public loop::Action {
 public:
+  RenderPass() : PROACTIVE_SINGLETON(RenderPass)(false) {}
   RenderPass(RenderPassInfo info) {
     setStage(loop::Stage::RENDER);
     auto& swapchain = rd::Presentation::getInstance().getSwapchain();
@@ -223,6 +226,8 @@ public:
     _render_pass.recordDraw(attachments);
   }
 
+  ONLY_MOVEABLE(RenderPass);
+
 private:
   rd::RenderPassPipeline      _render_pass;
   rd::FrameImage              _present_color_image;
@@ -303,12 +308,34 @@ private:
 
 template <typename Derived>
 void DrawUnitLoader<Derived>::add() {
-  RenderPass::getInstance()._draw_units[_subpass_n].insert(&self());
+  if (_subpass_n) {
+    RenderPass::getInstance()._draw_units[*_subpass_n].insert(&self());
+  }
 }
 
 template <typename Derived>
 void DrawUnitLoader<Derived>::remove() {
-  RenderPass::getInstance()._draw_units[_subpass_n].erase(&self());
+  if (_subpass_n) {
+    RenderPass::getInstance()._draw_units[*_subpass_n].erase(&self());
+  }
+}
+
+template <auto dset_layout, uint32 subpass_n>
+class DrawUnitTemplate : public DrawUnit {
+public:
+  DrawUnitTemplate() = default;
+  DrawUnitTemplate(
+    rd::VertexBuffer*                    vertex_buffer,
+    rd::IndexBuffer*                     index_buffer,
+    rd::meta::DescriptorSet<dset_layout> dset,
+    std::optional<uint8>                 stencil_ref = {}
+  )
+    : DrawUnit(subpass_n, vertex_buffer, index_buffer, std::move(dset), stencil_ref) {}
+};
+
+template <auto dset_layout>
+auto getLayoutHandle() -> VkDescriptorSetLayout {
+  return rd::meta::DescriptorPools::getInstance().getPool<dset_layout>();
 }
 
 } // namespace pl
