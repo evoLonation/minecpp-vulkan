@@ -95,7 +95,7 @@ void checkSubpassAttachmentMatch(
       current_outputs.push_back(subpass.depst.value());
       auto depst = attachments[subpass.depst.value()];
       TOY_ASSERT(depst.sample_count == sample_count);
-      TOY_ASSERT(getFormatInfo(depst.format).type & FormatType::DEPTH_STENCIL);
+      TOY_ASSERT(getFormatInfo(depst.format).type & FormatType::DEPTH_STENCIL, depst.format);
     }
     // check inputs
     auto inputs = subpass.inputs | views::transform([&](auto x) { return attachments[x]; }) |

@@ -1,6 +1,6 @@
 module;
 #include <toy.h>
-export module render.meta_descriptor;
+export module render.meta.descriptor;
 
 import std;
 import toy;

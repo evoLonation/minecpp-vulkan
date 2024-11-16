@@ -11,13 +11,14 @@ auto PipelineDrawer::forRecord(
   VkPipeline                       pipeline,
   VkPipelineLayout                 layout,
   VkExtent2D                       extent,
+  bool                             dyn_ref,
   VertexInfo                       vertex_info,
   std::span<VkPushConstantRange>   push_constants,
   std::span<VkDescriptorSetLayout> dset_layouts
 ) -> PipelineDrawer {
   return PipelineDrawer{
-    cmdbuf,       pipeline, layout,  extent,  vertex_info, push_constants,
-    dset_layouts, nullptr,  nullptr, nullptr, RECORD,
+    cmdbuf,         pipeline,     layout,  extent,  dyn_ref, vertex_info,
+    push_constants, dset_layouts, nullptr, nullptr, nullptr, RECORD,
   };
 }
 
@@ -27,8 +28,7 @@ auto PipelineDrawer::forCollect(
   std::vector<ResourceSet*>* resource_sets
 ) -> PipelineDrawer {
   return PipelineDrawer{
-    VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, {}, {}, {}, {}, vertex_buffers,
-    index_buffers,  resource_sets,  GET_RESOURCES,
+    {}, {}, {}, {}, {}, {}, {}, {}, vertex_buffers, index_buffers, resource_sets, GET_RESOURCES,
   };
 }
 
@@ -79,6 +79,7 @@ void PipelineDrawer::bindPushConstant(VkShaderStageFlags stage, std::span<std::b
 
 void PipelineDrawer::setStencilReference(uint32 reference) {
   if (_execute_type == RECORD) {
+    TOY_CHECK_ASSERT(_dyn_ref);
     vkCmdSetStencilReference(_cmdbuf, VK_STENCIL_FACE_FRONT_AND_BACK, reference);
   }
 }
@@ -112,7 +113,14 @@ void Pipeline::record(VkCommandBuffer cmdbuf, VkExtent2D extent, PipelineRecorde
   };
   vkCmdSetScissor(cmdbuf, 0, 1, &scissor);
   recorder(PipelineDrawer::forRecord(
-    cmdbuf, getPipeline(), getLayout(), extent, _vertex_info, _push_constants, _dset_layouts
+    cmdbuf,
+    getPipeline(),
+    getLayout(),
+    extent,
+    _dyn_ref,
+    _vertex_info,
+    _push_constants,
+    _dset_layouts
   ));
 }
 

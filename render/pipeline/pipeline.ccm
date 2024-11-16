@@ -90,6 +90,7 @@ public:
     VkPipeline                       pipeline,
     VkPipelineLayout                 layout,
     VkExtent2D                       extent,
+    bool                             dyn_ref,
     VertexInfo                       vertex_info,
     std::span<VkPushConstantRange>   push_constants,
     std::span<VkDescriptorSetLayout> dset_layouts
@@ -117,6 +118,7 @@ private:
     VkPipeline                       pipeline,
     VkPipelineLayout                 layout,
     VkExtent2D                       extent,
+    bool                             dyn_ref,
     VertexInfo                       vertex_info,
     std::span<VkPushConstantRange>   push_constants,
     std::span<VkDescriptorSetLayout> dset_layouts,
@@ -125,7 +127,7 @@ private:
     std::vector<ResourceSet*>*       resource_sets,
     ExecuteType                      execute_type
   )
-    : _cmdbuf(cmdbuf), _pipeline(pipeline), _layout(layout), _extent(extent),
+    : _cmdbuf(cmdbuf), _pipeline(pipeline), _layout(layout), _extent(extent), _dyn_ref(dyn_ref),
       _vertex_info(vertex_info), _push_constants(push_constants), _dset_layouts(dset_layouts),
       _execute_type(execute_type), _vertex_count(0), _index(false), _vertex_buffers(vertex_buffers),
       _index_buffers(index_buffers), _resource_sets(resource_sets) {}
@@ -135,6 +137,7 @@ private:
   VkPipeline                       _pipeline;
   VkPipelineLayout                 _layout;
   VkExtent2D                       _extent;
+  bool                             _dyn_ref;
   VertexInfo                       _vertex_info;
   std::span<VkPushConstantRange>   _push_constants;
   std::span<VkDescriptorSetLayout> _dset_layouts;
@@ -154,11 +157,13 @@ using PipelineRecorder = std::function<void(PipelineDrawer)>;
 class Pipeline : public PipelineResource {
 public:
   Pipeline(const PipelineInfo& info)
-    : PipelineResource(info), _vertex_info(info.vertex_info), _push_constants(info.push_constants),
+    : PipelineResource(info), _dyn_ref(info.stencil_option ? info.stencil_option->dyn_ref : false),
+      _vertex_info(info.vertex_info), _push_constants(info.push_constants),
       _dset_layouts(info.dset_layouts) {}
   void record(VkCommandBuffer cmdbuf, VkExtent2D extent, PipelineRecorder recorder);
 
 private:
+  bool                               _dyn_ref;
   VertexInfo                         _vertex_info;
   std::vector<VkPushConstantRange>   _push_constants;
   std::vector<VkDescriptorSetLayout> _dset_layouts;
