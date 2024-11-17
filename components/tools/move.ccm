@@ -47,7 +47,8 @@ auto generateCone(float radius = 1.0f, float height = 2.0f)
   return { std::move(vertices), std::move(indices) };
 }
 
-auto generateAxis() -> std::pair<std::vector<Vertex>, std::vector<uint16>> {
+auto generateAxis()
+  -> std::pair<std::pair<std::vector<Vertex>, std::vector<uint16>>, std::vector<Vertex>> {
   auto vertices = std::vector<Vertex>{};
   auto indices = std::vector<uint16>{};
   auto [cone_vertices, cone_indices] = generateCone();
@@ -76,47 +77,81 @@ auto generateAxis() -> std::pair<std::vector<Vertex>, std::vector<uint16>> {
                           return trans::transform(model_trans, vec);
                         }));
 
-  vertices.push_back(glm::vec3{ 0, 0, 0 });
-  vertices.push_back(glm::vec3{ 1, 0, 0 });
-  indices.push_back(vertices.size() - 2);
-  indices.push_back(vertices.size() - 1);
-  indices.push_back(vertices.size() - 2);
-  toy::debug(indices);
-  return { vertices, indices };
+  auto line_vertices = std::vector<Vertex>{};
+  line_vertices.push_back(glm::vec3{ 0, 0, 0 });
+  line_vertices.push_back(glm::vec3{ 1, 0, 0 });
+  line_vertices.push_back(glm::vec3{ 0, 0, 0 });
+  line_vertices.push_back(glm::vec3{ 0, 1, 0 });
+  line_vertices.push_back(glm::vec3{ 0, 0, 0 });
+  line_vertices.push_back(glm::vec3{ 0, 0, 1 });
+  // vertices.append_range(line_vertices);
+  // indices.append_range(line_indices);
+  // vertices.push_back(glm::vec3{ 0, 0, 0 });
+  // vertices.push_back(glm::vec3{ 1, 0, 0 });
+  // indices.push_back(vertices.size() - 2);
+  // indices.push_back(vertices.size() - 1);
+  // indices.push_back(vertices.size() - 2);
+  // toy::debug(indices);
+  return { { vertices, indices }, line_vertices };
 }
 
-class SimpleShape : public pl::BasicColorUnit {
+template <bool is_line = false>
+using BasicColorUnit = std::conditional_t<is_line, pl::BasicColorLineUnit, pl::BasicColorUnit>;
+
+template <bool is_line = false>
+class SimpleShapeTemp : public BasicColorUnit<is_line> {
 public:
-  SimpleShape() = default;
-  SimpleShape(
+  SimpleShapeTemp() = default;
+  SimpleShapeTemp(
+    auto&& vertices, auto&& indices, glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }
+  ) {
+    set(FORWARD(vertices), FORWARD(indices), location);
+  }
+  SimpleShapeTemp(auto&& vertices, glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
+    set(FORWARD(vertices), location);
+  }
+  void set(
     auto&& vertices, auto&& indices, glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }
   ) {
     _uniform_model = trans::model::create(location);
     _vertex_buf = { FORWARD(vertices) };
     _index_buf = { FORWARD(indices) };
     _uniform_color = glm::vec3{ 0.7f, 0.2f, 0.5f };
-    pl::BasicColorUnit::operator=(
+    // self reference, so can not directly move
+    BasicColorUnit<is_line>::operator=(
       { &_vertex_buf, &_index_buf, { &_uniform_model, &_uniform_color } }
+    );
+  }
+  void set(auto&& vertices, glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
+    _uniform_model = trans::model::create(location);
+    _vertex_buf = { FORWARD(vertices) };
+    _uniform_color = glm::vec3{ 0.7f, 0.2f, 0.5f };
+    // self reference, so can not directly move
+    BasicColorUnit<is_line>::operator=(
+      { &_vertex_buf, nullptr, { &_uniform_model, &_uniform_color } }
     );
   }
   auto getModelTrans() -> glm::mat4& { return _uniform_model; }
   auto getColor() -> glm::vec3& { return _uniform_color; }
 
+  UNCOPYABLE_MOVEABLE(SimpleShapeTemp);
+
 private:
-  pl::UniformBuffer<rd::align::mat4> _uniform_model;
   rd::VertexBuffer                   _vertex_buf;
   rd::IndexBuffer                    _index_buf;
+  pl::UniformBuffer<rd::align::mat4> _uniform_model;
   pl::UniformBuffer<rd::align::vec3> _uniform_color;
 };
 
+using SimpleShape = SimpleShapeTemp<false>;
+using SimpleShapeLine = SimpleShapeTemp<true>;
+
 class Cone : public SimpleShape {
 public:
-  // Cone(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
-  //   auto [vertices, indices] = generateCone();
-  //   SimpleShape::operator=({ std::move(vertices), std::move(indices), location });
-  // }
-  Cone(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f })
-    : SimpleShape{ generateCone().first, generateCone().second, location } {}
+  Cone(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
+    auto [vertices, indices] = generateCone();
+    set(std::move(vertices), std::move(indices), location);
+  }
 };
 
 class Cube : public SimpleShape {
@@ -125,12 +160,18 @@ public:
     : SimpleShape{ cube_vertices, cube_index, location } {}
 };
 
-class Axis : public SimpleShape {
+class Axis {
 public:
   Axis(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
-    auto [vertices, indices] = generateAxis();
-    SimpleShape::operator=({ std::move(vertices), std::move(indices), location });
+    auto [triangle, line_vertices] = generateAxis();
+    auto& [vertices, indices] = triangle;
+    _triangle.set(std::move(vertices), std::move(indices), location);
+    _line.set(std::move(line_vertices), location);
   }
+
+private:
+  SimpleShape     _triangle;
+  SimpleShapeLine _line;
 };
 
 } // namespace tool

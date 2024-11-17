@@ -29,6 +29,7 @@ using ColorVertex = rd::Vertex<glm::vec3>;
 
 using BasicTextureUnit = DrawUnitTemplate<layout_model_texture, 0>;
 using BasicColorUnit = DrawUnitTemplate<layout_model_color, 1>;
+using BasicColorLineUnit = DrawUnitTemplate<layout_model_color, 2>;
 
 class BasicPipeline : public RenderPass {
 public:
@@ -53,6 +54,16 @@ public:
         .frag_shader_name = "solid_color.frag",
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .cull_mode = VK_CULL_MODE_BACK_BIT,
+        .vertex_info = ColorVertex::getVertexInfo(),
+        .dset_layout = getLayoutHandle<layout_model_color>(),
+      },
+      PipelineInfo{
+        .colors = { 0 },
+        .depst = { { .depth = { {} } } },
+        .vertex_shader_name = "solid_color.vert",
+        .frag_shader_name = "solid_color.frag",
+        .topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
+        .cull_mode = VK_CULL_MODE_NONE,
         .vertex_info = ColorVertex::getVertexInfo(),
         .dset_layout = getLayoutHandle<layout_model_color>(),
       },

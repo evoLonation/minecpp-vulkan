@@ -61,6 +61,9 @@ private:
 class DrawUnit : public DrawUnitLoader<DrawUnit> {
 public:
   DrawUnit() = default;
+  /**
+   * @param index_buffer nullable
+   */
   DrawUnit(
     uint32               subpass_n,
     rd::VertexBuffer*    vertex_buffer,
@@ -72,7 +75,7 @@ public:
       _index_buffer(index_buffer), _dset(std::move(dset)), _stencil_ref(stencil_ref) {}
   ONLY_MOVEABLE(DrawUnit);
   auto getVertexBuffer() -> rd::VertexBuffer& { return *_vertex_buffer; }
-  auto getIndexBuffer() -> rd::IndexBuffer& { return *_index_buffer; }
+  auto getIndexBuffer() -> rd::IndexBuffer* { return _index_buffer; }
   auto getDescriptorSet() -> rd::ResourceSet& { return _dset; }
   auto getStencilRef() -> uint8 {
     TOY_CHECK_ASSERT(_stencil_ref.has_value());
@@ -197,7 +200,10 @@ public:
         drawer.bindPushConstant(VK_SHADER_STAGE_VERTEX_BIT, std::as_bytes(std::span{ _camera, 1 }));
         for (auto& draw_unit : draw_units) {
           drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
-          drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
+          auto* index_buf = draw_unit->getIndexBuffer();
+          if (index_buf) {
+            drawer.bindIndexBuffer(index_buf);
+          }
           drawer.bindResourceSet(0, &draw_unit->getDescriptorSet());
           if (_dynamic_references[index]) {
             drawer.setStencilReference(draw_unit->getStencilRef());
