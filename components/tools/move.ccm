@@ -28,71 +28,137 @@ const auto cube_index = std::array<uint16, 36>{
 
 auto generateCone(float radius = 1.0f, float height = 2.0f)
   -> std::pair<std::vector<glm::vec3>, std::vector<uint16>> {
-  auto bottom_vertex_num = 40;
+  auto bottom_split_num = 40;
   auto vertices = std::vector<glm::vec3>{};
   auto indices = std::vector<uint16>{};
   vertices.push_back(glm::vec3{ 0.0f, 0.0f, 0.0f });
   vertices.push_back(glm::vec3{ 0.0f, 0.0f, height });
-  for (auto i : views::iota(0, bottom_vertex_num)) {
-    auto x = radius * glm::cos(glm::radians(360.0f * i / bottom_vertex_num));
-    auto y = radius * glm::sin(glm::radians(360.0f * i / bottom_vertex_num));
+  for (auto i : views::iota(0, bottom_split_num)) {
+    auto x = radius * glm::cos(glm::radians(360.0f * i / bottom_split_num));
+    auto y = radius * glm::sin(glm::radians(360.0f * i / bottom_split_num));
     vertices.push_back(glm::vec3{ x, y, 0.0f });
     indices.push_back(0);
-    indices.push_back((i + 1) % bottom_vertex_num + 2);
+    indices.push_back((i + 1) % bottom_split_num + 2);
     indices.push_back(i + 2);
     indices.push_back(1);
     indices.push_back(i + 2);
-    indices.push_back((i + 1) % bottom_vertex_num + 2);
+    indices.push_back((i + 1) % bottom_split_num + 2);
   }
   return { std::move(vertices), std::move(indices) };
 }
 
-auto generateAxis()
-  -> std::pair<std::pair<std::vector<Vertex>, std::vector<uint16>>, std::vector<Vertex>> {
+auto generateCylinder(float radius = 1.0f, float height = 2.0f)
+  -> std::pair<std::vector<glm::vec3>, std::vector<uint16>> {
+  auto bottom_split_num = 40;
+  auto vertices = std::vector<glm::vec3>{};
+  auto indices = std::vector<uint16>{};
+  vertices.push_back(glm::vec3{ 0, 0, 0 });
+  for (auto i : views::iota(0, bottom_split_num)) {
+    auto x = radius * glm::cos(glm::radians(360.0f * i / bottom_split_num));
+    auto y = radius * glm::sin(glm::radians(360.0f * i / bottom_split_num));
+    vertices.push_back(glm::vec3{ x, y, 0 });
+    indices.push_back(0);
+    auto offset = 1;
+    indices.push_back(offset + (i + 1) % bottom_split_num);
+    indices.push_back(offset + i);
+  }
+  vertices.push_back(glm::vec3{ 0, 0, height });
+  for (auto i : views::iota(0, bottom_split_num)) {
+    auto x = radius * glm::cos(glm::radians(360.0f * i / bottom_split_num));
+    auto y = radius * glm::sin(glm::radians(360.0f * i / bottom_split_num));
+    vertices.push_back(glm::vec3{ x, y, height });
+    indices.push_back(bottom_split_num + 1);
+    auto offset = bottom_split_num + 2;
+    indices.push_back(offset + i);
+    indices.push_back(offset + (i + 1) % bottom_split_num);
+  }
+  for (auto i : views::iota(0, bottom_split_num)) {
+    auto offset_0 = 1;
+    auto offset_1 = bottom_split_num + 2;
+    indices.push_back(offset_1 + i);
+    indices.push_back(offset_0 + i);
+    indices.push_back(offset_0 + (i + 1) % bottom_split_num);
+    indices.push_back(offset_0 + (i + 1) % bottom_split_num);
+    indices.push_back(offset_1 + (i + 1) % bottom_split_num);
+    indices.push_back(offset_1 + i);
+  }
+  return { std::move(vertices), std::move(indices) };
+}
+
+auto generateSphere(float radius = 1.0f) -> std::pair<std::vector<glm::vec3>, std::vector<uint16>> {
+  // v: 纬度, u: 经度
+  // x = r * cos(u) * sin(v)
+  // y = r * sin(u) * sin(v)
+  // z = r * cos(v)
+  auto split_num = 40;
+  auto vertices = std::vector<glm::vec3>{};
+  // 维度 major
+  for (int i = 0; i < split_num; i++) {
+    auto u = glm::radians(360.0f * i / split_num);
+    for (int j = 0; j < split_num; j++) {
+      auto v = glm::radians(180.0f * j / split_num);
+      auto x = radius * glm::cos(u) * glm::sin(v);
+      auto y = radius * glm::sin(u) * glm::sin(v);
+      auto z = radius * glm::cos(v);
+      vertices.push_back(glm::vec3{ x, y, z });
+    }
+  }
+  auto indices = std::vector<uint16>{};
+  for (int i = 0; i < split_num; i++) {
+    for (int j = 0; j < split_num - 1; j++) {
+      indices.push_back(i * split_num + j);
+      indices.push_back(i * split_num + j + 1);
+      indices.push_back((i + 1) % split_num * split_num + j + 1);
+      indices.push_back((i + 1) % split_num * split_num + j + 1);
+      indices.push_back((i + 1) % split_num * split_num + j);
+      indices.push_back(i * split_num + j);
+    }
+  }
+  return { std::move(vertices), std::move(indices) };
+}
+
+auto generateArrow() -> std::pair<std::vector<glm::vec3>, std::vector<uint16>> {
+  auto vertices = std::vector<glm::vec3>{};
+  auto indices = std::vector<uint16>{};
+  auto [cone_vertices, cone_indices] = generateCone(0.1, 0.4);
+  auto [cylinder_vertices, cylinder_indices] = generateCylinder(0.05, 1);
+  auto model_trans = trans::translate(glm::vec3{ 0, 0, 1.0 });
+  cone_vertices = cone_vertices |
+                  views::transform([&](auto& vec) { return trans::transform(model_trans, vec); }) |
+                  ranges::to<std::vector>();
+  vertices.append_range(cone_vertices);
+  indices.append_range(cone_indices);
+  vertices.append_range(cylinder_vertices);
+  indices.append_range(cylinder_indices | views::transform([delta = cone_vertices.size()](auto& i) {
+                         return i + delta;
+                       }));
+  return { vertices, indices };
+}
+
+auto generateAxis() -> std::pair<std::vector<Vertex>, std::vector<uint16>> {
   auto vertices = std::vector<Vertex>{};
   auto indices = std::vector<uint16>{};
-  auto [cone_vertices, cone_indices] = generateCone();
+  auto [arrow_vertices, arrow_indices] = generateArrow();
   using trans::Axis;
-  auto model_trans = trans::model::create(glm::vec3{ 1, 0, 0 }, 0.2) * trans::rotate<Axis::Y>(90) *
-                     trans::scale(glm::vec3{ 0.5, 0.5, 1.0 });
-  (glm::vec3{ 0.5, 0.5, 1.0 });
-  indices.append_range(cone_indices);
-  vertices.append_range(cone_vertices | views::transform([&](auto& vec) {
-                          return trans::transform(model_trans, vec);
-                        }));
-  model_trans = trans::model::create(glm::vec3{ 0, 1, 0 }, 0.2) * trans::rotate<Axis::X>(-90) *
-                trans::scale(glm::vec3{ 0.5, 0.5, 1.0 });
-  indices.append_range(cone_indices | views::transform([delta = vertices.size()](auto& i) {
+  indices.append_range(arrow_indices);
+  indices.append_range(arrow_indices | views::transform([delta = arrow_vertices.size()](auto& i) {
                          return i + delta;
                        }));
-  vertices.append_range(cone_vertices | views::transform([&](auto& vec) {
-                          return trans::transform(model_trans, vec);
+  indices.append_range(
+    arrow_indices |
+    views::transform([delta = arrow_vertices.size() * 2](auto& i) { return i + delta; })
+  );
+  // x axis
+  vertices.append_range(arrow_vertices | views::transform([&](auto& vec) {
+                          return trans::transform(trans::rotate<Axis::Y>(90), vec);
                         }));
-  model_trans =
-    trans::model::create(glm::vec3{ 0, 0, 1 }, 0.2) * trans::scale(glm::vec3{ 0.5, 0.5, 1.0 });
-  indices.append_range(cone_indices | views::transform([delta = vertices.size()](auto& i) {
-                         return i + delta;
-                       }));
-  vertices.append_range(cone_vertices | views::transform([&](auto& vec) {
-                          return trans::transform(model_trans, vec);
+  // y axis
+  vertices.append_range(arrow_vertices | views::transform([&](auto& vec) {
+                          return trans::transform(trans::rotate<Axis::X>(-90), vec);
                         }));
-
-  auto line_vertices = std::vector<Vertex>{};
-  line_vertices.push_back(glm::vec3{ 0, 0, 0 });
-  line_vertices.push_back(glm::vec3{ 1, 0, 0 });
-  line_vertices.push_back(glm::vec3{ 0, 0, 0 });
-  line_vertices.push_back(glm::vec3{ 0, 1, 0 });
-  line_vertices.push_back(glm::vec3{ 0, 0, 0 });
-  line_vertices.push_back(glm::vec3{ 0, 0, 1 });
-  // vertices.append_range(line_vertices);
-  // indices.append_range(line_indices);
-  // vertices.push_back(glm::vec3{ 0, 0, 0 });
-  // vertices.push_back(glm::vec3{ 1, 0, 0 });
-  // indices.push_back(vertices.size() - 2);
-  // indices.push_back(vertices.size() - 1);
-  // indices.push_back(vertices.size() - 2);
-  // toy::debug(indices);
-  return { { vertices, indices }, line_vertices };
+  // z axis
+  vertices.append_range(arrow_vertices);
+  return { vertices, indices };
 }
 
 template <bool is_line = false>
@@ -160,18 +226,37 @@ public:
     : SimpleShape{ cube_vertices, cube_index, location } {}
 };
 
-class Axis {
+class Sphere : public SimpleShape {
+public:
+  Sphere(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
+    auto [vertices, indices] = generateSphere();
+    set(std::move(vertices), std::move(indices), location);
+  }
+};
+
+class Cylinder : public SimpleShape {
+public:
+  Cylinder(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
+    auto [vertices, indices] = generateCylinder();
+    set(std::move(vertices), std::move(indices), location);
+  }
+};
+
+class Arrow : public SimpleShape {
+public:
+  Arrow(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
+    auto [vertices, indices] = generateArrow();
+    set(std::move(vertices), std::move(indices), location);
+  }
+};
+
+class Axis : public SimpleShape {
 public:
   Axis(glm::vec3 const& location = glm::vec3{ 0.0f, 0.0f, 0.0f }) {
-    auto [triangle, line_vertices] = generateAxis();
-    auto& [vertices, indices] = triangle;
-    _triangle.set(std::move(vertices), std::move(indices), location);
-    _line.set(std::move(line_vertices), location);
+    auto [vertices, indices] = generateAxis();
+    toy::debug(indices);
+    set(std::move(vertices), std::move(indices), location);
   }
-
-private:
-  SimpleShape     _triangle;
-  SimpleShapeLine _line;
 };
 
 } // namespace tool
