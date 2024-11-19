@@ -28,6 +28,7 @@ public:
         .height = extent.height,
       }),
     };
+    computeView();
   }
 
   void runLoop(loop::ActionContext const& ctx) override {
@@ -43,50 +44,70 @@ public:
   auto getView() -> glm::mat4& { return _data.view; }
   auto getProj() -> glm::mat4& { return _data.proj; }
   auto getData() -> CameraData& { return _data; }
+  auto getViewPos() -> glm::vec3& { return _view_pos; }
+
+  /**
+   * @brief 以自身的坐标系移动 moved 的距离
+   * 自身坐标系： z与世界坐标系相同，只有x和y是根据_rotate_z旋转后的结果
+   */
+  void move(glm::vec3 moved) {
+    // 将moved转换到世界坐标系的位移，然后更新_view_pos
+    _view_pos += trans::transform(trans::rotate<trans::Axis::Z>(-_rotate_z), moved);
+    computeView();
+  }
+
+  void rotate_right(float degree) {
+    // degree 为正 -> 所有坐标轴沿z轴向左转 -> 摄像机向右转
+    _rotate_z += degree;
+    computeView();
+  }
+  void rotate_up(float degree) {
+    // degree为正 -> 所有坐标沿y轴向下转 -> 摄像机向上转
+    _rotate_y += degree;
+    _rotate_y = std::clamp(_rotate_y, -90.0f, 90.0f);
+    computeView();
+  }
 
 private:
   CameraData _data;
+  // 1. translate -_view_pos
+  // 2. rotate _rotate_z by z axis
+  // 3. rotate _rotate_y by y axis
+  glm::vec3 _view_pos = glm::vec3{ 5.0f, .0f, .0f };
+  float     _rotate_z = 0.0f;
+  float     _rotate_y = 0.0f;
+
+  void computeView() {
+    _data.view = trans::rotate<trans::Axis::Y>(_rotate_y) *
+                 trans::rotate<trans::Axis::Z>(_rotate_z) * trans::translate(-_view_pos);
+  }
 };
 
 class Controller : public loop::Action {
 public:
-  Controller(glm::mat4* view, glm::vec3 location = glm::vec3{ 5.0f, .0f, .0f }) : _view(view) {
-    _rotate_z = 180.0f;
-    _translate = trans::translate(-location);
-    setStage(loop::Stage::BEFORE_RENDER);
-    computeView();
-  }
-  void computeView() {
-    *_view = trans::rotate<trans::Axis::Y>(_rotate_y) * //
-             trans::rotate<trans::Axis::Z>(_rotate_z) * _translate;
-  }
-
-  void move(glm::vec3 moved) {
-    _translate = trans::rotate<trans::Axis::Z>(-_rotate_z) * trans::translate(moved) *
-                 trans::rotate<trans::Axis::Z>(_rotate_z) * _translate;
-  }
+  Controller(Camera* camera) : _camera(camera) { setStage(loop::Stage::BEFORE_RENDER); }
 
   void runLoop(loop::ActionContext const& ctx) override {
     auto delta = ctx.interval;
     using enum input::Keyboard;
     auto& input = input::InputProcessor::getInstance();
     if (input[KEY_S]) {
-      move(glm::vec3{ _move_speed * delta, 0.0f, 0.0f });
+      _camera->move(glm::vec3{ -_move_speed * delta, 0.0f, 0.0f });
     }
     if (input[KEY_W]) {
-      move(glm::vec3{ -_move_speed * delta, 0.0f, 0.0f });
+      _camera->move(glm::vec3{ _move_speed * delta, 0.0f, 0.0f });
     }
     if (input[KEY_A]) {
-      move(glm::vec3{ 0.0f, -_move_speed * delta, 0.0f });
+      _camera->move(glm::vec3{ 0.0f, _move_speed * delta, 0.0f });
     }
     if (input[KEY_D]) {
-      move(glm::vec3{ 0.0f, _move_speed * delta, 0.0f });
+      _camera->move(glm::vec3{ 0.0f, -_move_speed * delta, 0.0f });
     }
     if (input[KEY_Z]) {
-      move(glm::vec3{ 0.0f, 0.0f, -_move_speed * delta });
+      _camera->move(glm::vec3{ 0.0f, 0.0f, _move_speed * delta });
     }
     if (input[KEY_X]) {
-      move(glm::vec3{ 0.0f, 0.0f, _move_speed * delta });
+      _camera->move(glm::vec3{ 0.0f, 0.0f, -_move_speed * delta });
     }
     if (auto res = input[ESCAPE]; res && res->state == input::ButtonState::DOWN) {
       input.setCursorVisible(!input.getCursorState().visible);
@@ -97,26 +118,16 @@ public:
       auto x = cursor.x_move;
       auto y = cursor.y_move;
       auto [width, height] = rd::Presentation::getInstance().getSwapchain().getExtent();
-      // x为正 -> 鼠标右移 -> 所有坐标沿z轴正旋转
-      _rotate_z += x / static_cast<float>(width) * 360;
-      // y为正 -> 鼠标下移 -> 所有坐标沿y轴负旋转
-      _rotate_y -= y / static_cast<float>(height) * 360;
-      _rotate_y = std::clamp(_rotate_y, -90.0f, 90.0f);
+      _camera->rotate_right(x / static_cast<float>(width) * 360);
+      _camera->rotate_up(-y / static_cast<float>(height) * 360);
     }
-    computeView();
-    // *_view = trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f });
   }
 
 private:
-  glm::mat4* _view;
-
-  glm::mat4 _translate;
+  Camera* _camera;
 
   float _move_speed = 3.0f;
   float _rotate_speed = 0.2f;
-  // float _delta = 1.0f / 60.0f;
-  float _rotate_z = 0.0f;
-  float _rotate_y = 0.0f;
 };
 
 } // namespace camera

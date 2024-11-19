@@ -13,3 +13,5 @@ module:
     provide: pipeline.uniform
 - base2.ccm:
     provide: pipeline.base2
+- light.ccm:
+    provide: pipeline.light

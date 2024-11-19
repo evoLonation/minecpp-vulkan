@@ -58,7 +58,7 @@ void PipelineDrawer::bindIndexBuffer(IndexBuffer* index_buffer) {
 
 void PipelineDrawer::bindDescriptorSet(uint32 index, DescriptorSet* dset) {
   if (_execute_type == RECORD) {
-    TOY_CHECK_ASSERT(_dset_layouts[index] == dset->getLayout());
+    TOY_CHECK_ASSERT(index < _dset_layouts.size() && _dset_layouts[index] == dset->getLayout());
     auto handle = dset->get();
     vkCmdBindDescriptorSets(
       _cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, _layout, index, 1, &handle, 0, nullptr

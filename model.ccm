@@ -1,3 +1,5 @@
+module;
+#include <toy.h>
 export module model;
 
 import <tinyobj_loader_c.h>;
@@ -6,15 +8,13 @@ import toy;
 import render.vertex;
 import glm;
 
-namespace fs = std::filesystem;
-
 export namespace model {
 
-using Vertex = rd::Vertex<glm::vec3, glm::dvec2>;
-
-struct MeshInfo {
-  std::vector<Vertex> vertex_data;
-  fs::path            texture_path;
+struct Mesh {
+  std::vector<glm::vec3> positions;
+  std::vector<glm::vec3> normals;
+  std::vector<glm::vec2> tex_coords;
+  std::vector<uint16>    indices;
 };
 
 void file_reader(
@@ -38,8 +38,7 @@ void file_reader(
 /**
  * @param path Do not use string_view because of not guarantee null terminated
  */
-auto getModelInfo(const std::string& path
-) -> std::pair<std::vector<Vertex>, std::vector<uint16>> {
+auto getModelInfo(const std::string& path) -> Mesh {
   tinyobj_attrib_t    attrib;
   tinyobj_shape_t*    p_shape;
   size_t              shape_num;
@@ -57,47 +56,38 @@ auto getModelInfo(const std::string& path
     nullptr,
     0
   );
-  auto vertices = std::vector<Vertex>{};
-  vertices.reserve(attrib.num_vertices);
-  auto indices = std::vector<uint16>{};
-  indices.reserve(attrib.num_faces);
+
+  auto ret = Mesh{};
+  auto& [positions, normals, tex_coords, indices] = ret;
 
   toy::debugf("number of shape: {}, number of material: {}", shape_num, material_num);
   toy::debugs(p_shape[0].face_offset, p_shape[0].length);
-  toy::debugs(
+  TOY_DEBUG(
     attrib.num_faces,
     attrib.num_normals,
     attrib.num_vertices,
     attrib.face_num_verts[0],
     attrib.num_face_num_verts
   );
-  // toy::debug(std::span{ attrib.face_num_verts, attrib.num_face_num_verts });
-  bool method = true;
-  if (!method) {
-    for (auto face : std::span{ attrib.faces, attrib.num_faces }) {
-      indices.push_back(face.v_idx);
-    }
-    for (int i = 0; i < attrib.num_vertices; i++) {
-      vertices.emplace_back(
-        glm::vec3{ attrib.vertices[3 * i], attrib.vertices[3 * i + 1], attrib.vertices[3 * i + 2] },
-        glm::dvec2{ 0.5, 0.5 }
-      );
-    }
-  } else {
-    for (auto [index, face] : std::span{ attrib.faces, attrib.num_faces } | toy::enumerate) {
-      vertices.emplace_back(
-        glm::vec3{ attrib.vertices[3 * face.v_idx],
-                   attrib.vertices[3 * face.v_idx + 1],
-                   attrib.vertices[3 * face.v_idx + 2] },
-        glm::dvec2{ attrib.texcoords[2 * face.vt_idx],
-                    1.0f - attrib.texcoords[2 * face.vt_idx + 1] }
-      );
-      indices.push_back(index);
-    }
-  }
 
-  // toy::debug(vertices, indices);
-  return std::pair{ std::move(vertices), std::move(indices) };
+  for (auto [index, face] : std::span{ attrib.faces, attrib.num_faces } | toy::enumerate) {
+    positions.push_back(glm::vec3{
+      attrib.vertices[3 * face.v_idx],
+      attrib.vertices[3 * face.v_idx + 1],
+      attrib.vertices[3 * face.v_idx + 2],
+    });
+    normals.push_back(glm::vec3{
+      attrib.normals[3 * face.vn_idx],
+      attrib.normals[3 * face.vn_idx + 1],
+      attrib.normals[3 * face.vn_idx + 2],
+    });
+    tex_coords.push_back(glm::vec2{
+      attrib.texcoords[2 * face.vt_idx],
+      1.0f - attrib.texcoords[2 * face.vt_idx + 1],
+    });
+    indices.push_back(index);
+  }
+  return ret;
 }
 
 } // namespace model

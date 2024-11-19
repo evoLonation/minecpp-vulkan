@@ -21,7 +21,8 @@ struct PipelineInfo {
   VkPrimitiveTopology            topology;
   VkCullModeFlagBits             cull_mode;
   rd::VertexInfo                 vertex_info;
-  VkDescriptorSetLayout          dset_layout;
+  VkDescriptorSetLayout          unit_dset_layout;
+  VkDescriptorSetLayout          global_dset_layout; // nullable
 };
 
 struct RenderPassInfo {
@@ -138,7 +139,10 @@ public:
           colors.push_back(i);
         }
       }
-
+      auto dset_layouts = std::vector<VkDescriptorSetLayout>{ pipeline.unit_dset_layout };
+      if (pipeline.global_dset_layout) {
+        dset_layouts.push_back(pipeline.global_dset_layout);
+      }
       auto subpass_info = rd::SubpassPipelineInfo{
         .colors = colors,
         .multi_sample = info.multi_sampling.transform(
@@ -150,7 +154,7 @@ public:
         .topology = pipeline.topology,
         .cull_mode = pipeline.cull_mode,
         .vertex_info = pipeline.vertex_info,
-        .dset_layouts = {pipeline.dset_layout},
+        .dset_layouts = std::move(dset_layouts),
         .push_constants = { 
           rd::PushConstantInfo{ 
             .stage = VK_SHADER_STAGE_VERTEX_BIT, 
@@ -190,6 +194,7 @@ public:
     _render_pass.setDepstClear(index, clear_value);
   }
   void setCamera(camera::CameraData* camera) { _camera = camera; }
+  void setGlobalDescriptorSet(rd::DescriptorSet* dset) { _global_dset = dset; }
 
   void runLoop(loop::ActionContext const& ctx) override {
     if (ctx.recreated) {
@@ -198,6 +203,9 @@ public:
     for (auto [index, draw_units] : _draw_units | toy::enumerate) {
       _render_pass.setRecorder(index, [&](rd::PipelineDrawer drawer) {
         drawer.bindPushConstant(VK_SHADER_STAGE_VERTEX_BIT, std::as_bytes(std::span{ _camera, 1 }));
+        if (_global_dset) {
+          drawer.bindDescriptorSet(1, _global_dset);
+        }
         for (auto& draw_unit : draw_units) {
           drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
           auto* index_buf = draw_unit->getIndexBuffer();
@@ -241,7 +249,8 @@ private:
   std::vector<rd::FrameImage> _resolve_images;
   std::vector<rd::FrameImage> _depst_images;
 
-  camera::CameraData* _camera;
+  camera::CameraData* _camera = nullptr;
+  rd::DescriptorSet*  _global_dset = nullptr;
 
   std::vector<bool> _dynamic_references;
 

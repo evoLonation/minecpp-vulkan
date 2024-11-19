@@ -8,3 +8,5 @@ shader:
 - id.frag
 - solid_color.frag
 - solid_color.vert
+- light.vert
+- light.frag

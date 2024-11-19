@@ -1,0 +1,77 @@
+module;
+#include <toy.h>
+export module pipeline.light;
+
+import std;
+import toy;
+import glm;
+
+import render;
+import model;
+import loop;
+import input;
+import transform;
+import pipeline.base2;
+
+export namespace pl {
+
+using LightVertex = rd::Vertex<glm::vec3, glm::vec3, glm::vec2>;
+
+struct LightModelVertexData {
+  rd::align::mat4 model;
+  rd::align::mat3 normal_model;
+};
+
+struct LightModelFragmentData {
+  float shininess;
+};
+
+struct LightData {
+  rd::align::vec3 direction;
+  rd::align::vec3 ambient;
+  rd::align::vec3 diffuse;
+  rd::align::vec3 specular;
+  rd::align::vec3 view_pos;
+};
+
+constexpr auto layout_model_light = rd::meta::DescriptorLayout{
+  rd::meta::UniformBinding{ rd::meta::type<LightModelVertexData>(), rd::meta::Stage::VERTEX },
+  rd::meta::UniformBinding{ rd::meta::type<LightModelFragmentData>(), rd::meta::Stage::FRAGMENT },
+  rd::meta::TextureBinding{ rd::meta::Stage::FRAGMENT },
+  rd::meta::TextureBinding{ rd::meta::Stage::FRAGMENT },
+};
+
+constexpr auto layout_global_light = rd::meta::DescriptorLayout{
+  rd::meta::UniformBinding{ rd::meta::type<LightData>(), rd::meta::Stage::FRAGMENT },
+};
+
+using LightUnit = DrawUnitTemplate<layout_model_light, 0>;
+
+class LightPipeline : public RenderPass {
+public:
+  LightPipeline() {
+    auto pipeline_infos = std::vector<PipelineInfo>{
+      PipelineInfo{
+        .colors = { 0 },
+        .depst = { { .depth = { {} } } },
+        .vertex_shader_name = "light.vert",
+        .frag_shader_name = "light.frag",
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .cull_mode = VK_CULL_MODE_BACK_BIT,
+        .vertex_info = LightVertex::getVertexInfo(),
+        .unit_dset_layout = getLayoutHandle<layout_model_light>(),
+        .global_dset_layout = getLayoutHandle<layout_global_light>(),
+      },
+    };
+    auto info = RenderPassInfo{
+      .depst_formats = { VK_FORMAT_D32_SFLOAT },
+      .multi_sampling = VK_SAMPLE_COUNT_8_BIT,
+      .pipelines = std::move(pipeline_infos),
+    };
+    RenderPass::operator=(RenderPass{ info });
+    setColorClearValue(0, { 0.5f, 0.5f, 0.5f, 1.0f });
+    setDepstClearValue(0, 1.0f);
+  }
+};
+
+} // namespace pl

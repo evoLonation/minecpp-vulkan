@@ -127,4 +127,14 @@ void Action::remove() {
   }
 }
 
+class ActionHandler : public Action {
+public:
+  ActionHandler(std::function<void(ActionContext const&)> func, Stage stage = Stage::RENDER)
+    : _func(std::move(func)), Action(stage) {}
+
+private:
+  std::function<void(ActionContext const&)> _func;
+  void runLoop(ActionContext const& ctx) override { _func(ctx); }
+};
+
 } // namespace loop
