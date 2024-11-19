@@ -29,12 +29,12 @@ DescriptorSetLayout::DescriptorSetLayout(std::vector<BindingInfo> infos)
   });
 }
 
-void DescriptorSet::addWaitable(std::shared_ptr<Waitable> waitable) {
+void ReusableDescriptorSet::addWaitable(std::shared_ptr<Waitable> waitable) {
   removeIdles();
   _waitables.push_back(std::move(waitable));
 }
 
-auto DescriptorSet::waitIdle(uint64 nano_timeout) -> bool {
+auto ReusableDescriptorSet::waitIdle(uint64 nano_timeout) -> bool {
   auto res = Waitable::wait(
     _waitables | views::transform([](auto& w) {
       return std::pair{ w.get(), VkPipelineStageFlags2{ VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } };
@@ -51,7 +51,7 @@ auto DescriptorSet::waitIdle(uint64 nano_timeout) -> bool {
   return res;
 }
 
-void DescriptorSet::removeIdles() {
+void ReusableDescriptorSet::removeIdles() {
   auto new_end = std::remove_if(_waitables.begin(), _waitables.end(), [](auto& w) {
     return w->wait(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0);
   });
@@ -79,9 +79,11 @@ DescriptorPool::DescriptorPool(std::vector<BindingInfo> infos)
   _dset_layouts.append_range(views::repeat(get()) | views::take(_allocate_count));
 }
 
-void DescriptorPool::recycle(DescriptorSet dset) { _working_resources.push_back(std::move(dset)); }
+void DescriptorPool::recycle(ReusableDescriptorSet dset) {
+  _working_resources.push_back(std::move(dset));
+}
 
-auto DescriptorPool::extract() -> DescriptorSet {
+auto DescriptorPool::extract() -> ReusableDescriptorSet {
   auto  pool_handle = _pool_counts.extract(_pool_counts.begin()).value().second;
   auto& dsets = _resources.at(pool_handle).second;
   auto  dset = dsets.exit();
@@ -156,8 +158,8 @@ void checkResourceBinding(
   }
 }
 
-ResourceSet::ResourceSet(DescriptorPool* pool, std::initializer_list<ResourceBinding> bindings)
-  : toy::RecyclableObject<DescriptorPool, DescriptorSet>{ pool } {
+DescriptorSet::DescriptorSet(DescriptorPool* pool, std::initializer_list<ResourceBinding> bindings)
+  : toy::RecyclableObject<DescriptorPool, ReusableDescriptorSet>{ pool } {
   checkResourceBinding(pool->getInfo(), bindings);
   auto write_infos = std::vector<VkWriteDescriptorSet>{};
   auto all_image_infos = std::vector<std::vector<VkDescriptorImageInfo>>{};

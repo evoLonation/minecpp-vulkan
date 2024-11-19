@@ -101,7 +101,7 @@ private:
 };
 
 template <auto layout, auto... binding_infos>
-class DescriptorSet_ : public rd::ResourceSet {
+class DescriptorSet_ : public rd::DescriptorSet {
 public:
   template <typename ResourceType, uint32 count>
   using ResourceBinding =
@@ -110,7 +110,7 @@ public:
   DescriptorSet_(
     ResourceBinding<typename decltype(binding_infos)::ResourceType, binding_infos.count>... bindings
   )
-    : rd::ResourceSet{
+    : rd::DescriptorSet{
         &DescriptorPools::getInstance().getPool<layout>(),
         { toResourceBinding(bindings)... },
       } {}
@@ -347,7 +347,7 @@ public:
              DrawUnits::getInstance().getDrawUnits<std::get<index>(RenderPassInfoT::layouts)>()) {
           drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
           drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
-          drawer.bindResourceSet(0, &draw_unit->getDescriptorSet());
+          drawer.bindDescriptorSet(0, &draw_unit->getDescriptorSet());
           if (_dynamic_references[index]) {
             drawer.setStencilReference(draw_unit->getStencilRef());
           }

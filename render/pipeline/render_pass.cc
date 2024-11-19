@@ -39,11 +39,11 @@ void recordRenderPass(
   vkCmdEndRenderPass(cmdbuf);
 }
 
-void RenderPass::record(
+auto RenderPass::record(
   std::vector<CommandBatch>                                         batches,
   std::span<FrameImageManager* const>                               images,
   std::span<std::function<void(VkCommandBuffer, VkExtent2D)> const> pipeline_recorders
-) {
+) -> Waitable {
   for (auto [image, format, sample] : views::zip(images, _formats, _sample_counts)) {
     TOY_ASSERT(image->getFormat() == format && image->getSampleCount() == sample);
   }
@@ -79,13 +79,14 @@ void RenderPass::record(
         ranges::to<std::vector>()
     );
   } });
-  _executor->submit(batches);
+  auto waitable = std::move(_executor->submit(batches).back());
 
   for (auto [image, info] : views::zip(images, getSyncInfos())) {
     image->getTracker().setNewScope(
       Scope{ .stage_mask = info.final_stage }, _executor->getFamily(), info.final_layout
     );
   }
+  return waitable;
 }
 
 RenderPassPipeline::RenderPassPipeline(
@@ -152,12 +153,14 @@ void RenderPassPipeline::recordDraw(std::span<FrameImageManager*> images) {
       batches.push_back(ctx->toAcquireBatch(&waitables_keep_lifetime.back()));
     }
   };
+  auto total_dsets = std::vector<DescriptorSet*>{};
   for (auto recorder : _recorders) {
     auto vertex_buffers = std::vector<Buffer*>{};
     auto index_buffers = std::vector<Buffer*>{};
-    auto resource_sets = std::vector<ResourceSet*>{};
-    auto drawer = PipelineDrawer::forCollect(&vertex_buffers, &index_buffers, &resource_sets);
+    auto dsets = std::vector<DescriptorSet*>{};
+    auto drawer = PipelineDrawer::forCollect(&vertex_buffers, &index_buffers, &dsets);
     recorder(drawer);
+    total_dsets.append_range(dsets);
     for (auto* vertex_buffer : vertex_buffers) {
       auto sync = vertex_buffer->getTracker().syncScope(
         Scope{
@@ -178,11 +181,11 @@ void RenderPassPipeline::recordDraw(std::span<FrameImageManager*> images) {
       );
       addSync(std::move(sync));
     }
-    for (auto* resource_set : resource_sets) {
-      for (auto resource : resource_set->getResources()) {
+    for (auto* dset : dsets) {
+      for (auto resource : dset->getResources()) {
         auto ctx = resource.resource->getDescriptorContext();
-        auto type = resource_set->getInfo()[resource.binding_i].type;
-        auto shader_stage = resource_set->getInfo()[resource.binding_i].stage;
+        auto type = dset->getInfo()[resource.binding_i].type;
+        auto shader_stage = dset->getInfo()[resource.binding_i].stage;
         using ImageContext = DescriptorResource::ImageContext;
         using BufferContext = DescriptorResource::BufferContext;
         if (auto* image_ctx = std::get_if<ImageContext>(&ctx)) {
@@ -243,7 +246,10 @@ void RenderPassPipeline::recordDraw(std::span<FrameImageManager*> images) {
       pipeline.record(cmdbuf, extent, recorder);
     });
   }
-  record(batches, images, pipeline_recorders);
+  auto waitable = std::make_shared<Waitable>(record(batches, images, pipeline_recorders));
+  for (auto* dset : total_dsets) {
+    dset->addWaitable(waitable);
+  }
 }
 
 } // namespace rd

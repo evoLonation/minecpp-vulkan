@@ -68,7 +68,7 @@ public:
     uint32               subpass_n,
     rd::VertexBuffer*    vertex_buffer,
     rd::IndexBuffer*     index_buffer,
-    rd::ResourceSet      dset,
+    rd::DescriptorSet    dset,
     std::optional<uint8> stencil_ref = {}
   )
     : DrawUnitLoader<DrawUnit>{ subpass_n }, _vertex_buffer(vertex_buffer),
@@ -76,7 +76,7 @@ public:
   ONLY_MOVEABLE(DrawUnit);
   auto getVertexBuffer() -> rd::VertexBuffer& { return *_vertex_buffer; }
   auto getIndexBuffer() -> rd::IndexBuffer* { return _index_buffer; }
-  auto getDescriptorSet() -> rd::ResourceSet& { return _dset; }
+  auto getDescriptorSet() -> rd::DescriptorSet& { return _dset; }
   auto getStencilRef() -> uint8 {
     TOY_CHECK_ASSERT(_stencil_ref.has_value());
     return *_stencil_ref;
@@ -88,7 +88,7 @@ private:
 
   rd::VertexBuffer*    _vertex_buffer;
   rd::IndexBuffer*     _index_buffer;
-  rd::ResourceSet      _dset;
+  rd::DescriptorSet    _dset;
   std::optional<uint8> _stencil_ref;
 };
 
@@ -204,7 +204,7 @@ public:
           if (index_buf) {
             drawer.bindIndexBuffer(index_buf);
           }
-          drawer.bindResourceSet(0, &draw_unit->getDescriptorSet());
+          drawer.bindDescriptorSet(0, &draw_unit->getDescriptorSet());
           if (_dynamic_references[index]) {
             drawer.setStencilReference(draw_unit->getStencilRef());
           }

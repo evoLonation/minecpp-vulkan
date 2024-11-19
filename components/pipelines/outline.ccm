@@ -189,7 +189,7 @@ public:
       for (auto& [draw_unit, info] : _draw_units) {
         drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
         drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
-        drawer.bindResourceSet(0, &info.dset_1);
+        drawer.bindDescriptorSet(0, &info.dset_1);
         drawer.setStencilReference(reference++);
         drawer.draw();
       }
@@ -202,7 +202,7 @@ public:
         if (info.id == _last_id) {
           drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
           drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
-          drawer.bindResourceSet(0, &info.dset_2);
+          drawer.bindDescriptorSet(0, &info.dset_2);
           drawer.setStencilReference(reference);
           drawer.draw();
         }
@@ -256,9 +256,9 @@ private:
   CameraData* _camera;
   struct DrawUnitInfo {
     pl::UniformBuffer<uint32>     id;
-    rd::ResourceSet               dset_1;
+    rd::DescriptorSet             dset_1;
     pl::UniformBuffer<ModelTrans> scaled_model;
-    rd::ResourceSet               dset_2;
+    rd::DescriptorSet             dset_2;
   };
   std::unordered_map<DrawUnit*, DrawUnitInfo> _draw_units;
 

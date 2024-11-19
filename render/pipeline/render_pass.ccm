@@ -134,11 +134,11 @@ public:
     _clear_values[index] = VkClearValue{ .color = value.clear_value };
     _is_set_clears[index] = true;
   }
-  void record(
+  auto record(
     std::vector<CommandBatch>                                         batches,
     std::span<FrameImageManager* const>                               images,
     std::span<std::function<void(VkCommandBuffer, VkExtent2D)> const> pipeline_recorders
-  );
+  ) -> Waitable;
 
 private:
   CommandExecutor*                   _executor;

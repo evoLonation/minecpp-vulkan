@@ -93,7 +93,7 @@ private:
 };
 
 template <auto layout, auto... binding_infos>
-class DescriptorSet_ : public rd::ResourceSet {
+class DescriptorSet_ : public rd::DescriptorSet {
 public:
   template <typename ResourceType, uint32 count>
   using ResourceBinding =
@@ -102,7 +102,7 @@ public:
   DescriptorSet_(
     ResourceBinding<typename decltype(binding_infos)::ResourceType, binding_infos.count>... bindings
   )
-    : rd::ResourceSet{
+    : rd::DescriptorSet{
         &DescriptorPools::getInstance().getPool<layout>(),
         { toResourceBinding(bindings)... },
       } {}

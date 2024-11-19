@@ -23,12 +23,12 @@ auto PipelineDrawer::forRecord(
 }
 
 auto PipelineDrawer::forCollect(
-  std::vector<Buffer*>*      vertex_buffers,
-  std::vector<Buffer*>*      index_buffers,
-  std::vector<ResourceSet*>* resource_sets
+  std::vector<Buffer*>*        vertex_buffers,
+  std::vector<Buffer*>*        index_buffers,
+  std::vector<DescriptorSet*>* dsets
 ) -> PipelineDrawer {
   return PipelineDrawer{
-    {}, {}, {}, {}, {}, {}, {}, {}, vertex_buffers, index_buffers, resource_sets, GET_RESOURCES,
+    {}, {}, {}, {}, {}, {}, {}, {}, vertex_buffers, index_buffers, dsets, GET_RESOURCES,
   };
 }
 
@@ -56,15 +56,15 @@ void PipelineDrawer::bindIndexBuffer(IndexBuffer* index_buffer) {
   }
 }
 
-void PipelineDrawer::bindResourceSet(uint32 index, ResourceSet* resource_set) {
+void PipelineDrawer::bindDescriptorSet(uint32 index, DescriptorSet* dset) {
   if (_execute_type == RECORD) {
-    TOY_CHECK_ASSERT(_dset_layouts[index] == resource_set->getLayout());
-    auto handle = resource_set->get();
+    TOY_CHECK_ASSERT(_dset_layouts[index] == dset->getLayout());
+    auto handle = dset->get();
     vkCmdBindDescriptorSets(
       _cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, _layout, index, 1, &handle, 0, nullptr
     );
   } else {
-    _resource_sets->push_back(resource_set);
+    _dsets->push_back(dset);
   }
 }
 
