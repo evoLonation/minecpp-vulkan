@@ -23,10 +23,14 @@ auto matrix(const std::array<glm::vec4, 4>& vecs) -> glm::mat4 {
   return glm::transpose(glm::mat4{ vecs[0], vecs[1], vecs[2], vecs[3] });
 }
 
-auto transform(const glm::mat4& matrix, const glm::vec3& vec) -> glm::vec3 {
-  auto vec4 = matrix * glm::vec4{ vec, 1 };
+auto transform_pos(const glm::mat4& matrix, const glm::vec3& pos) -> glm::vec3 {
+  auto vec4 = matrix * glm::vec4{ pos, 1 };
   vec4 /= vec4.w;
   return vec4;
+}
+
+auto transform_vec(const glm::mat4& matrix, const glm::vec3& vec) -> glm::vec3 {
+  return matrix * glm::vec4{ vec, 0 };
 }
 
 auto translate(const glm::vec3& vec) -> glm::mat4 {

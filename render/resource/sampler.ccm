@@ -17,7 +17,14 @@ export namespace rd {
 class SampledTexture : toy::AutoMoveAssigner<SampledTexture>, public DescriptorResource {
 public:
   SampledTexture() = default;
-  static auto create(const std::string& path, bool mipmap, VkPipelineStageFlagBits use_stage)
+  SampledTexture(
+    std::span<std::byte const> data,
+    VkFormat                   format,
+    VkExtent2D                 extent,
+    bool                       mipmap,
+    VkPipelineStageFlagBits    use_stage
+  );
+  static auto fromFile(const std::string& path, bool mipmap, VkPipelineStageFlagBits use_stage)
     -> SampledTexture;
   auto getImage() -> Image& { return _image; }
   auto getSampler() const -> VkSampler { return _sampler; }

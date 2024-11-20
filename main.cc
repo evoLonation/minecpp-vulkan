@@ -15,7 +15,7 @@ import transform;
 import gui;
 import loop;
 // import pipeline.outline;
-// import pipeline.basic;
+import pipeline.basic;
 import pipeline.light;
 import pipeline.uniform;
 import render;
@@ -38,8 +38,9 @@ int main() {
 
     auto camera = camera::Camera{};
     auto controller = camera::Controller{ &camera };
+    render_pass.setCamera(&camera.getData());
 
-    auto texture = rd::SampledTexture::create(
+    auto texture = rd::SampledTexture::fromFile(
       "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
     );
     auto uniform_1 = pl::UniformBuffer{ pl::LightModelVertexData{
@@ -74,10 +75,11 @@ int main() {
       &index_buf,
       { &uniform_1, &uniform_2, &texture, &texture },
     };
-    // auto cube = tool::Axis{ glm::vec3{ 0.0f, 0.0f, 1.0f } };
-    // auto sphere = tool::Arrow{ glm::vec3{ 0.0f, 0.0f, 1.0f } };
-
-    render_pass.setCamera(&camera.getData());
+    auto cube = tool::Cube{ glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f } };
+    auto cone = tool::Cone{ glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 5.0f } };
+    auto cylinder = tool::Cylinder{ glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 10.0f } };
+    auto sphere = tool::Sphere{ glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 15.0f } };
+    auto axis = tool::Axis{ glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 0.0f } };
 
     loop::Loop::getInstance().run();
 

@@ -52,7 +52,7 @@ public:
    */
   void move(glm::vec3 moved) {
     // 将moved转换到世界坐标系的位移，然后更新_view_pos
-    _view_pos += trans::transform(trans::rotate<trans::Axis::Z>(-_rotate_z), moved);
+    _view_pos += trans::transform_pos(trans::rotate<trans::Axis::Z>(-_rotate_z), moved);
     computeView();
   }
 

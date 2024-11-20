@@ -7,6 +7,7 @@ import render.device;
 namespace rd {
 
 auto getSubresourceRange(VkImageAspectFlags aspect, MipRange mip_range) -> VkImageSubresourceRange {
+  TOY_ASSERT(mip_range.count > 0);
   return {
     .aspectMask = aspect,
     .baseMipLevel = mip_range.base_level,
@@ -156,7 +157,7 @@ Image::Image(
       VkExtent2D{ width, height },
       format,
       sample_count,
-      getSubresourceRange(aspect, MipRange{ 0, 1 })
+      getSubresourceRange(aspect, MipRange{ 0, mip_levels })
     ) {}
 
 auto Image::operator=(Image&& e) noexcept -> Image& {

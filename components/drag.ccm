@@ -26,8 +26,8 @@ auto cursor2Plane(
   auto ndc_y = float(pos_y) / extent.height * 2 - 1;
   auto start = glm::vec3{ ndc_x, ndc_y, -1.0f };
   auto end = glm::vec3{ ndc_x, ndc_y, 1.0f };
-  start = trans::transform(trans::inverse(model) * trans::inverse(view) * perspective_iv, start);
-  end = trans::transform(trans::inverse(model) * trans::inverse(view) * perspective_iv, end);
+  start = trans::transform_pos(trans::inverse(model) * trans::inverse(view) * perspective_iv, start);
+  end = trans::transform_pos(trans::inverse(model) * trans::inverse(view) * perspective_iv, end);
   auto inter = trans::intersection(
     trans::Line{
       .direction = end - start,
