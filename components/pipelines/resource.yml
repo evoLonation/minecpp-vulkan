@@ -7,11 +7,9 @@ module:
     provide: pipeline.outline
 - drawunit.ccm:
     provide: pipeline.drawunit
-- base.ccm:
-    provide: pipeline.base
 - uniform.ccm:
     provide: pipeline.uniform
-- base2.ccm:
+- base.ccm:
     provide: pipeline.base2
 - light.ccm:
     provide: pipeline.light

@@ -1,6 +1,6 @@
 module;
 #include <toy.h>
-export module pipeline.base;
+export module pipeline.base2;
 
 import std;
 import toy;
@@ -13,266 +13,125 @@ import camera;
 
 export namespace pl {
 
-using SampledTexture = rd::SampledTexture;
-
-template <typename Vertex>
-struct VertexBuffer : rd::VertexBuffer {
-  VertexBuffer() = default;
-  VertexBuffer(std::span<const Vertex> vertex_data) : rd::VertexBuffer(vertex_data) {}
-};
-
-using IndexBuffer = rd::IndexBuffer;
-
-template <typename T>
-using type = std::type_identity<T>;
-
-enum Stage { VERTEX, FRAGMENT };
-enum Type { UNIFORM, SAMPLED_IMAGE };
-
-template <typename DataType>
-struct UniformBinding {
-  type<DataType> data_type;
-  Stage          stage;
-  uint32         count = 1;
-
-  static constexpr Type type = Type::UNIFORM;
-  using ResourceType = pl::UniformBuffer<DataType>;
-};
-
-struct TextureBinding {
-  Stage  stage;
-  uint32 count = 1;
-
-  static constexpr Type type = Type::SAMPLED_IMAGE;
-  using ResourceType = rd::SampledTexture;
-};
-
-auto toBindingInfo(auto binding_info) -> rd::BindingInfo {
-  auto toVkShaderStage = [](Stage stage) -> VkShaderStageFlagBits {
-    switch (stage) {
-    case Stage::VERTEX:
-      return VK_SHADER_STAGE_VERTEX_BIT;
-    case Stage::FRAGMENT:
-      return VK_SHADER_STAGE_FRAGMENT_BIT;
-    }
-  };
-  auto toVkDescriptorType = [](Type type) -> VkDescriptorType {
-    switch (type) {
-    case Type::UNIFORM:
-      return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    case Type::SAMPLED_IMAGE:
-      return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    }
-  };
-  return {
-    .type = toVkDescriptorType(binding_info.type),
-    .stage = toVkShaderStage(binding_info.stage),
-    .count = binding_info.count,
-  };
-}
-
-template <typename... BindingInfos>
-struct DescriptorLayout : toy::Tuple<BindingInfos...> {};
-template <typename... BindingInfos>
-DescriptorLayout(BindingInfos...) -> DescriptorLayout<BindingInfos...>;
-
-class DescriptorPools : public PROACTIVE_SINGLETON(DescriptorPools) {
-public:
-  DescriptorPools() = default;
-
-  /**
-   * @tparam layout: must is @ref DescriptorLayout
-   */
-  template <auto layout>
-  auto getPool() -> rd::DescriptorPool& {
-    static rd::DescriptorPool* _pool;
-    if (!_pool) {
-      auto new_pool = std::make_unique<rd::DescriptorPool>(std::apply(
-        [](auto... infos) { return std::vector<rd::BindingInfo>{ toBindingInfo(infos)... }; },
-        layout.toTuple()
-      ));
-      _pool = _pools.emplace_back(std::move(new_pool)).get();
-    }
-    return *_pool;
-  }
-
-private:
-  std::vector<std::unique_ptr<rd::DescriptorPool>> _pools;
-};
-
-template <auto layout, auto... binding_infos>
-class DescriptorSet_ : public rd::DescriptorSet {
-public:
-  template <typename ResourceType, uint32 count>
-  using ResourceBinding =
-    std::conditional_t<count == 1, ResourceType*, std::array<ResourceType*, count>>;
-
-  DescriptorSet_(
-    ResourceBinding<typename decltype(binding_infos)::ResourceType, binding_infos.count>... bindings
-  )
-    : rd::DescriptorSet{
-        &DescriptorPools::getInstance().getPool<layout>(),
-        { toResourceBinding(bindings)... },
-      } {}
-
-private:
-  static auto toResourceBinding(auto binding) -> rd::ResourceBinding {
-    if constexpr (ranges::range<decltype(binding)>) {
-      auto resources = std::vector<rd::DescriptorResource*>{};
-      for (auto* r : binding) {
-        resources.push_back(r);
-      }
-      return { resources };
-    } else {
-      return { binding };
-    }
-  }
-};
-
-/**
- * @tparam layout must be type of @ref DescriptorLayout
- */
-template <auto layout>
-using DescriptorSet = APPLY_INDEX_SEQUENCE_TYPE(std::tuple_size_v<decltype(layout.toTuple())>, {
-  return type<DescriptorSet_<layout, std::get<indices>(layout.toTuple())...>>{};
-});
-
-template <typename VertexT, typename DescriptorLayoutT>
-struct PipelineLayout {
-  type<VertexT>     vertex;
-  DescriptorLayoutT dset_layout;
-  uint32            color_n;
-  bool              depst;
-};
-
-template <auto pipeline_layout>
 struct PipelineInfo {
-  using DepthStencil =
-    std::conditional_t<pipeline_layout.depst, rd::DepstOption, std::type_identity<void>>;
-  std::array<uint32, pipeline_layout.color_n> colors;
-  DepthStencil                                depst;
-  std::string                                 vertex_shader_name;
-  std::string                                 frag_shader_name;
-  VkPrimitiveTopology                         topology;
-  VkCullModeFlagBits                          cull_mode;
-
-  static constexpr auto layout = pipeline_layout;
+  std::vector<uint32>            colors;
+  std::optional<rd::DepstOption> depst;
+  std::string                    vertex_shader_name;
+  std::string                    frag_shader_name;
+  VkPrimitiveTopology            topology;
+  VkCullModeFlagBits             cull_mode;
+  rd::VertexInfo                 vertex_info;
+  VkDescriptorSetLayout          unit_dset_layout;
+  VkDescriptorSetLayout          global_dset_layout; // nullable
 };
 
-template <typename... PipelineInfoTs>
 struct RenderPassInfo {
   std::vector<VkFormat>                color_formats;
   std::vector<VkFormat>                depst_formats;
   std::optional<VkSampleCountFlagBits> multi_sampling;
-  std::tuple<PipelineInfoTs...>        pipelines;
-
-  static constexpr auto layouts = std::tuple{ (PipelineInfoTs::layout)... };
-};
-
-template <auto pipeline_layout>
-class DrawUnit;
-class DrawUnits : public PROACTIVE_SINGLETON(DrawUnits) {
-public:
-  DrawUnits() = default;
-
-  template <auto pipeline_layout>
-  auto getDrawUnits() -> std::unordered_set<DrawUnit<pipeline_layout>*>& {
-    static std::unordered_set<DrawUnit<pipeline_layout>*> draw_units;
-    return draw_units;
-  }
-  template <auto pipeline_layout>
-  auto add(DrawUnit<pipeline_layout>* draw_unit) -> void {
-    getDrawUnits<pipeline_layout>().emplace(draw_unit);
-  }
-  template <auto pipeline_layout>
-  auto remove(DrawUnit<pipeline_layout>* draw_unit) -> void {
-    getDrawUnits<pipeline_layout>().erase(draw_unit);
-  }
+  std::vector<PipelineInfo>            pipelines;
 };
 
 template <typename Derived>
 class DrawUnitLoader {
 public:
-  DrawUnitLoader() { add(); }
+  DrawUnitLoader() = default;
+  DrawUnitLoader(uint32 subpass_n) : _subpass_n(subpass_n) { add(); }
   ~DrawUnitLoader() { remove(); }
   DrawUnitLoader(const DrawUnitLoader&) noexcept = delete;
-  DrawUnitLoader(DrawUnitLoader&&) noexcept { add(); }
+  DrawUnitLoader(DrawUnitLoader&& e) noexcept {
+    _subpass_n = e._subpass_n;
+    add();
+  }
   auto operator=(const DrawUnitLoader&) noexcept -> DrawUnitLoader& = delete;
-  auto operator=(DrawUnitLoader&&) noexcept -> DrawUnitLoader& = default;
+  auto operator=(DrawUnitLoader&& e) noexcept -> DrawUnitLoader& {
+    remove();
+    _subpass_n = e._subpass_n;
+    add();
+    return *this;
+  }
 
 private:
   auto self() -> Derived& { return static_cast<Derived&>(*this); }
-  void add() { DrawUnits::getInstance().add(&self()); }
-  void remove() { DrawUnits::getInstance().remove(&self()); }
+  void add();
+  void remove();
+
+  std::optional<uint32> _subpass_n;
 };
 
-template <auto pipeline_layout>
-class DrawUnit : public DrawUnitLoader<DrawUnit<pipeline_layout>> {
+class DrawUnit : public DrawUnitLoader<DrawUnit> {
 public:
-  using VertexBuffer = VertexBuffer<typename decltype(pipeline_layout.vertex)::type>;
-  using DescriptorSet = DescriptorSet<pipeline_layout.dset_layout>;
-  DrawUnit(VertexBuffer* vertex_buffer, rd::IndexBuffer* index_buffer, DescriptorSet dset)
-    : _vertex_buffer(vertex_buffer), _index_buffer(index_buffer), _dset(std::move(dset)) {}
+  DrawUnit() = default;
+  /**
+   * @param index_buffer nullable
+   */
   DrawUnit(
-    VertexBuffer*    vertex_buffer,
-    rd::IndexBuffer* index_buffer,
-    DescriptorSet    dset,
-    uint8            stencil_ref
+    uint32               subpass_n,
+    rd::VertexBuffer*    vertex_buffer,
+    rd::IndexBuffer*     index_buffer,
+    rd::DescriptorSet    dset,
+    std::optional<uint8> stencil_ref = {}
   )
-    : _vertex_buffer(vertex_buffer), _index_buffer(index_buffer), _dset(std::move(dset)),
-      _stencil_ref(stencil_ref) {}
+    : DrawUnitLoader<DrawUnit>{ subpass_n }, _vertex_buffer(vertex_buffer),
+      _index_buffer(index_buffer), _dset(std::move(dset)), _stencil_ref(stencil_ref) {}
   ONLY_MOVEABLE(DrawUnit);
-  auto getVertexBuffer() -> VertexBuffer& { return *_vertex_buffer; }
-  auto getIndexBuffer() -> IndexBuffer& { return *_index_buffer; }
-  auto getDescriptorSet() -> DescriptorSet& { return _dset; }
-  auto getStencilRef() -> uint8 { return _stencil_ref; }
+  auto getVertexBuffer() -> rd::VertexBuffer& { return *_vertex_buffer; }
+  auto getIndexBuffer() -> rd::IndexBuffer* { return _index_buffer; }
+  auto getDescriptorSet() -> rd::DescriptorSet& { return _dset; }
+  auto getStencilRef() -> uint8 {
+    TOY_CHECK_ASSERT(_stencil_ref.has_value());
+    return *_stencil_ref;
+  }
 
 private:
-  VertexBuffer*    _vertex_buffer;
-  rd::IndexBuffer* _index_buffer;
-  DescriptorSet    _dset;
-  uint8            _stencil_ref;
+  void add();
+  void remove();
+
+  rd::VertexBuffer*    _vertex_buffer;
+  rd::IndexBuffer*     _index_buffer;
+  rd::DescriptorSet    _dset;
+  std::optional<uint8> _stencil_ref;
 };
 
-template <typename RenderPassInfoT>
-class RenderPass : public loop::Action {
+class RenderPass : public PROACTIVE_SINGLETON(RenderPass), public loop::Action {
 public:
-  RenderPass(RenderPassInfoT info) {
+  RenderPass() : PROACTIVE_SINGLETON(RenderPass)(false) {}
+  RenderPass(RenderPassInfo info) {
     setStage(loop::Stage::RENDER);
     auto& swapchain = rd::Presentation::getInstance().getSwapchain();
     auto  attachment_infos = std::vector<rd::AttachmentInfo>{};
-    auto  color_formats = std::vector<VkFormat>{};
-    color_formats.push_back(swapchain.getFormat());
-    color_formats.append_range(info.color_formats);
-    for (auto& color_format : color_formats) {
-      attachment_infos.push_back(rd::AttachmentInfo{
-        .format = color_format,
-        .sample_count = info.multi_sampling.value_or(VK_SAMPLE_COUNT_1_BIT),
-        .load_op = rd::LoadOp::CLEAR,
-        .is_store = !info.multi_sampling,
-      });
-      if (info.multi_sampling) {
+    {
+      auto color_formats = std::vector<VkFormat>{};
+      color_formats.push_back(swapchain.getFormat());
+      color_formats.append_range(info.color_formats);
+      for (auto& color_format : color_formats) {
         attachment_infos.push_back(rd::AttachmentInfo{
           .format = color_format,
-          .sample_count = VK_SAMPLE_COUNT_1_BIT,
+          .sample_count = info.multi_sampling.value_or(VK_SAMPLE_COUNT_1_BIT),
+          .load_op = rd::LoadOp::CLEAR,
+          .is_store = !info.multi_sampling,
+        });
+        if (info.multi_sampling) {
+          attachment_infos.push_back(rd::AttachmentInfo{
+            .format = color_format,
+            .sample_count = VK_SAMPLE_COUNT_1_BIT,
+          });
+        }
+      }
+      for (auto& depst_format : info.depst_formats) {
+        attachment_infos.push_back(rd::AttachmentInfo{
+          .format = depst_format,
+          .sample_count = info.multi_sampling.value_or(VK_SAMPLE_COUNT_1_BIT),
+          .load_op = rd::LoadOp::CLEAR,
+          .is_store = false,
         });
       }
     }
-    for (auto& depst_format : info.depst_formats) {
-      attachment_infos.push_back(rd::AttachmentInfo{
-        .format = depst_format,
-        .sample_count = info.multi_sampling.value_or(VK_SAMPLE_COUNT_1_BIT),
-        .load_op = rd::LoadOp::CLEAR,
-        .is_store = false,
-      });
-    }
     auto subpass_infos = std::vector<rd::SubpassPipelineInfo>{};
-    auto addSubpassInfoAndDynRef = [&](auto subpass) {
-      constexpr auto pipeline_layout = subpass.layout;
-
+    for (auto& pipeline : info.pipelines) {
       auto colors = std::vector<uint32>{};
       auto resolves = std::vector<std::optional<uint32>>{};
-      for (auto i : subpass.colors) {
+      for (auto i : pipeline.colors) {
         if (info.multi_sampling) {
           colors.push_back(i * 2);
           resolves.push_back(i * 2 + 1);
@@ -280,20 +139,22 @@ public:
           colors.push_back(i);
         }
       }
-
+      auto dset_layouts = std::vector<VkDescriptorSetLayout>{ pipeline.unit_dset_layout };
+      if (pipeline.global_dset_layout) {
+        dset_layouts.push_back(pipeline.global_dset_layout);
+      }
       auto subpass_info = rd::SubpassPipelineInfo{
         .colors = colors,
         .multi_sample = info.multi_sampling.transform(
           [&](auto x) { return rd::SubpassInfo::MultiSample{ resolves, x }; }
         ),
-        .vertex_shader_name = subpass.vertex_shader_name,
-        .frag_shader_name = subpass.frag_shader_name,
-        .topology = subpass.topology,
-        .cull_mode = subpass.cull_mode,
-        .vertex_info = decltype(pipeline_layout.vertex)::type::getVertexInfo(),
-        .dset_layouts = { 
-          DescriptorPools::getInstance().getPool<pipeline_layout.dset_layout>(),
-        },
+        .depst = pipeline.depst,
+        .vertex_shader_name = pipeline.vertex_shader_name,
+        .frag_shader_name = pipeline.frag_shader_name,
+        .topology = pipeline.topology,
+        .cull_mode = pipeline.cull_mode,
+        .vertex_info = pipeline.vertex_info,
+        .dset_layouts = std::move(dset_layouts),
         .push_constants = { 
           rd::PushConstantInfo{ 
             .stage = VK_SHADER_STAGE_VERTEX_BIT, 
@@ -302,19 +163,17 @@ public:
           },
         },
       };
-      auto dynamic_reference = false;
-      if constexpr (pipeline_layout.depst) {
-        subpass_info.depst = subpass.depst;
+      if (subpass_info.depst) {
         subpass_info.depst->attachment +=
-          pipeline_layout.color_n + (info.multi_sampling ? pipeline_layout.color_n : 0);
-        dynamic_reference = subpass.depst.stencil->dyn_ref;
+          info.multi_sampling ? info.color_formats.size() * 2 + 2 : info.color_formats.size() + 1;
       }
       subpass_infos.push_back(subpass_info);
-      _dynamic_references.push_back(dynamic_reference);
-    };
-    std::apply([&](auto... subpass) { (addSubpassInfoAndDynRef(subpass), ...); }, info.pipelines);
-
+      auto dyn_ref =
+        pipeline.depst ? pipeline.depst->stencil ? pipeline.depst->stencil->dyn_ref : false : false;
+      _dynamic_references.push_back(dyn_ref);
+    }
     _render_pass = rd::RenderPassPipeline{ attachment_infos, subpass_infos };
+    _draw_units.resize(info.pipelines.size());
 
     createFramebuffers(info.color_formats, info.depst_formats, info.multi_sampling);
   }
@@ -335,18 +194,24 @@ public:
     _render_pass.setDepstClear(index, clear_value);
   }
   void setCamera(camera::CameraData* camera) { _camera = camera; }
+  void setGlobalDescriptorSet(rd::DescriptorSet* dset) { _global_dset = dset; }
 
   void runLoop(loop::ActionContext const& ctx) override {
     if (ctx.recreated) {
       recreateFramebuffers();
     }
-    auto setRecorder = [&]<size_t index>() {
+    for (auto [index, draw_units] : _draw_units | toy::enumerate) {
       _render_pass.setRecorder(index, [&](rd::PipelineDrawer drawer) {
         drawer.bindPushConstant(VK_SHADER_STAGE_VERTEX_BIT, std::as_bytes(std::span{ _camera, 1 }));
-        for (auto& draw_unit :
-             DrawUnits::getInstance().getDrawUnits<std::get<index>(RenderPassInfoT::layouts)>()) {
+        if (_global_dset) {
+          drawer.bindDescriptorSet(1, _global_dset);
+        }
+        for (auto& draw_unit : draw_units) {
           drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
-          drawer.bindIndexBuffer(&draw_unit->getIndexBuffer());
+          auto* index_buf = draw_unit->getIndexBuffer();
+          if (index_buf) {
+            drawer.bindIndexBuffer(index_buf);
+          }
           drawer.bindDescriptorSet(0, &draw_unit->getDescriptorSet());
           if (_dynamic_references[index]) {
             drawer.setStencilReference(draw_unit->getStencilRef());
@@ -354,8 +219,7 @@ public:
           drawer.draw();
         }
       });
-    };
-    toy::templateForEach<std::tuple_size_v<decltype(RenderPassInfoT::layouts)>>(setRecorder);
+    }
     auto attachments = std::vector<rd::FrameImageManager*>{};
     if (_present_color_image.valid()) {
       attachments.push_back(&_present_color_image);
@@ -376,6 +240,8 @@ public:
     _render_pass.recordDraw(attachments);
   }
 
+  ONLY_MOVEABLE(RenderPass);
+
 private:
   rd::RenderPassPipeline      _render_pass;
   rd::FrameImage              _present_color_image;
@@ -383,9 +249,14 @@ private:
   std::vector<rd::FrameImage> _resolve_images;
   std::vector<rd::FrameImage> _depst_images;
 
-  camera::CameraData* _camera;
+  camera::CameraData* _camera = nullptr;
+  rd::DescriptorSet*  _global_dset = nullptr;
 
   std::vector<bool> _dynamic_references;
+
+  template <typename>
+  friend class DrawUnitLoader;
+  std::vector<std::unordered_set<DrawUnit*>> _draw_units;
 
   void createFramebuffers(
     std::span<VkFormat const>            color_formats,
@@ -450,46 +321,36 @@ private:
   }
 };
 
-// using Vertex = rd::Vertex<glm::vec3>;
-// constexpr auto dset_layout = DescriptorLayout{
-//   UniformBinding{ type<int>(), Stage::VERTEX, 2 },
-//   TextureBinding{ Stage::VERTEX },
-// };
-// constexpr auto pipeline_layout = PipelineLayout{
-//   .vertex = type<Vertex>{},
-//   .dset_layout = dset_layout,
-//   .color_n = 2,
-//   .depst = true,
-// };
+template <typename Derived>
+void DrawUnitLoader<Derived>::add() {
+  if (_subpass_n) {
+    RenderPass::getInstance()._draw_units[*_subpass_n].insert(&self());
+  }
+}
 
-// auto compile_test() {
+template <typename Derived>
+void DrawUnitLoader<Derived>::remove() {
+  if (_subpass_n) {
+    RenderPass::getInstance()._draw_units[*_subpass_n].erase(&self());
+  }
+}
 
-//   auto subpass = PipelineInfo<pipeline_layout>{
-//     .colors = { 0, 1 },
-//     .vertex_shader_name = "test",
-//     .frag_shader_name = "test",
-//     .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-//     .cull_mode = VK_CULL_MODE_NONE,
-//   };
-//   auto render_pass_info = RenderPassInfo{
-//     .color_formats = { VK_FORMAT_R8G8B8_SRGB, VK_FORMAT_R8G8B8_SRGB, VK_FORMAT_R8G8B8_SRGB },
-//     .depst_formats = { VK_FORMAT_D24_UNORM_S8_UINT },
-//     .multi_sampling = VK_SAMPLE_COUNT_8_BIT,
-//     .pipelines = std::tuple{ subpass },
-//   };
-//   auto uniform = UniformBuffer<int>{};
-//   auto texture = rd::SampledTexture{};
-//   auto dset = DescriptorSet<dset_layout>{ { &uniform, &uniform }, &texture };
-//   auto vertex_buffer = VertexBuffer<Vertex>{};
-//   auto index_buffer = rd::IndexBuffer{};
-//   auto draw_unit = DrawUnit<pipeline_layout>{
-//     &vertex_buffer,
-//     &index_buffer,
-//     { { &uniform, &uniform }, &texture },
-//   };
-//   auto render_pass = RenderPass{ render_pass_info };
+template <auto dset_layout, uint32 subpass_n>
+class DrawUnitTemplate : public DrawUnit {
+public:
+  DrawUnitTemplate() = default;
+  DrawUnitTemplate(
+    rd::VertexBuffer*                    vertex_buffer,
+    rd::IndexBuffer*                     index_buffer,
+    rd::meta::DescriptorSet<dset_layout> dset,
+    std::optional<uint8>                 stencil_ref = {}
+  )
+    : DrawUnit(subpass_n, vertex_buffer, index_buffer, std::move(dset), stencil_ref) {}
+};
 
-//   return 0;
-// }
+template <auto dset_layout>
+auto getLayoutHandle() -> VkDescriptorSetLayout {
+  return rd::meta::DescriptorPools::getInstance().getPool<dset_layout>();
+}
 
 } // namespace pl
