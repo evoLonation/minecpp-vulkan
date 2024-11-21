@@ -34,11 +34,12 @@ public:
     return *this;
   }
   operator DataType&() { return _cache_data; }
-  auto get() -> DataType& { return _cache_data; }
-  auto operator->() -> DataType* { return &_cache_data; }
+  operator const DataType&() const { return _cache_data; }
+  auto get(this auto&& self) -> auto& { return &self._cache_data; }
+  auto operator->(this auto&& self) -> auto* { return &self._cache_data; }
 
 private:
   DataType _cache_data;
 };
 
-} // namespace uni
+} // namespace pl

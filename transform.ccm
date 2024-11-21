@@ -1,3 +1,5 @@
+module;
+#include <toy.h>
 export module transform;
 
 import std;
@@ -6,7 +8,10 @@ import toy;
 
 export namespace trans {
 
-auto eq(float a, float b) { return glm::abs(a - b) < 0.001f; }
+auto eq(float a, float b) {
+  // todo: too large
+  return glm::abs(a - b) < 0.001f;
+}
 auto eq(glm::vec4 a, glm::vec4 b) {
   return eq(a.x, b.x) && eq(a.y, b.y) && eq(a.z, b.z) && eq(a.w, b.w);
 }
@@ -33,6 +38,8 @@ auto transform_vec(const glm::mat4& matrix, const glm::vec3& vec) -> glm::vec3 {
   return matrix * glm::vec4{ vec, 0 };
 }
 
+enum class Axis { X = 0, Y = 1, Z = 2 };
+
 auto translate(const glm::vec3& vec) -> glm::mat4 {
   return matrix({
     glm::vec4{ 1.0f, 0.0f, 0.0f, vec.x },
@@ -40,6 +47,28 @@ auto translate(const glm::vec3& vec) -> glm::mat4 {
     glm::vec4{ 0.0f, 0.0f, 1.0f, vec.z },
     glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f },
   });
+}
+
+template <Axis axis>
+auto translate(float move) -> glm::mat4 {
+  if constexpr (axis == Axis::X) {
+    return translate(glm::vec3{ move, 0.0f, 0.0f });
+  } else if constexpr (axis == Axis::Y) {
+    return translate(glm::vec3{ 0.0f, move, 0.0f });
+  } else if constexpr (axis == Axis::Z) {
+    return translate(glm::vec3{ 0.0f, 0.0f, move });
+  }
+}
+
+auto translate(Axis axis, float move) -> glm::mat4 {
+  switch (axis) {
+  case Axis::X:
+    return translate<Axis::X>(move);
+  case Axis::Y:
+    return translate<Axis::Y>(move);
+  case Axis::Z:
+    return translate<Axis::Z>(move);
+  }
 }
 
 auto scale(const glm::vec3& vec) -> glm::mat4 {
@@ -51,7 +80,27 @@ auto scale(const glm::vec3& vec) -> glm::mat4 {
   });
 }
 
-enum class Axis { X, Y, Z };
+template <Axis axis>
+auto scale(float factor) -> glm::mat4 {
+  if constexpr (axis == Axis::X) {
+    return scale(glm::vec3{ factor, 1.0f, 1.0f });
+  } else if constexpr (axis == Axis::Y) {
+    return scale(glm::vec3{ 1.0f, factor, 1.0f });
+  } else if constexpr (axis == Axis::Z) {
+    return scale(glm::vec3{ 1.0f, 1.0f, factor });
+  }
+}
+
+auto scale(Axis axis, float factor) -> glm::mat4 {
+  switch (axis) {
+  case Axis::X:
+    return scale<Axis::X>(factor);
+  case Axis::Y:
+    return scale<Axis::Y>(factor);
+  case Axis::Z:
+    return scale<Axis::Z>(factor);
+  }
+}
 
 template <Axis axis>
 auto rotate(float degree) -> glm::mat4 {
@@ -81,14 +130,19 @@ auto rotate(float degree) -> glm::mat4 {
   }
 }
 
-auto rotate(const glm::vec3& axis_, float degree) -> glm::mat4 {
-  auto radian = glm::radians(degree);
-  radian /= 2;
-  auto sin = glm::sin(radian);
-  auto cos = glm::cos(radian);
-  auto axis = glm::normalize(axis_);
-  auto quaternion = glm::vec4{ cos, axis.x * sin, axis.y * sin, axis.z * sin };
-  auto [a, b, c, d] = std::tuple<float&, float&, float&, float&>{
+auto rotate(Axis axis, float degree) -> glm::mat4 {
+  switch (axis) {
+  case Axis::X:
+    return rotate<Axis::X>(degree);
+  case Axis::Y:
+    return rotate<Axis::Y>(degree);
+  case Axis::Z:
+    return rotate<Axis::Z>(degree);
+  }
+}
+
+auto rotate(const glm::vec4& quaternion) -> glm::mat4 {
+  auto [a, b, c, d] = std::tuple<float, float, float, float>{
     quaternion.x, quaternion.y, quaternion.z, quaternion.w
   };
   auto [a2, b2, c2, d2] = std::tuple{ a * a, b * b, c * c, d * d };
@@ -99,6 +153,64 @@ auto rotate(const glm::vec3& axis_, float degree) -> glm::mat4 {
     glm::vec4{ 2 * (bd - ac), 2 * (ab + cd), a2 - b2 - c2 + d2, 0.0f },
     glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f },
   });
+}
+
+auto rotate(glm::vec3 axis, float degree) -> glm::mat4 {
+  auto radian = glm::radians(degree);
+  radian /= 2;
+  auto sin = glm::sin(radian);
+  auto cos = glm::cos(radian);
+  axis = glm::normalize(axis);
+  auto quaternion = glm::vec4{ cos, axis.x * sin, axis.y * sin, axis.z * sin };
+  return rotate(quaternion);
+}
+
+// 欧拉角
+auto rotate(float x_degree, float y_degree, float z_drgree) -> glm::mat4 {
+  float cosx = std::cos(glm::radians(x_degree));
+  float sinx = std::sin(glm::radians(x_degree));
+  float cosy = std::cos(glm::radians(y_degree));
+  float siny = std::sin(glm::radians(y_degree));
+  float cosz = std::cos(glm::radians(z_drgree));
+  float sinz = std::sin(glm::radians(z_drgree));
+  // r = rz * ry * rx
+  auto r = glm::mat4{};
+  r[0][0] = cosy * cosz;
+  r[0][1] = cosy * sinz;
+  r[0][2] = -siny;
+  r[1][0] = sinx * siny * cosz - cosx * sinz;
+  r[1][1] = sinx * siny * sinz + cosx * cosz;
+  r[1][2] = sinx * cosy;
+  r[2][0] = cosx * siny * cosz + sinx * sinz;
+  r[2][1] = cosx * siny * sinz - sinx * cosz;
+  r[2][2] = cosx * cosy;
+  r[3][3] = 1;
+  return r;
+}
+
+auto getEulerAngle(const glm::mat4& r) -> glm::vec3 {
+  float x_rad, y_rad, z_rad;
+  float siny = -r[0][2];
+  float sinx_cosy = r[1][2];
+  float cosx_cosy = r[2][2];
+  float cosy_sinz = r[0][1];
+  float cosy_cosz = r[0][0];
+  // 检查万向节锁 (y_degree = 90 or -90)
+  if (!eq(glm::abs(siny), 1.0f)) {
+    y_rad = glm::asin(siny);
+    // atan2 is range of [-pi, pi], since atan is range of [-pi/2, pi/2]
+    z_rad = std::atan2(sinx_cosy, cosx_cosy);
+    x_rad = std::atan2(cosy_sinz, cosy_cosz);
+  } else {
+    y_rad = eq(siny, 1.0f) ? glm::radians(90.0f) : glm::radians(-90.0f);
+    z_rad = 0; // any value
+    // follow is based on z_rad = 0
+    float sinx_siny = r[1][0];
+    float cosx = r[1][1];
+    // todo: why -sinx_siny?
+    x_rad = std::atan2(-sinx_siny, cosx);
+  }
+  return { glm::degrees(x_rad), glm::degrees(y_rad), glm::degrees(z_rad) };
 }
 
 auto inverse(const glm::mat4& transform) -> glm::mat4 {
@@ -125,6 +237,11 @@ auto inverse(const glm::mat4& transform) -> glm::mat4 {
   // q^-1 = s^-2 * q^t
   auto q_i = s2_i * q_t;
   return q_i * t_i;
+}
+
+auto getNormalModel(glm::mat4 model) -> glm::mat3 {
+  model[3] = glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f };
+  return transpose(glm::mat3(inverse(model)));
 }
 
 // equation: L(t) = direction * t + pointer
@@ -257,27 +374,26 @@ auto perspectiveInverse(const ProjectionInfo& info) -> glm::mat4 {
 } // namespace proj
 
 void test_trans() {
-  auto assert = [](bool condition) { toy::throwf(condition, "assert error!"); };
   auto view = view::create({ 1, 0, 0 }, { 1, 1, 0 }, { 0, -1, 1 });
-  // assert(eq(view * glm::vec4{ 1, 0, 1, 1 }, glm::vec4{ 0, 0, 1, 1 }));
-  assert(eq(view * glm::vec4{ 0, 0, 1, 1 }, glm::vec4{ 0, 1, 1, 1 }));
-  assert(eq(view * glm::vec4{ 2, 0, 1, 1 }, glm::vec4{ 0, -1, 1, 1 }));
-  assert(eq(view * glm::vec4{ 1, 1, 1, 1 }, glm::vec4{ 1, 0, 1, 1 }));
-  assert(eq(view * glm::vec4{ 1, -1, 1, 1 }, glm::vec4{ -1, 0, 1, 1 }));
+  // TOY_ASSERT(eq(view * glm::vec4{ 1, 0, 1, 1 }, glm::vec4{ 0, 0, 1, 1 }));
+  TOY_ASSERT(eq(view * glm::vec4{ 0, 0, 1, 1 }, glm::vec4{ 0, 1, 1, 1 }));
+  TOY_ASSERT(eq(view * glm::vec4{ 2, 0, 1, 1 }, glm::vec4{ 0, -1, 1, 1 }));
+  TOY_ASSERT(eq(view * glm::vec4{ 1, 1, 1, 1 }, glm::vec4{ 1, 0, 1, 1 }));
+  TOY_ASSERT(eq(view * glm::vec4{ 1, -1, 1, 1 }, glm::vec4{ -1, 0, 1, 1 }));
   auto transform = translate(glm::vec3{ 7, 8, 9 });
   auto I = transform * inverse(transform);
-  assert(eq(glm::vec4{ I[0][0], I[1][1], I[2][2], I[3][3] }, glm::vec4{ 1.0f }));
+  TOY_ASSERT(eq(glm::vec4{ I[0][0], I[1][1], I[2][2], I[3][3] }, glm::vec4{ 1.0f }));
   transform *= rotate(glm::vec3{ 1, 2, 3 }, 56);
   I = transform * inverse(transform);
-  assert(eq(glm::vec4{ I[0][0], I[1][1], I[2][2], I[3][3] }, glm::vec4{ 1.0f }));
+  TOY_ASSERT(eq(glm::vec4{ I[0][0], I[1][1], I[2][2], I[3][3] }, glm::vec4{ 1.0f }));
   transform *= scale(glm::vec3{ 4, 5, 6 });
   I = transform * inverse(transform);
   for (int i = 0; i < 4; i++) {
     for (int j = 0; j < 4; j++) {
       if (i == j) {
-        assert(eq(I[i][j], 1));
+        TOY_ASSERT(eq(I[i][j], 1));
       } else {
-        assert(eq(I[i][j], 0));
+        TOY_ASSERT(eq(I[i][j], 0), I[i][j]);
       }
     }
   }
@@ -292,57 +408,61 @@ void test_trans() {
       .dot = -glm::sqrt(3.0f),
     }
   );
-  assert(inter.index() == 0);
-  assert(eq(std::get<0>(inter), glm::vec3(glm::sqrt(3.0f), 0.0f, 1.0f)));
+  TOY_ASSERT(inter.index() == 0);
+  TOY_ASSERT(eq(std::get<0>(inter), glm::vec3(glm::sqrt(3.0f), 0.0f, 1.0f)));
 
   // proj test
   auto near = 1.0f, far = 3.0f, left = 2.0f, right = 0.0f, bottom = 0.0f, top = 2.0f;
   // auto near = 1.0f, far = 3.0f, left = 2.0f, right = -2.0f, bottom = -2.0f, top = 2.0f;
   auto orthogonal = proj::orthogonal(near, far, left, right, bottom, top);
-  assert(eq(
+  TOY_ASSERT(eq(
     orthogonal * glm::vec4{ (near + far) / 2, (left + right) / 2, (bottom + top) / 2, 1.0f },
     glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f }
   ));
-  assert(
+  TOY_ASSERT(
     eq(orthogonal * glm::vec4{ near, left, bottom, 1.0f }, glm::vec4{ -1.0f, 1.0f, -1.0f, 1.0f })
   );
-  assert(eq(orthogonal * glm::vec4{ far, right, top, 1.0f }, glm::vec4{ 1.0f, -1.0f, 1.0f, 1.0f }));
-  assert(eq(orthogonal * glm::vec4{ far, right, bottom, 1.0f }, glm::vec4{ 1.0f, 1.0f, 1.0f, 1.0f })
+  TOY_ASSERT(
+    eq(orthogonal * glm::vec4{ far, right, top, 1.0f }, glm::vec4{ 1.0f, -1.0f, 1.0f, 1.0f })
   );
-  assert(eq(orthogonal * glm::vec4{ near, left, top, 1.0f }, glm::vec4{ -1.0f, -1.0f, -1.0f, 1.0f })
+  TOY_ASSERT(
+    eq(orthogonal * glm::vec4{ far, right, bottom, 1.0f }, glm::vec4{ 1.0f, 1.0f, 1.0f, 1.0f })
+  );
+  TOY_ASSERT(
+    eq(orthogonal * glm::vec4{ near, left, top, 1.0f }, glm::vec4{ -1.0f, -1.0f, -1.0f, 1.0f })
   );
   auto perspective = proj::perspective(near, far, left, right, bottom, top);
   auto perspective_i = proj::perspectiveInverse(near, far, left, right, bottom, top);
-  assert(eq(perspective * perspective_i, glm::mat4{ 1.0f }));
-  assert(equivalence(
+  TOY_ASSERT(eq(perspective * perspective_i, glm::mat4{ 1.0f }));
+  TOY_ASSERT(equivalence(
     perspective * glm::vec4{ near, left, bottom, 1.0f }, glm::vec4{ -1.0f, 1.0f, -1.0f, 1.0f }
   ));
-  assert(equivalence(
+  TOY_ASSERT(equivalence(
     perspective * glm::vec4{ near, right, top, 1.0f }, glm::vec4{ 1.0f, -1.0f, -1.0f, 1.0f }
   ));
-  assert(equivalence(
+  TOY_ASSERT(equivalence(
     perspective *
       glm::vec4{ far, (left + right) / 2 * far / near, (bottom + top) / 2 * far / near, 1.0f },
     glm::vec4{ 0.0f, 0.0f, 1.0f, 1.0f }
   ));
-  assert(equivalence(
+  TOY_ASSERT(equivalence(
     perspective * glm::vec4{ far, left * far / near, bottom * far / near, 1.0f },
     glm::vec4{ -1.0f, 1.0f, 1.0f, 1.0f }
   ));
-  assert(equivalence(
+  TOY_ASSERT(equivalence(
     perspective * glm::vec4{ far, right * far / near, top * far / near, 1.0f },
     glm::vec4{ 1.0f, -1.0f, 1.0f, 1.0f }
   ));
   perspective = proj::perspective({ 1920, 1080, 90.0f, 2.5f, 100.0f });
   perspective_i = proj::perspectiveInverse({ 1920, 1080, 90.0f, 2.5f, 100.0f });
-  assert(eq(perspective * perspective_i, glm::mat4{ 1.0f }));
-  assert(equivalence(
+  TOY_ASSERT(eq(perspective * perspective_i, glm::mat4{ 1.0f }));
+  TOY_ASSERT(equivalence(
     perspective * glm::vec4{ 2.5f, 0.0f, 0.0f, 1.0f }, glm::vec4{ 0.0f, 0.0f, -1.0f, 1.0f }
   ));
-  assert(equivalence(
+  TOY_ASSERT(equivalence(
     perspective * glm::vec4{ 100.0f, 0.0f, 0.0f, 1.0f }, glm::vec4{ 0.0f, 0.0f, 1.0f, 1.0f }
   ));
-  assert(equivalence(
+  TOY_ASSERT(equivalence(
     perspective * glm::vec4{ 2.5f, 2.5f, 0.0f, 1.0f }, glm::vec4{ -1.0f, 0.0f, -1.0f, 1.0f }
   ));
 }

@@ -1,5 +1,6 @@
 export module render;
 
+export import render.resource;
 export import render.sync;
 export import render.executor;
 export import render.tracker;

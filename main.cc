@@ -34,6 +34,7 @@ int main() {
     auto  ctx = ctx::Context{ "hello vulkan", 1920, 1080 };
     auto  dset_pools = rd::meta::DescriptorPools{};
     auto& input = input::InputProcessor::getInstance();
+    auto  transform_gui = tool::ModelTransformGui{};
     auto  render_pass = pl::LightPipeline{};
 
     auto camera = camera::Camera{};
@@ -80,6 +81,10 @@ int main() {
     auto cylinder = tool::Cylinder{ glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 10.0f } };
     auto sphere = tool::Sphere{ glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 15.0f } };
     auto axis = tool::Axis{ glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 0.0f } };
+
+    auto scene_component =
+      tool::SceneComponent{ std::make_unique<tool::SimpleShape>(tool::generateCylinder()) };
+    transform_gui.setController(&scene_component.getController());
 
     loop::Loop::getInstance().run();
 

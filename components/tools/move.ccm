@@ -10,6 +10,9 @@ import render;
 import pipeline.light;
 import transform;
 import pipeline.uniform;
+import gui;
+
+import <imgui_config.h>;
 
 export namespace tool {
 
@@ -238,8 +241,7 @@ public:
       { &_uniform_model_vertex, &_uniform_model_fragment, &_texture, &_texture },
     });
   }
-  // auto getModelTrans() -> glm::mat4& { return _resource_set.getResource<0>(); }
-  // auto getColor() -> glm::vec3& { return _resource_set.getResource<1>(); }
+  auto getModelTrans() -> pl::LightModelVertexData& { return _uniform_model_vertex; }
 
   UNCOPYABLE_MOVEABLE(SimpleShape);
 
@@ -291,6 +293,127 @@ public:
   Axis(glm::vec3 color, glm::vec3 location = { 0.0f, 0.0f, 0.0f }) {
     set(generateAxis(), color, location);
   }
+};
+
+class ModelTransform : public loop::Action {
+public:
+  ModelTransform() = default;
+  ModelTransform(glm::mat4* model) : loop::Action(loop::Stage::BEFORE_RENDER), model(model) {}
+  void translate(glm::vec3 const& delta) {
+    if (mode == WORLD) {
+      location += delta;
+    } else {
+      auto r_2 =
+        trans::rotate(rotate_euler.x, rotate_euler.y, rotate_euler.z) * trans::translate(delta);
+      // r_2 = t_new * r_new
+      // t_new = t_2[3][0-3], r_new = t_2[0-2][0-2]
+      location += glm::vec3{ r_2[3] };
+      r_2[3] = glm::vec4{ 0, 0, 0, 1 };
+      rotate_euler = trans::getEulerAngle(r_2);
+    }
+  }
+  void rotate(trans::Axis axis, float degree) {
+    auto r_new = glm::mat4{};
+    if (mode == WORLD) {
+      r_new =
+        trans::rotate(axis, degree) * trans::rotate(rotate_euler.x, rotate_euler.y, rotate_euler.z);
+    } else {
+      r_new =
+        trans::rotate(rotate_euler.x, rotate_euler.y, rotate_euler.z) * trans::rotate(axis, degree);
+    }
+    rotate_euler = trans::getEulerAngle(r_new);
+  }
+  void scale(trans::Axis axis, float factor) {
+    using enum trans::Axis;
+    if (mode == WORLD) {
+      auto s_r =
+        trans::scale(axis, factor) * trans::rotate(rotate_euler.x, rotate_euler.y, rotate_euler.z);
+      auto new_scale_factor = glm::vec3{
+        glm::sqrt(glm::length(s_r[0])),
+        glm::sqrt(glm::length(s_r[1])),
+        glm::sqrt(glm::length(s_r[2])),
+      };
+      scale_factor *= new_scale_factor;
+    } else {
+      scale_factor[static_cast<int>(axis)] *= factor;
+    }
+  }
+  void runLoop(loop::ActionContext const& ctx) override {
+    *model = trans::translate(location) *
+             trans::rotate(rotate_euler.x, rotate_euler.y, rotate_euler.z) *
+             trans::scale(scale_factor);
+  }
+  glm::vec3 location = { 0, 0, 0 };
+  glm::vec3 rotate_euler = { 0, 0, 0 };
+  glm::vec3 scale_factor = { 1, 1, 1 };
+  enum Mode { LOCAL, WORLD };
+  Mode mode = WORLD;
+
+private:
+  glm::mat4* model = nullptr;
+};
+
+class SceneComponent : public loop::Action {
+public:
+  SceneComponent() = default;
+  SceneComponent(std::unique_ptr<SimpleShape> shape) : _controller(&_to_parent) {
+    setStage(loop::Stage::BEFORE_RENDER);
+    _shape = std::move(shape);
+    _to_parent = _shape->getModelTrans().model;
+  }
+  void add(std::unique_ptr<SceneComponent> component) {
+    component->reset();
+    _sub_components.push_back(std::move(component));
+  }
+
+  auto getController() -> ModelTransform& { return _controller; }
+
+  // only root will perform
+  void runLoop(loop::ActionContext const& ctx) override {
+    auto handleComponent = std::function<void(SceneComponent & component, glm::mat4 * father)>{};
+    handleComponent = [&handleComponent](SceneComponent& component, glm::mat4* father) {
+      if (father == nullptr) {
+        component._to_world = component._to_parent;
+      } else {
+        component._to_world = *father * component._to_parent;
+      }
+      component._shape->getModelTrans().model = component._to_world;
+      component._shape->getModelTrans().normal_model = trans::getNormalModel(component._to_world);
+      for (auto& sub : component._sub_components) {
+        handleComponent(*sub, &component._to_world);
+      }
+    };
+    handleComponent(*this, nullptr);
+  }
+
+  UNCOPYABLE_MOVEABLE(SceneComponent);
+
+private:
+  ModelTransform                               _controller;
+  std::unique_ptr<SimpleShape>                 _shape;
+  glm::mat4                                    _to_world;
+  glm::mat4                                    _to_parent;
+  std::vector<std::unique_ptr<SceneComponent>> _sub_components;
+};
+
+class ModelTransformGui : public PROACTIVE_SINGLETON(ModelTransformGui), public gui::Drawer {
+public:
+  ModelTransformGui() = default;
+  void setController(ModelTransform* controller) { _controller = controller; }
+  void draw() override {
+    if (_controller == nullptr) {
+      ImGui::Text("There is no any ModelTransform.");
+      return;
+    }
+    gui::slider("location", _controller->location);
+    gui::slider("euler_angle", _controller->rotate_euler, glm::vec3{ -180 }, glm::vec3{ 180 });
+    gui::slider("scale", _controller->scale_factor);
+  }
+
+  UNCOPYABLE_MOVEABLE(ModelTransformGui);
+
+private:
+  ModelTransform* _controller = nullptr;
 };
 
 } // namespace tool

@@ -10,12 +10,7 @@ import glfw;
 import <vulkan_config.h>;
 import <imgui_config.h>;
 
-import render.resource;
-import render.device;
-import render.executor;
-import render.render_pass;
-import render.framebuffer;
-import render.swapchain;
+import render;
 
 import loop;
 
@@ -146,12 +141,22 @@ public:
   auto getSelected() -> const T* { return _selected; }
 };
 
-/**
- * @brief the draw implement should only contain codes relevant to GUI draw
- */
 class Drawer {
-public:
+private:
+  friend class Context;
   virtual void draw() = 0;
+
+protected:
+  Drawer() { add(); }
+  ~Drawer() { remove(); }
+  Drawer(const Drawer& e) noexcept { add(); }
+  Drawer(Drawer&& e) noexcept { add(); }
+  auto operator=(const Drawer& e) noexcept -> Drawer& = default;
+  auto operator=(Drawer&& e) noexcept -> Drawer& = default;
+
+private:
+  void add();
+  void remove();
 };
 
 /**
@@ -265,6 +270,9 @@ private:
     _io->FontGlobalScale = _scale / (_default_font_size * 1.0f / _base_font_size);
   }
 
+  friend Drawer;
+  std::unordered_set<Drawer*> _drawers;
+
 public:
   ~Context() {
     // 销毁阶段:
@@ -287,13 +295,10 @@ public:
 
     slider("scale ratio", _scale, _min_scale, _max_scale);
     _io->FontGlobalScale = _scale / (_default_font_size * 1.0f / _base_font_size);
-    // for (auto* drawer : _co_drawers) {
-    //   drawer->next();
-    // }
+    for (auto* drawer : _drawers) {
+      drawer->draw();
+    }
     ImGui::End();
-    // for (auto* drawer : _drawers) {
-    //   drawer->draw();
-    // }
     ImGui::Render();
   }
   void recordDraw(rd::FrameImageManager* image) {
@@ -309,5 +314,9 @@ public:
     recordDraw(ctx.image_manager);
   }
 };
+
+void Drawer::add() { Context::getInstance()._drawers.insert(this); }
+
+void Drawer::remove() { Context::getInstance()._drawers.erase(this); }
 
 } // namespace gui
