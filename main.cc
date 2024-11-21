@@ -22,6 +22,7 @@ import render;
 // import pipeline.resources;
 // import pipeline.drawunit;
 import tool.move;
+import tool.shape;
 import camera;
 import drag;
 
@@ -41,50 +42,31 @@ int main() {
     auto controller = camera::Controller{ &camera };
     render_pass.setCamera(&camera.getData());
 
-    auto texture = rd::SampledTexture::fromFile(
-      "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
-    );
-    auto uniform_1 = pl::UniformBuffer{ pl::LightModelVertexData{
-      .model = trans::model::create(),
-      .normal_model = glm::mat3{ trans::model::create() },
-    } };
-    auto uniform_2 = pl::UniformBuffer{ pl::LightModelFragmentData{
-      .shininess = 32,
-    } };
-    auto uniform_3 = pl::UniformBuffer{ pl::LightData{
-      .direction = glm::vec3{ 0.0f, 0.0f, -1.0f },
-      .ambient = glm::vec3{ 0.1f, 0.1f, 0.1f },
-      .diffuse = glm::vec3{ 0.5f, 0.5f, 0.5f },
-      .specular = glm::vec3{ 1.0f, 1.0f, 1.0f },
-      .view_pos = glm::vec3{ 5.0f, 5.0f, 5.0f },
-    } };
-    auto action = loop::ActionHandler{
-      [&](loop::ActionContext const& ctx) { uniform_3->view_pos = camera.getViewPos(); },
-      loop::Stage::BEFORE_RENDER,
-    };
-    auto global_dset = rd::meta::DescriptorSet<pl::layout_global_light>{ &uniform_3 };
-    render_pass.setGlobalDescriptorSet(&global_dset);
     auto [positions, normals, tex_coords, indices] = model::getModelInfo("model/viking_room.obj");
-    auto vertices = std::vector<pl::LightVertex>{};
-    for (auto [pos, norm, tex] : views::zip(positions, normals, tex_coords)) {
-      vertices.emplace_back(pos, norm, tex);
-    }
-    auto vertex_buf = rd::VertexBuffer{ vertices };
-    auto index_buf = rd::IndexBuffer{ indices };
-    auto draw_unit = pl::LightUnit{
-      &vertex_buf,
-      &index_buf,
-      { &uniform_1, &uniform_2, &texture, &texture },
-    };
-    auto cube = tool::Cube{ glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f } };
-    auto cone = tool::Cone{ glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 5.0f } };
-    auto cylinder = tool::Cylinder{ glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 10.0f } };
-    auto sphere = tool::Sphere{ glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 15.0f } };
-    auto axis = tool::Axis{ glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 0.0f } };
+    auto object1 = tool::SceneComponent{ {
+      pl::LightMesh{
+        std::move(positions), std::move(normals), std::move(tex_coords), std::move(indices) },
+      rd::SampledTexture::fromFile(
+        "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+      ),
+    } };
+    auto cube = std::make_unique<tool::SceneComponent>(tool::createShape(
+      tool::generateCube(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f }
+    ));
+    auto cone = std::make_unique<tool::SceneComponent>(tool::createShape(
+      tool::generateCone(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 5.0f }
+    ));
+    // auto cylinder = std::make_unique<tool::SceneComponent>(tool::createShape(
+    //   tool::generateCylinder(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 10.0f }
+    // ));
+    // auto sphere = std::make_unique<tool::SceneComponent>(tool::createShape(
+    //   tool::generateSphere(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 15.0f }
+    // ));
+    // auto axis = std::make_unique<tool::SceneComponent>(tool::createShape(
+    //   tool::generateAxis(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 0.0f }
+    // ));
 
-    auto scene_component =
-      tool::SceneComponent{ std::make_unique<tool::SimpleShape>(tool::generateCylinder()) };
-    transform_gui.setController(&scene_component.getController());
+    cube->add(std::move(cone));
 
     loop::Loop::getInstance().run();
 

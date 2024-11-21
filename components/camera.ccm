@@ -1,3 +1,5 @@
+module;
+#include "toy.h"
 export module camera;
 
 import std;
@@ -16,7 +18,7 @@ struct CameraData {
   rd::align::mat4 proj;
 };
 
-class Camera : public loop::Action {
+class Camera : public loop::Action, public PROACTIVE_SINGLETON(Camera) {
 public:
   Camera() {
     setStage(loop::Stage::BEFORE_RENDER);

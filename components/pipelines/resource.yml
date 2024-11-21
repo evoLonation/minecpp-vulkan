@@ -10,6 +10,6 @@ module:
 - uniform.ccm:
     provide: pipeline.uniform
 - base.ccm:
-    provide: pipeline.base2
+    provide: pipeline.base
 - light.ccm:
     provide: pipeline.light

@@ -64,8 +64,7 @@ public:
  * @tparam DataType : all vec and matrix member must be from rd::align
  */
 template <typename DataType>
-  requires std::is_trivially_copyable_v<DataType> &&
-             std::is_trivially_default_constructible_v<DataType>
+  requires std::is_trivially_copyable_v<DataType> && std::is_default_constructible_v<DataType>
 class UniformBuffer : private HostBuffer, public DescriptorResource {
 public:
   UniformBuffer() : UniformBuffer(DataType{}) {}

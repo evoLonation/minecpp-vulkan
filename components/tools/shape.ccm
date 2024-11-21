@@ -1,0 +1,229 @@
+module;
+#include <toy.h>
+export module tool.shape;
+
+import std;
+import toy;
+import glm;
+import render;
+import transform;
+import pipeline.light;
+import <vulkan_config.h>;
+
+export namespace tool {
+
+struct ShapeMesh {
+  std::vector<glm::vec3> positions;
+  std::vector<glm::vec3> normals;
+  std::vector<uint16>    indices;
+
+  auto transform(glm::mat4 const& trans) -> ShapeMesh {
+    auto ret = *this;
+    auto& [positions, normals, indices] = ret;
+    for (auto& pos : positions) {
+      pos = trans::transform_pos(trans, pos);
+    }
+    for (auto& normal : normals) {
+      normal = trans::transform_vec(trans, normal);
+    }
+    return ret;
+  }
+  static auto merge(std::initializer_list<ShapeMesh> meshes) -> ShapeMesh {
+    auto ret = ShapeMesh{};
+    auto& [positions, normals, indices] = ret;
+    for (auto& mesh : meshes) {
+      indices.append_range(mesh.indices | views::transform([delta = positions.size()](auto& i) {
+                             return i + delta;
+                           }));
+      positions.append_range(mesh.positions);
+      normals.append_range(mesh.normals);
+    }
+    return ret;
+  }
+};
+
+auto generateCube() -> ShapeMesh {
+  auto ret = ShapeMesh{};
+  auto& [positions, normals, indices] = ret;
+  auto addFace = [&](std::array<glm::vec3, 4> face, glm::vec3 normal) {
+    auto base = positions.size();
+    indices.push_back(base);
+    indices.push_back(base + 1);
+    indices.push_back(base + 2);
+    indices.push_back(base + 2);
+    indices.push_back(base + 3);
+    indices.push_back(base);
+    positions.append_range(face);
+    normals.append_range(views::repeat(normal) | views::take(4));
+  };
+  addFace({ glm::vec3{ 0, 0, 0 }, { 0, 0, 1 }, { 0, 1, 1 }, { 0, 1, 0 } }, { -1, 0, 0 });
+  addFace({ glm::vec3{ 0, 0, 0 }, { 1, 0, 0 }, { 1, 0, 1 }, { 0, 0, 1 } }, { 0, -1, 0 });
+  addFace({ glm::vec3{ 0, 0, 0 }, { 0, 1, 0 }, { 1, 1, 0 }, { 1, 0, 0 } }, { 0, 0, -1 });
+  addFace({ glm::vec3{ 1, 0, 0 }, { 1, 1, 0 }, { 1, 1, 1 }, { 1, 0, 1 } }, { 1, 0, 0 });
+  addFace({ glm::vec3{ 0, 1, 0 }, { 0, 1, 1 }, { 1, 1, 1 }, { 1, 1, 0 } }, { 0, 1, 0 });
+  addFace({ glm::vec3{ 0, 0, 1 }, { 1, 0, 1 }, { 1, 1, 1 }, { 0, 1, 1 } }, { 0, 0, 1 });
+  return ret;
+}
+
+auto generateCone(float radius = 1.0f, float height = 2.0f) -> ShapeMesh {
+  auto bottom_split_num = 40;
+  auto ret = ShapeMesh{};
+  auto& [vertices, normals, indices] = ret;
+  vertices.push_back(glm::vec3{ 0, 0, 0 });
+  normals.push_back(glm::vec3{ 0, 0, -1 });
+  for (auto i : views::iota(0, bottom_split_num)) {
+    auto x = radius * glm::cos(glm::radians(360.0f * i / bottom_split_num));
+    auto y = radius * glm::sin(glm::radians(360.0f * i / bottom_split_num));
+    vertices.push_back(glm::vec3{ x, y, 0 });
+    normals.push_back(glm::vec3{ 0, 0, -1 });
+    indices.push_back(0);
+    indices.push_back((i + 1) % bottom_split_num + 1);
+    indices.push_back(i + 1);
+  }
+  auto normal_z = radius / height;
+  auto offset = vertices.size();
+  for (auto i : views::iota(0, bottom_split_num)) {
+    auto rotate = glm::radians(360.0f * i / bottom_split_num);
+    vertices.push_back(glm::vec3{
+      radius * glm::cos(rotate),
+      radius * glm::sin(rotate),
+      0,
+    });
+    normals.push_back(glm::normalize(glm::vec3{
+      glm::cos(rotate),
+      glm::sin(rotate),
+      normal_z,
+    }));
+    vertices.push_back(glm::vec3{ 0, 0, height });
+    rotate += glm::radians(360.0f / bottom_split_num / 2);
+    normals.push_back(glm::normalize(glm::vec3{
+      glm::cos(rotate),
+      glm::sin(rotate),
+      normal_z,
+    }));
+    indices.push_back(offset + i * 2 + 1);
+    indices.push_back(offset + i * 2);
+    indices.push_back(offset + (i + 1) * 2 % (bottom_split_num * 2));
+  }
+  return ret;
+}
+
+auto generateCylinder(float radius = 1.0f, float height = 2.0f) -> ShapeMesh {
+  auto bottom_split_num = 40;
+  auto ret = ShapeMesh{};
+  auto& [vertices, normals, indices] = ret;
+  vertices.push_back(glm::vec3{ 0, 0, 0 });
+  normals.push_back(glm::vec3{ 0, 0, -1 });
+  auto offset = vertices.size();
+  for (auto i : views::iota(0, bottom_split_num)) {
+    auto x = radius * glm::cos(glm::radians(360.0f * i / bottom_split_num));
+    auto y = radius * glm::sin(glm::radians(360.0f * i / bottom_split_num));
+    vertices.push_back(glm::vec3{ x, y, 0 });
+    normals.push_back(glm::vec3{ 0, 0, -1 });
+    indices.push_back(0);
+    indices.push_back(offset + (i + 1) % bottom_split_num);
+    indices.push_back(offset + i);
+  }
+  vertices.push_back(glm::vec3{ 0, 0, height });
+  normals.push_back(glm::vec3{ 0, 0, 1 });
+  offset = vertices.size();
+  for (auto i : views::iota(0, bottom_split_num)) {
+    auto x = radius * glm::cos(glm::radians(360.0f * i / bottom_split_num));
+    auto y = radius * glm::sin(glm::radians(360.0f * i / bottom_split_num));
+    vertices.push_back(glm::vec3{ x, y, height });
+    normals.push_back(glm::vec3{ 0, 0, 1 });
+    indices.push_back(bottom_split_num + 1);
+    indices.push_back(offset + i);
+    indices.push_back(offset + (i + 1) % bottom_split_num);
+  }
+  offset = vertices.size();
+  for (auto i : views::iota(0, bottom_split_num)) {
+    auto x = radius * glm::cos(glm::radians(360.0f * i / bottom_split_num));
+    auto y = radius * glm::sin(glm::radians(360.0f * i / bottom_split_num));
+    vertices.push_back(glm::vec3{ x, y, 0 });
+    normals.push_back(glm::normalize(glm::vec3{ x, y, 0 }));
+    vertices.push_back(glm::vec3{ x, y, height });
+    normals.push_back(glm::normalize(glm::vec3{ x, y, 0 }));
+    indices.push_back(offset + i * 2 + 1);
+    indices.push_back(offset + i * 2);
+    indices.push_back(offset + (i + 1) * 2 % (bottom_split_num * 2));
+    indices.push_back(offset + (i + 1) * 2 % (bottom_split_num * 2));
+    indices.push_back(offset + (i + 1) * 2 % (bottom_split_num * 2) + 1);
+    indices.push_back(offset + i * 2 + 1);
+  }
+  return ret;
+}
+
+auto generateSphere(float radius = 1.0f) -> ShapeMesh {
+  // v: 纬度, u: 经度
+  // x = r * cos(u) * sin(v)
+  // y = r * sin(u) * sin(v)
+  // z = r * cos(v)
+  auto split_num = 40;
+  auto ret = ShapeMesh{};
+  auto& [vertices, normals, indices] = ret;
+  // 纬度 major
+  for (int i = 0; i < split_num; i++) {
+    auto u = glm::radians(360.0f * i / split_num);
+    for (int j = 0; j <= split_num; j++) {
+      auto v = glm::radians(180.0f * j / split_num);
+      auto x = radius * glm::cos(u) * glm::sin(v);
+      auto y = radius * glm::sin(u) * glm::sin(v);
+      auto z = radius * glm::cos(v);
+      vertices.push_back(glm::vec3{ x, y, z });
+      normals.push_back(glm::normalize(glm::vec3{ x, y, z }));
+    }
+  }
+  for (int i = 0; i < split_num; i++) {
+    for (int j = 0; j < split_num; j++) {
+      indices.push_back(i * split_num + j);
+      indices.push_back(i * split_num + j + 1);
+      indices.push_back((i + 1) % split_num * split_num + j + 1);
+      indices.push_back((i + 1) % split_num * split_num + j + 1);
+      indices.push_back((i + 1) % split_num * split_num + j);
+      indices.push_back(i * split_num + j);
+    }
+  }
+  return ret;
+}
+
+auto generateArrow() -> ShapeMesh {
+  auto cone = generateCone(0.1, 0.4).transform(trans::translate(glm::vec3{ 0, 0, 1.0 }));
+  auto cylinder = generateCylinder(0.05, 1);
+  return ShapeMesh::merge({ cone, cylinder });
+}
+
+auto generateAxis() -> ShapeMesh {
+  using trans::Axis;
+  auto arrow_z = generateArrow();
+  auto arrow_x = arrow_z.transform(trans::rotate<Axis::Y>(90));
+  auto arrow_y = arrow_z.transform(trans::rotate<Axis::X>(-90));
+  return ShapeMesh::merge({ arrow_x, arrow_y, arrow_z });
+}
+
+auto createShape(
+  ShapeMesh shape, glm::vec3 color = { 0.7f, 0.2f, 0.5f }, glm::vec3 location = { 0.0f, 0.0f, 0.0f }
+) -> pl::LightObject {
+  auto mesh = pl::LightMesh{
+    .positions = shape.positions,
+    .normals = shape.normals,
+    .tex_coords = views::repeat(glm::vec2{ 0, 0 }) | views::take(shape.positions.size()) |
+                  ranges::to<std::vector>(),
+    .indices = shape.indices,
+  };
+  auto color_a = glm::vec4{ color, 1.0f };
+  auto object = pl::LightObject{
+    std::move(mesh),
+    rd::SampledTexture{
+      std::as_bytes(std::span{ &color_a, 1 }),
+      VK_FORMAT_R32G32B32A32_SFLOAT,
+      { 1, 1 },
+      false,
+      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+    },
+  };
+  object.getModelTrans() = trans::model::create(location);
+  return object;
+}
+
+} // namespace tool

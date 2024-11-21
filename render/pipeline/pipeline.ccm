@@ -129,8 +129,9 @@ private:
   )
     : _cmdbuf(cmdbuf), _pipeline(pipeline), _layout(layout), _extent(extent), _dyn_ref(dyn_ref),
       _vertex_info(vertex_info), _push_constants(push_constants), _dset_layouts(dset_layouts),
-      _execute_type(execute_type), _vertex_count(0), _index(false), _vertex_buffers(vertex_buffers),
-      _index_buffers(index_buffers), _dsets(dsets) {}
+      _execute_type(execute_type), _vertex_count(0), _index(false),
+      _bound_sets(dset_layouts.size()), _bound_pushes(push_constants.size()),
+      _vertex_buffers(vertex_buffers), _index_buffers(index_buffers), _dsets(dsets) {}
 
   // only for RECORD
   VkCommandBuffer                  _cmdbuf;
@@ -144,8 +145,10 @@ private:
 
   ExecuteType _execute_type;
 
-  uint32 _vertex_count;
-  bool   _index;
+  uint32            _vertex_count;
+  bool              _index;
+  std::vector<bool> _bound_sets;
+  std::vector<bool> _bound_pushes;
 
   std::vector<Buffer*>*        _vertex_buffers;
   std::vector<Buffer*>*        _index_buffers;

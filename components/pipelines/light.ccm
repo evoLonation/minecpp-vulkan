@@ -11,7 +11,9 @@ import model;
 import loop;
 import input;
 import transform;
-import pipeline.base2;
+import pipeline.base;
+import pipeline.uniform;
+import camera;
 
 export namespace pl {
 
@@ -23,15 +25,15 @@ struct LightModelVertexData {
 };
 
 struct LightModelFragmentData {
-  float shininess;
+  float shininess = 32.0f;
 };
 
 struct LightData {
-  rd::align::vec3 direction;
-  rd::align::vec3 ambient;
-  rd::align::vec3 diffuse;
-  rd::align::vec3 specular;
-  rd::align::vec3 view_pos;
+  rd::align::vec3 direction = glm::vec3{ 0.0f, 0.0f, -1.0f };
+  rd::align::vec3 ambient = glm::vec3{ 0.1f, 0.1f, 0.1f };
+  rd::align::vec3 diffuse = glm::vec3{ 0.5f, 0.5f, 0.5f };
+  rd::align::vec3 specular = glm::vec3{ 1.0f, 1.0f, 1.0f };
+  rd::align::vec3 view_pos = glm::vec3{ 5.0f, 5.0f, 5.0f };
 };
 
 constexpr auto layout_model_light = rd::meta::DescriptorLayout{
@@ -45,33 +47,155 @@ constexpr auto layout_global_light = rd::meta::DescriptorLayout{
   rd::meta::UniformBinding{ rd::meta::type<LightData>(), rd::meta::Stage::FRAGMENT },
 };
 
-using LightUnit = DrawUnitTemplate<layout_model_light, 0>;
+using IdVertex = rd::Vertex<glm::vec3>;
 
-class LightPipeline : public RenderPass {
+constexpr auto layout_id = rd::meta::DescriptorLayout{
+  rd::meta::UniformBinding{ rd::meta::type<rd::align::mat4>(), rd::meta::Stage::VERTEX },
+  rd::meta::UniformBinding{ rd::meta::type<uint32>(), rd::meta::Stage::FRAGMENT },
+};
+
+struct LightMesh {
+  std::vector<glm::vec3> positions;
+  std::vector<glm::vec3> normals;
+  std::vector<glm::vec2> tex_coords;
+  std::vector<uint16>    indices;
+};
+
+class LightObject : loop::Action {
 public:
+  LightObject() = default;
+  LightObject(LightMesh mesh, rd::SampledTexture texture) {
+    setStage(loop::Stage::BEFORE_RENDER);
+    auto light_vertices = std::vector<LightVertex>{};
+    auto id_vertices = std::vector<IdVertex>{};
+    for (auto [pos, norm, tex] : views::zip(mesh.positions, mesh.normals, mesh.tex_coords)) {
+      light_vertices.push_back({ pos, norm, tex });
+      id_vertices.push_back(pos);
+    }
+    _resource = std::make_unique<Resource>();
+    _resource->light_vertex = light_vertices;
+    _resource->id_vertex = id_vertices;
+    _resource->index_buf = { mesh.indices };
+    _resource->uniform_id_frag = _max_id++;
+    _resource->textures[0] = std::move(texture);
+    _light_unit = {
+      &_resource->light_vertex,
+      &_resource->index_buf,
+      {
+        &_resource->uniform_vertex,
+        &_resource->uniform_frag,
+        &_resource->textures[0],
+        &_resource->textures[0],
+      },
+    };
+    _id_unit = {
+      &_resource->id_vertex,
+      &_resource->index_buf,
+      { &_resource->uniform_id_vert, &_resource->uniform_id_frag },
+    };
+  }
+
+  void runLoop(loop::ActionContext const& ctx) override {
+    auto& trans = _resource->uniform_vertex->model;
+    _resource->uniform_vertex->normal_model = trans::getNormalModel(trans);
+    _resource->uniform_id_vert = trans;
+  }
+  auto getModelTrans() -> glm::mat4& { return _resource->uniform_vertex->model; }
+  auto getShininess() -> float& { return _resource->uniform_frag->shininess; }
+  auto getId() -> uint32 { return _resource->uniform_id_frag.get(); }
+  auto isSelected() -> bool;
+
+  ONLY_MOVEABLE(LightObject);
+
+private:
+  inline static uint32 _max_id = 114514;
+
+  struct Resource {
+    rd::VertexBuffer                      light_vertex;
+    rd::VertexBuffer                      id_vertex;
+    rd::IndexBuffer                       index_buf;
+    UniformBuffer<LightModelVertexData>   uniform_vertex;
+    UniformBuffer<LightModelFragmentData> uniform_frag;
+    UniformBuffer<rd::align::mat4>        uniform_id_vert;
+    UniformBuffer<uint32>                 uniform_id_frag;
+    std::array<rd::SampledTexture, 2>     textures;
+  };
+  std::unique_ptr<Resource>               _resource;
+  DrawUnitTemplate<layout_model_light, 0> _light_unit;
+  DrawUnitTemplate<layout_id, 1>          _id_unit;
+};
+
+class LightPipeline : public PROACTIVE_SINGLETON(LightPipeline),
+                      public RenderPass,
+                      public loop::Action {
+public:
+  using PROACTIVE_SINGLETON(LightPipeline)::getInstance;
   LightPipeline() {
+    setStage(loop::Stage::RENDER);
     auto pipeline_infos = std::vector<PipelineInfo>{
       PipelineInfo{
         .colors = { 0 },
-        .depst = { { .depth = { {} } } },
+        .depst = { { .attachment = 0, .depth = { {} } } },
         .vertex_shader_name = "light.vert",
         .frag_shader_name = "light.frag",
-        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-        .cull_mode = VK_CULL_MODE_BACK_BIT,
         .vertex_info = LightVertex::getVertexInfo(),
         .unit_dset_layout = getLayoutHandle<layout_model_light>(),
         .global_dset_layout = getLayoutHandle<layout_global_light>(),
       },
+      PipelineInfo{
+        .colors = { 1 },
+        .depst = { { .attachment = 1, .depth = { {} } } },
+        .vertex_shader_name = "id.vert",
+        .frag_shader_name = "id.frag",
+        .vertex_info = IdVertex::getVertexInfo(),
+        .unit_dset_layout = getLayoutHandle<layout_id>(),
+      },
     };
     auto info = RenderPassInfo{
-      .depst_formats = { VK_FORMAT_D32_SFLOAT },
+      .color_formats = { VK_FORMAT_R32_UINT },
+      .depst_formats = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT },
       .multi_sampling = VK_SAMPLE_COUNT_8_BIT,
       .pipelines = std::move(pipeline_infos),
     };
-    RenderPass::operator=(RenderPass{ info });
+    RenderPass::operator=({ info });
     setColorClearValue(0, { 0.5f, 0.5f, 0.5f, 1.0f });
+    setColorClearValue(1, { 0u });
     setDepstClearValue(0, 1.0f);
+    setDepstClearValue(1, 1.0f);
+    _dset_global_light = { &_uniform_light };
+    setGlobalDescriptorSet(0, &_dset_global_light);
+    _reader = { VK_FORMAT_R32_UINT, { 1, 1 } };
   }
+
+  auto getLight() -> LightData& { return _uniform_light.get(); }
+
+  auto getSelectedId() -> uint32 { return _current_id; }
+
+  UNCOPYABLE_MOVEABLE(LightPipeline);
+
+private:
+  void runLoop(loop::ActionContext const& ctx) override {
+    auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
+    auto cursor = input::InputProcessor::getInstance().getCursorState();
+    if (cursor.visible) {
+      int32 x = std::clamp(cursor.x, 0u, extent.width - 1);
+      int32 y = std::clamp(cursor.y, 0u, extent.height - 1);
+      _reader.loadImage(getColorAttachment(0), VK_IMAGE_ASPECT_COLOR_BIT, { x, y }, { 1, 1 }, 0);
+      _current_id = *reinterpret_cast<uint32*>(_reader.readPixel(0, 0));
+    } else {
+      _current_id = 0;
+    }
+    _uniform_light->view_pos = camera::Camera::getInstance().getViewPos();
+    draw(ctx);
+  }
+  UniformBuffer<LightData>                     _uniform_light;
+  rd::meta::DescriptorSet<layout_global_light> _dset_global_light;
+  rd::ImageLocalReader                         _reader;
+  uint32                                       _current_id = 0;
 };
+
+auto LightObject::isSelected() -> bool {
+  return LightPipeline::getInstance().getSelectedId() == getId();
+}
 
 } // namespace pl

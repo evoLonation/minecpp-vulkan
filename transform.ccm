@@ -40,6 +40,15 @@ auto transform_vec(const glm::mat4& matrix, const glm::vec3& vec) -> glm::vec3 {
 
 enum class Axis { X = 0, Y = 1, Z = 2 };
 
+auto identity() -> glm::mat4 {
+  return matrix({
+    glm::vec4{ 1.0f, 0.0f, 0.0f, 0.0f },
+    glm::vec4{ 0.0f, 1.0f, 0.0f, 0.0f },
+    glm::vec4{ 0.0f, 0.0f, 1.0f, 0.0f },
+    glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f },
+  });
+}
+
 auto translate(const glm::vec3& vec) -> glm::mat4 {
   return matrix({
     glm::vec4{ 1.0f, 0.0f, 0.0f, vec.x },

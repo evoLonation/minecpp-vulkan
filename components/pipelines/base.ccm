@@ -1,6 +1,6 @@
 module;
 #include <toy.h>
-export module pipeline.base2;
+export module pipeline.base;
 
 import std;
 import toy;
@@ -18,8 +18,8 @@ struct PipelineInfo {
   std::optional<rd::DepstOption> depst;
   std::string                    vertex_shader_name;
   std::string                    frag_shader_name;
-  VkPrimitiveTopology            topology;
-  VkCullModeFlagBits             cull_mode;
+  VkPrimitiveTopology            topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+  VkCullModeFlagBits             cull_mode = VK_CULL_MODE_BACK_BIT;
   rd::VertexInfo                 vertex_info;
   VkDescriptorSetLayout          unit_dset_layout;
   VkDescriptorSetLayout          global_dset_layout; // nullable
@@ -93,11 +93,10 @@ private:
   std::optional<uint8> _stencil_ref;
 };
 
-class RenderPass : public PROACTIVE_SINGLETON(RenderPass), public loop::Action {
+class RenderPass : public PROACTIVE_SINGLETON(RenderPass) {
 public:
   RenderPass() : PROACTIVE_SINGLETON(RenderPass)(false) {}
   RenderPass(RenderPassInfo info) {
-    setStage(loop::Stage::RENDER);
     auto& swapchain = rd::Presentation::getInstance().getSwapchain();
     auto  attachment_infos = std::vector<rd::AttachmentInfo>{};
     {
@@ -174,14 +173,15 @@ public:
     }
     _render_pass = rd::RenderPassPipeline{ attachment_infos, subpass_infos };
     _draw_units.resize(info.pipelines.size());
+    _global_dsets.resize(info.pipelines.size());
 
     createFramebuffers(info.color_formats, info.depst_formats, info.multi_sampling);
   }
-  auto getColorAttachment(uint32 index, bool resolved = false) -> rd::FrameImageManager& {
+  auto getColorAttachment(uint32 index, bool resolved = true) -> rd::FrameImageManager& {
     if (resolved) {
-      return _resolve_images[index];
+      return _resolve_images.at(index);
     } else {
-      return _color_images[index];
+      return _color_images.at(index);
     }
   }
   auto getDepstAttachment(uint32 index) -> rd::FrameImageManager& { return _depst_images[index]; }
@@ -194,17 +194,20 @@ public:
     _render_pass.setDepstClear(index, clear_value);
   }
   void setCamera(camera::CameraData* camera) { _camera = camera; }
-  void setGlobalDescriptorSet(rd::DescriptorSet* dset) { _global_dset = dset; }
+  void setGlobalDescriptorSet(uint32 index, rd::DescriptorSet* dset) {
+    _global_dsets.at(index) = dset;
+  }
 
-  void runLoop(loop::ActionContext const& ctx) override {
+  void draw(loop::ActionContext const& ctx) {
     if (ctx.recreated) {
       recreateFramebuffers();
     }
-    for (auto [index, draw_units] : _draw_units | toy::enumerate) {
+    for (auto [index, draw_units, global_dset] :
+         views::zip(views::iota(0u), _draw_units, _global_dsets)) {
       _render_pass.setRecorder(index, [&](rd::PipelineDrawer drawer) {
         drawer.bindPushConstant(VK_SHADER_STAGE_VERTEX_BIT, std::as_bytes(std::span{ _camera, 1 }));
-        if (_global_dset) {
-          drawer.bindDescriptorSet(1, _global_dset);
+        if (global_dset) {
+          drawer.bindDescriptorSet(1, global_dset);
         }
         for (auto& draw_unit : draw_units) {
           drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
@@ -250,9 +253,9 @@ private:
   std::vector<rd::FrameImage> _depst_images;
 
   camera::CameraData* _camera = nullptr;
-  rd::DescriptorSet*  _global_dset = nullptr;
 
-  std::vector<bool> _dynamic_references;
+  std::vector<bool>               _dynamic_references;
+  std::vector<rd::DescriptorSet*> _global_dsets;
 
   template <typename>
   friend class DrawUnitLoader;
@@ -282,7 +285,7 @@ private:
         swapchain.getExtent().width,
         swapchain.getExtent().height,
         multi_sampling.value_or(VK_SAMPLE_COUNT_1_BIT),
-        {},
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
       });
       if (multi_sampling) {
         _resolve_images.push_back(rd::FrameImage{
@@ -290,7 +293,7 @@ private:
           swapchain.getExtent().width,
           swapchain.getExtent().height,
           VK_SAMPLE_COUNT_1_BIT,
-          {},
+          VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
         });
       }
     }

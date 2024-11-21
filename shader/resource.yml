@@ -5,6 +5,7 @@ shader:
 - hello.vert
 - outline.vert
 - outline.frag
+- id.vert
 - id.frag
 - solid_color.frag
 - solid_color.vert

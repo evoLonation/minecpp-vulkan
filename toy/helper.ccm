@@ -97,9 +97,9 @@ public:
     }
   }
 
-  static auto getInstance() -> Derived& {
+  static auto getInstance(std::source_location loc = std::source_location::current()) -> Derived& {
     if (_instance_ptr == nullptr) {
-      toy::throwf("need proactively construct {} first!", name.value);
+      toy::throwf(loc, "need proactively construct {} first!", name.value);
     }
     return *_instance_ptr;
   }

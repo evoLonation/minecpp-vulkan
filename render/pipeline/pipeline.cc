@@ -63,6 +63,7 @@ void PipelineDrawer::bindDescriptorSet(uint32 index, DescriptorSet* dset) {
     vkCmdBindDescriptorSets(
       _cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, _layout, index, 1, &handle, 0, nullptr
     );
+    _bound_sets[index] = true;
   } else {
     _dsets->push_back(dset);
   }
@@ -70,10 +71,12 @@ void PipelineDrawer::bindDescriptorSet(uint32 index, DescriptorSet* dset) {
 
 void PipelineDrawer::bindPushConstant(VkShaderStageFlags stage, std::span<std::byte const> data) {
   if (_execute_type == RECORD) {
-    auto opt = toy::findIf(_push_constants, [&](auto& range) { return range.stageFlags == stage; });
-    TOY_CHECK_ASSERT(opt.has_value());
-    TOY_CHECK_ASSERT(data.size() == opt->size, data.size(), opt->size);
-    vkCmdPushConstants(_cmdbuf, _layout, opt->stageFlags, opt->offset, opt->size, data.data());
+    auto iter =
+      ranges::find_if(_push_constants, [&](auto& range) { return range.stageFlags == stage; });
+    TOY_CHECK_ASSERT(iter != _push_constants.end());
+    TOY_CHECK_ASSERT(data.size() == iter->size, data.size(), iter->size);
+    vkCmdPushConstants(_cmdbuf, _layout, iter->stageFlags, iter->offset, iter->size, data.data());
+    _bound_pushes[iter - _push_constants.begin()] = true;
   }
 }
 
@@ -86,6 +89,9 @@ void PipelineDrawer::setStencilReference(uint32 reference) {
 
 void PipelineDrawer::draw() {
   if (_execute_type == RECORD) {
+    TOY_CHECK_ASSERT(_vertex_count > 0);
+    TOY_CHECK_ASSERT(ranges::all_of(_bound_sets, [](auto x) { return x; }));
+    TOY_CHECK_ASSERT(ranges::all_of(_bound_pushes, [](auto x) { return x; }));
     if (_index) {
       vkCmdDrawIndexed(_cmdbuf, _vertex_count, 1, 0, 0, 0);
     } else {

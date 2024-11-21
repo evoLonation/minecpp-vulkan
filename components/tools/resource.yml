@@ -1,3 +1,5 @@
 module:
 - move.ccm:
     provide: tool.move
+- shape.ccm:
+    provide: tool.shape

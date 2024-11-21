@@ -95,6 +95,7 @@ private:
 template <auto layout, auto... binding_infos>
 class DescriptorSet_ : public rd::DescriptorSet {
 public:
+  DescriptorSet_() = default;
   template <typename ResourceType, uint32 count>
   using ResourceBinding =
     std::conditional_t<count == 1, ResourceType*, std::array<ResourceType*, count>>;
