@@ -106,7 +106,8 @@ public:
     _sub_components.push_back(std::move(component));
   }
   auto getSubComponents() -> std::vector<SceneComponent>& { return _sub_components; }
-  auto getTransToParent() -> ModelTransform& { return _to_parent; }
+  auto getTransform() -> ModelTransform& { return _to_parent; }
+  auto getTransToParent() -> glm::mat4 const& { return _to_parent.get(); }
   auto getTransToWorld() -> glm::mat4 const& { return _to_world; }
 
   auto isSelected() -> bool { return _object.valid() && _object.isSelected(); }
@@ -146,20 +147,20 @@ class ModelTransformGuiController : public PROACTIVE_SINGLETON(ModelTransformGui
 public:
   ModelTransformGuiController() = default;
   void draw() override {
-    if (!_controller.valid()) {
-      ImGui::Text("There is no any ModelTransform.");
+    if (!_transform.valid()) {
+      ImGui::Text("There is no any valid ModelTransform.");
       return;
     }
-    gui::slider("location", _controller->location);
-    gui::slider("euler_angle", _controller->rotate_euler, glm::vec3{ -180 }, glm::vec3{ 180 });
-    gui::slider("scale", _controller->scale_factor);
+    gui::slider("location", _transform->location);
+    gui::slider("euler_angle", _transform->rotate_euler, glm::vec3{ -180 }, glm::vec3{ 180 });
+    gui::slider("scale", _transform->scale_factor);
   }
 
   UNCOPYABLE_MOVEABLE(ModelTransformGuiController);
 
 private:
   friend class MoveTransformSelector;
-  cp::ptr<ModelTransform> _controller;
+  cp::ptr<ModelTransform> _transform;
 };
 
 class MoveTransformSelector : public fw::Action, public cp::Component {
@@ -182,8 +183,7 @@ private:
         if (_down) {
           _down = false;
           if (_component->isSelected()) {
-            ModelTransformGuiController::getInstance()._controller =
-              &_component->getTransToParent();
+            ModelTransformGuiController::getInstance()._transform = &_component->getTransform();
           }
         }
       }
@@ -201,11 +201,11 @@ public:
     auto x_axis = SceneComponent{};
     _axises[0] = &x_axis;
     // _axises[0]->setObject(pl::LightObject{ createShape(generateArrow(), { 1, 0, 0 }) });
-    x_axis.getTransToParent().rotate(mt::Axis::Y, 90);
+    x_axis.getTransform().rotate(mt::Axis::Y, 90);
     auto y_axis = SceneComponent{};
     _axises[1] = &y_axis;
     // _axises[1]->setObject(pl::LightObject{ createShape(generateArrow(), { 0, 1, 0 }) });
-    y_axis.getTransToParent().rotate(mt::Axis::X, -90);
+    y_axis.getTransform().rotate(mt::Axis::X, -90);
     auto z_axis = SceneComponent{};
     _axises[2] = &z_axis;
     // _axises[2]->setObject(pl::LightObject{ createShape(generateArrow(), { 0, 0, 1 }) });
@@ -252,7 +252,7 @@ private:
     } else if (_axis) {
       auto now_pos = getAxisPos(*_axis);
       if (glm::abs(now_pos - _start_pos) > _unit_length) {
-        _root.getTransToParent().translate(*_axis, now_pos - _start_pos);
+        _root.getTransform().translate(*_axis, now_pos - _start_pos);
       }
     }
   }
