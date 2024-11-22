@@ -2,7 +2,7 @@
    "editor.tabSize": 2,
    "clangd.arguments": [
       // 关闭头文件自动插入
-      "--header-insertion=never",
+      "--header-insertion=never"
    ],
    "files.associations": {
       "*.ccm": "cpp"

@@ -15,17 +15,19 @@ module;
 
 #include <__config>
 
+// by zzy
+#define _LIBCPP_HAS_FILESYSTEM 1
+#define _LIBCPP_HAS_LOCALIZATION 1
+
 // The headers of Table 24: C++ library headers [tab:headers.cpp]
 // and the headers of Table 25: C++ headers for C library facilities [tab:headers.cpp.c]
 #include <algorithm>
 #include <any>
 #include <array>
-#if !defined(_LIBCPP_HAS_NO_ATOMIC_HEADER)
+#if _LIBCPP_HAS_ATOMIC_HEADER
 #  include <atomic>
 #endif
-#if !defined(_LIBCPP_HAS_NO_THREADS)
-#  include <barrier>
-#endif
+#include <barrier>
 #include <bit>
 #include <bitset>
 #include <cassert>
@@ -37,11 +39,11 @@ module;
 #include <chrono>
 #include <cinttypes>
 #include <climits>
-#if !defined(_LIBCPP_HAS_NO_LOCALIZATION)
+#if _LIBCPP_HAS_LOCALIZATION
 #  include <clocale>
 #endif
 #include <cmath>
-#if !defined(_LIBCPP_HAS_NO_LOCALIZATION)
+#if _LIBCPP_HAS_LOCALIZATION
 #  include <codecvt>
 #endif
 #include <compare>
@@ -59,47 +61,41 @@ module;
 #include <cstring>
 #include <ctime>
 #include <cuchar>
-#if !defined(_LIBCPP_HAS_NO_WIDE_CHARACTERS)
-#  include <cwchar>
-#endif
-#if !defined(_LIBCPP_HAS_NO_WIDE_CHARACTERS)
-#  include <cwctype>
-#endif
+#include <cwchar>
+#include <cwctype>
 #include <deque>
 #include <exception>
 #include <execution>
 #include <expected>
 #include <filesystem>
+// by zzy
+// #include <flat_map>
 #include <format>
 #include <forward_list>
-#if !defined(_LIBCPP_HAS_NO_LOCALIZATION)
+#if _LIBCPP_HAS_LOCALIZATION
 #  include <fstream>
 #endif
 #include <functional>
-#if !defined(_LIBCPP_HAS_NO_THREADS)
-#  include <future>
-#endif
+#include <future>
 #include <initializer_list>
-#if !defined(_LIBCPP_HAS_NO_LOCALIZATION)
+#if _LIBCPP_HAS_LOCALIZATION
 #  include <iomanip>
 #endif
-#if !defined(_LIBCPP_HAS_NO_LOCALIZATION)
+#if _LIBCPP_HAS_LOCALIZATION
 #  include <ios>
 #endif
 #include <iosfwd>
-#if !defined(_LIBCPP_HAS_NO_LOCALIZATION)
+#if _LIBCPP_HAS_LOCALIZATION
 #  include <iostream>
 #endif
-#if !defined(_LIBCPP_HAS_NO_LOCALIZATION)
+#if _LIBCPP_HAS_LOCALIZATION
 #  include <istream>
 #endif
 #include <iterator>
-#if !defined(_LIBCPP_HAS_NO_THREADS)
-#  include <latch>
-#endif
+#include <latch>
 #include <limits>
 #include <list>
-#if !defined(_LIBCPP_HAS_NO_LOCALIZATION)
+#if _LIBCPP_HAS_LOCALIZATION
 #  include <locale>
 #endif
 #include <map>
@@ -111,7 +107,7 @@ module;
 #include <numbers>
 #include <numeric>
 #include <optional>
-#if !defined(_LIBCPP_HAS_NO_LOCALIZATION)
+#if _LIBCPP_HAS_LOCALIZATION
 #  include <ostream>
 #endif
 #include <print>
@@ -119,42 +115,34 @@ module;
 #include <random>
 #include <ranges>
 #include <ratio>
-#if !defined(_LIBCPP_HAS_NO_LOCALIZATION)
+#if _LIBCPP_HAS_LOCALIZATION
 #  include <regex>
 #endif
 #include <scoped_allocator>
-#if !defined(_LIBCPP_HAS_NO_THREADS)
-#  include <semaphore>
-#endif
+#include <semaphore>
 #include <set>
-#if !defined(_LIBCPP_HAS_NO_THREADS)
-#  include <shared_mutex>
-#endif
+#include <shared_mutex>
 #include <source_location>
 #include <span>
-#if !defined(_LIBCPP_HAS_NO_LOCALIZATION)
+#if _LIBCPP_HAS_LOCALIZATION
 #  include <sstream>
 #endif
 #include <stack>
 #include <stdexcept>
-#if !defined(_LIBCPP_HAS_NO_THREADS)
-#  include <stop_token>
-#endif
-#if !defined(_LIBCPP_HAS_NO_LOCALIZATION)
+#include <stop_token>
+#if _LIBCPP_HAS_LOCALIZATION
 #  include <streambuf>
 #endif
 #include <string>
 #include <string_view>
-#if !defined(_LIBCPP_HAS_NO_LOCALIZATION)
+#if _LIBCPP_HAS_LOCALIZATION
 #  include <strstream>
 #endif
-#if !defined(_LIBCPP_HAS_NO_LOCALIZATION)
+#if _LIBCPP_HAS_LOCALIZATION
 #  include <syncstream>
 #endif
 #include <system_error>
-#if !defined(_LIBCPP_HAS_NO_THREADS)
-#  include <thread>
-#endif
+#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <typeindex>
@@ -168,39 +156,48 @@ module;
 #include <version>
 
 // *** Headers not yet available ***
-#if __has_include(<debugging>)
-#  error "please update the header information for <debugging> in headers_not_available in utils/libcxx/header_information.py"
-#endif // __has_include(<debugging>)
-#if __has_include(<flat_map>)
-#  error "please update the header information for <flat_map> in headers_not_available in utils/libcxx/header_information.py"
-#endif // __has_include(<flat_map>)
-#if __has_include(<flat_set>)
-#  error "please update the header information for <flat_set> in headers_not_available in utils/libcxx/header_information.py"
-#endif // __has_include(<flat_set>)
-#if __has_include(<generator>)
-#  error "please update the header information for <generator> in headers_not_available in utils/libcxx/header_information.py"
-#endif // __has_include(<generator>)
-#if __has_include(<hazard_pointer>)
-#  error "please update the header information for <hazard_pointer> in headers_not_available in utils/libcxx/header_information.py"
-#endif // __has_include(<hazard_pointer>)
-#if __has_include(<linalg>)
-#  error "please update the header information for <linalg> in headers_not_available in utils/libcxx/header_information.py"
-#endif // __has_include(<linalg>)
-#if __has_include(<rcu>)
-#  error "please update the header information for <rcu> in headers_not_available in utils/libcxx/header_information.py"
-#endif // __has_include(<rcu>)
-#if __has_include(<spanstream>)
-#  error "please update the header information for <spanstream> in headers_not_available in utils/libcxx/header_information.py"
-#endif // __has_include(<spanstream>)
-#if __has_include(<stacktrace>)
-#  error "please update the header information for <stacktrace> in headers_not_available in utils/libcxx/header_information.py"
-#endif // __has_include(<stacktrace>)
-#if __has_include(<stdfloat>)
-#  error "please update the header information for <stdfloat> in headers_not_available in utils/libcxx/header_information.py"
-#endif // __has_include(<stdfloat>)
-#if __has_include(<text_encoding>)
-#  error "please update the header information for <text_encoding> in headers_not_available in utils/libcxx/header_information.py"
-#endif // __has_include(<text_encoding>)
+//
+// This validation is mainly to catch when a new header is added but adding the
+// corresponding .inc file is forgotten. However, the check based on __has_include
+// alone doesn't work on Windows because the Windows SDK is on the include path,
+// and that means the MSVC STL headers can be found as well, tricking __has_include
+// into thinking that libc++ provides the header.
+//
+#ifndef _WIN32
+#  if __has_include(<debugging>)
+#    error "please update the header information for <debugging> in headers_not_available in utils/libcxx/header_information.py"
+#  endif // __has_include(<debugging>)
+#  if __has_include(<flat_set>)
+#    error "please update the header information for <flat_set> in headers_not_available in utils/libcxx/header_information.py"
+#  endif // __has_include(<flat_set>)
+#  if __has_include(<generator>)
+#    error "please update the header information for <generator> in headers_not_available in utils/libcxx/header_information.py"
+#  endif // __has_include(<generator>)
+#  if __has_include(<hazard_pointer>)
+#    error "please update the header information for <hazard_pointer> in headers_not_available in utils/libcxx/header_information.py"
+#  endif // __has_include(<hazard_pointer>)
+#  if __has_include(<inplace_vector>)
+#    error "please update the header information for <inplace_vector> in headers_not_available in utils/libcxx/header_information.py"
+#  endif // __has_include(<inplace_vector>)
+#  if __has_include(<linalg>)
+#    error "please update the header information for <linalg> in headers_not_available in utils/libcxx/header_information.py"
+#  endif // __has_include(<linalg>)
+#  if __has_include(<rcu>)
+#    error "please update the header information for <rcu> in headers_not_available in utils/libcxx/header_information.py"
+#  endif // __has_include(<rcu>)
+#  if __has_include(<spanstream>)
+#    error "please update the header information for <spanstream> in headers_not_available in utils/libcxx/header_information.py"
+#  endif // __has_include(<spanstream>)
+#  if __has_include(<stacktrace>)
+#    error "please update the header information for <stacktrace> in headers_not_available in utils/libcxx/header_information.py"
+#  endif // __has_include(<stacktrace>)
+#  if __has_include(<stdfloat>)
+#    error "please update the header information for <stdfloat> in headers_not_available in utils/libcxx/header_information.py"
+#  endif // __has_include(<stdfloat>)
+#  if __has_include(<text_encoding>)
+#    error "please update the header information for <text_encoding> in headers_not_available in utils/libcxx/header_information.py"
+#  endif // __has_include(<text_encoding>)
+#endif // _WIN32
 
 export module std;
 
@@ -241,15 +238,15 @@ export module std;
 // by zzy
 // #include "std/ctime.inc"
 #include "std/cuchar.inc"
-// by zzy
-// #include "std/cwchar.inc"
+#include "std/cwchar.inc"
 #include "std/cwctype.inc"
 #include "std/deque.inc"
 #include "std/exception.inc"
 #include "std/execution.inc"
 #include "std/expected.inc"
 #include "std/filesystem.inc"
-#include "std/flat_map.inc"
+// by zzy
+// #include "std/flat_map.inc"
 #include "std/flat_set.inc"
 #include "std/format.inc"
 #include "std/forward_list.inc"
@@ -308,9 +305,9 @@ export module std;
 #include "std/text_encoding.inc"
 #include "std/thread.inc"
 #include "std/tuple.inc"
-#include "std/type_traits.inc"
 #include "std/typeindex.inc"
 #include "std/typeinfo.inc"
+#include "std/type_traits.inc"
 #include "std/unordered_map.inc"
 #include "std/unordered_set.inc"
 #include "std/utility.inc"

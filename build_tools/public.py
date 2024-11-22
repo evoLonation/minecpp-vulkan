@@ -217,7 +217,7 @@ class Compiler:
     clang_executable_path = "clang"
     system_include_dirs = [
         "C:/Users/ZhengyangZhao/msys64/mingw64/include/c++/v1",
-        "C:/Users/ZhengyangZhao/msys64/mingw64/lib/clang/18/include",
+        "C:/Users/ZhengyangZhao/msys64/mingw64/lib/clang/19/include",
     ]
     system_link_dirs = [
         "C:/Users/18389/msys2/mingw64/lib",

@@ -2,11 +2,14 @@
 - 安装cmake（用于构建第三方库）
 - 安装ninja
 - 安装msys2
-- 在msys2 mingw64中执行:
+- 安装llvm，在msys2 mingw64中执行:
+  - `pacman -Sy # 更新本地的包数据库(用于升级)`
+  - `pacman -S mingw-w64-x86_64-clang-tools-extra`
   - `pacman -S mingw-w64-x86_64-clang`
   - `pacman -S mingw-w64-x86_64-libc++`
-  - `pacman -S mingw-w64-x86_64-clang-tools-extra`
   - `pacman -S mingw-w64-x86_64-lldb`
+- 目前llvm版本为19
+- lldb v19版本需要将bin目录下的libpython3.11.dll 改为 libpython3.12.dll
 
 # 第三方库
 ## glfw3

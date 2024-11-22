@@ -5,16 +5,26 @@ export module toy.enums;
 import std;
 
 import toy.log;
+import toy.concepts;
 
 export namespace toy {
 
+template <typename Derived>
 struct EnumBase {
   constexpr EnumBase() = default;
+
+private:
+  template <typename EnumT>
+  friend constexpr auto enum2String(EnumT t) -> const char*;
+
+  constexpr static auto getPair() { return Derived::pair; }
+  constexpr static auto getCount() { return Derived::count; }
 };
 
 } // namespace toy
 
-export template <std::derived_from<toy::EnumBase> T>
+export template <typename T>
+  requires std::derived_from<T, toy::EnumBase<T>>
 class std::formatter<T> : public std::formatter<std::string> {
 public:
   template <typename FormatContext, typename... Args>
@@ -29,13 +39,13 @@ private:
 export namespace toy {
 
 // for macro generate to enum
-template <typename EnumT>
+template <toy::InstantiationOf<EnumBase> EnumT>
 constexpr auto enum2String(EnumT t) -> const char* {
-  return &EnumT::pair.first[EnumT::pair.second[t._value]];
+  return &EnumT::getPair().first[EnumT::getPair().second[t._value]];
 }
 template <typename EnumT>
 constexpr auto enumCount() -> std::size_t {
-  return EnumT::count;
+  return EnumT::getCount();
 }
 
 template <int... Values, std::size_t N>
@@ -108,7 +118,9 @@ struct EnumSet {
   auto end() const { return Iterator(*this, _bitset.size()); }
 };
 
-namespace test_Enum {
+} // namespace toy
+
+export namespace test_Enum {
 
 TOY_ENUM(Giao, YUANSHEN, QIDONG, YIGEIWOLI);
 
@@ -127,7 +139,9 @@ void test() {
 
 } // namespace test_Enum
 
-namespace test_EnumSet {
+export namespace test_EnumSet {
+
+using namespace toy;
 
 enum class A { A, B, C, MAX_ENUM_VALUE };
 
@@ -141,5 +155,3 @@ void test() {
 }
 
 } // namespace test_EnumSet
-
-} // namespace toy

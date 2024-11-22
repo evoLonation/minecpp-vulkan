@@ -85,7 +85,8 @@ void inputText(const std::string& label, std::string& text) {
   text.resize(size);
 }
 
-template <std::derived_from<toy::EnumBase> T>
+template <typename T>
+  requires std::derived_from<T, toy::EnumBase<T>>
 void selectEnum(const std::string& label, T& value) {
   [&]<size_t... enum_indices>(std::index_sequence<enum_indices...> _) {
     constexpr auto enum_items =

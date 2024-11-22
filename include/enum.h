@@ -1,7 +1,6 @@
 #define TOY_ENUM(name, ...)                                                                        \
-  class name : public toy::EnumBase {                                                              \
-    template <typename EnumT>                                                                      \
-    friend constexpr auto toy::enum2String(EnumT t) -> const char*;                                \
+  class name : public toy::EnumBase<name> {                                                        \
+    friend toy::EnumBase<name>;                                                                    \
                                                                                                    \
   public:                                                                                          \
     enum Enum { __VA_ARGS__ };                                                                     \

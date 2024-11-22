@@ -45,8 +45,10 @@ struct OverloadLambda : public Lambdas... {
   using Lambdas::operator()...;
 };
 
+auto _ptr_manager_lambda = [](auto) {};
+
 template <typename P>
-using PtrManager = std::unique_ptr<std::remove_pointer_t<P>, decltype([](auto) {})>;
+using PtrManager = std::unique_ptr<std::remove_pointer_t<P>, decltype(_ptr_manager_lambda)>;
 
 /**
  * @brief must place it to the first base class location
@@ -281,6 +283,14 @@ void test() {
   func<"abcd">();
   func<StringLiteral<5>::from("abcd")>();
   func<stringView2Literal<[]() { return std::string_view{ "abcd" }; }>()>();
+
+  class A;
+  auto ptr = PtrManager<A*>{ nullptr, _ptr_manager_lambda };
+  auto ptr_ = PtrManager<A*>{};
+  ptr_ = std::move(ptr);
+  auto ptr2 = PtrManager<void*>{};
+  auto ptr2_ = PtrManager<void*>{ std::move(ptr2) };
+  ptr2 = std::move(ptr2_);
 }
 
 } // namespace test_StringLiteral

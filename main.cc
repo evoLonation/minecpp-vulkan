@@ -30,7 +30,7 @@ int main() {
   try {
     json::test_json();
     toy::test_Generator::test();
-    toy::test_EnumSet::test();
+    test_EnumSet::test();
     auto  ctx = ctx::Context{ "hello vulkan", 1920, 1080 };
     auto  dset_pools = rd::meta::DescriptorPools{};
     auto& input = input::InputProcessor::getInstance();
