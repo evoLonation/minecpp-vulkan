@@ -20,3 +20,5 @@ sub_dir:
 - components
 target:
 - main.cc: hello_vulkan
+test:
+- transform_test.cc

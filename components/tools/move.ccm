@@ -12,6 +12,7 @@ import transform;
 import pipeline.uniform;
 import tool.shape;
 import gui;
+import input;
 
 import <imgui_config.h>;
 
@@ -19,14 +20,14 @@ export namespace tool {
 
 class ModelTransform : public loop::Action {
 public:
-  ModelTransform() = default;
-  ModelTransform(glm::mat4* model) : loop::Action(loop::Stage::BEFORE_RENDER), model(model) {}
+  ModelTransform() : ModelTransform{ trans::model::create() } {}
+  ModelTransform(glm::mat4 const& model)
+    : loop::Action(loop::Stage::BEFORE_RENDER), _model(model) {}
   void translate(glm::vec3 const& delta) {
     if (mode == WORLD) {
       location += delta;
     } else {
-      auto r_2 =
-        trans::rotate(rotate_euler.x, rotate_euler.y, rotate_euler.z) * trans::translate(delta);
+      auto r_2 = trans::rotate(rotate_euler) * trans::translate(delta);
       // r_2 = t_new * r_new
       // t_new = t_2[3][0-3], r_new = t_2[0-2][0-2]
       location += glm::vec3{ r_2[3] };
@@ -37,19 +38,16 @@ public:
   void rotate(trans::Axis axis, float degree) {
     auto r_new = glm::mat4{};
     if (mode == WORLD) {
-      r_new =
-        trans::rotate(axis, degree) * trans::rotate(rotate_euler.x, rotate_euler.y, rotate_euler.z);
+      r_new = trans::rotate(axis, degree) * trans::rotate(rotate_euler);
     } else {
-      r_new =
-        trans::rotate(rotate_euler.x, rotate_euler.y, rotate_euler.z) * trans::rotate(axis, degree);
+      r_new = trans::rotate(rotate_euler) * trans::rotate(axis, degree);
     }
     rotate_euler = trans::getEulerAngle(r_new);
   }
   void scale(trans::Axis axis, float factor) {
     using enum trans::Axis;
     if (mode == WORLD) {
-      auto s_r =
-        trans::scale(axis, factor) * trans::rotate(rotate_euler.x, rotate_euler.y, rotate_euler.z);
+      auto s_r = trans::scale(axis, factor) * trans::rotate(rotate_euler);
       auto new_scale_factor = glm::vec3{
         glm::sqrt(glm::length(s_r[0])),
         glm::sqrt(glm::length(s_r[1])),
@@ -60,49 +58,69 @@ public:
       scale_factor[static_cast<int>(axis)] *= factor;
     }
   }
-  void runLoop(loop::ActionContext const& ctx) override {
-    *model = trans::translate(location) *
-             trans::rotate(rotate_euler.x, rotate_euler.y, rotate_euler.z) *
-             trans::scale(scale_factor);
-  }
+  auto get() const -> glm::mat4 const& { return _model; }
+
   glm::vec3 location = { 0, 0, 0 };
   glm::vec3 rotate_euler = { 0, 0, 0 };
   glm::vec3 scale_factor = { 1, 1, 1 };
   enum Mode { LOCAL, WORLD };
   Mode mode = WORLD;
 
+  ONLY_MOVEABLE(ModelTransform);
+
 private:
-  glm::mat4* model = nullptr;
+  glm::mat4 _model;
+
+  void runLoop(loop::ActionContext const& ctx) override {
+    _model = trans::translate(location) * trans::rotate(rotate_euler) * trans::scale(scale_factor);
+  }
 };
 
-class SceneComponent : public loop::Action {
+class SceneComponent : toy::AutoMoveAssigner<SceneComponent>, public loop::Action {
 public:
-  SceneComponent() = default;
-  SceneComponent(pl::LightObject object) : _controller(&_to_parent) {
+  SceneComponent() {
+    setStage(loop::Stage::BEFORE_RENDER);
+    _to_world = _to_parent.get();
+  }
+  SceneComponent(pl::LightObject object) {
     setStage(loop::Stage::BEFORE_RENDER);
     _object = std::move(object);
-    _to_world = _object.getModelTrans();
-    _to_parent = _object.getModelTrans();
+    _object.getModelTrans() = _to_parent.get();
+    _to_world = _to_parent.get();
   }
-  void add(std::unique_ptr<SceneComponent> component) {
-    component->_is_root = false;
+  void add(SceneComponent component) {
+    component._is_root = false;
     _sub_components.push_back(std::move(component));
   }
+  auto getSubComponents() -> std::vector<SceneComponent>& { return _sub_components; }
+  auto getTransToParent() -> ModelTransform& { return _to_parent; }
+  auto getTransToWorld() -> glm::mat4 const& { return _to_world; }
 
-  auto getController() -> ModelTransform& { return _controller; }
+  auto isSelected() -> bool { return _object.valid() && _object.isSelected(); }
+
+  REGISTER_BEFORE_DESTROY(SceneComponent, { _beforeDestroy(); });
+
+private:
+  bool                        _is_root = true;
+  ModelTransform              _to_parent;
+  pl::LightObject             _object;
+  glm::mat4                   _to_world;
+  std::vector<SceneComponent> _sub_components;
 
   void runLoop(loop::ActionContext const& ctx) override {
     if (_is_root) {
       auto handleComponent = std::function<void(SceneComponent & component, glm::mat4 * father)>{};
       handleComponent = [&handleComponent](SceneComponent& component, glm::mat4* father) {
         if (father == nullptr) {
-          component._to_world = component._to_parent;
+          component._to_world = component._to_parent.get();
         } else {
-          component._to_world = *father * component._to_parent;
+          component._to_world = *father * component._to_parent.get();
         }
-        component._object.getModelTrans() = component._to_world;
+        if (component._object.valid()) {
+          component._object.getModelTrans() = component._to_world;
+        }
         for (auto& sub : component._sub_components) {
-          handleComponent(*sub, &component._to_world);
+          handleComponent(sub, &component._to_world);
         }
       };
       handleComponent(*this, nullptr);
@@ -110,22 +128,14 @@ public:
     checkSelected();
   }
   void checkSelected();
-
-  UNCOPYABLE_MOVEABLE(SceneComponent);
-
-private:
-  bool                                         _is_root = true;
-  ModelTransform                               _controller;
-  pl::LightObject                              _object;
-  glm::mat4                                    _to_world;
-  glm::mat4                                    _to_parent;
-  std::vector<std::unique_ptr<SceneComponent>> _sub_components;
+  void _beforeDestroy();
 };
 
 class ModelTransformGui : public PROACTIVE_SINGLETON(ModelTransformGui), public gui::Drawer {
 public:
   ModelTransformGui() = default;
   void setController(ModelTransform* controller) { _controller = controller; }
+  auto getController() -> ModelTransform* { return _controller; }
   void draw() override {
     if (_controller == nullptr) {
       ImGui::Text("There is no any ModelTransform.");
@@ -143,9 +153,58 @@ private:
 };
 
 void SceneComponent::checkSelected() {
-  if (_object.isSelected()) {
-    ModelTransformGui::getInstance().setController(&_controller);
+  if (_object.valid() && _object.isSelected()) {
+    ModelTransformGui::getInstance().setController(&_to_parent);
   }
 }
+
+void SceneComponent::_beforeDestroy() {
+  auto& gui = ModelTransformGui::getInstance();
+  if (gui.getController() == &_to_parent) {
+    gui.setController(nullptr);
+  }
+}
+
+class MoveController : public loop::Action {
+public:
+  MoveController() : loop::Action(loop::Stage::BEFORE_RENDER) {
+    _root = {};
+    auto x_axis = SceneComponent{ pl::LightObject{ createShape(generateArrow(), { 1, 0, 0 }) } };
+    x_axis.getTransToParent().rotate(trans::Axis::Y, 90);
+    auto y_axis = SceneComponent{ pl::LightObject{ createShape(generateArrow(), { 0, 1, 0 }) } };
+    y_axis.getTransToParent().rotate(trans::Axis::X, -90);
+    auto z_axis = SceneComponent{ pl::LightObject{ createShape(generateArrow(), { 0, 0, 1 }) } };
+    _root.add(std::move(x_axis));
+    _root.add(std::move(y_axis));
+    _root.add(std::move(z_axis));
+  }
+
+  // must is root component
+  void setControl(SceneComponent* scene) { _selected = scene; }
+
+  enum Mode { LOCAL, WORLD };
+  Mode mode = WORLD;
+
+private:
+  SceneComponent  _root;
+  SceneComponent* _selected;
+
+  void runLoop(loop::ActionContext const& ctx) override {
+    auto& input = input::InputProcessor::getInstance();
+    if (input.getState(input::Mouse::LEFT)->state == input::ButtonState::DOWN) {
+      auto& x_axis = _root.getSubComponents()[0];
+      auto& y_axis = _root.getSubComponents()[1];
+      auto& z_axis = _root.getSubComponents()[2];
+      // if (x_axis.isSelected()) {
+      //   _axis = trans::Axis::X;
+
+      //   auto plane = trans::Surface{ x_axis.getTransToParent() };
+      // }
+    }
+  }
+
+  trans::Axis _axis;
+  float       _start_pos;
+};
 
 } // namespace tool

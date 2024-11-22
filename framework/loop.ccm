@@ -48,7 +48,11 @@ protected:
   }
 
   Action(const Action& e) noexcept : _stage(e._stage) { add(); }
-  Action(Action&& e) noexcept : Action(e) {}
+  Action(Action&& e) noexcept {
+    e.remove();
+    _stage = std::move(e._stage);
+    add();
+  }
   auto operator=(const Action& e) noexcept -> Action& {
     remove();
     _stage = e._stage;
@@ -56,7 +60,10 @@ protected:
     return *this;
   }
   auto operator=(Action&& e) noexcept -> Action& {
-    *this = e;
+    e.remove();
+    remove();
+    _stage = std::move(e._stage);
+    add();
     return *this;
   }
 

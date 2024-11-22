@@ -19,7 +19,11 @@ if __name__ == "__main__":
             std::println("start test {id}");
             for (auto& [name, func] : {id}_map) {{
               std::println("start test {{}}", name);
-              func();
+              try {{
+                func();
+              }} catch (const std::exception& e) {{
+                std::println("test {{}} failed: \\n{{}}", name, e.what());
+              }}
             }}
             """
         )

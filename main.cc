@@ -31,7 +31,6 @@ int main() {
     json::test_json();
     toy::test_Generator::test();
     toy::test_EnumSet::test();
-    trans::test_trans();
     auto  ctx = ctx::Context{ "hello vulkan", 1920, 1080 };
     auto  dset_pools = rd::meta::DescriptorPools{};
     auto& input = input::InputProcessor::getInstance();
@@ -43,19 +42,17 @@ int main() {
     render_pass.setCamera(&camera.getData());
 
     auto [positions, normals, tex_coords, indices] = model::getModelInfo("model/viking_room.obj");
-    auto object1 = tool::SceneComponent{ {
-      pl::LightMesh{
-        std::move(positions), std::move(normals), std::move(tex_coords), std::move(indices) },
-      rd::SampledTexture::fromFile(
-        "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
-      ),
-    } };
-    auto cube = std::make_unique<tool::SceneComponent>(tool::createShape(
-      tool::generateCube(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f }
-    ));
-    auto cone = std::make_unique<tool::SceneComponent>(tool::createShape(
-      tool::generateCone(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 5.0f }
-    ));
+    // auto object1 = tool::SceneComponent{ {
+    //   pl::LightMesh{
+    //     std::move(positions), std::move(normals), std::move(tex_coords), std::move(indices) },
+    //   rd::SampledTexture::fromFile(
+    //     "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+    //   ),
+    // } };
+    // auto cube = tool::SceneComponent{ tool::createShape(
+    //   tool::generateCube(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f }
+    // ) };
+
     // auto cylinder = std::make_unique<tool::SceneComponent>(tool::createShape(
     //   tool::generateCylinder(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 10.0f }
     // ));
@@ -65,8 +62,15 @@ int main() {
     // auto axis = std::make_unique<tool::SceneComponent>(tool::createShape(
     //   tool::generateAxis(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 0.0f }
     // ));
+    auto move = tool::MoveController{};
 
-    cube->add(std::move(cone));
+    // {
+    //   auto cone = tool::SceneComponent{ tool::createShape(
+    //     tool::generateCone(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 5.0f }
+    //   ) };
+    //   cube.add(std::move(cone));
+    //   cube.getTrans().translate(glm::vec3{ 0.0f, 0.0f, 5.0f });
+    // }
 
     loop::Loop::getInstance().run();
 

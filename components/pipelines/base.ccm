@@ -40,13 +40,15 @@ public:
   ~DrawUnitLoader() { remove(); }
   DrawUnitLoader(const DrawUnitLoader&) noexcept = delete;
   DrawUnitLoader(DrawUnitLoader&& e) noexcept {
-    _subpass_n = e._subpass_n;
+    e.remove();
+    _subpass_n = std::move(e._subpass_n);
     add();
   }
   auto operator=(const DrawUnitLoader&) noexcept -> DrawUnitLoader& = delete;
   auto operator=(DrawUnitLoader&& e) noexcept -> DrawUnitLoader& {
+    e.remove();
     remove();
-    _subpass_n = e._subpass_n;
+    _subpass_n = std::move(e._subpass_n);
     add();
     return *this;
   }

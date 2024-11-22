@@ -94,6 +94,7 @@ public:
       { &_resource->uniform_id_vert, &_resource->uniform_id_frag },
     };
   }
+  auto valid() const -> bool { return _resource.get(); }
 
   void runLoop(loop::ActionContext const& ctx) override {
     auto& trans = _resource->uniform_vertex->model;
