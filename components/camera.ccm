@@ -23,23 +23,14 @@ public:
   Camera() {
     setStage(fw::Stage::BEFORE_RENDER);
     auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
-    _data = {
-      .view = trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f }),
-      .proj = trans::proj::perspective({
-        .width = extent.width,
-        .height = extent.height,
-      }),
-    };
-    computeView();
+    _data.view = trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f });
+    updateProj();
+    updateView();
   }
 
   void runLoop(fw::ActionContext const& ctx) override {
     if (ctx.recreated) {
-      auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
-      _data.proj = trans::proj::perspective({
-        .width = extent.width,
-        .height = extent.height,
-      });
+      updateProj();
     }
   }
 
@@ -47,6 +38,7 @@ public:
   auto getProj() -> glm::mat4& { return _data.proj; }
   auto getData() -> CameraData& { return _data; }
   auto getViewPos() -> glm::vec3& { return _view_pos; }
+  auto getProjIV() -> glm::mat4& { return _proj_iv; }
 
   /**
    * @brief 以自身的坐标系移动 moved 的距离
@@ -55,23 +47,24 @@ public:
   void move(glm::vec3 moved) {
     // 将moved转换到世界坐标系的位移，然后更新_view_pos
     _view_pos += trans::transform_pos(trans::rotate<trans::Axis::Z>(-_rotate_z), moved);
-    computeView();
+    updateView();
   }
 
   void rotate_right(float degree) {
     // degree 为正 -> 所有坐标轴沿z轴向左转 -> 摄像机向右转
     _rotate_z += degree;
-    computeView();
+    updateView();
   }
   void rotate_up(float degree) {
     // degree为正 -> 所有坐标沿y轴向下转 -> 摄像机向上转
     _rotate_y += degree;
     _rotate_y = std::clamp(_rotate_y, -90.0f, 90.0f);
-    computeView();
+    updateView();
   }
 
 private:
   CameraData _data;
+  glm::mat4  _proj_iv; // proj inverse
   // 1. translate -_view_pos
   // 2. rotate _rotate_z by z axis
   // 3. rotate _rotate_y by y axis
@@ -79,9 +72,18 @@ private:
   float     _rotate_z = 0.0f;
   float     _rotate_y = 0.0f;
 
-  void computeView() {
+  void updateView() {
     _data.view = trans::rotate<trans::Axis::Y>(_rotate_y) *
                  trans::rotate<trans::Axis::Z>(_rotate_z) * trans::translate(-_view_pos);
+  }
+  void updateProj() {
+    auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
+    auto info = trans::proj::ProjectionInfo{
+      .width = extent.width,
+      .height = extent.height,
+    };
+    _data.proj = trans::proj::perspective(info);
+    _proj_iv = trans::proj::perspectiveInverse(info);
   }
 };
 

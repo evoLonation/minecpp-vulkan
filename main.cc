@@ -34,7 +34,7 @@ int main() {
     auto  ctx = ctx::Context{ "hello vulkan", 1920, 1080 };
     auto  dset_pools = rd::meta::DescriptorPools{};
     auto& input = fw::InputProcessor::getInstance();
-    auto  transform_gui = tool::ModelTransformGui{};
+    auto  transform_gui = tool::ModelTransformGuiController{};
     auto  render_pass = pl::LightPipeline{};
 
     auto camera = camera::Camera{};
@@ -49,9 +49,10 @@ int main() {
     //     "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
     //   ),
     // } };
-    // auto cube = tool::SceneComponent{ tool::createShape(
-    //   tool::generateCube(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f }
-    // ) };
+    auto cube = tool::SceneComponent{ tool::createShape(
+      tool::generateCube(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f }
+    ) };
+    auto selector_cube = tool::MoveTransformSelector{ &cube };
 
     // auto cylinder = std::make_unique<tool::SceneComponent>(tool::createShape(
     //   tool::generateCylinder(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 10.0f }
@@ -64,13 +65,15 @@ int main() {
     // ));
     auto move = tool::MoveController{};
 
-    // {
-    //   auto cone = tool::SceneComponent{ tool::createShape(
-    //     tool::generateCone(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 5.0f }
-    //   ) };
-    //   cube.add(std::move(cone));
-    //   cube.getTrans().translate(glm::vec3{ 0.0f, 0.0f, 5.0f });
-    // }
+    auto selector_cone = tool::MoveTransformSelector{};
+    {
+      auto cone = tool::SceneComponent{ tool::createShape(
+        tool::generateCone(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 5.0f }
+      ) };
+      selector_cone = { &cone };
+      cube.add(std::move(cone));
+      cube.getTransToParent().translate(glm::vec3{ 0.0f, 0.0f, 5.0f });
+    }
 
     fw::Loop::getInstance().run();
 

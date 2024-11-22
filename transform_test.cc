@@ -131,4 +131,35 @@ TEST(transform) {
   TOY_ASSERT(eq(getEulerAngle(rotate(0, 90, 73)), glm::vec3{ -73, 90, 0 }));
   TOY_ASSERT(eq(getEulerAngle(rotate(0, -90, -73)), glm::vec3{ -73, -90, 0 }));
   TOY_ASSERT(eq(getEulerAngle(rotate(73, 90, 0)), glm::vec3{ 73, 90, 0 }));
+
+  // distance
+  auto line1 = Line{ .direction = { 1, 0, 0 }, .point = { 0, 0, 0 } };
+  auto line2 = Line{ .direction = { 0, 1, 0 }, .point = { 0, 0, 0 } };
+  auto ret = distance(line1, line2);
+  TOY_ASSERT(ret.distance == 0);
+  TOY_ASSERT(eq(ret.point1, glm::vec3{ 0, 0, 0 }));
+  TOY_ASSERT(eq(ret.point2, glm::vec3{ 0, 0, 0 }));
+  line1 = Line{ .direction = { 1, 0, 0 }, .point = { 0, 0, 0 } };
+  line2 = Line{ .direction = { 0, 1, 0 }, .point = { 0, 0, 1 } };
+  ret = distance(line1, line2);
+  TOY_ASSERT(ret.distance == 1);
+  TOY_ASSERT(eq(ret.point1, glm::vec3{ 0, 0, 0 }));
+  TOY_ASSERT(eq(ret.point2, glm::vec3{ 0, 0, 1 }));
+  line1 = Line{ .direction = { 0, 1, 1 }, .point = { 0, 0, 0 } };
+  line2 = Line{ .direction = { 0, 1, -1 }, .point = { 0, 0, 1 } };
+  ret = distance(line1, line2);
+  TOY_ASSERT(eq(ret.point2, glm::vec3{ 0, 0.5, 0.5 }), ret.point2);
+  TOY_ASSERT(eq(ret.point1, glm::vec3{ 0, 0.5, 0.5 }), ret.point1);
+  TOY_ASSERT(eq(ret.distance, 0), ret.distance);
+  line1 = Line{ .direction = { 0, 1, 1 }, .point = { 0, 0, 0 } };
+  line2 = Line{ .direction = { 0, 1, -1 }, .point = { 1, 0, 1 } };
+  ret = distance(line1, line2);
+  TOY_ASSERT(eq(ret.point2, glm::vec3{ 1, 0.5, 0.5 }), ret.point2);
+  TOY_ASSERT(eq(ret.point1, glm::vec3{ 0, 0.5, 0.5 }), ret.point1);
+  TOY_ASSERT(eq(ret.distance, 1), ret.distance);
+  // parallel
+  line1 = Line{ .direction = { 0, 1, 1 }, .point = { 0, 0, 0 } };
+  line2 = Line{ .direction = { 0, 1, 1 }, .point = { 10, 123, 123 } };
+  ret = distance(line1, line2);
+  TOY_ASSERT(eq(ret.distance, 10), ret.distance);
 }

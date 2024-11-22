@@ -3,3 +3,7 @@ module:
     provide: tool.move
 - shape.ccm:
     provide: tool.shape
+- component.ccm:
+    provide: component
+test:
+- proxy_test.cc

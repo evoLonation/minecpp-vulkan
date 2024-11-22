@@ -1,0 +1,136 @@
+module;
+#include <toy.h>
+export module component;
+
+import std;
+import toy;
+
+export namespace cp {
+
+class Proxy;
+template <typename T>
+class ProxyFor;
+template <typename T>
+using ptr = ProxyFor<T>;
+class Component {
+public:
+  Component() = default;
+  ~Component();
+  Component(const Component&) noexcept;
+  Component(Component&&) noexcept;
+  auto operator=(const Component&) noexcept -> Component&;
+  auto operator=(Component&&) noexcept -> Component&;
+
+  auto getProxy(this auto&& self) -> ProxyFor<std::remove_reference_t<decltype(self)>>;
+
+private:
+  friend Proxy;
+  // todo: more efficient data structure
+  std::unordered_set<Proxy*> _proxies;
+};
+struct Proxy {
+public:
+  Proxy() = default;
+  Proxy(Component* ptr) : ptr{ ptr } { add(); }
+  ~Proxy() { remove(); }
+  auto valid() const -> bool { return ptr; }
+  auto get() -> Component& { return *ptr; }
+  auto operator->() -> Component* { return ptr; }
+  Proxy(const Proxy& e) noexcept {
+    ptr = e.ptr;
+    add();
+  }
+  Proxy(Proxy&& e) noexcept {
+    ptr = e.ptr;
+    add();
+    e.remove();
+    e.ptr = nullptr;
+  }
+  auto operator=(const Proxy& e) noexcept -> Proxy& {
+    remove();
+    ptr = e.ptr;
+    add();
+    return *this;
+  }
+  auto operator=(Proxy&& e) noexcept -> Proxy& {
+    remove();
+    ptr = e.ptr;
+    add();
+    e.remove();
+    e.ptr = nullptr;
+    return *this;
+  }
+
+private:
+  friend Component;
+  Component* ptr = nullptr;
+  void       set(Component* ptr) {
+    remove();
+    this->ptr = ptr;
+    add();
+  }
+
+  void add() {
+    if (ptr) {
+      ptr->_proxies.insert(this);
+    }
+  }
+  void remove() {
+    if (ptr) {
+      ptr->_proxies.erase(this);
+    }
+  }
+};
+
+template <typename T>
+class ProxyFor {
+public:
+  ProxyFor() = default;
+  ProxyFor(Component* ptr) : proxy{ ptr } {}
+  auto get() -> T& {
+    TOY_ASSERT(proxy.valid());
+    return static_cast<T&>(proxy.get());
+  }
+  auto operator->() -> T* {
+    TOY_ASSERT(proxy.valid());
+    return static_cast<T*>(&proxy.get());
+  }
+  auto valid() const -> bool { return proxy.valid(); }
+
+private:
+  Proxy proxy;
+};
+
+Component::Component(const Component& e) noexcept {
+  // do nothing
+}
+Component::Component(Component&& e) noexcept {
+  _proxies = std::move(e._proxies);
+  for (auto* p : _proxies) {
+    p->ptr = this;
+  }
+}
+auto Component::operator=(const Component& e) noexcept -> Component& {
+  // do nothing
+  return *this;
+}
+auto Component::operator=(Component&& e) noexcept -> Component& {
+  for (auto* p : e._proxies) {
+    p->ptr = this;
+  }
+  _proxies.insert_range(e._proxies);
+  e._proxies.clear();
+  return *this;
+}
+
+auto Component::getProxy(this auto&& self) -> ProxyFor<std::remove_reference_t<decltype(self)>> {
+  return { &self };
+}
+
+Component::~Component() {
+  for (auto* p : _proxies) {
+    p->ptr = nullptr;
+  }
+}
+
+} // namespace cp

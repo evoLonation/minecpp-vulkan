@@ -15,9 +15,10 @@ export namespace fw {
 
 struct ButtonState {
   enum State {
-    DOWN, // FREE to HOLD
-    HOLD,
-    RELEASE, // HOLD to FREE
+    DOWN = 0b001, // FREE to HOLD
+    HOLD = 0b010,
+    RELEASE = 0b100, // HOLD to FREE
+    PRESS = DOWN | HOLD,
     MAX_ENUM_VALUE,
   } state;
   // in DOWN, is always at 0

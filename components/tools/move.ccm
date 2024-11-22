@@ -12,15 +12,17 @@ import transform;
 import pipeline.uniform;
 import tool.shape;
 import gui;
+import component;
+import camera;
 
 import <imgui_config.h>;
 
 export namespace tool {
 
-class ModelTransform : public fw::Action {
+class ModelTransform : public fw::Action, public cp::Component {
 public:
   ModelTransform() : ModelTransform{ trans::model::create() } {}
-  ModelTransform(glm::mat4 const& model) : fw::Action(fw::Stage::BEFORE_RENDER), _model(model) {}
+  ModelTransform(glm::mat4 const& model) : fw::Action(fw::Stage::MODEL_TRANSFORM), _model(model) {}
   void translate(glm::vec3 const& delta) {
     if (mode == WORLD) {
       location += delta;
@@ -31,6 +33,20 @@ public:
       location += glm::vec3{ r_2[3] };
       r_2[3] = glm::vec4{ 0, 0, 0, 1 };
       rotate_euler = trans::getEulerAngle(r_2);
+    }
+  }
+  void translate(trans::Axis axis, float delta) {
+    using enum trans::Axis;
+    switch (axis) {
+    case X:
+      translate(glm::vec3{ delta, 0, 0 });
+      break;
+    case Y:
+      translate(glm::vec3{ 0, delta, 0 });
+      break;
+    case Z:
+      translate(glm::vec3{ 0, 0, delta });
+      break;
     }
   }
   void rotate(trans::Axis axis, float degree) {
@@ -74,17 +90,16 @@ private:
   }
 };
 
-class SceneComponent : toy::AutoMoveAssigner<SceneComponent>, public fw::Action {
+class SceneComponent : public fw::Action, public cp::Component {
 public:
   SceneComponent() {
-    setStage(fw::Stage::BEFORE_RENDER);
+    setStage(fw::Stage::SCENE_COMPONENT);
     _to_world = _to_parent.get();
   }
-  SceneComponent(pl::LightObject object) {
-    setStage(fw::Stage::BEFORE_RENDER);
+  SceneComponent(pl::LightObject object) : SceneComponent() { setObject(std::move(object)); }
+  void setObject(pl::LightObject object) {
     _object = std::move(object);
-    _object.getModelTrans() = _to_parent.get();
-    _to_world = _to_parent.get();
+    _object.getModelTrans() = _to_world;
   }
   void add(SceneComponent component) {
     component._is_root = false;
@@ -96,7 +111,7 @@ public:
 
   auto isSelected() -> bool { return _object.valid() && _object.isSelected(); }
 
-  REGISTER_BEFORE_DESTROY(SceneComponent, { _beforeDestroy(); });
+  ONLY_MOVEABLE(SceneComponent);
 
 private:
   bool                        _is_root = true;
@@ -123,19 +138,15 @@ private:
       };
       handleComponent(*this, nullptr);
     }
-    checkSelected();
   }
-  void checkSelected();
-  void _beforeDestroy();
 };
 
-class ModelTransformGui : public PROACTIVE_SINGLETON(ModelTransformGui), public gui::Drawer {
+class ModelTransformGuiController : public PROACTIVE_SINGLETON(ModelTransformGuiController),
+                                    public gui::Drawer {
 public:
-  ModelTransformGui() = default;
-  void setController(ModelTransform* controller) { _controller = controller; }
-  auto getController() -> ModelTransform* { return _controller; }
+  ModelTransformGuiController() = default;
   void draw() override {
-    if (_controller == nullptr) {
+    if (!_controller.valid()) {
       ImGui::Text("There is no any ModelTransform.");
       return;
     }
@@ -144,48 +155,77 @@ public:
     gui::slider("scale", _controller->scale_factor);
   }
 
-  UNCOPYABLE_MOVEABLE(ModelTransformGui);
+  UNCOPYABLE_MOVEABLE(ModelTransformGuiController);
 
 private:
-  ModelTransform* _controller = nullptr;
+  friend class MoveTransformSelector;
+  cp::ptr<ModelTransform> _controller;
 };
 
-void SceneComponent::checkSelected() {
-  if (_object.valid() && _object.isSelected()) {
-    ModelTransformGui::getInstance().setController(&_to_parent);
+class MoveTransformSelector : public fw::Action, public cp::Component {
+public:
+  MoveTransformSelector() = default;
+  MoveTransformSelector(SceneComponent* component) {
+    fw::Action::setStage(fw::Stage::BEFORE_RENDER);
+    _component = component;
   }
-}
 
-void SceneComponent::_beforeDestroy() {
-  auto& gui = ModelTransformGui::getInstance();
-  if (gui.getController() == &_to_parent) {
-    gui.setController(nullptr);
+private:
+  void runLoop(fw::ActionContext const& ctx) override {
+    auto& input = fw::InputProcessor::getInstance();
+    if (auto state = input.getState(fw::Mouse::LEFT)) {
+      if (state->state == fw::ButtonState::DOWN) {
+        if (_component->isSelected()) {
+          _down = true;
+        }
+      } else if (state->state == fw::ButtonState::RELEASE) {
+        if (_down) {
+          _down = false;
+          if (_component->isSelected()) {
+            ModelTransformGuiController::getInstance()._controller =
+              &_component->getTransToParent();
+          }
+        }
+      }
+    }
   }
-}
+  cp::ptr<SceneComponent> _component;
+
+  bool _down = false;
+};
 
 class MoveController : public fw::Action {
 public:
   MoveController() : fw::Action(fw::Stage::BEFORE_RENDER) {
     _root = {};
-    auto x_axis = SceneComponent{ pl::LightObject{ createShape(generateArrow(), { 1, 0, 0 }) } };
+    auto x_axis = SceneComponent{};
+    _axises[0] = &x_axis;
+    // _axises[0]->setObject(pl::LightObject{ createShape(generateArrow(), { 1, 0, 0 }) });
     x_axis.getTransToParent().rotate(trans::Axis::Y, 90);
-    auto y_axis = SceneComponent{ pl::LightObject{ createShape(generateArrow(), { 0, 1, 0 }) } };
+    auto y_axis = SceneComponent{};
+    _axises[1] = &y_axis;
+    // _axises[1]->setObject(pl::LightObject{ createShape(generateArrow(), { 0, 1, 0 }) });
     y_axis.getTransToParent().rotate(trans::Axis::X, -90);
-    auto z_axis = SceneComponent{ pl::LightObject{ createShape(generateArrow(), { 0, 0, 1 }) } };
+    auto z_axis = SceneComponent{};
+    _axises[2] = &z_axis;
+    // _axises[2]->setObject(pl::LightObject{ createShape(generateArrow(), { 0, 0, 1 }) });
     _root.add(std::move(x_axis));
     _root.add(std::move(y_axis));
     _root.add(std::move(z_axis));
+    setAxisObject(trans::Axis::X, glm::vec3{ 1, 0, 0 });
+    setAxisObject(trans::Axis::Y, glm::vec3{ 0, 1, 0 });
+    setAxisObject(trans::Axis::Z, glm::vec3{ 0, 0, 1 });
   }
 
   // must is root component
-  void setControl(SceneComponent* scene) { _selected = scene; }
+  // void setControl(SceneComponent* scene) { _selected = scene; }
 
   enum Mode { LOCAL, WORLD };
   Mode mode = WORLD;
 
 private:
-  SceneComponent  _root;
-  SceneComponent* _selected;
+  SceneComponent                         _root;
+  std::array<cp::ptr<SceneComponent>, 3> _axises;
 
   void runLoop(fw::ActionContext const& ctx) override {
     auto& input = fw::InputProcessor::getInstance();
@@ -193,16 +233,75 @@ private:
       auto& x_axis = _root.getSubComponents()[0];
       auto& y_axis = _root.getSubComponents()[1];
       auto& z_axis = _root.getSubComponents()[2];
-      // if (x_axis.isSelected()) {
-      //   _axis = trans::Axis::X;
-
-      //   auto plane = trans::Surface{ x_axis.getTransToParent() };
-      // }
+      if (x_axis.isSelected()) {
+        _axis = trans::Axis::X;
+      } else if (y_axis.isSelected()) {
+        _axis = trans::Axis::Y;
+      } else if (z_axis.isSelected()) {
+        _axis = trans::Axis::Z;
+      }
+      if (_axis) {
+        setAxisObject(*_axis, glm::vec3{ 1, 1, 0 });
+        _start_pos = getAxisPos(*_axis);
+      }
+    } else if (input[fw::Mouse::LEFT]->state == fw::ButtonState::RELEASE) {
+      if (_axis) {
+        setAxisObject(*_axis, trans::unitVec(*_axis));
+      }
+      _axis = {};
+    } else if (_axis) {
+      auto now_pos = getAxisPos(*_axis);
+      if (glm::abs(now_pos - _start_pos) > _unit_length) {
+        _root.getTransToParent().translate(*_axis, now_pos - _start_pos);
+      }
     }
   }
 
-  trans::Axis _axis;
-  float       _start_pos;
+  void setAxisObject(trans::Axis axis, glm::vec3 const& color) {
+    auto& axis_obj = _axises[(int)axis];
+    axis_obj->setObject(pl::LightObject{ createShape(generateArrow(), color) });
+    // if (axis == trans::Axis::X) {
+    //   axis_obj->getTransToParent().rotate(trans::Axis::Y, 90);
+    // } else if (axis == trans::Axis::Y) {
+    //   axis_obj->getTransToParent().rotate(trans::Axis::X, -90);
+    // }
+  }
+
+  auto getAxisPos(trans::Axis axis) -> float {
+    auto  cursor = fw::InputProcessor::getInstance().getCursorState();
+    auto& camera = camera::Camera::getInstance();
+    auto  extent = rd::Presentation::getInstance().getSwapchain().getExtent();
+    auto  ndc_x = float(cursor.x) / extent.width * 2 - 1;
+    auto  ndc_y = float(cursor.y) / extent.height * 2 - 1;
+    auto  start = glm::vec3{ ndc_x, ndc_y, 0 };
+    auto  end = glm::vec3{ ndc_x, ndc_y, 1 };
+    auto  trans = trans::inverse(camera.getView()) * camera.getProjIV();
+    // TOY_DEBUG(trans);
+    start = trans::transform_pos(trans, start);
+    end = trans::transform_pos(trans, end);
+    auto line_cursor = trans::Line{
+      .direction = end - start,
+      .point = start,
+    };
+    auto line_axis = trans::Line{
+      .direction =
+        glm::normalize(trans::transform_vec(_root.getTransToWorld(), trans::unitVec(*_axis))),
+      .point = trans::transform_pos(_root.getTransToWorld(), glm::vec3{ 0, 0, 0 }),
+    };
+    // TOY_DEBUG(_root.getTransToWorld());
+    // TOY_DEBUG(line_cursor.point, line_cursor.direction);
+    // TOY_DEBUG(line_axis.point, line_axis.direction);
+    auto ret = trans::distance(line_cursor, line_axis);
+    // TOY_DEBUG(ret.distance, ret.point2);
+    auto d = glm::dot(ret.point2 - line_axis.point, line_axis.direction);
+    // TOY_DEBUG(d);
+    return d;
+  }
+
+  std::optional<trans::Axis> _axis;
+  float                      _start_pos;
+
+  float _unit_length = 0.3;
 };
 
 } // namespace tool

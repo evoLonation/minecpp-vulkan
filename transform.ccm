@@ -40,6 +40,17 @@ auto transform_vec(const glm::mat4& matrix, const glm::vec3& vec) -> glm::vec3 {
 
 enum class Axis { X = 0, Y = 1, Z = 2 };
 
+auto unitVec(Axis axis) -> glm::vec3 {
+  switch (axis) {
+  case Axis::X:
+    return glm::vec3{ 1.0f, 0.0f, 0.0f };
+  case Axis::Y:
+    return glm::vec3{ 0.0f, 1.0f, 0.0f };
+  case Axis::Z:
+    return glm::vec3{ 0.0f, 0.0f, 1.0f };
+  }
+}
+
 auto identity() -> glm::mat4 {
   return matrix({
     glm::vec4{ 1.0f, 0.0f, 0.0f, 0.0f },
@@ -279,6 +290,39 @@ auto intersection(const Line& line, const Surface& surface) -> std::variant<glm:
                          glm::dot(surface.normal, line.direction)) *
                           line.direction;
   }
+}
+
+struct DistanceInfo {
+  glm::vec3 point1;
+  glm::vec3 point2;
+  float     distance;
+};
+
+auto distance(Line const& line1, Line const& line2) -> DistanceInfo {
+  auto p1 = line1.point;
+  auto p2 = line2.point;
+  auto d1 = line1.direction;
+  auto d2 = line2.direction;
+  auto d1d2 = glm::dot(d1, d2);
+  auto d1d1 = glm::dot(d1, d1);
+  auto d2d2 = glm::dot(d2, d2);
+  auto p1_p2 = p1 - p2;
+  auto denominator = d1d2 * d1d2 - d1d1 * d2d2;
+  if (eq(denominator, 0)) {
+    // toy::debug("parallel");
+    auto unit = glm::normalize(line1.direction);
+    auto proj = glm::dot(p1_p2, unit) * unit;
+    auto vec = p1_p2 - proj;
+    // vec = pp1 - pp2
+    auto pp1 = p1;
+    auto pp2 = pp1 - vec;
+    return { pp1, pp2, glm::length(vec) };
+  }
+  auto s1 = (d2d2 * glm::dot(p1_p2, d1) - d1d2 * glm::dot(p1_p2, d2)) / denominator;
+  auto s2 = (d1d2 * glm::dot(p1_p2, d1) - d1d1 * glm::dot(p1_p2, d2)) / denominator;
+  auto pp1 = p1 + s1 * d1;
+  auto pp2 = p2 + s2 * d2;
+  return { pp1, pp2, glm::length(pp1 - pp2) };
 }
 
 namespace model {
