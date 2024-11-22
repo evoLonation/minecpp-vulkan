@@ -7,7 +7,7 @@ import toy;
 import glm;
 import framework;
 
-import transform;
+import math;
 import render;
 import <vulkan_config.h>;
 
@@ -23,7 +23,7 @@ public:
   Camera() {
     setStage(fw::Stage::BEFORE_RENDER);
     auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
-    _data.view = trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f });
+    _data.view = mt::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f });
     updateProj();
     updateView();
   }
@@ -46,7 +46,7 @@ public:
    */
   void move(glm::vec3 moved) {
     // 将moved转换到世界坐标系的位移，然后更新_view_pos
-    _view_pos += trans::transform_pos(trans::rotate<trans::Axis::Z>(-_rotate_z), moved);
+    _view_pos += mt::transformDot(mt::rotate<mt::Axis::Z>(-_rotate_z), moved);
     updateView();
   }
 
@@ -73,17 +73,17 @@ private:
   float     _rotate_y = 0.0f;
 
   void updateView() {
-    _data.view = trans::rotate<trans::Axis::Y>(_rotate_y) *
-                 trans::rotate<trans::Axis::Z>(_rotate_z) * trans::translate(-_view_pos);
+    _data.view = mt::rotate<mt::Axis::Y>(_rotate_y) * mt::rotate<mt::Axis::Z>(_rotate_z) *
+                 mt::translate(-_view_pos);
   }
   void updateProj() {
     auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
-    auto info = trans::proj::ProjectionInfo{
+    auto info = mt::proj::ProjectionInfo{
       .width = extent.width,
       .height = extent.height,
     };
-    _data.proj = trans::proj::perspective(info);
-    _proj_iv = trans::proj::perspectiveInverse(info);
+    _data.proj = mt::proj::perspective(info);
+    _proj_iv = mt::proj::perspectiveInverse(info);
   }
 };
 

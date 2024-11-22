@@ -1,14 +1,14 @@
 import toy;
 // #include <test.h>
 import std;
-import transform;
+import math;
 import glm;
 #include <test.h>
 #include <toy.h>
 
-using namespace trans;
+using namespace mt;
 
-TEST(transform) {
+TEST(math) {
   auto view = view::create({ 1, 0, 0 }, { 1, 1, 0 }, { 0, -1, 1 });
   // TOY_ASSERT(eq(view * glm::vec4{ 1, 0, 1, 1 }, glm::vec4{ 0, 0, 1, 1 }));
   TOY_ASSERT(eq(view * glm::vec4{ 0, 0, 1, 1 }, glm::vec4{ 0, 1, 1, 1 }));

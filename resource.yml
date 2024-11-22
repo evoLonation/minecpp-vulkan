@@ -7,7 +7,7 @@ module:
 - model.ccm:
     provide: model
 - transform.ccm:
-    provide: transform
+    provide: math
 source:
 - header_impl.cc
 sub_dir:

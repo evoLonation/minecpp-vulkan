@@ -1,12 +1,12 @@
 module;
 #include <toy.h>
-export module transform;
+export module math;
 
 import std;
 import glm;
 import toy;
 
-export namespace trans {
+export namespace mt {
 
 auto eq(float a, float b) {
   // todo: too large
@@ -28,13 +28,13 @@ auto matrix(const std::array<glm::vec4, 4>& vecs) -> glm::mat4 {
   return glm::transpose(glm::mat4{ vecs[0], vecs[1], vecs[2], vecs[3] });
 }
 
-auto transform_pos(const glm::mat4& matrix, const glm::vec3& pos) -> glm::vec3 {
+auto transformDot(const glm::mat4& matrix, const glm::vec3& pos) -> glm::vec3 {
   auto vec4 = matrix * glm::vec4{ pos, 1 };
   vec4 /= vec4.w;
   return vec4;
 }
 
-auto transform_vec(const glm::mat4& matrix, const glm::vec3& vec) -> glm::vec3 {
+auto transformVec(const glm::mat4& matrix, const glm::vec3& vec) -> glm::vec3 {
   return matrix * glm::vec4{ vec, 0 };
 }
 
@@ -429,7 +429,7 @@ auto perspectiveInverse(const ProjectionInfo& info) -> glm::mat4 {
 
 } // namespace proj
 
-} // namespace trans
+} // namespace mt
 
 CUSTOM_FORMATTER(glm::vec3, [](const glm::vec3& v) {
   return std::format("({:.2f}, {:.2f}, {:.2f})", v.x, v.y, v.z);

@@ -10,7 +10,7 @@ import render;
 import model;
 import framework;
 
-import transform;
+import math;
 import pipeline.base;
 import pipeline.uniform;
 import camera;
@@ -98,7 +98,7 @@ public:
 
   void runLoop(fw::ActionContext const& ctx) override {
     auto& trans = _resource->uniform_vertex->model;
-    _resource->uniform_vertex->normal_model = trans::getNormalModel(trans);
+    _resource->uniform_vertex->normal_model = mt::getNormalModel(trans);
     _resource->uniform_id_vert = trans;
   }
   auto getModelTrans() -> glm::mat4& { return _resource->uniform_vertex->model; }

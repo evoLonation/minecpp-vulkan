@@ -8,7 +8,7 @@ import glm;
 import framework;
 import render;
 import pipeline.light;
-import transform;
+import math;
 import pipeline.uniform;
 import tool.shape;
 import gui;
@@ -21,22 +21,22 @@ export namespace tool {
 
 class ModelTransform : public fw::Action, public cp::Component {
 public:
-  ModelTransform() : ModelTransform{ trans::model::create() } {}
+  ModelTransform() : ModelTransform{ mt::model::create() } {}
   ModelTransform(glm::mat4 const& model) : fw::Action(fw::Stage::MODEL_TRANSFORM), _model(model) {}
   void translate(glm::vec3 const& delta) {
     if (mode == WORLD) {
       location += delta;
     } else {
-      auto r_2 = trans::rotate(rotate_euler) * trans::translate(delta);
+      auto r_2 = mt::rotate(rotate_euler) * mt::translate(delta);
       // r_2 = t_new * r_new
       // t_new = t_2[3][0-3], r_new = t_2[0-2][0-2]
       location += glm::vec3{ r_2[3] };
       r_2[3] = glm::vec4{ 0, 0, 0, 1 };
-      rotate_euler = trans::getEulerAngle(r_2);
+      rotate_euler = mt::getEulerAngle(r_2);
     }
   }
-  void translate(trans::Axis axis, float delta) {
-    using enum trans::Axis;
+  void translate(mt::Axis axis, float delta) {
+    using enum mt::Axis;
     switch (axis) {
     case X:
       translate(glm::vec3{ delta, 0, 0 });
@@ -49,19 +49,19 @@ public:
       break;
     }
   }
-  void rotate(trans::Axis axis, float degree) {
+  void rotate(mt::Axis axis, float degree) {
     auto r_new = glm::mat4{};
     if (mode == WORLD) {
-      r_new = trans::rotate(axis, degree) * trans::rotate(rotate_euler);
+      r_new = mt::rotate(axis, degree) * mt::rotate(rotate_euler);
     } else {
-      r_new = trans::rotate(rotate_euler) * trans::rotate(axis, degree);
+      r_new = mt::rotate(rotate_euler) * mt::rotate(axis, degree);
     }
-    rotate_euler = trans::getEulerAngle(r_new);
+    rotate_euler = mt::getEulerAngle(r_new);
   }
-  void scale(trans::Axis axis, float factor) {
-    using enum trans::Axis;
+  void scale(mt::Axis axis, float factor) {
+    using enum mt::Axis;
     if (mode == WORLD) {
-      auto s_r = trans::scale(axis, factor) * trans::rotate(rotate_euler);
+      auto s_r = mt::scale(axis, factor) * mt::rotate(rotate_euler);
       auto new_scale_factor = glm::vec3{
         glm::sqrt(glm::length(s_r[0])),
         glm::sqrt(glm::length(s_r[1])),
@@ -86,7 +86,7 @@ private:
   glm::mat4 _model;
 
   void runLoop(fw::ActionContext const& ctx) override {
-    _model = trans::translate(location) * trans::rotate(rotate_euler) * trans::scale(scale_factor);
+    _model = mt::translate(location) * mt::rotate(rotate_euler) * mt::scale(scale_factor);
   }
 };
 
@@ -201,20 +201,20 @@ public:
     auto x_axis = SceneComponent{};
     _axises[0] = &x_axis;
     // _axises[0]->setObject(pl::LightObject{ createShape(generateArrow(), { 1, 0, 0 }) });
-    x_axis.getTransToParent().rotate(trans::Axis::Y, 90);
+    x_axis.getTransToParent().rotate(mt::Axis::Y, 90);
     auto y_axis = SceneComponent{};
     _axises[1] = &y_axis;
     // _axises[1]->setObject(pl::LightObject{ createShape(generateArrow(), { 0, 1, 0 }) });
-    y_axis.getTransToParent().rotate(trans::Axis::X, -90);
+    y_axis.getTransToParent().rotate(mt::Axis::X, -90);
     auto z_axis = SceneComponent{};
     _axises[2] = &z_axis;
     // _axises[2]->setObject(pl::LightObject{ createShape(generateArrow(), { 0, 0, 1 }) });
     _root.add(std::move(x_axis));
     _root.add(std::move(y_axis));
     _root.add(std::move(z_axis));
-    setAxisObject(trans::Axis::X, glm::vec3{ 1, 0, 0 });
-    setAxisObject(trans::Axis::Y, glm::vec3{ 0, 1, 0 });
-    setAxisObject(trans::Axis::Z, glm::vec3{ 0, 0, 1 });
+    setAxisObject(mt::Axis::X, glm::vec3{ 1, 0, 0 });
+    setAxisObject(mt::Axis::Y, glm::vec3{ 0, 1, 0 });
+    setAxisObject(mt::Axis::Z, glm::vec3{ 0, 0, 1 });
   }
 
   // must is root component
@@ -234,11 +234,11 @@ private:
       auto& y_axis = _root.getSubComponents()[1];
       auto& z_axis = _root.getSubComponents()[2];
       if (x_axis.isSelected()) {
-        _axis = trans::Axis::X;
+        _axis = mt::Axis::X;
       } else if (y_axis.isSelected()) {
-        _axis = trans::Axis::Y;
+        _axis = mt::Axis::Y;
       } else if (z_axis.isSelected()) {
-        _axis = trans::Axis::Z;
+        _axis = mt::Axis::Z;
       }
       if (_axis) {
         setAxisObject(*_axis, glm::vec3{ 1, 1, 0 });
@@ -246,7 +246,7 @@ private:
       }
     } else if (input[fw::Mouse::LEFT]->state == fw::ButtonState::RELEASE) {
       if (_axis) {
-        setAxisObject(*_axis, trans::unitVec(*_axis));
+        setAxisObject(*_axis, mt::unitVec(*_axis));
       }
       _axis = {};
     } else if (_axis) {
@@ -257,17 +257,17 @@ private:
     }
   }
 
-  void setAxisObject(trans::Axis axis, glm::vec3 const& color) {
+  void setAxisObject(mt::Axis axis, glm::vec3 const& color) {
     auto& axis_obj = _axises[(int)axis];
     axis_obj->setObject(pl::LightObject{ createShape(generateArrow(), color) });
-    // if (axis == trans::Axis::X) {
-    //   axis_obj->getTransToParent().rotate(trans::Axis::Y, 90);
-    // } else if (axis == trans::Axis::Y) {
-    //   axis_obj->getTransToParent().rotate(trans::Axis::X, -90);
+    // if (axis == mt::Axis::X) {
+    //   axis_obj->getTransToParent().rotate(mt::Axis::Y, 90);
+    // } else if (axis == mt::Axis::Y) {
+    //   axis_obj->getTransToParent().rotate(mt::Axis::X, -90);
     // }
   }
 
-  auto getAxisPos(trans::Axis axis) -> float {
+  auto getAxisPos(mt::Axis axis) -> float {
     auto  cursor = fw::InputProcessor::getInstance().getCursorState();
     auto& camera = camera::Camera::getInstance();
     auto  extent = rd::Presentation::getInstance().getSwapchain().getExtent();
@@ -275,31 +275,30 @@ private:
     auto  ndc_y = float(cursor.y) / extent.height * 2 - 1;
     auto  start = glm::vec3{ ndc_x, ndc_y, 0 };
     auto  end = glm::vec3{ ndc_x, ndc_y, 1 };
-    auto  trans = trans::inverse(camera.getView()) * camera.getProjIV();
+    auto  trans = mt::inverse(camera.getView()) * camera.getProjIV();
     // TOY_DEBUG(trans);
-    start = trans::transform_pos(trans, start);
-    end = trans::transform_pos(trans, end);
-    auto line_cursor = trans::Line{
+    start = mt::transformDot(trans, start);
+    end = mt::transformDot(trans, end);
+    auto line_cursor = mt::Line{
       .direction = end - start,
       .point = start,
     };
-    auto line_axis = trans::Line{
-      .direction =
-        glm::normalize(trans::transform_vec(_root.getTransToWorld(), trans::unitVec(*_axis))),
-      .point = trans::transform_pos(_root.getTransToWorld(), glm::vec3{ 0, 0, 0 }),
+    auto line_axis = mt::Line{
+      .direction = glm::normalize(mt::transformVec(_root.getTransToWorld(), mt::unitVec(*_axis))),
+      .point = mt::transformDot(_root.getTransToWorld(), glm::vec3{ 0, 0, 0 }),
     };
     // TOY_DEBUG(_root.getTransToWorld());
     // TOY_DEBUG(line_cursor.point, line_cursor.direction);
     // TOY_DEBUG(line_axis.point, line_axis.direction);
-    auto ret = trans::distance(line_cursor, line_axis);
+    auto ret = mt::distance(line_cursor, line_axis);
     // TOY_DEBUG(ret.distance, ret.point2);
     auto d = glm::dot(ret.point2 - line_axis.point, line_axis.direction);
     // TOY_DEBUG(d);
     return d;
   }
 
-  std::optional<trans::Axis> _axis;
-  float                      _start_pos;
+  std::optional<mt::Axis> _axis;
+  float                   _start_pos;
 
   float _unit_length = 0.3;
 };

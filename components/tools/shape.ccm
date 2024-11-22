@@ -6,7 +6,7 @@ import std;
 import toy;
 import glm;
 import render;
-import transform;
+import math;
 import pipeline.light;
 import <vulkan_config.h>;
 
@@ -21,10 +21,10 @@ struct ShapeMesh {
     auto ret = *this;
     auto& [positions, normals, indices] = ret;
     for (auto& pos : positions) {
-      pos = trans::transform_pos(trans, pos);
+      pos = mt::transformDot(trans, pos);
     }
     for (auto& normal : normals) {
-      normal = trans::transform_vec(trans, normal);
+      normal = mt::transformVec(trans, normal);
     }
     return ret;
   }
@@ -188,16 +188,16 @@ auto generateSphere(float radius = 1.0f) -> ShapeMesh {
 }
 
 auto generateArrow() -> ShapeMesh {
-  auto cone = generateCone(0.1, 0.4).transform(trans::translate(glm::vec3{ 0, 0, 1.0 }));
+  auto cone = generateCone(0.1, 0.4).transform(mt::translate(glm::vec3{ 0, 0, 1.0 }));
   auto cylinder = generateCylinder(0.05, 1);
   return ShapeMesh::merge({ cone, cylinder });
 }
 
 auto generateAxis() -> ShapeMesh {
-  using trans::Axis;
+  using mt::Axis;
   auto arrow_z = generateArrow();
-  auto arrow_x = arrow_z.transform(trans::rotate<Axis::Y>(90));
-  auto arrow_y = arrow_z.transform(trans::rotate<Axis::X>(-90));
+  auto arrow_x = arrow_z.transform(mt::rotate<Axis::Y>(90));
+  auto arrow_y = arrow_z.transform(mt::rotate<Axis::X>(-90));
   return ShapeMesh::merge({ arrow_x, arrow_y, arrow_z });
 }
 
@@ -222,7 +222,7 @@ auto createShape(
       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
     },
   };
-  object.getModelTrans() = trans::model::create(location);
+  object.getModelTrans() = mt::model::create(location);
   return object;
 }
 

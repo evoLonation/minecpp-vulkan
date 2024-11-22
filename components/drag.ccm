@@ -6,7 +6,7 @@ import std;
 import toy;
 
 import framework;
-import transform;
+import math;
 
 import glm;
 
@@ -26,15 +26,14 @@ auto cursor2Plane(
   auto ndc_y = float(pos_y) / extent.height * 2 - 1;
   auto start = glm::vec3{ ndc_x, ndc_y, -1.0f };
   auto end = glm::vec3{ ndc_x, ndc_y, 1.0f };
-  start =
-    trans::transform_pos(trans::inverse(model) * trans::inverse(view) * perspective_iv, start);
-  end = trans::transform_pos(trans::inverse(model) * trans::inverse(view) * perspective_iv, end);
-  auto inter = trans::intersection(
-    trans::Line{
+  start = mt::transformDot(mt::inverse(model) * mt::inverse(view) * perspective_iv, start);
+  end = mt::transformDot(mt::inverse(model) * mt::inverse(view) * perspective_iv, end);
+  auto inter = mt::intersection(
+    mt::Line{
       .direction = end - start,
       .point = start,
     },
-    trans::Surface{
+    mt::Surface{
       .normal = glm::vec3{ 1.0f, 0.0f, 0.0f },
       .dot = 0.0f,
     }
@@ -43,7 +42,7 @@ auto cursor2Plane(
     auto inter_point = std::get<0>(inter);
     if (glm::dot(inter_point - start, inter_point - end) < 0) {
       // toy::debug(std::tuple{ inter_point.x, inter_point.y, inter_point.z });
-      return model * trans::translate(inter_point);
+      return model * mt::translate(inter_point);
     }
   }
   return std::nullopt;
@@ -60,13 +59,13 @@ public:
     : fw::Action(fw::Stage::BEFORE_RENDER), _view_trans(view_trans), _model_trans(model_trans) {
     auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
     _perspective_iv =
-      trans::proj::perspectiveInverse({ .width = extent.width, .height = extent.height });
+      mt::proj::perspectiveInverse({ .width = extent.width, .height = extent.height });
   }
   void runLoop(const fw::ActionContext& ctx) override {
     if (ctx.recreated) {
       auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
       _perspective_iv =
-        trans::proj::perspectiveInverse({ .width = extent.width, .height = extent.height });
+        mt::proj::perspectiveInverse({ .width = extent.width, .height = extent.height });
     }
     auto& cursor = fw::InputProcessor::getInstance().getCursorState();
     if (cursor.visible) {

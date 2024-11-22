@@ -12,7 +12,7 @@ import pipeline.drawunit;
 import pipeline.uniform;
 import model;
 
-import transform;
+import math;
 
 export namespace pl {
 
@@ -180,7 +180,7 @@ public:
     }
     for (auto& [draw_unit, info] : _draw_units) {
       info.scaled_model->model =
-        draw_unit->getModelTrans()->model * trans::scale(glm::vec3{ 1.05f, 1.05f, 1.05f });
+        draw_unit->getModelTrans()->model * mt::scale(glm::vec3{ 1.05f, 1.05f, 1.05f });
     }
     _render_pass.setRecorder(0, [&](rd::PipelineDrawer drawer) {
       // todo: easy to overflow
