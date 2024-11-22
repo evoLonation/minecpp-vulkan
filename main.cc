@@ -8,12 +8,12 @@ import <glfw_config.h>;
 import render;
 import context;
 import glm;
-import input;
+
 import model;
 import glfw;
 import transform;
 import gui;
-import loop;
+import framework;
 // import pipeline.outline;
 import pipeline.basic;
 import pipeline.light;
@@ -33,7 +33,7 @@ int main() {
     test_EnumSet::test();
     auto  ctx = ctx::Context{ "hello vulkan", 1920, 1080 };
     auto  dset_pools = rd::meta::DescriptorPools{};
-    auto& input = input::InputProcessor::getInstance();
+    auto& input = fw::InputProcessor::getInstance();
     auto  transform_gui = tool::ModelTransformGui{};
     auto  render_pass = pl::LightPipeline{};
 
@@ -72,7 +72,7 @@ int main() {
     //   cube.getTrans().translate(glm::vec3{ 0.0f, 0.0f, 5.0f });
     // }
 
-    loop::Loop::getInstance().run();
+    fw::Loop::getInstance().run();
 
   } catch (const std::exception& e) {
     std::print("catch exception at root:\n{}\n", e.what());

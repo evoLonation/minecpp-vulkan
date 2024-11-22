@@ -1,0 +1,4 @@
+export module framework;
+
+export import framework.input;
+export import framework.loop;

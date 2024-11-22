@@ -6,19 +6,19 @@ import std;
 import toy;
 import glm;
 import render;
-import loop;
+import framework;
 import pipeline.resources;
 import pipeline.drawunit;
 import pipeline.uniform;
 import model;
-import input;
+
 import transform;
 
 export namespace pl {
 
-class OutlinePipeline : loop::Action {
+class OutlinePipeline : fw::Action {
 public:
-  OutlinePipeline() : loop::Action{ loop::Stage::RENDER } {
+  OutlinePipeline() : fw::Action{ fw::Stage::RENDER } {
     auto& swapchain = rd::Presentation::getInstance().getSwapchain();
     TOY_ASSERT((rd::ImageContext::getInstance().getAvailableSampleCounts() & _sample_count) > 0);
 
@@ -174,7 +174,7 @@ public:
     _image_reader = rd::ImageLocalReader{ _id_format, swapchain.getExtent() };
   }
 
-  void runLoop(loop::ActionContext const& ctx) override {
+  void runLoop(fw::ActionContext const& ctx) override {
     if (ctx.recreated) {
       createFramebuffers();
     }
@@ -220,7 +220,7 @@ public:
       _id_resolved_image.getExtent(),
       0
     );
-    auto cursor = input::InputProcessor::getInstance().getCursorState();
+    auto cursor = fw::InputProcessor::getInstance().getCursorState();
     if (cursor.visible) {
       auto pixel = *reinterpret_cast<uint32 const*>(_image_reader.readPixel(cursor.x, cursor.y));
       // toy::debugf("pixel: {:x}", pixel);

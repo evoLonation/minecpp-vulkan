@@ -14,9 +14,9 @@ import render.framebuffer;
 import render.presentation;
 
 import gui;
-import input;
+
 import glfw;
-import loop;
+import framework;
 
 export namespace ctx {
 
@@ -25,18 +25,18 @@ public:
   Context(const std::string& app_name, uint32 width, uint32 height);
 
 private:
-  std::unique_ptr<glfw::Context>         _glfw_ctx;
-  std::unique_ptr<glfw::Window>          _glfw_window;
-  std::unique_ptr<rd::InstanceResource>  _instance;
-  std::unique_ptr<rd::rs::Surface>       _surface;
-  std::unique_ptr<rd::Device>            _device;
-  std::unique_ptr<rd::ExecutorManager>   _executor_manager;
-  std::unique_ptr<rd::ImageContext>      _image_context;
-  std::unique_ptr<rd::FramebufferPool>   _framebuffer_pool;
-  std::unique_ptr<rd::Presentation>      _presentation;
-  std::unique_ptr<input::InputProcessor> _input_processor;
-  std::unique_ptr<loop::Loop>            _loop;
-  std::unique_ptr<gui::Context>          _gui_ctx;
+  std::unique_ptr<glfw::Context>        _glfw_ctx;
+  std::unique_ptr<glfw::Window>         _glfw_window;
+  std::unique_ptr<rd::InstanceResource> _instance;
+  std::unique_ptr<rd::rs::Surface>      _surface;
+  std::unique_ptr<rd::Device>           _device;
+  std::unique_ptr<rd::ExecutorManager>  _executor_manager;
+  std::unique_ptr<rd::ImageContext>     _image_context;
+  std::unique_ptr<rd::FramebufferPool>  _framebuffer_pool;
+  std::unique_ptr<rd::Presentation>     _presentation;
+  std::unique_ptr<fw::InputProcessor>   _input_processor;
+  std::unique_ptr<fw::Loop>             _loop;
+  std::unique_ptr<gui::Context>         _gui_ctx;
 };
 
 } // namespace ctx

@@ -1,8 +1,8 @@
 module;
 #include <toy.h>
-export module input;
+export module framework.input;
 
-export import input.convert;
+export import framework.input.convert;
 
 import glfw;
 
@@ -11,9 +11,7 @@ import <glfw_config.h>;
 import std;
 import toy;
 
-import input.convert;
-
-export namespace input {
+export namespace fw {
 
 struct ButtonState {
   enum State {
@@ -154,4 +152,4 @@ public:
   UNCOPYABLE_MOVEABLE(InputProcessor);
 };
 
-} // namespace input
+} // namespace fw

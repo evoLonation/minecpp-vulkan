@@ -5,9 +5,9 @@ export module drag;
 import std;
 import toy;
 
-import loop;
+import framework;
 import transform;
-import input;
+
 import glm;
 
 import render;
@@ -26,7 +26,8 @@ auto cursor2Plane(
   auto ndc_y = float(pos_y) / extent.height * 2 - 1;
   auto start = glm::vec3{ ndc_x, ndc_y, -1.0f };
   auto end = glm::vec3{ ndc_x, ndc_y, 1.0f };
-  start = trans::transform_pos(trans::inverse(model) * trans::inverse(view) * perspective_iv, start);
+  start =
+    trans::transform_pos(trans::inverse(model) * trans::inverse(view) * perspective_iv, start);
   end = trans::transform_pos(trans::inverse(model) * trans::inverse(view) * perspective_iv, end);
   auto inter = trans::intersection(
     trans::Line{
@@ -48,7 +49,7 @@ auto cursor2Plane(
   return std::nullopt;
 }
 
-class CursorDragger : private loop::Action {
+class CursorDragger : private fw::Action {
 private:
   glm::mat4        _perspective_iv;
   const glm::mat4* _view_trans;
@@ -56,18 +57,18 @@ private:
 
 public:
   CursorDragger(const glm::mat4* view_trans, glm::mat4* model_trans)
-    : loop::Action(loop::Stage::BEFORE_RENDER), _view_trans(view_trans), _model_trans(model_trans) {
+    : fw::Action(fw::Stage::BEFORE_RENDER), _view_trans(view_trans), _model_trans(model_trans) {
     auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
     _perspective_iv =
       trans::proj::perspectiveInverse({ .width = extent.width, .height = extent.height });
   }
-  void runLoop(const loop::ActionContext& ctx) override {
+  void runLoop(const fw::ActionContext& ctx) override {
     if (ctx.recreated) {
       auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
       _perspective_iv =
         trans::proj::perspectiveInverse({ .width = extent.width, .height = extent.height });
     }
-    auto& cursor = input::InputProcessor::getInstance().getCursorState();
+    auto& cursor = fw::InputProcessor::getInstance().getCursorState();
     if (cursor.visible) {
       if (auto opt =
             cursor2Plane(cursor.x, cursor.y, _perspective_iv, *_view_trans, *_model_trans)) {

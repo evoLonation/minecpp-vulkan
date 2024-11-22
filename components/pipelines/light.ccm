@@ -8,8 +8,8 @@ import glm;
 
 import render;
 import model;
-import loop;
-import input;
+import framework;
+
 import transform;
 import pipeline.base;
 import pipeline.uniform;
@@ -61,11 +61,11 @@ struct LightMesh {
   std::vector<uint16>    indices;
 };
 
-class LightObject : loop::Action {
+class LightObject : fw::Action {
 public:
   LightObject() = default;
   LightObject(LightMesh mesh, rd::SampledTexture texture) {
-    setStage(loop::Stage::BEFORE_RENDER);
+    setStage(fw::Stage::BEFORE_RENDER);
     auto light_vertices = std::vector<LightVertex>{};
     auto id_vertices = std::vector<IdVertex>{};
     for (auto [pos, norm, tex] : views::zip(mesh.positions, mesh.normals, mesh.tex_coords)) {
@@ -96,7 +96,7 @@ public:
   }
   auto valid() const -> bool { return _resource.get(); }
 
-  void runLoop(loop::ActionContext const& ctx) override {
+  void runLoop(fw::ActionContext const& ctx) override {
     auto& trans = _resource->uniform_vertex->model;
     _resource->uniform_vertex->normal_model = trans::getNormalModel(trans);
     _resource->uniform_id_vert = trans;
@@ -128,11 +128,11 @@ private:
 
 class LightPipeline : public PROACTIVE_SINGLETON(LightPipeline),
                       public RenderPass,
-                      public loop::Action {
+                      public fw::Action {
 public:
   using PROACTIVE_SINGLETON(LightPipeline)::getInstance;
   LightPipeline() {
-    setStage(loop::Stage::RENDER);
+    setStage(fw::Stage::RENDER);
     auto pipeline_infos = std::vector<PipelineInfo>{
       PipelineInfo{
         .colors = { 0 },
@@ -175,9 +175,9 @@ public:
   UNCOPYABLE_MOVEABLE(LightPipeline);
 
 private:
-  void runLoop(loop::ActionContext const& ctx) override {
+  void runLoop(fw::ActionContext const& ctx) override {
     auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
-    auto cursor = input::InputProcessor::getInstance().getCursorState();
+    auto cursor = fw::InputProcessor::getInstance().getCursorState();
     if (cursor.visible) {
       int32 x = std::clamp(cursor.x, 0u, extent.width - 1);
       int32 y = std::clamp(cursor.y, 0u, extent.height - 1);

@@ -1,13 +1,15 @@
 module:
 - input.ccm:
-    provide: input
+    provide: framework.input
 - input_convert.ccm:
-    provide: input.convert
+    provide: framework.input.convert
 - loop.ccm:
-    provide: loop
+    provide: framework.loop
 - context.ccm:
     provide: context
 - context.cc:
     implement: context
 - gui.ccm:
     provide: gui
+- framework.ccm:
+    provide: framework

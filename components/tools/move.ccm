@@ -5,24 +5,22 @@ export module tool.move;
 import std;
 import toy;
 import glm;
-import loop;
+import framework;
 import render;
 import pipeline.light;
 import transform;
 import pipeline.uniform;
 import tool.shape;
 import gui;
-import input;
 
 import <imgui_config.h>;
 
 export namespace tool {
 
-class ModelTransform : public loop::Action {
+class ModelTransform : public fw::Action {
 public:
   ModelTransform() : ModelTransform{ trans::model::create() } {}
-  ModelTransform(glm::mat4 const& model)
-    : loop::Action(loop::Stage::BEFORE_RENDER), _model(model) {}
+  ModelTransform(glm::mat4 const& model) : fw::Action(fw::Stage::BEFORE_RENDER), _model(model) {}
   void translate(glm::vec3 const& delta) {
     if (mode == WORLD) {
       location += delta;
@@ -71,19 +69,19 @@ public:
 private:
   glm::mat4 _model;
 
-  void runLoop(loop::ActionContext const& ctx) override {
+  void runLoop(fw::ActionContext const& ctx) override {
     _model = trans::translate(location) * trans::rotate(rotate_euler) * trans::scale(scale_factor);
   }
 };
 
-class SceneComponent : toy::AutoMoveAssigner<SceneComponent>, public loop::Action {
+class SceneComponent : toy::AutoMoveAssigner<SceneComponent>, public fw::Action {
 public:
   SceneComponent() {
-    setStage(loop::Stage::BEFORE_RENDER);
+    setStage(fw::Stage::BEFORE_RENDER);
     _to_world = _to_parent.get();
   }
   SceneComponent(pl::LightObject object) {
-    setStage(loop::Stage::BEFORE_RENDER);
+    setStage(fw::Stage::BEFORE_RENDER);
     _object = std::move(object);
     _object.getModelTrans() = _to_parent.get();
     _to_world = _to_parent.get();
@@ -107,7 +105,7 @@ private:
   glm::mat4                   _to_world;
   std::vector<SceneComponent> _sub_components;
 
-  void runLoop(loop::ActionContext const& ctx) override {
+  void runLoop(fw::ActionContext const& ctx) override {
     if (_is_root) {
       auto handleComponent = std::function<void(SceneComponent & component, glm::mat4 * father)>{};
       handleComponent = [&handleComponent](SceneComponent& component, glm::mat4* father) {
@@ -165,9 +163,9 @@ void SceneComponent::_beforeDestroy() {
   }
 }
 
-class MoveController : public loop::Action {
+class MoveController : public fw::Action {
 public:
-  MoveController() : loop::Action(loop::Stage::BEFORE_RENDER) {
+  MoveController() : fw::Action(fw::Stage::BEFORE_RENDER) {
     _root = {};
     auto x_axis = SceneComponent{ pl::LightObject{ createShape(generateArrow(), { 1, 0, 0 }) } };
     x_axis.getTransToParent().rotate(trans::Axis::Y, 90);
@@ -189,9 +187,9 @@ private:
   SceneComponent  _root;
   SceneComponent* _selected;
 
-  void runLoop(loop::ActionContext const& ctx) override {
-    auto& input = input::InputProcessor::getInstance();
-    if (input.getState(input::Mouse::LEFT)->state == input::ButtonState::DOWN) {
+  void runLoop(fw::ActionContext const& ctx) override {
+    auto& input = fw::InputProcessor::getInstance();
+    if (input.getState(fw::Mouse::LEFT)->state == fw::ButtonState::DOWN) {
       auto& x_axis = _root.getSubComponents()[0];
       auto& y_axis = _root.getSubComponents()[1];
       auto& z_axis = _root.getSubComponents()[2];

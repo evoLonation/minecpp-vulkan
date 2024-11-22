@@ -1,18 +1,16 @@
 module;
 #include <toy.h>
-export module loop;
+export module framework.loop;
 
 import std;
 import toy;
-
 import glfw;
-import input;
-
+import render;
+import framework.input;
 import <glfw_config.h>;
 
-import render.presentation;
 
-export namespace loop {
+export namespace fw {
 
 enum Stage {
   BEFORE_RENDER,
@@ -90,7 +88,7 @@ public:
       auto interval_ = timer::now() - last_time;
       last_time += interval_;
       interval = chrono::duration_cast<chrono::microseconds>(interval_).count() / 1'000'000.0f;
-      input::InputProcessor::getInstance().processInput(interval);
+      InputProcessor::getInstance().processInput(interval);
       auto res = presentation.prepare();
       if (!res.has_value()) {
         if (presentation.recreate()) {
@@ -144,4 +142,4 @@ private:
   void runLoop(ActionContext const& ctx) override { _func(ctx); }
 };
 
-} // namespace loop
+} // namespace fw

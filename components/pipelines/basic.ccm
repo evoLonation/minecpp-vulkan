@@ -8,8 +8,8 @@ import glm;
 
 import render;
 import model;
-import loop;
-import input;
+import framework;
+
 import transform;
 import pipeline.base;
 

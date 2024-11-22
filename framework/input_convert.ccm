@@ -1,11 +1,11 @@
-export module input.convert;
+export module framework.input.convert;
 
 import std;
 import toy;
 
 import <glfw_config.h>;
 
-export namespace input {
+export namespace fw {
 
 enum class Mouse {
   LEFT,
@@ -394,4 +394,4 @@ auto keyboardMapper(int key) -> Keyboard {
   }
 }
 
-} // namespace input
+} // namespace fw

@@ -6,7 +6,7 @@ import std;
 import toy;
 import glm;
 import render;
-import loop;
+import framework;
 
 import pipeline.uniform;
 import camera;
@@ -200,7 +200,7 @@ public:
     _global_dsets.at(index) = dset;
   }
 
-  void draw(loop::ActionContext const& ctx) {
+  void draw(fw::ActionContext const& ctx) {
     if (ctx.recreated) {
       recreateFramebuffers();
     }

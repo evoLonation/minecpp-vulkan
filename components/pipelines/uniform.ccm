@@ -3,7 +3,7 @@ export module pipeline.uniform;
 import std;
 import toy;
 import render;
-import loop;
+import framework;
 import glm;
 
 import <vulkan_config.h>;
@@ -11,15 +11,15 @@ import <vulkan_config.h>;
 export namespace pl {
 
 template <typename DataType>
-class UniformBuffer : public loop::Action, public rd::UniformBuffer<DataType> {
+class UniformBuffer : public fw::Action, public rd::UniformBuffer<DataType> {
   using Base = rd::UniformBuffer<DataType>;
 
 public:
   UniformBuffer() : UniformBuffer(DataType{}) {}
   UniformBuffer(DataType const& data)
-    : loop::Action(loop::Stage::UNIFORM_UPDATE), Base(data), _cache_data(data) {}
+    : fw::Action(fw::Stage::UNIFORM_UPDATE), Base(data), _cache_data(data) {}
 
-  void runLoop(loop::ActionContext const&) override {
+  void runLoop(fw::ActionContext const&) override {
     auto cache_bytes = std::as_bytes(std::span{ &_cache_data, 1 });
     auto buffer_data = Base::read();
     auto buffer_bytes = std::as_bytes(std::span{ &buffer_data, 1 });

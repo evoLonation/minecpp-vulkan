@@ -5,8 +5,8 @@ export module camera;
 import std;
 import toy;
 import glm;
-import loop;
-import input;
+import framework;
+
 import transform;
 import render;
 import <vulkan_config.h>;
@@ -18,10 +18,10 @@ struct CameraData {
   rd::align::mat4 proj;
 };
 
-class Camera : public loop::Action, public PROACTIVE_SINGLETON(Camera) {
+class Camera : public fw::Action, public PROACTIVE_SINGLETON(Camera) {
 public:
   Camera() {
-    setStage(loop::Stage::BEFORE_RENDER);
+    setStage(fw::Stage::BEFORE_RENDER);
     auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
     _data = {
       .view = trans::view::create(glm::vec3{ 5.0f, 5.0f, 5.0f }),
@@ -33,7 +33,7 @@ public:
     computeView();
   }
 
-  void runLoop(loop::ActionContext const& ctx) override {
+  void runLoop(fw::ActionContext const& ctx) override {
     if (ctx.recreated) {
       auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
       _data.proj = trans::proj::perspective({
@@ -85,14 +85,14 @@ private:
   }
 };
 
-class Controller : public loop::Action {
+class Controller : public fw::Action {
 public:
-  Controller(Camera* camera) : _camera(camera) { setStage(loop::Stage::BEFORE_RENDER); }
+  Controller(Camera* camera) : _camera(camera) { setStage(fw::Stage::BEFORE_RENDER); }
 
-  void runLoop(loop::ActionContext const& ctx) override {
+  void runLoop(fw::ActionContext const& ctx) override {
     auto delta = ctx.interval;
-    using enum input::Keyboard;
-    auto& input = input::InputProcessor::getInstance();
+    using enum fw::Keyboard;
+    auto& input = fw::InputProcessor::getInstance();
     if (input[KEY_S]) {
       _camera->move(glm::vec3{ -_move_speed * delta, 0.0f, 0.0f });
     }
@@ -111,7 +111,7 @@ public:
     if (input[KEY_X]) {
       _camera->move(glm::vec3{ 0.0f, 0.0f, -_move_speed * delta });
     }
-    if (auto res = input[ESCAPE]; res && res->state == input::ButtonState::DOWN) {
+    if (auto res = input[ESCAPE]; res && res->state == fw::ButtonState::DOWN) {
       input.setCursorVisible(!input.getCursorState().visible);
     }
     // x: left, y: down

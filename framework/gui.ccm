@@ -12,7 +12,7 @@ import <imgui_config.h>;
 
 import render;
 
-import loop;
+import framework;
 
 export namespace gui {
 
@@ -163,10 +163,10 @@ private:
 /**
  * @brief must call after input processor
  */
-class Context : public PROACTIVE_SINGLETON(Context), public loop::Action {
+class Context : public PROACTIVE_SINGLETON(Context), public fw::Action {
 public:
   Context() {
-    setStage(loop::Stage::AFTER_RENDER);
+    setStage(fw::Stage::AFTER_RENDER);
     auto window = glfw::Window::getInstance().get();
     auto instance = rd::rs::Instance::getInstance().get();
     auto pdevice = rd::Device::getInstance().getPdevice().get();
@@ -310,7 +310,7 @@ public:
     _render_pass.record({}, std::array{ image }, std::span{ &recorder, 1 });
   }
 
-  void runLoop(loop::ActionContext const& ctx) override {
+  void runLoop(fw::ActionContext const& ctx) override {
     draw();
     recordDraw(ctx.image_manager);
   }
