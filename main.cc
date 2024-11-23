@@ -36,6 +36,8 @@ int main() {
     auto& input = fw::InputProcessor::getInstance();
     auto  transform_gui = tool::ModelTransformGuiController{};
     auto  render_pass = pl::LightPipeline{};
+    auto  click_observer = tool::ObjectClickObserver{};
+    auto  move_manager = tool::MoveControllerManager{};
 
     auto camera = camera::Camera{};
     auto controller = camera::Controller{ &camera };
@@ -72,7 +74,8 @@ int main() {
       ) };
       selector_cone = { &cone };
       cube.add(std::move(cone));
-      cube.getTransToParent().translate(glm::vec3{ 0.0f, 0.0f, 5.0f });
+      cube.getTransform().translate(glm::vec3{ 0.0f, 0.0f, 5.0f });
+      // move = tool::MoveController{ &cube };
     }
 
     fw::Loop::getInstance().run();

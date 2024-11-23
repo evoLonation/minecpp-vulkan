@@ -86,9 +86,6 @@ public:
   }
 
 private:
-  void add();
-  void remove();
-
   rd::VertexBuffer*    _vertex_buffer;
   rd::IndexBuffer*     _index_buffer;
   rd::DescriptorSet    _dset;

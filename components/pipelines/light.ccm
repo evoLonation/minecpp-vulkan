@@ -64,7 +64,7 @@ struct LightMesh {
 class LightObject : fw::Action {
 public:
   LightObject() = default;
-  LightObject(LightMesh mesh, rd::SampledTexture texture) {
+  LightObject(LightMesh mesh, rd::SampledTexture texture, bool uplayer = false) {
     setStage(fw::Stage::BEFORE_RENDER);
     auto light_vertices = std::vector<LightVertex>{};
     auto id_vertices = std::vector<IdVertex>{};
@@ -78,33 +78,16 @@ public:
     _resource->index_buf = { mesh.indices };
     _resource->uniform_id_frag = _max_id++;
     _resource->textures[0] = std::move(texture);
-    _light_unit = {
-      &_resource->light_vertex,
-      &_resource->index_buf,
-      {
-        &_resource->uniform_vertex,
-        &_resource->uniform_frag,
-        &_resource->textures[0],
-        &_resource->textures[0],
-      },
-    };
-    _id_unit = {
-      &_resource->id_vertex,
-      &_resource->index_buf,
-      { &_resource->uniform_id_vert, &_resource->uniform_id_frag },
-    };
+    setUnit(uplayer);
   }
   auto valid() const -> bool { return _resource.get(); }
 
-  void runLoop(fw::ActionContext const& ctx) override {
-    auto& trans = _resource->uniform_vertex->model;
-    _resource->uniform_vertex->normal_model = mt::getNormalModel(trans);
-    _resource->uniform_id_vert = trans;
-  }
+  void setUplayer() { setUnit(true); }
   auto getModelTrans() -> glm::mat4& { return _resource->uniform_vertex->model; }
   auto getShininess() -> float& { return _resource->uniform_frag->shininess; }
   auto getId() -> uint32 { return _resource->uniform_id_frag.get(); }
-  auto isSelected() -> bool;
+
+  static auto getSelectedId() -> uint32;
 
   ONLY_MOVEABLE(LightObject);
 
@@ -121,9 +104,43 @@ private:
     UniformBuffer<uint32>                 uniform_id_frag;
     std::array<rd::SampledTexture, 2>     textures;
   };
-  std::unique_ptr<Resource>               _resource;
-  DrawUnitTemplate<layout_model_light, 0> _light_unit;
-  DrawUnitTemplate<layout_id, 1>          _id_unit;
+  template <bool uplayer>
+  using LightUnit = DrawUnitTemplate<layout_model_light, uplayer ? 1 : 0>;
+  template <bool uplayer>
+  using IdUnit = DrawUnitTemplate<layout_id, uplayer ? 3 : 2>;
+  std::unique_ptr<Resource>                       _resource;
+  std::variant<LightUnit<false>, LightUnit<true>> _light_unit;
+  std::variant<IdUnit<false>, IdUnit<true>>       _id_unit;
+
+  void runLoop(fw::ActionContext const& ctx) override {
+    auto& trans = _resource->uniform_vertex->model;
+    _resource->uniform_vertex->normal_model = mt::getNormalModel(trans);
+    _resource->uniform_id_vert = trans;
+  }
+  void setUnit(bool uplayer) {
+    auto setter = [&]<bool uplayer>() {
+      _light_unit = LightUnit<uplayer>{
+        &_resource->light_vertex,
+        &_resource->index_buf,
+        {
+          &_resource->uniform_vertex,
+          &_resource->uniform_frag,
+          &_resource->textures[0],
+          &_resource->textures[0],
+        },
+      };
+      _id_unit = IdUnit<uplayer>{
+        &_resource->id_vertex,
+        &_resource->index_buf,
+        { &_resource->uniform_id_vert, &_resource->uniform_id_frag },
+      };
+    };
+    if (uplayer) {
+      setter.operator()<true>();
+    } else {
+      setter.operator()<false>();
+    }
+  }
 };
 
 class LightPipeline : public PROACTIVE_SINGLETON(LightPipeline),
@@ -143,9 +160,27 @@ public:
         .unit_dset_layout = getLayoutHandle<layout_model_light>(),
         .global_dset_layout = getLayoutHandle<layout_global_light>(),
       },
+      // for move tool
+      PipelineInfo{
+        .colors = { 0 },
+        .depst = { { .attachment = 1, .depth = { {} } } },
+        .vertex_shader_name = "light.vert",
+        .frag_shader_name = "light.frag",
+        .vertex_info = LightVertex::getVertexInfo(),
+        .unit_dset_layout = getLayoutHandle<layout_model_light>(),
+        .global_dset_layout = getLayoutHandle<layout_global_light>(),
+      },
       PipelineInfo{
         .colors = { 1 },
-        .depst = { { .attachment = 1, .depth = { {} } } },
+        .depst = { { .attachment = 2, .depth = { {} } } },
+        .vertex_shader_name = "id.vert",
+        .frag_shader_name = "id.frag",
+        .vertex_info = IdVertex::getVertexInfo(),
+        .unit_dset_layout = getLayoutHandle<layout_id>(),
+      },
+      PipelineInfo{
+        .colors = { 1 },
+        .depst = { { .attachment = 3, .depth = { {} } } },
         .vertex_shader_name = "id.vert",
         .frag_shader_name = "id.frag",
         .vertex_info = IdVertex::getVertexInfo(),
@@ -154,7 +189,10 @@ public:
     };
     auto info = RenderPassInfo{
       .color_formats = { VK_FORMAT_R32_UINT },
-      .depst_formats = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT },
+      .depst_formats = { VK_FORMAT_D32_SFLOAT,
+                         VK_FORMAT_D32_SFLOAT,
+                         VK_FORMAT_D32_SFLOAT,
+                         VK_FORMAT_D32_SFLOAT },
       .multi_sampling = VK_SAMPLE_COUNT_8_BIT,
       .pipelines = std::move(pipeline_infos),
     };
@@ -163,8 +201,11 @@ public:
     setColorClearValue(1, { 0u });
     setDepstClearValue(0, 1.0f);
     setDepstClearValue(1, 1.0f);
+    setDepstClearValue(2, 1.0f);
+    setDepstClearValue(3, 1.0f);
     _dset_global_light = { &_uniform_light };
     setGlobalDescriptorSet(0, &_dset_global_light);
+    setGlobalDescriptorSet(1, &_dset_global_light);
     _reader = { VK_FORMAT_R32_UINT, { 1, 1 } };
   }
 
@@ -195,8 +236,6 @@ private:
   uint32                                       _current_id = 0;
 };
 
-auto LightObject::isSelected() -> bool {
-  return LightPipeline::getInstance().getSelectedId() == getId();
-}
+auto LightObject::getSelectedId() -> uint32 { return LightPipeline::getInstance().getSelectedId(); }
 
 } // namespace pl

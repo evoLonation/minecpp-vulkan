@@ -80,7 +80,7 @@ public:
   enum Mode { LOCAL, WORLD };
   Mode mode = WORLD;
 
-  ONLY_MOVEABLE(ModelTransform);
+  DEFAULT_COPYABLE_MOVEABLE(ModelTransform);
 
 private:
   glm::mat4 _model;
@@ -98,19 +98,31 @@ public:
   }
   SceneComponent(pl::LightObject object) : SceneComponent() { setObject(std::move(object)); }
   void setObject(pl::LightObject object) {
+    if (_object.valid()) {
+      _id_components.erase(_object.getId());
+    }
     _object = std::move(object);
     _object.getModelTrans() = _to_world;
+    _id_components[_object.getId()] = this;
   }
+  auto getObject() -> pl::LightObject& { return _object; }
   void add(SceneComponent component) {
     component._is_root = false;
     _sub_components.push_back(std::move(component));
   }
+  auto isRoot() -> bool { return _is_root; }
   auto getSubComponents() -> std::vector<SceneComponent>& { return _sub_components; }
   auto getTransform() -> ModelTransform& { return _to_parent; }
   auto getTransToParent() -> glm::mat4 const& { return _to_parent.get(); }
   auto getTransToWorld() -> glm::mat4 const& { return _to_world; }
+  auto isSelected() -> bool { return getSelected() == this; }
 
-  auto isSelected() -> bool { return _object.valid() && _object.isSelected(); }
+  static auto getSelected() -> SceneComponent* {
+    if (_id_components.contains(pl::LightObject::getSelectedId())) {
+      return _id_components[pl::LightObject::getSelectedId()];
+    }
+    return nullptr;
+  }
 
   ONLY_MOVEABLE(SceneComponent);
 
@@ -140,6 +152,36 @@ private:
       handleComponent(*this, nullptr);
     }
   }
+
+  inline static std::unordered_map<uint32, cp::ptr<SceneComponent>> _id_components;
+};
+
+class ObjectClickObserver : public fw::Action, public PROACTIVE_SINGLETON(ObjectClickObserver) {
+public:
+  ObjectClickObserver() : fw::Action(fw::Stage::BEFORE_RENDER) {}
+  auto getClick() -> SceneComponent* { return _clicked; }
+
+private:
+  void runLoop(fw::ActionContext const& ctx) override {
+    auto& input = fw::InputProcessor::getInstance();
+    if (_clicked) {
+      _clicked = nullptr;
+    }
+    if (auto state = input.getState(fw::Mouse::LEFT)) {
+      if (state->state == fw::ButtonState::DOWN) {
+        if (auto selected = SceneComponent::getSelected()) {
+          _down = selected;
+        }
+      } else if (_down && state->state == fw::ButtonState::RELEASE) {
+        if (_down == SceneComponent::getSelected()) {
+          _clicked = _down;
+        }
+        _down = nullptr;
+      }
+    }
+  }
+  cp::ptr<SceneComponent> _down = nullptr;
+  cp::ptr<SceneComponent> _clicked = nullptr;
 };
 
 class ModelTransformGuiController : public PROACTIVE_SINGLETON(ModelTransformGuiController),
@@ -168,71 +210,58 @@ public:
   MoveTransformSelector() = default;
   MoveTransformSelector(SceneComponent* component) {
     fw::Action::setStage(fw::Stage::BEFORE_RENDER);
-    _component = component;
+    _component = { component };
   }
 
 private:
   void runLoop(fw::ActionContext const& ctx) override {
-    auto& input = fw::InputProcessor::getInstance();
-    if (auto state = input.getState(fw::Mouse::LEFT)) {
-      if (state->state == fw::ButtonState::DOWN) {
-        if (_component->isSelected()) {
-          _down = true;
-        }
-      } else if (state->state == fw::ButtonState::RELEASE) {
-        if (_down) {
-          _down = false;
-          if (_component->isSelected()) {
-            ModelTransformGuiController::getInstance()._transform = &_component->getTransform();
-          }
-        }
-      }
+    if (ObjectClickObserver::getInstance().getClick() == _component) {
+      ModelTransformGuiController::getInstance()._transform = &_component->getTransform();
     }
   }
   cp::ptr<SceneComponent> _component;
-
-  bool _down = false;
 };
 
 class MoveController : public fw::Action {
 public:
-  MoveController() : fw::Action(fw::Stage::BEFORE_RENDER) {
-    _root = {};
+  MoveController() = default;
+  // must is root component
+  MoveController(SceneComponent* component) : fw::Action(fw::Stage::BEFORE_RENDER) {
+    TOY_ASSERT(component->isRoot());
+    _component = component;
+    _axis_root = {};
+    _axis_root.getTransform() = _component->getTransform();
+    _axis_root.getTransform().scale_factor = { 1, 1, 1 };
     auto x_axis = SceneComponent{};
     _axises[0] = &x_axis;
-    // _axises[0]->setObject(pl::LightObject{ createShape(generateArrow(), { 1, 0, 0 }) });
     x_axis.getTransform().rotate(mt::Axis::Y, 90);
     auto y_axis = SceneComponent{};
     _axises[1] = &y_axis;
-    // _axises[1]->setObject(pl::LightObject{ createShape(generateArrow(), { 0, 1, 0 }) });
     y_axis.getTransform().rotate(mt::Axis::X, -90);
     auto z_axis = SceneComponent{};
     _axises[2] = &z_axis;
-    // _axises[2]->setObject(pl::LightObject{ createShape(generateArrow(), { 0, 0, 1 }) });
-    _root.add(std::move(x_axis));
-    _root.add(std::move(y_axis));
-    _root.add(std::move(z_axis));
+    _axis_root.add(std::move(x_axis));
+    _axis_root.add(std::move(y_axis));
+    _axis_root.add(std::move(z_axis));
     setAxisObject(mt::Axis::X, glm::vec3{ 1, 0, 0 });
     setAxisObject(mt::Axis::Y, glm::vec3{ 0, 1, 0 });
     setAxisObject(mt::Axis::Z, glm::vec3{ 0, 0, 1 });
   }
 
-  // must is root component
-  // void setControl(SceneComponent* scene) { _selected = scene; }
-
   enum Mode { LOCAL, WORLD };
   Mode mode = WORLD;
 
 private:
-  SceneComponent                         _root;
+  cp::ptr<SceneComponent>                _component;
+  SceneComponent                         _axis_root;
   std::array<cp::ptr<SceneComponent>, 3> _axises;
 
   void runLoop(fw::ActionContext const& ctx) override {
     auto& input = fw::InputProcessor::getInstance();
     if (input.getState(fw::Mouse::LEFT)->state == fw::ButtonState::DOWN) {
-      auto& x_axis = _root.getSubComponents()[0];
-      auto& y_axis = _root.getSubComponents()[1];
-      auto& z_axis = _root.getSubComponents()[2];
+      auto& x_axis = _axis_root.getSubComponents()[0];
+      auto& y_axis = _axis_root.getSubComponents()[1];
+      auto& z_axis = _axis_root.getSubComponents()[2];
       if (x_axis.isSelected()) {
         _axis = mt::Axis::X;
       } else if (y_axis.isSelected()) {
@@ -252,19 +281,18 @@ private:
     } else if (_axis) {
       auto now_pos = getAxisPos(*_axis);
       if (glm::abs(now_pos - _start_pos) > _unit_length) {
-        _root.getTransform().translate(*_axis, now_pos - _start_pos);
+        _axis_root.getTransform().translate(*_axis, now_pos - _start_pos);
+        auto scale_factor = _component->getTransform().scale_factor;
+        _component->getTransform() = _axis_root.getTransform();
+        _component->getTransform().scale_factor = scale_factor;
       }
     }
   }
 
   void setAxisObject(mt::Axis axis, glm::vec3 const& color) {
     auto& axis_obj = _axises[(int)axis];
-    axis_obj->setObject(pl::LightObject{ createShape(generateArrow(), color) });
-    // if (axis == mt::Axis::X) {
-    //   axis_obj->getTransToParent().rotate(mt::Axis::Y, 90);
-    // } else if (axis == mt::Axis::Y) {
-    //   axis_obj->getTransToParent().rotate(mt::Axis::X, -90);
-    // }
+    axis_obj->setObject(createShape(generateArrow(), color));
+    axis_obj->getObject().setUplayer();
   }
 
   auto getAxisPos(mt::Axis axis) -> float {
@@ -284,8 +312,9 @@ private:
       .point = start,
     };
     auto line_axis = mt::Line{
-      .direction = glm::normalize(mt::transformVec(_root.getTransToWorld(), mt::unitVec(*_axis))),
-      .point = mt::transformDot(_root.getTransToWorld(), glm::vec3{ 0, 0, 0 }),
+      .direction =
+        glm::normalize(mt::transformVec(_axis_root.getTransToWorld(), mt::unitVec(*_axis))),
+      .point = mt::transformDot(_axis_root.getTransToWorld(), glm::vec3{ 0, 0, 0 }),
     };
     // TOY_DEBUG(_root.getTransToWorld());
     // TOY_DEBUG(line_cursor.point, line_cursor.direction);
@@ -301,6 +330,21 @@ private:
   float                   _start_pos;
 
   float _unit_length = 0.3;
+};
+
+class MoveControllerManager : public fw::Action {
+public:
+  MoveControllerManager() : fw::Action(fw::Stage::BEFORE_RENDER) {}
+
+private:
+  void runLoop(fw::ActionContext const& ctx) override {
+    if (auto selected = ObjectClickObserver::getInstance().getClick()) {
+      if (selected->isRoot()) {
+        _controller = selected;
+      }
+    }
+  }
+  MoveController _controller;
 };
 
 } // namespace tool

@@ -56,6 +56,14 @@
   type(type&&) noexcept = default;                                                                 \
   auto operator=(type&&) noexcept -> type& = default;
 
+#define DEFAULT_COPYABLE(type)                                                                     \
+  type(const type&) noexcept = default;                                                            \
+  auto operator=(const type&) noexcept -> type& = default;
+
+#define DEFAULT_COPYABLE_MOVEABLE(type)                                                            \
+  DEFAULT_COPYABLE(type)                                                                           \
+  DEFAULT_MOVEABLE(type)
+
 #define CUSTOM_FORMATTER(type, func)                                                               \
   export template <>                                                                               \
   class std::formatter<type> : public std::formatter<std::string> {                                \
@@ -80,6 +88,6 @@
   ~cls() { beforeDestroy(); }                                                                      \
                                                                                                    \
 private:                                                                                           \
-  void beforeDestroy() __VA_ARGS__ public:
+void beforeDestroy() __VA_ARGS__ public:
 
 #endif

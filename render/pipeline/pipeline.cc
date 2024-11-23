@@ -90,8 +90,8 @@ void PipelineDrawer::setStencilReference(uint32 reference) {
 void PipelineDrawer::draw() {
   if (_execute_type == RECORD) {
     TOY_CHECK_ASSERT(_vertex_count > 0);
-    TOY_CHECK_ASSERT(ranges::all_of(_bound_sets, [](auto x) { return x; }));
-    TOY_CHECK_ASSERT(ranges::all_of(_bound_pushes, [](auto x) { return x; }));
+    TOY_CHECK_ASSERT(ranges::all_of(_bound_sets, [](auto x) { return x; }), _bound_sets);
+    TOY_CHECK_ASSERT(ranges::all_of(_bound_pushes, [](auto x) { return x; }), _bound_pushes);
     if (_index) {
       vkCmdDrawIndexed(_cmdbuf, _vertex_count, 1, 0, 0, 0);
     } else {
