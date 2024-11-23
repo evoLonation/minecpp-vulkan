@@ -14,10 +14,6 @@ export namespace fw {
 enum Stage {
   BEFORE_RENDER,
 
-  // the scene_component's _to_world is dependent on the model_transform
-  MODEL_TRANSFORM,
-  SCENE_COMPONENT,
-
   UNIFORM_UPDATE,
   RENDER,
   AFTER_RENDER,

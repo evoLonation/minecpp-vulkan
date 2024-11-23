@@ -8,12 +8,12 @@ import toy.traceable;
 export namespace toy {
 
 template <typename T>
-struct Observable : public Traceable {
-  T value;
+class Observable : public Traceable {
+public:
   Observable() = default;
   Observable(T const& v) : value{ v } {}
   Observable(T&& v) : value{ std::move(v) } {}
-  Observable(auto&&... args) : value{ FORWARD(args)... } {}
+  // Observable(auto&&... args) : value{ FORWARD(args)... } {}
   Observable(Observable const& e) noexcept : value{ e.value } {}
   Observable(Observable&& e) noexcept
     : value{ std::move(e.value) }, observers{ std::move(e.observers) } {}
@@ -24,8 +24,17 @@ struct Observable : public Traceable {
   }
   auto operator=(Observable&& e) noexcept -> Observable& {
     value = std::move(e.value);
-    observers.append_range(e.observers);
-    e.observers.clear();
+    observers = std::move(e.observers);
+    trigger();
+    return *this;
+  }
+  auto operator=(T const& v) -> Observable& {
+    value = v;
+    trigger();
+    return *this;
+  }
+  auto operator=(T&& v) -> Observable& {
+    value = std::move(v);
     trigger();
     return *this;
   }
@@ -142,14 +151,23 @@ struct Observable : public Traceable {
     f(value);
     trigger();
   }
-  void addObserver(std::function<void(T const&)> f) { observers.push_back(std::move(f)); }
+  void addObserver(std::function<void(T const&)> f, bool init = true) {
+    if (init) {
+      f(value);
+    }
+    observers.push_back(std::move(f));
+  }
+
+private:
+  T value;
+
+  std::vector<std::function<void(T const&)>> observers;
 
   void trigger() {
     for (auto& f : observers) {
       f(value);
     }
   }
-  std::vector<std::function<void(T const&)>> observers;
 };
 
 } // namespace toy

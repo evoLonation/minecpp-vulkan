@@ -10,6 +10,8 @@ export namespace toy {
 class Tracer;
 template <typename T>
 class TracerFor;
+
+// 拷贝赋值的会使指向原本资源的所有tracer失效，然后将新的tracer指向该资源
 class Traceable {
 public:
   Traceable() = default;
@@ -117,11 +119,10 @@ auto Traceable::operator=(const Traceable& e) noexcept -> Traceable& {
   return *this;
 }
 auto Traceable::operator=(Traceable&& e) noexcept -> Traceable& {
-  for (auto* p : e._proxies) {
+  _proxies = std::move(e._proxies);
+  for (auto* p : _proxies) {
     p->ptr = this;
   }
-  _proxies.insert_range(e._proxies);
-  e._proxies.clear();
   return *this;
 }
 

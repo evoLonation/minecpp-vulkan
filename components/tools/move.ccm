@@ -19,10 +19,17 @@ import <imgui_config.h>;
 
 export namespace tool {
 
-class ModelTransform : public fw::Action, public cp::Component {
+class ModelTransform : public cp::Component {
 public:
-  ModelTransform() : ModelTransform{ mt::model::create() } {}
-  ModelTransform(glm::mat4 const& model) : fw::Action(fw::Stage::MODEL_TRANSFORM), _model(model) {}
+  ModelTransform() {
+    auto changer = [self = getTracer()](auto&& any) {
+      self->_model = mt::translate(self->location) * mt::rotate(self->rotate_euler) *
+                     mt::scale(self->scale_factor);
+    };
+    location.addObserver(changer);
+    rotate_euler.addObserver(changer);
+    scale_factor.addObserver(changer);
+  }
   void translate(glm::vec3 const& delta) {
     if (mode == WORLD) {
       location += delta;
@@ -74,9 +81,9 @@ public:
   }
   auto get() const -> glm::mat4 const& { return _model; }
 
-  glm::vec3 location = { 0, 0, 0 };
-  glm::vec3 rotate_euler = { 0, 0, 0 };
-  glm::vec3 scale_factor = { 1, 1, 1 };
+  toy::Observable<glm::vec3> location = { { 0, 0, 0 } };
+  toy::Observable<glm::vec3> rotate_euler = { { 0, 0, 0 } };
+  toy::Observable<glm::vec3> scale_factor = { { 1, 1, 1 } };
   enum Mode { LOCAL, WORLD };
   Mode mode = WORLD;
 
@@ -84,16 +91,12 @@ public:
 
 private:
   glm::mat4 _model;
-
-  void runLoop(fw::ActionContext const& ctx) override {
-    _model = mt::translate(location) * mt::rotate(rotate_euler) * mt::scale(scale_factor);
-  }
 };
 
-class SceneComponent : public fw::Action, public cp::Component {
+class SceneComponent : public cp::Component {
 public:
   SceneComponent() {
-    setStage(fw::Stage::SCENE_COMPONENT);
+    setStage(fw::Stage::BEFORE_RENDER);
     _to_world = _to_parent.get();
   }
   SceneComponent(pl::LightObject object) : SceneComponent() { setObject(std::move(object)); }
@@ -193,9 +196,11 @@ public:
       ImGui::Text("There is no any valid ModelTransform.");
       return;
     }
-    gui::slider("location", _transform->location);
-    gui::slider("euler_angle", _transform->rotate_euler, glm::vec3{ -180 }, glm::vec3{ 180 });
-    gui::slider("scale", _transform->scale_factor);
+    _transform->location.change([](auto& location) { gui::slider("location", location); });
+    _transform->rotate_euler.change([](auto& rotate_euler) {
+      gui::slider("euler_angle", rotate_euler, glm::vec3{ -180 }, glm::vec3{ 180 });
+    });
+    _transform->scale_factor.change([](auto& scale_factor) { gui::slider("scale", scale_factor); });
   }
 
   UNCOPYABLE_MOVEABLE(ModelTransformGuiController);
@@ -205,7 +210,7 @@ private:
   cp::ptr<ModelTransform> _transform;
 };
 
-class MoveTransformSelector : public fw::Action, public cp::Component {
+class MoveTransformSelector : public cp::Component {
 public:
   MoveTransformSelector() = default;
   MoveTransformSelector(SceneComponent* component) {
@@ -222,11 +227,12 @@ private:
   cp::ptr<SceneComponent> _component;
 };
 
-class MoveController : public fw::Action {
+class MoveController : public cp::Component {
 public:
   MoveController() = default;
   // must is root component
-  MoveController(SceneComponent* component) : fw::Action(fw::Stage::BEFORE_RENDER) {
+  MoveController(SceneComponent* component) {
+    setStage(fw::Stage::BEFORE_RENDER);
     TOY_ASSERT(component->isRoot());
     _component = component;
     _axis_root = {};

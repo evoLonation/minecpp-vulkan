@@ -5,5 +5,3 @@ module:
     provide: tool.shape
 - component.ccm:
     provide: component
-test:
-- proxy_test.cc
