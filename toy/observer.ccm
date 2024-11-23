@@ -1,0 +1,155 @@
+module;
+#include <toy.h>
+export module toy.observer;
+
+import std;
+import toy.traceable;
+
+export namespace toy {
+
+template <typename T>
+struct Observable : public Traceable {
+  T value;
+  Observable() = default;
+  Observable(T const& v) : value{ v } {}
+  Observable(T&& v) : value{ std::move(v) } {}
+  Observable(auto&&... args) : value{ FORWARD(args)... } {}
+  Observable(Observable const& e) noexcept : value{ e.value } {}
+  Observable(Observable&& e) noexcept
+    : value{ std::move(e.value) }, observers{ std::move(e.observers) } {}
+  auto operator=(Observable const& e) noexcept -> Observable& {
+    value = e.value;
+    trigger();
+    return *this;
+  }
+  auto operator=(Observable&& e) noexcept -> Observable& {
+    value = std::move(e.value);
+    observers.append_range(e.observers);
+    e.observers.clear();
+    trigger();
+    return *this;
+  }
+
+  // forward operators
+  template <typename S>
+    requires(!std::is_same_v<std::remove_cvref_t<S>, Observable>)
+  auto operator=(S&& v) -> Observable& {
+    value = FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator+(auto&& v) -> decltype(auto) { return value + FORWARD(v); }
+  auto operator-(auto&& v) -> decltype(auto) { return value - FORWARD(v); }
+  auto operator*(auto&& v) -> decltype(auto) { return value * FORWARD(v); }
+  auto operator/(auto&& v) -> decltype(auto) { return value / FORWARD(v); }
+  auto operator%(auto&& v) -> decltype(auto) { return value % FORWARD(v); }
+  auto operator&(auto&& v) -> decltype(auto) { return value & FORWARD(v); }
+  auto operator|(auto&& v) -> decltype(auto) { return value | FORWARD(v); }
+  auto operator^(auto&& v) -> decltype(auto) { return value ^ FORWARD(v); }
+  auto operator<<(auto&& v) -> decltype(auto) { return value << FORWARD(v); }
+  auto operator>>(auto&& v) -> decltype(auto) { return value >> FORWARD(v); }
+  auto operator+=(auto&& v) -> Observable& {
+    value += FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator-=(auto&& v) -> Observable& {
+    value -= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator*=(auto&& v) -> Observable& {
+    value *= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator/=(auto&& v) -> Observable& {
+    value /= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator%=(auto&& v) -> Observable& {
+    value %= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator&=(auto&& v) -> Observable& {
+    value &= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator|=(auto&& v) -> Observable& {
+    value |= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator^=(auto&& v) -> Observable& {
+    value ^= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator<<=(auto&& v) -> Observable& {
+    value <<= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator>>=(auto&& v) -> Observable& {
+    value >>= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator++() -> Observable& {
+    ++value;
+    trigger();
+    return *this;
+  }
+  auto operator--() -> Observable& {
+    --value;
+    trigger();
+    return *this;
+  }
+  auto operator++(int) -> T {
+    T v = value;
+    ++value;
+    trigger();
+    return v;
+  }
+  auto operator--(int) -> T {
+    T v = value;
+    --value;
+    trigger();
+    return v;
+  }
+  // the lifetime of result must shorter than this
+  auto operator[](auto&& i) -> decltype(auto) {
+    auto e = Observable<std::remove_cvref_t<decltype(value[FORWARD(i)])>>{ value[FORWARD(i)] };
+    e.addObserver([this, i](auto const& v) {
+      this->value[i] = v;
+      this->trigger();
+    });
+    return e;
+  }
+  auto operator==(Observable const& e) const -> bool { return value == e.value; }
+  template <typename S>
+    requires(!std::is_same_v<std::remove_cvref_t<S>, Observable>)
+  auto operator==(S&& e) const -> bool {
+    return value == FORWARD(e);
+  }
+
+  operator T() const { return value; }
+
+  void change(std::function<void(T&)> const& f) {
+    f(value);
+    trigger();
+  }
+  void addObserver(std::function<void(T const&)> f) { observers.push_back(std::move(f)); }
+
+  void trigger() {
+    for (auto& f : observers) {
+      f(value);
+    }
+  }
+  std::vector<std::function<void(T const&)>> observers;
+};
+
+} // namespace toy

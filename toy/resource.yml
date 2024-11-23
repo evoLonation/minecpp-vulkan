@@ -21,5 +21,9 @@ module:
     provide: toy.json
 - pool.ccm:
     provide: toy.pool
+- traceable.ccm:
+    provide: toy.traceable
+- observer.ccm:
+    provide: toy.observer
 test:
 - test.cc

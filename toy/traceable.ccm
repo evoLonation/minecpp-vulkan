@@ -1,0 +1,138 @@
+module;
+#include <toy.h>
+export module toy.traceable;
+
+import toy.log;
+import std;
+
+export namespace toy {
+
+class Tracer;
+template <typename T>
+class TracerFor;
+class Traceable {
+public:
+  Traceable() = default;
+  ~Traceable();
+  Traceable(const Traceable&) noexcept;
+  Traceable(Traceable&&) noexcept;
+  auto operator=(const Traceable&) noexcept -> Traceable&;
+  auto operator=(Traceable&&) noexcept -> Traceable&;
+
+  auto getTracer(this auto&& self) -> TracerFor<std::remove_reference_t<decltype(self)>>;
+
+private:
+  friend Tracer;
+  // todo: more efficient data structure
+  std::unordered_set<Tracer*> _proxies;
+};
+struct Tracer {
+public:
+  Tracer() = default;
+  Tracer(Traceable* ptr) : ptr{ ptr } { add(); }
+  ~Tracer() { remove(); }
+  auto valid() const -> bool { return ptr; }
+  auto get() const -> Traceable& {
+    TOY_ASSERT(valid());
+    return *ptr;
+  }
+  auto operator->() const -> Traceable* {
+    TOY_ASSERT(valid());
+    return ptr;
+  }
+  auto operator*() const -> Traceable& { return get(); }
+  operator Traceable*() const { return ptr; }
+  Tracer(const Tracer& e) noexcept {
+    ptr = e.ptr;
+    add();
+  }
+  Tracer(Tracer&& e) noexcept {
+    ptr = e.ptr;
+    add();
+    e.remove();
+    e.ptr = nullptr;
+  }
+  auto operator=(const Tracer& e) noexcept -> Tracer& {
+    remove();
+    ptr = e.ptr;
+    add();
+    return *this;
+  }
+  auto operator=(Tracer&& e) noexcept -> Tracer& {
+    remove();
+    ptr = e.ptr;
+    add();
+    e.remove();
+    e.ptr = nullptr;
+    return *this;
+  }
+
+private:
+  friend Traceable;
+  Traceable* ptr = nullptr;
+  void       set(Traceable* ptr) {
+    remove();
+    this->ptr = ptr;
+    add();
+  }
+
+  void add() {
+    if (ptr) {
+      ptr->_proxies.insert(this);
+    }
+  }
+  void remove() {
+    if (ptr) {
+      ptr->_proxies.erase(this);
+    }
+  }
+};
+
+template <typename T>
+class TracerFor {
+public:
+  TracerFor() = default;
+  TracerFor(T* ptr) : proxy{ ptr } {}
+  auto get() const -> T& { return static_cast<T&>(proxy.get()); }
+  auto operator->() const -> T* { return static_cast<T*>(&proxy.get()); }
+  auto operator*() const -> T& { return static_cast<T&>(*proxy); }
+  operator T*() const { return static_cast<T*>(static_cast<Traceable*>(proxy)); }
+  auto valid() const -> bool { return proxy.valid(); }
+
+private:
+  Tracer proxy;
+};
+
+Traceable::Traceable(const Traceable& e) noexcept {
+  // do nothing
+}
+Traceable::Traceable(Traceable&& e) noexcept {
+  _proxies = std::move(e._proxies);
+  for (auto* p : _proxies) {
+    p->ptr = this;
+  }
+}
+auto Traceable::operator=(const Traceable& e) noexcept -> Traceable& {
+  // do nothing
+  return *this;
+}
+auto Traceable::operator=(Traceable&& e) noexcept -> Traceable& {
+  for (auto* p : e._proxies) {
+    p->ptr = this;
+  }
+  _proxies.insert_range(e._proxies);
+  e._proxies.clear();
+  return *this;
+}
+
+auto Traceable::getTracer(this auto&& self) -> TracerFor<std::remove_reference_t<decltype(self)>> {
+  return { &self };
+}
+
+Traceable::~Traceable() {
+  for (auto* p : _proxies) {
+    p->ptr = nullptr;
+  }
+}
+
+} // namespace toy
