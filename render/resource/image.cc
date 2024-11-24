@@ -74,8 +74,7 @@ auto createImage(
   return { image_info };
 }
 
-auto createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect, uint32 mip_levels)
-  -> rs::ImageView {
+auto createImageView(VkImage image, VkFormat format, uint32 mip_levels) -> rs::ImageView {
   auto create_info = VkImageViewCreateInfo{
     .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
     .pNext = nullptr,
@@ -91,7 +90,7 @@ auto createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect, 
       .a = VK_COMPONENT_SWIZZLE_IDENTITY,
     },
     // view 访问 image 资源的范围
-    .subresourceRange = getSubresourceRange(aspect, {0, mip_levels}),
+    .subresourceRange = getSubresourceRange(getAspect(format), {0, mip_levels}),
   };
   return { create_info };
 }
@@ -114,7 +113,6 @@ ImageResource::ImageResource(
   uint32                width,
   uint32                height,
   VkImageUsageFlags     usage,
-  VkImageAspectFlags    aspect,
   uint32                mip_levels,
   VkSampleCountFlagBits sample_count
 )
@@ -132,7 +130,7 @@ ImageResource::ImageResource(
       }()
     )),
     _memory(_image, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
-    _image_view(createImageView(_image, format, aspect, mip_levels)) {}
+    _image_view(createImageView(_image, format, mip_levels)) {}
 
 auto ImageResource::operator=(ImageResource&& e) noexcept -> ImageResource& {
   _image_view = std::move(e._image_view);
@@ -146,106 +144,24 @@ Image::Image(
   uint32                width,
   uint32                height,
   VkImageUsageFlags     usage,
-  VkImageAspectFlags    aspect,
   uint32                mip_levels,
   VkSampleCountFlagBits sample_count
 )
-  : ImageResource(format, width, height, usage, aspect, mip_levels, sample_count),
+  : ImageResource(format, width, height, usage, mip_levels, sample_count),
     ImageManager(
       ImageResource::_image,
       ImageResource::_image_view,
+      usage,
       VkExtent2D{ width, height },
       format,
-      sample_count,
-      getSubresourceRange(aspect, MipRange{ 0, mip_levels })
+      mip_levels,
+      sample_count
     ) {}
 
 auto Image::operator=(Image&& e) noexcept -> Image& {
   ImageManager::operator=(std::move(e));
   ImageResource::operator=(std::move(e));
   return *this;
-}
-
-// must only one bit of aspect (by specification)
-auto getBufferImageCopy(
-  VkImageAspectFlagBits aspect, uint32 mip_level, VkOffset2D offset, VkExtent2D extent
-) -> VkBufferImageCopy {
-  return VkBufferImageCopy{
-    .bufferOffset = 0,
-    // bufferRowLength and bufferImageHeight
-    // 用于更详细的定义buffer的内存如何映射到image
-    .bufferRowLength = 0,
-    .bufferImageHeight = 0,
-    .imageSubresource = getSubresourceLayers(aspect, mip_level),
-    .imageOffset =
-      VkOffset3D{
-        .x = offset.x,
-        .y = offset.y,
-        .z = 0,
-      },
-    .imageExtent =
-      VkExtent3D{
-        .width = extent.width,
-        .height = extent.height,
-        .depth = 1,
-      },
-  };
-}
-
-void copyBufferToImage(
-  VkCommandBuffer       cmdbuf,
-  VkBuffer              buffer,
-  VkImage               image,
-  VkImageAspectFlagBits aspect,
-  VkOffset2D            offset,
-  VkExtent2D            extent,
-  uint32                mip_level
-) {
-  auto image_copy = getBufferImageCopy(aspect, mip_level, offset, extent);
-  vkCmdCopyBufferToImage(
-    cmdbuf, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_copy
-  );
-}
-
-void copyImageToBuffer(
-  VkCommandBuffer       cmdbuf,
-  VkImage               image,
-  VkBuffer              buffer,
-  VkImageAspectFlagBits aspect,
-  VkOffset2D            offset,
-  VkExtent2D            extent,
-  uint32                mip_level
-) {
-  auto image_copy = getBufferImageCopy(aspect, mip_level, offset, extent);
-  vkCmdCopyImageToBuffer(
-    cmdbuf, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1, &image_copy
-  );
-}
-
-void blitImage(VkCommandBuffer cmdbuf, ImageBlit src, ImageBlit dst) {
-  auto blit = VkImageBlit{
-    .srcSubresource = getSubresourceLayers(src.aspect, src.mip_level),
-    .srcOffsets = { VkOffset3D{ 0, 0, 0 },
-                    VkOffset3D{ (int32)src.extent.width, (int32)src.extent.height, 1 } },
-    .dstSubresource = getSubresourceLayers(dst.aspect, dst.mip_level),
-    .dstOffsets = { VkOffset3D{ 0, 0, 0 },
-                    VkOffset3D{ (int32)dst.extent.width, (int32)dst.extent.height, 1 } },
-  };
-  vkCmdBlitImage(cmdbuf, src.image, src.layout, dst.image, dst.layout, 1, &blit, VK_FILTER_LINEAR);
-}
-
-auto computeMipExtents(VkExtent2D extent) -> std::vector<VkExtent2D> {
-  auto mip_levels = uint32(std::floor(std::log2(std::max(extent.width, extent.height)))) + 1;
-  auto mip_extents = std::vector<VkExtent2D>{};
-  auto now_extent = extent;
-  for (auto i : views::iota(0u, mip_levels)) {
-    mip_extents.emplace_back(now_extent);
-    now_extent = VkExtent2D{
-      std::max(now_extent.width / 2, 1u),
-      std::max(now_extent.height / 2, 1u),
-    };
-  }
-  return mip_extents;
 }
 
 } // namespace rd

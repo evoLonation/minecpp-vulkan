@@ -186,12 +186,8 @@ auto Presentation::recreate() -> bool {
 Presentation::ImageContext::ImageContext(
   VkImage image, VkImageView image_view, VkExtent2D extent, VkFormat format
 )
-  : FrameImageManager{ image,
-                       image_view,
-                       extent,
-                       format,
-                       VK_SAMPLE_COUNT_1_BIT,
-                       getSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, MipRange{ 0, 1 }) },
+  : FrameImageManager{ image,  image_view, Swapchain::getUsage(),
+                       extent, format,     VK_SAMPLE_COUNT_1_BIT ,},
     present_wait_sema(createSemaphore()), present_signal_fence{ false }, fence_waitable(false),
     need_release(false) {}
 

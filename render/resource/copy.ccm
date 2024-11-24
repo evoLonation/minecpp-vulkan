@@ -1,0 +1,94 @@
+module;
+#include <toy.h>
+export module render.copy;
+
+import std;
+import toy;
+
+import render.image;
+import render.buffer;
+import render.format;
+import render.executor;
+import render.tracker;
+import render.sync;
+import <vulkan_config.h>;
+
+export namespace rd {
+
+void copyBufferToImage(
+  VkCommandBuffer       cmdbuf,
+  VkBuffer              buffer,
+  VkImage               image,
+  VkImageAspectFlagBits aspect,
+  VkOffset2D            offset,
+  VkExtent2D            extent,
+  uint32                mip_level
+);
+
+void copyImageToBuffer(
+  VkCommandBuffer       cmdbuf,
+  VkImage               image,
+  VkBuffer              buffer,
+  VkImageAspectFlagBits aspect,
+  VkOffset2D            offset,
+  VkExtent2D            extent,
+  uint32                mip_level
+);
+
+struct ImageBlit {
+  VkImage               image;
+  VkImageAspectFlagBits aspect;
+  VkImageLayout         layout;
+  uint32                mip_level;
+  VkExtent2D            extent;
+};
+
+void blitImage(VkCommandBuffer cmdbuf, ImageBlit src, ImageBlit dst);
+
+auto computeMipExtents(VkExtent2D extent) -> std::vector<VkExtent2D>;
+
+class ImageLocalReader {
+public:
+  ImageLocalReader() = default;
+  ImageLocalReader(VkFormat format, VkExtent2D max_extent);
+  void loadImage(
+    ImageManager&         manager,
+    VkImageAspectFlagBits aspect,
+    VkOffset2D            offset,
+    VkExtent2D            extent,
+    uint32                mip_level
+  );
+  auto readPixel(uint32 x, uint32 y) -> std::byte*;
+
+private:
+  VkFormat   _format;
+  VkExtent2D _max_extent;
+
+  HostBuffer _buffer;
+  // the sub image extent store in host_buffer
+  VkExtent2D _local_extent;
+};
+
+class ImageWriter {
+public:
+  ImageWriter() = default;
+  ImageWriter(VkFormat format, VkExtent2D max_extent);
+  void writeImage(
+    ImageManager&         manager,
+    VkImageAspectFlagBits aspect,
+    VkOffset2D            offset,
+    VkExtent2D            extent,
+    MipRange              mip_range
+  );
+  auto readPixel(uint32 x, uint32 y) -> std::byte*;
+
+private:
+  VkFormat   _format;
+  VkExtent2D _max_extent;
+
+  HostBuffer _buffer;
+  // the sub image extent store in host_buffer
+  VkExtent2D _local_extent;
+};
+
+} // namespace rd

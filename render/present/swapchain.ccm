@@ -35,11 +35,13 @@ public:
   auto getExtent() const -> VkExtent2D { return _swapchain_extent; }
 
   static auto getFormat() -> VkFormat { return _format; }
+  static auto getUsage() -> VkImageUsageFlags { return _usage; }
 
 private:
-  static VkFormat         _format;
-  static VkPresentModeKHR _present_mode;
-  static VkColorSpaceKHR  _color_space;
+  static VkFormat          _format;
+  static VkImageUsageFlags _usage;
+  static VkPresentModeKHR  _present_mode;
+  static VkColorSpaceKHR   _color_space;
 
 public:
   static auto checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& request) -> bool;

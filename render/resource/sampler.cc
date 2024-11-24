@@ -5,6 +5,7 @@ module render.sampler;
 import <vulkan_config.h>;
 import render.sync;
 import render.executor;
+import render.copy;
 
 import <stb_image.h>;
 
@@ -84,7 +85,7 @@ SampledTexture::SampledTexture(
   }
   TOY_DEBUG(mip_levels);
   _image = Image{
-    format, width, height, _usage, _aspect, mip_levels, VK_SAMPLE_COUNT_1_BIT,
+    format, width, height, _usage, mip_levels, VK_SAMPLE_COUNT_1_BIT,
   };
   _sampler = createSampler(_max_anisotropy);
 

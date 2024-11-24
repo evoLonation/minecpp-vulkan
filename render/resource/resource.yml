@@ -23,5 +23,9 @@ module:
     provide: render.alignment
 - format.ccm:
     provide: render.format
+- copy.ccm:
+    provide: render.copy
+- copy.cc:
+    implement: render.copy
 test:
 - test.cc

@@ -14,6 +14,7 @@ export import render.swapchain;
 export import render.presentation;
 export import render.buffer;
 export import render.image;
+export import render.copy;
 export import render.alignment;
 export import render.sampler;
 export import render.vertex;

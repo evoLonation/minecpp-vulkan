@@ -17,6 +17,10 @@ namespace rd {
  */
 auto Swapchain::_present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
 auto Swapchain::_format = VK_FORMAT_R8G8B8A8_SRGB;
+auto Swapchain::_usage = VkImageUsageFlags{
+  VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+    VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+};
 auto Swapchain::_color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 
 Swapchain::Swapchain(
@@ -61,7 +65,7 @@ Swapchain::Swapchain(
      * VK_IMAGE_USAGE_TRANSFER_DST_BIT :
      * 先渲染到单独的图像上（以便进行后处理），然后传输到交换链图像
      */
-    .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+    .imageUsage = _usage,
     /*
      * VK_SHARING_MODE_CONCURRENT:
      * 图像可以跨多个队列族使用，而无需明确的所有权转移
@@ -91,10 +95,9 @@ Swapchain::Swapchain(
   rs::Swapchain::operator=(create_info);
   _swapchain_extent = extent;
   _images = getVkResources(vkGetSwapchainImagesKHR, Device::getInstance(), get());
-  _image_views = _images | views::transform([&](VkImage image) {
-                   return createImageView(image, _format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
-                 }) |
-                 ranges::to<std::vector>();
+  _image_views =
+    _images | views::transform([&](VkImage image) { return createImageView(image, _format, 1); }) |
+    ranges::to<std::vector>();
 }
 
 auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& request) -> bool {
