@@ -170,4 +170,35 @@ private:
   }
 };
 
+template <typename T>
+class Bidirectional : public Traceable {
+public:
+  Bidirectional() = default;
+  Bidirectional(Observable<T>* a, Observable<T>* b) : _a(a), _b(b) {
+    _a->addObserver(
+      [self = getTracer()](T const& v) {
+        if (self->_doing)
+          return;
+        self->_doing = true;
+        *self->_b = v;
+        self->_doing = false;
+      },
+      true
+    );
+    _b->addObserver([self = getTracer()](T const& v) {
+      if (self->_doing)
+        return;
+      self->_doing = true;
+      *self->_a = v;
+      self->_doing = false;
+    });
+  }
+  ONLY_MOVEABLE(Bidirectional);
+
+private:
+  toy::TracerFor<Observable<T>> _a;
+  toy::TracerFor<Observable<T>> _b;
+  bool                          _doing = false;
+};
+
 } // namespace toy

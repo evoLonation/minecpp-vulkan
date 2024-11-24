@@ -17,216 +17,58 @@ import camera;
 
 import <imgui_config.h>;
 
-export namespace tool {
+export namespace cp {
 
-class ModelTransform : public cp::Component {
+class MovePlane {
 public:
-  ModelTransform() {
-    auto changer = [self = getTracer()](auto&& any) {
-      self->_model = mt::translate(self->location) * mt::rotate(self->rotate_euler) *
-                     mt::scale(self->scale_factor);
-    };
-    location.addObserver(changer);
-    rotate_euler.addObserver(changer);
-    scale_factor.addObserver(changer);
-  }
-  void translate(glm::vec3 const& delta) {
-    if (mode == WORLD) {
-      location += delta;
-    } else {
-      auto r_2 = mt::rotate(rotate_euler) * mt::translate(delta);
-      // r_2 = t_new * r_new
-      // t_new = t_2[3][0-3], r_new = t_2[0-2][0-2]
-      location += glm::vec3{ r_2[3] };
-      r_2[3] = glm::vec4{ 0, 0, 0, 1 };
-      rotate_euler = mt::getEulerAngle(r_2);
-    }
-  }
-  void translate(mt::Axis axis, float delta) {
-    using enum mt::Axis;
-    switch (axis) {
-    case X:
-      translate(glm::vec3{ delta, 0, 0 });
-      break;
-    case Y:
-      translate(glm::vec3{ 0, delta, 0 });
-      break;
-    case Z:
-      translate(glm::vec3{ 0, 0, delta });
-      break;
-    }
-  }
-  void rotate(mt::Axis axis, float degree) {
-    auto r_new = glm::mat4{};
-    if (mode == WORLD) {
-      r_new = mt::rotate(axis, degree) * mt::rotate(rotate_euler);
-    } else {
-      r_new = mt::rotate(rotate_euler) * mt::rotate(axis, degree);
-    }
-    rotate_euler = mt::getEulerAngle(r_new);
-  }
-  void scale(mt::Axis axis, float factor) {
-    using enum mt::Axis;
-    if (mode == WORLD) {
-      auto s_r = mt::scale(axis, factor) * mt::rotate(rotate_euler);
-      auto new_scale_factor = glm::vec3{
-        glm::sqrt(glm::length(s_r[0])),
-        glm::sqrt(glm::length(s_r[1])),
-        glm::sqrt(glm::length(s_r[2])),
-      };
-      scale_factor *= new_scale_factor;
-    } else {
-      scale_factor[static_cast<int>(axis)] *= factor;
-    }
-  }
-  auto get() const -> glm::mat4 const& { return _model; }
+  MovePlane() = default;
+  MovePlane(mt::Axis normal_axis, SceneComponent* component) {
+    _component = component;
+    auto normal = mt::unitVec(normal_axis);
+    auto cube = SceneComponent{ createShape(generateCube(), glm::vec3{ 0.5, 0.5, 0.5 }) };
+    cube.getTransform().scale_factor =
+      glm::vec3{ 1, 1, 1 } - normal * (1 - _thickness) - (glm::vec3{ 1, 1, 1 } - normal) * _edge;
+    cube.getTransform().location = -normal * (_thickness / 2);
 
-  toy::Observable<glm::vec3> location = { { 0, 0, 0 } };
-  toy::Observable<glm::vec3> rotate_euler = { { 0, 0, 0 } };
-  toy::Observable<glm::vec3> scale_factor = { { 1, 1, 1 } };
-  enum Mode { LOCAL, WORLD };
-  Mode mode = WORLD;
+    auto unit_2 = mt::unitVec(mt::Axis(((int)normal_axis + 2) % 3));
+    auto unit_1 = mt::unitVec(mt::Axis(((int)normal_axis + 1) % 3));
+    auto edge_1 = SceneComponent{ createShape(generateCylinder(_thickness / 2, _edge), unit_1) };
+    if (auto cross = glm::cross(glm::vec3{ 0, 0, 1 }, unit_1);
+        !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
+      edge_1.getTransform().rotate(cross, 90);
+    }
+    edge_1.getTransform().translate(unit_2 * _edge);
+    auto edge_2 = SceneComponent{ createShape(generateCylinder(_thickness / 2, _edge), unit_2) };
+    if (auto cross = glm::cross(glm::vec3{ 0, 0, 1 }, unit_2);
+        !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
+      edge_2.getTransform().rotate(cross, 90);
+    }
+    edge_2.getTransform().translate(unit_1 * _edge);
 
-  DEFAULT_COPYABLE_MOVEABLE(ModelTransform);
+    cube.getObject().setUplayer();
+    edge_1.getObject().setUplayer();
+    edge_2.getObject().setUplayer();
+    _component->addSubcomponent(std::move(cube));
+    _component->addSubcomponent(std::move(edge_1));
+    _component->addSubcomponent(std::move(edge_2));
+  }
+  auto isSelected() -> bool {
+    return ranges::find_if(_component->getSubComponents(), [](auto& c) {
+             return c.isSelected();
+           }) != _component->getSubComponents().end();
+  }
+  // todo: set color
 
 private:
-  glm::mat4 _model;
-};
-
-class SceneComponent : public cp::Component {
-public:
-  SceneComponent() {
-    setStage(fw::Stage::BEFORE_RENDER);
-    _to_world = _to_parent.get();
-  }
-  SceneComponent(pl::LightObject object) : SceneComponent() { setObject(std::move(object)); }
-  void setObject(pl::LightObject object) {
-    if (_object.valid()) {
-      _id_components.erase(_object.getId());
-    }
-    _object = std::move(object);
-    _object.getModelTrans() = _to_world;
-    _id_components[_object.getId()] = this;
-  }
-  auto getObject() -> pl::LightObject& { return _object; }
-  void add(SceneComponent component) {
-    component._is_root = false;
-    _sub_components.push_back(std::move(component));
-  }
-  auto isRoot() -> bool { return _is_root; }
-  auto getSubComponents() -> std::vector<SceneComponent>& { return _sub_components; }
-  auto getTransform() -> ModelTransform& { return _to_parent; }
-  auto getTransToParent() -> glm::mat4 const& { return _to_parent.get(); }
-  auto getTransToWorld() -> glm::mat4 const& { return _to_world; }
-  auto isSelected() -> bool { return getSelected() == this; }
-
-  static auto getSelected() -> SceneComponent* {
-    if (_id_components.contains(pl::LightObject::getSelectedId())) {
-      return _id_components[pl::LightObject::getSelectedId()];
-    }
-    return nullptr;
-  }
-
-  ONLY_MOVEABLE(SceneComponent);
-
-private:
-  bool                        _is_root = true;
-  ModelTransform              _to_parent;
-  pl::LightObject             _object;
-  glm::mat4                   _to_world;
-  std::vector<SceneComponent> _sub_components;
-
-  void runLoop(fw::ActionContext const& ctx) override {
-    if (_is_root) {
-      auto handleComponent = std::function<void(SceneComponent & component, glm::mat4 * father)>{};
-      handleComponent = [&handleComponent](SceneComponent& component, glm::mat4* father) {
-        if (father == nullptr) {
-          component._to_world = component._to_parent.get();
-        } else {
-          component._to_world = *father * component._to_parent.get();
-        }
-        if (component._object.valid()) {
-          component._object.getModelTrans() = component._to_world;
-        }
-        for (auto& sub : component._sub_components) {
-          handleComponent(sub, &component._to_world);
-        }
-      };
-      handleComponent(*this, nullptr);
-    }
-  }
-
-  inline static std::unordered_map<uint32, cp::ptr<SceneComponent>> _id_components;
-};
-
-class ObjectClickObserver : public fw::Action, public PROACTIVE_SINGLETON(ObjectClickObserver) {
-public:
-  ObjectClickObserver() : fw::Action(fw::Stage::BEFORE_RENDER) {}
-  auto getClick() -> SceneComponent* { return _clicked; }
-
-private:
-  void runLoop(fw::ActionContext const& ctx) override {
-    auto& input = fw::InputProcessor::getInstance();
-    if (_clicked) {
-      _clicked = nullptr;
-    }
-    if (auto state = input.getState(fw::Mouse::LEFT)) {
-      if (state->state == fw::ButtonState::DOWN) {
-        if (auto selected = SceneComponent::getSelected()) {
-          _down = selected;
-        }
-      } else if (_down && state->state == fw::ButtonState::RELEASE) {
-        if (_down == SceneComponent::getSelected()) {
-          _clicked = _down;
-        }
-        _down = nullptr;
-      }
-    }
-  }
-  cp::ptr<SceneComponent> _down = nullptr;
-  cp::ptr<SceneComponent> _clicked = nullptr;
-};
-
-class ModelTransformGuiController : public PROACTIVE_SINGLETON(ModelTransformGuiController),
-                                    public gui::Drawer {
-public:
-  ModelTransformGuiController() = default;
-  void draw() override {
-    if (!_transform.valid()) {
-      ImGui::Text("There is no any valid ModelTransform.");
-      return;
-    }
-    _transform->location.change([](auto& location) { gui::slider("location", location); });
-    _transform->rotate_euler.change([](auto& rotate_euler) {
-      gui::slider("euler_angle", rotate_euler, glm::vec3{ -180 }, glm::vec3{ 180 });
-    });
-    _transform->scale_factor.change([](auto& scale_factor) { gui::slider("scale", scale_factor); });
-  }
-
-  UNCOPYABLE_MOVEABLE(ModelTransformGuiController);
-
-private:
-  friend class MoveTransformSelector;
-  cp::ptr<ModelTransform> _transform;
-};
-
-class MoveTransformSelector : public cp::Component {
-public:
-  MoveTransformSelector() = default;
-  MoveTransformSelector(SceneComponent* component) {
-    fw::Action::setStage(fw::Stage::BEFORE_RENDER);
-    _component = { component };
-  }
-
-private:
-  void runLoop(fw::ActionContext const& ctx) override {
-    if (ObjectClickObserver::getInstance().getClick() == _component) {
-      ModelTransformGuiController::getInstance()._transform = &_component->getTransform();
-    }
-  }
   cp::ptr<SceneComponent> _component;
+
+  constexpr static float _thickness = 0.05f;
+  constexpr static float _edge = 0.5f;
 };
 
+// 1. 监听_component的Transform，如果mode为WORLD，只绑定location，
+// 如果mode为LOCAL，绑定location和rotate
+// 2. 只对_component的Transform的location进行操作
 class MoveController : public cp::Component {
 public:
   MoveController() = default;
@@ -235,9 +77,8 @@ public:
     setStage(fw::Stage::BEFORE_RENDER);
     TOY_ASSERT(component->isRoot());
     _component = component;
-    _axis_root = {};
-    _axis_root.getTransform() = _component->getTransform();
-    _axis_root.getTransform().scale_factor = { 1, 1, 1 };
+    _root = {};
+    _root.getTransform().location = _component->getTransform().location;
     auto x_axis = SceneComponent{};
     _axises[0] = &x_axis;
     x_axis.getTransform().rotate(mt::Axis::Y, 90);
@@ -246,12 +87,21 @@ public:
     y_axis.getTransform().rotate(mt::Axis::X, -90);
     auto z_axis = SceneComponent{};
     _axises[2] = &z_axis;
-    _axis_root.add(std::move(x_axis));
-    _axis_root.add(std::move(y_axis));
-    _axis_root.add(std::move(z_axis));
+    _root.addSubcomponent(std::move(x_axis));
+    _root.addSubcomponent(std::move(y_axis));
+    _root.addSubcomponent(std::move(z_axis));
     setAxisObject(mt::Axis::X, glm::vec3{ 1, 0, 0 });
     setAxisObject(mt::Axis::Y, glm::vec3{ 0, 1, 0 });
     setAxisObject(mt::Axis::Z, glm::vec3{ 0, 0, 1 });
+    auto x_plane = SceneComponent{};
+    _planes[0] = MovePlane(mt::Axis::X, &x_plane);
+    auto y_plane = SceneComponent{};
+    _planes[1] = MovePlane(mt::Axis::Y, &y_plane);
+    auto z_plane = SceneComponent{};
+    _planes[2] = MovePlane(mt::Axis::Z, &z_plane);
+    _root.addSubcomponent(std::move(x_plane));
+    _root.addSubcomponent(std::move(y_plane));
+    _root.addSubcomponent(std::move(z_plane));
   }
 
   enum Mode { LOCAL, WORLD };
@@ -259,38 +109,73 @@ public:
 
 private:
   cp::ptr<SceneComponent>                _component;
-  SceneComponent                         _axis_root;
+  SceneComponent                         _root;
   std::array<cp::ptr<SceneComponent>, 3> _axises;
+  std::array<MovePlane, 3>               _planes;
 
   void runLoop(fw::ActionContext const& ctx) override {
     auto& input = fw::InputProcessor::getInstance();
     if (input.getState(fw::Mouse::LEFT)->state == fw::ButtonState::DOWN) {
-      auto& x_axis = _axis_root.getSubComponents()[0];
-      auto& y_axis = _axis_root.getSubComponents()[1];
-      auto& z_axis = _axis_root.getSubComponents()[2];
+      auto& x_axis = _root.getSubComponents()[0];
+      auto& y_axis = _root.getSubComponents()[1];
+      auto& z_axis = _root.getSubComponents()[2];
+      auto& x_plane = _planes[0];
+      auto& y_plane = _planes[1];
+      auto& z_plane = _planes[2];
       if (x_axis.isSelected()) {
         _axis = mt::Axis::X;
       } else if (y_axis.isSelected()) {
         _axis = mt::Axis::Y;
       } else if (z_axis.isSelected()) {
         _axis = mt::Axis::Z;
+      } else if (x_plane.isSelected()) {
+        _plane = mt::Axis::X;
+      } else if (y_plane.isSelected()) {
+        _plane = mt::Axis::Y;
+      } else if (z_plane.isSelected()) {
+        _plane = mt::Axis::Z;
       }
       if (_axis) {
         setAxisObject(*_axis, glm::vec3{ 1, 1, 0 });
         _start_pos = getAxisPos(*_axis);
+      } else if (_plane) {
+        // todo
+        auto ret = getPlanePos(*_plane);
+        TOY_ASSERT(ret);
+        _start_plane_pos = *ret;
       }
     } else if (input[fw::Mouse::LEFT]->state == fw::ButtonState::RELEASE) {
       if (_axis) {
         setAxisObject(*_axis, mt::unitVec(*_axis));
+      } else if (_plane) {
+        // todo
       }
+      _plane = {};
       _axis = {};
     } else if (_axis) {
       auto now_pos = getAxisPos(*_axis);
-      if (glm::abs(now_pos - _start_pos) > _unit_length) {
-        _axis_root.getTransform().translate(*_axis, now_pos - _start_pos);
-        auto scale_factor = _component->getTransform().scale_factor;
-        _component->getTransform() = _axis_root.getTransform();
-        _component->getTransform().scale_factor = scale_factor;
+      if (glm::abs(now_pos - _start_pos) >= _unit_length) {
+        _root.getTransform().translate(*_axis, now_pos - _start_pos);
+        _component->getTransform().translate(*_axis, now_pos - _start_pos);
+      }
+    } else if (_plane) {
+      auto ret = getPlanePos(*_plane);
+      if (ret) {
+        auto now_pos_1 = ret->x;
+        auto now_pos_2 = ret->y;
+        auto start_pos_1 = _start_plane_pos.x;
+        auto start_pos_2 = _start_plane_pos.y;
+        if (glm::abs(now_pos_1 - start_pos_1) >= _unit_length ||
+            glm::abs(now_pos_2 - start_pos_2) >= _unit_length) {
+          _root.getTransform().translate(mt::Axis(((int)*_plane + 1) % 3), now_pos_1 - start_pos_1);
+          _root.getTransform().translate(mt::Axis(((int)*_plane + 2) % 3), now_pos_2 - start_pos_2);
+          _component->getTransform().translate(
+            mt::Axis(((int)*_plane + 1) % 3), now_pos_1 - start_pos_1
+          );
+          _component->getTransform().translate(
+            mt::Axis(((int)*_plane + 2) % 3), now_pos_2 - start_pos_2
+          );
+        }
       }
     }
   }
@@ -318,9 +203,8 @@ private:
       .point = start,
     };
     auto line_axis = mt::Line{
-      .direction =
-        glm::normalize(mt::transformVec(_axis_root.getTransToWorld(), mt::unitVec(*_axis))),
-      .point = mt::transformDot(_axis_root.getTransToWorld(), glm::vec3{ 0, 0, 0 }),
+      .direction = mt::transformVec(_root.getTransToWorld(), mt::unitVec(*_axis)),
+      .point = mt::transformDot(_root.getTransToWorld(), glm::vec3{ 0, 0, 0 }),
     };
     // TOY_DEBUG(_root.getTransToWorld());
     // TOY_DEBUG(line_cursor.point, line_cursor.direction);
@@ -331,9 +215,46 @@ private:
     // TOY_DEBUG(d);
     return d;
   }
+  auto getPlanePos(mt::Axis axis) -> std::optional<glm::vec2> {
+    auto  cursor = fw::InputProcessor::getInstance().getCursorState();
+    auto& camera = camera::Camera::getInstance();
+    auto  extent = rd::Presentation::getInstance().getSwapchain().getExtent();
+    auto  ndc_x = float(cursor.x) / extent.width * 2 - 1;
+    auto  ndc_y = float(cursor.y) / extent.height * 2 - 1;
+    auto  start = glm::vec3{ ndc_x, ndc_y, 0 };
+    auto  end = glm::vec3{ ndc_x, ndc_y, 1 };
+    auto  trans = mt::inverse(camera.getView()) * camera.getProjIV();
+    start = mt::transformDot(trans, start);
+    end = mt::transformDot(trans, end);
+    auto line_cursor = mt::Line{
+      .direction = end - start,
+      .point = start,
+    };
+    auto plane_point = mt::transformDot(_root.getTransToWorld(), glm::vec3{ 0, 0, 0 });
+    auto plane = mt::Surface{
+      .normal = mt::transformVec(_root.getTransToWorld(), mt::unitVec(axis)),
+    };
+    plane.dot = glm::dot(plane_point, plane.normal);
+    // TOY_DEBUG(plane.normal, plane.dot);
+    auto ret = mt::intersection(line_cursor, plane);
+    if (std::holds_alternative<glm::vec3>(ret)) {
+      auto point = std::get<glm::vec3>(ret) - plane_point;
+      // TOY_DEBUG(point);
+      auto unit_1 =
+        mt::transformVec(_root.getTransToWorld(), mt::unitVec(mt::Axis(((int)axis + 1) % 3)));
+      auto unit_2 =
+        mt::transformVec(_root.getTransToWorld(), mt::unitVec(mt::Axis(((int)axis + 2) % 3)));
+      auto res = glm::vec2{ glm::dot(point, unit_1), glm::dot(point, unit_2) };
+      // TOY_DEBUG(glm::vec3{ res, 0 });
+      return res;
+    }
+    return std::nullopt;
+  }
 
   std::optional<mt::Axis> _axis;
+  std::optional<mt::Axis> _plane;
   float                   _start_pos;
+  glm::vec2               _start_plane_pos;
 
   float _unit_length = 0.3;
 };
@@ -353,4 +274,4 @@ private:
   MoveController _controller;
 };
 
-} // namespace tool
+} // namespace cp

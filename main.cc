@@ -19,6 +19,7 @@ import pipeline.basic;
 import pipeline.light;
 import pipeline.uniform;
 import render;
+import component;
 // import pipeline.resources;
 // import pipeline.drawunit;
 import tool.move;
@@ -34,10 +35,10 @@ int main() {
     auto  ctx = ctx::Context{ "hello vulkan", 1920, 1080 };
     auto  dset_pools = rd::meta::DescriptorPools{};
     auto& input = fw::InputProcessor::getInstance();
-    auto  transform_gui = tool::ModelTransformGuiController{};
+    auto  transform_gui = cp::ModelTransformGuiController{};
     auto  render_pass = pl::LightPipeline{};
-    auto  click_observer = tool::ObjectClickObserver{};
-    auto  move_manager = tool::MoveControllerManager{};
+    auto  click_observer = cp::ObjectClickObserver{};
+    auto  move_manager = cp::MoveControllerManager{};
 
     auto camera = camera::Camera{};
     auto controller = camera::Controller{ &camera };
@@ -51,10 +52,10 @@ int main() {
     //     "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
     //   ),
     // } };
-    auto cube = tool::SceneComponent{ tool::createShape(
-      tool::generateCube(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f }
-    ) };
-    auto selector_cube = tool::MoveTransformSelector{ &cube };
+    auto cube = cp::SceneComponent{
+      cp::createShape(cp::generateCube(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f })
+    };
+    auto selector_cube = cp::MoveTransformSelector{ &cube };
 
     // auto cylinder = std::make_unique<tool::SceneComponent>(tool::createShape(
     //   tool::generateCylinder(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 10.0f }
@@ -65,16 +66,16 @@ int main() {
     // auto axis = std::make_unique<tool::SceneComponent>(tool::createShape(
     //   tool::generateAxis(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 0.0f }
     // ));
-    auto move = tool::MoveController{};
+    auto move = cp::MoveController{};
 
-    auto selector_cone = tool::MoveTransformSelector{};
+    auto selector_cone = cp::MoveTransformSelector{};
     {
-      auto cone = tool::SceneComponent{ tool::createShape(
-        tool::generateCone(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 5.0f }
+      auto cone = cp::SceneComponent{ cp::createShape(
+        cp::generateCone(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 5.0f }
       ) };
       selector_cone = { &cone };
-      cube.add(std::move(cone));
-      cube.getTransform().translate(glm::vec3{ 0.0f, 0.0f, 5.0f });
+      cube.addSubcomponent(std::move(cone));
+      cube.getTransform().translate(glm::vec3{ 0.0f, 0.0f, 1.0f });
       // move = tool::MoveController{ &cube };
     }
 

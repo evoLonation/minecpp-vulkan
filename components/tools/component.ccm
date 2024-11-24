@@ -5,6 +5,11 @@ export module component;
 import std;
 import toy;
 import framework;
+import gui;
+import math;
+import pipeline.light;
+import glm;
+import <imgui_config.h>;
 
 export namespace cp {
 
@@ -13,5 +18,243 @@ using ptr = toy::TracerFor<T>;
 struct Component : public toy::Traceable, public fw::Action {
   void runLoop(fw::ActionContext const& ctx) override {}
 };
+
+class ModelTransform : public cp::Component {
+public:
+  ModelTransform() {
+    auto changer = [self = getTracer()](auto&& any) {
+      self->_model = mt::translate(self->location) * mt::rotate(self->rotate_euler) *
+                     mt::scale(self->scale_factor);
+    };
+    location.addObserver(changer);
+    rotate_euler.addObserver(changer);
+    scale_factor.addObserver(changer);
+  }
+  void translate(glm::vec3 const& delta) {
+    if (mode == WORLD) {
+      location += delta;
+    } else {
+      auto r_2 = mt::rotate(rotate_euler) * mt::translate(delta);
+      // r_2 = t_new * r_new
+      // t_new = t_2[3][0-3], r_new = t_2[0-2][0-2]
+      location += glm::vec3{ r_2[3] };
+      r_2[3] = glm::vec4{ 0, 0, 0, 1 };
+      rotate_euler = mt::getEulerAngle(r_2);
+    }
+  }
+  void translate(mt::Axis axis, float delta) {
+    using enum mt::Axis;
+    switch (axis) {
+    case X:
+      translate(glm::vec3{ delta, 0, 0 });
+      break;
+    case Y:
+      translate(glm::vec3{ 0, delta, 0 });
+      break;
+    case Z:
+      translate(glm::vec3{ 0, 0, delta });
+      break;
+    }
+  }
+  void rotate(mt::Axis axis, float degree) {
+    auto r_new = glm::mat4{};
+    if (mode == WORLD) {
+      r_new = mt::rotate(axis, degree) * mt::rotate(rotate_euler);
+    } else {
+      r_new = mt::rotate(rotate_euler) * mt::rotate(axis, degree);
+    }
+    rotate_euler = mt::getEulerAngle(r_new);
+  }
+  void rotate(glm::vec3 const& axis, float degree) {
+    auto r_new = glm::mat4{};
+    if (mode == WORLD) {
+      r_new = mt::rotate(axis, degree) * mt::rotate(rotate_euler);
+    } else {
+      r_new = mt::rotate(rotate_euler) * mt::rotate(axis, degree);
+    }
+    rotate_euler = mt::getEulerAngle(r_new);
+  }
+  void scale(glm::vec3 const& factor) {
+    using enum mt::Axis;
+    if (mode == WORLD) {
+      auto s_r = mt::scale(factor) * mt::rotate(rotate_euler);
+      auto new_scale_factor = glm::vec3{
+        glm::sqrt(glm::length(s_r[0])),
+        glm::sqrt(glm::length(s_r[1])),
+        glm::sqrt(glm::length(s_r[2])),
+      };
+      scale_factor *= new_scale_factor;
+      s_r[0] = glm::normalize(s_r[0]);
+      s_r[1] = glm::normalize(s_r[1]);
+      s_r[2] = glm::normalize(s_r[2]);
+      rotate_euler = mt::getEulerAngle(s_r);
+    } else {
+      scale_factor[0] *= factor[0];
+      scale_factor[1] *= factor[1];
+      scale_factor[2] *= factor[2];
+    }
+  }
+  void scale(mt::Axis axis, float factor) {
+    using enum mt::Axis;
+    if (mode == WORLD) {
+      auto s_r = mt::scale(axis, factor) * mt::rotate(rotate_euler);
+      auto new_scale_factor = glm::vec3{
+        glm::sqrt(glm::length(s_r[0])),
+        glm::sqrt(glm::length(s_r[1])),
+        glm::sqrt(glm::length(s_r[2])),
+      };
+      scale_factor *= new_scale_factor;
+    } else {
+      scale_factor[static_cast<int>(axis)] *= factor;
+    }
+  }
+  auto get() const -> glm::mat4 const& { return _model; }
+
+  toy::Observable<glm::vec3> location = { { 0, 0, 0 } };
+  toy::Observable<glm::vec3> rotate_euler = { { 0, 0, 0 } };
+  toy::Observable<glm::vec3> scale_factor = { { 1, 1, 1 } };
+  enum Mode { LOCAL, WORLD };
+  Mode mode = WORLD;
+
+  DEFAULT_COPYABLE_MOVEABLE(ModelTransform);
+
+private:
+  glm::mat4 _model;
+};
+
+class SceneComponent : public cp::Component {
+public:
+  SceneComponent() {
+    setStage(fw::Stage::BEFORE_RENDER);
+    _to_world = _to_parent.get();
+  }
+  SceneComponent(pl::LightObject object) : SceneComponent() { setObject(std::move(object)); }
+  void setObject(pl::LightObject object) {
+    if (_object.valid()) {
+      _id_components.erase(_object.getId());
+    }
+    _object = std::move(object);
+    _object.getModelTrans() = _to_world;
+    _id_components[_object.getId()] = this;
+  }
+  auto getObject() -> pl::LightObject& { return _object; }
+  void addSubcomponent(SceneComponent component) {
+    component._is_root = false;
+    _sub_components.push_back(std::move(component));
+  }
+  auto getSubComponents() -> std::span<SceneComponent> { return _sub_components; }
+  auto isRoot() -> bool { return _is_root; }
+  auto getTransform() -> ModelTransform& { return _to_parent; }
+  auto getTransToParent() -> glm::mat4 const& { return _to_parent.get(); }
+  auto getTransToWorld() -> glm::mat4 const& { return _to_world; }
+  auto isSelected() -> bool { return getSelected() == this; }
+
+  static auto getSelected() -> SceneComponent* {
+    if (_id_components.contains(pl::LightObject::getSelectedId())) {
+      return _id_components[pl::LightObject::getSelectedId()];
+    }
+    return nullptr;
+  }
+
+  ONLY_MOVEABLE(SceneComponent);
+
+private:
+  bool                        _is_root = true;
+  ModelTransform              _to_parent;
+  pl::LightObject             _object;
+  glm::mat4                   _to_world;
+  std::vector<SceneComponent> _sub_components;
+
+  void runLoop(fw::ActionContext const& ctx) override {
+    if (_is_root) {
+      auto handleComponent = std::function<void(SceneComponent & component, glm::mat4 * father)>{};
+      handleComponent = [&handleComponent](SceneComponent& component, glm::mat4* father) {
+        if (father == nullptr) {
+          component._to_world = component._to_parent.get();
+        } else {
+          component._to_world = *father * component._to_parent.get();
+        }
+        if (component._object.valid()) {
+          component._object.getModelTrans() = component._to_world;
+        }
+        for (auto& sub : component._sub_components) {
+          handleComponent(sub, &component._to_world);
+        }
+      };
+      handleComponent(*this, nullptr);
+    }
+  }
+
+  inline static std::unordered_map<uint32, cp::ptr<SceneComponent>> _id_components;
+};
+
+class ObjectClickObserver : public fw::Action, public PROACTIVE_SINGLETON(ObjectClickObserver) {
+public:
+  ObjectClickObserver() : fw::Action(fw::Stage::BEFORE_RENDER) {}
+  auto getClick() -> SceneComponent* { return _clicked; }
+
+private:
+  void runLoop(fw::ActionContext const& ctx) override {
+    auto& input = fw::InputProcessor::getInstance();
+    if (_clicked) {
+      _clicked = nullptr;
+    }
+    if (auto state = input.getState(fw::Mouse::LEFT)) {
+      if (state->state == fw::ButtonState::DOWN) {
+        if (auto selected = SceneComponent::getSelected()) {
+          _down = selected;
+        }
+      } else if (_down && state->state == fw::ButtonState::RELEASE) {
+        if (_down == SceneComponent::getSelected()) {
+          _clicked = _down;
+        }
+        _down = nullptr;
+      }
+    }
+  }
+  cp::ptr<SceneComponent> _down = nullptr;
+  cp::ptr<SceneComponent> _clicked = nullptr;
+};
+
+class ModelTransformGuiController : public PROACTIVE_SINGLETON(ModelTransformGuiController),
+                                    public gui::Drawer {
+public:
+  ModelTransformGuiController() = default;
+  void draw() override {
+    if (!_transform.valid()) {
+      ImGui::Text("There is no any valid ModelTransform.");
+      return;
+    }
+    _transform->location.change([](auto& location) { gui::slider("location", location); });
+    _transform->rotate_euler.change([](auto& rotate_euler) {
+      gui::slider("euler_angle", rotate_euler, glm::vec3{ -180 }, glm::vec3{ 180 });
+    });
+    _transform->scale_factor.change([](auto& scale_factor) { gui::slider("scale", scale_factor); });
+  }
+
+  UNCOPYABLE_MOVEABLE(ModelTransformGuiController);
+
+private:
+  friend class MoveTransformSelector;
+  cp::ptr<ModelTransform> _transform;
+};
+
+class MoveTransformSelector : public cp::Component {
+public:
+  MoveTransformSelector() = default;
+  MoveTransformSelector(SceneComponent* component) {
+    fw::Action::setStage(fw::Stage::BEFORE_RENDER);
+    _component = { component };
+  }
+
+private:
+  void runLoop(fw::ActionContext const& ctx) override {
+    if (ObjectClickObserver::getInstance().getClick() == _component) {
+      ModelTransformGuiController::getInstance()._transform = &_component->getTransform();
+    }
+  }
+  cp::ptr<SceneComponent> _component;
+};
+
 
 } // namespace cp
