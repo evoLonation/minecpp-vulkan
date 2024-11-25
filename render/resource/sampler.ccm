@@ -8,6 +8,7 @@ import render.device;
 import render.image;
 import render.buffer;
 import render.descriptor;
+import render.copy;
 
 import std;
 import toy;
@@ -39,14 +40,9 @@ public:
   })
 
 private:
-  StagingBuffer _staging_buffer;
-  Image         _image;
-  rs::Sampler   _sampler;
-
-  SampledTexture(StagingBuffer staging_buffer, Image image, rs::Sampler sampler, MipRange mip_range)
-    : _staging_buffer(std::move(staging_buffer)), _image(std::move(image)),
-      _sampler(std::move(sampler)),
-      DescriptorResource{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER } {}
+  ImageLocalWriter _writer;
+  Image            _image;
+  rs::Sampler      _sampler;
 
 private:
   static std::vector<VkFormat> _formats;

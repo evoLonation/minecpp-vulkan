@@ -9,14 +9,11 @@ import <vulkan_config.h>;
 import render.resource;
 import render.memory;
 import render.tracker;
-import render.buffer;
-import render.executor;
-import render.sync;
 import render.format;
 
 export namespace rd {
 
-auto getAspect(VkFormat format) -> VkImageAspectFlags {
+auto getFormatAspect(VkFormat format) -> VkImageAspectFlags {
   using enum FormatType;
   switch (getFormatInfo(format).type) {
   case COLOR:
@@ -38,6 +35,8 @@ struct MipRange {
 auto getSubresourceRange(VkImageAspectFlags aspect, MipRange mip_range) -> VkImageSubresourceRange;
 
 auto getSubresourceLayers(VkImageAspectFlags aspect, uint32 mip_level) -> VkImageSubresourceLayers;
+
+auto computeMipExtents(VkExtent2D extent) -> std::vector<VkExtent2D>;
 
 auto createImage(
   VkFormat              format,
@@ -63,38 +62,47 @@ class ImageManager {
 public:
   ImageManager() = default;
   ImageManager(
-    VkImage               image,
-    VkImageView           image_view,
-    VkImageUsageFlags     usage,
-    VkExtent2D            extent,
-    VkFormat              format,
-    uint32                mip_levels,
-    VkSampleCountFlagBits sample_count
+    VkImage                 image,
+    VkImageView             image_view,
+    VkImageUsageFlags       usage,
+    VkExtent2D              extent,
+    VkFormat                format,
+    std::vector<VkExtent2D> mipmap_extents,
+    VkSampleCountFlagBits   sample_count
   )
     : _image(image), _image_view(image_view),
-      _tracker(image, getSubresourceRange(getAspect(format), MipRange{ 0, mip_levels })),
-      _usage(usage), _extent(extent), _format(format), _sample_count(sample_count),
-      _mip_levels(mip_levels) {}
+      _tracker(
+        image,
+        getSubresourceRange(
+          getFormatAspect(format),
+          MipRange{ 0, mipmap_extents.size() == 0 ? 1 : (uint32)mipmap_extents.size() }
+        )
+      ),
+      _usage(usage), _extent(extent), _format(format), _mipmap_extents(std::move(mipmap_extents)),
+      _sample_count(sample_count) {}
 
   auto getImage() -> VkImage { return _image; }
   auto getImageView() -> VkImageView { return _image_view; }
   auto getTracker() -> ImageBarrierTracker& { return _tracker; }
   auto getUsage() -> VkImageUsageFlags { return _usage; }
+  auto getAspect() -> VkImageAspectFlags { return getFormatAspect(_format); }
   auto getExtent() -> VkExtent2D { return _extent; }
   auto getFormat() -> VkFormat { return _format; }
+  auto enableMipmap() -> bool { return !_mipmap_extents.empty(); }
+  // first element is equal to getExtent, empty if mipmap is disable
+  auto getMipmapExtents() -> std::span<VkExtent2D const> { return _mipmap_extents; }
   auto getSampleCount() -> VkSampleCountFlagBits { return _sample_count; }
-  auto getMipLevels() -> uint32 { return _mip_levels; }
   auto valid() -> bool { return _tracker.valid(); }
 
 private:
-  VkImage               _image;
-  VkImageView           _image_view;
-  ImageBarrierTracker   _tracker;
-  VkImageUsageFlags     _usage;
-  VkExtent2D            _extent;
-  VkFormat              _format;
-  VkSampleCountFlagBits _sample_count;
-  uint32                _mip_levels;
+  VkImage                 _image;
+  VkImageView             _image_view;
+  ImageBarrierTracker     _tracker;
+  VkImageUsageFlags       _usage;
+  VkExtent2D              _extent;
+  VkFormat                _format;
+  std::vector<VkExtent2D> _mipmap_extents;
+  VkSampleCountFlagBits   _sample_count;
 };
 
 struct ImageResource {
@@ -125,7 +133,7 @@ public:
     uint32                width,
     uint32                height,
     VkImageUsageFlags     usage,
-    uint32                mip_levels,
+    bool                  mipmap,
     VkSampleCountFlagBits sample_count
   );
   Image(Image&&) noexcept = default;

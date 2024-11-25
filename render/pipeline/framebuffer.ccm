@@ -26,7 +26,7 @@ public:
     VkFormat              format,
     VkSampleCountFlagBits sample_count
   )
-    : ImageManager(image, image_view, usage, extent, format, 1, sample_count) {}
+    : ImageManager(image, image_view, usage, extent, format, {}, sample_count) {}
 
   REGISTER_BEFORE_DESTROY(FrameImageManager, { beforeDestroy_(); })
 

@@ -26,6 +26,20 @@ auto getSubresourceLayers(VkImageAspectFlags aspect, uint32 mip_level) -> VkImag
   };
 }
 
+auto computeMipExtents(VkExtent2D extent) -> std::vector<VkExtent2D> {
+  auto mip_levels = uint32(std::floor(std::log2(std::max(extent.width, extent.height)))) + 1;
+  auto mip_extents = std::vector<VkExtent2D>{};
+  auto now_extent = extent;
+  for (auto i : views::iota(0u, mip_levels)) {
+    mip_extents.emplace_back(now_extent);
+    now_extent = VkExtent2D{
+      std::max(now_extent.width / 2, 1u),
+      std::max(now_extent.height / 2, 1u),
+    };
+  }
+  return mip_extents;
+}
+
 auto createImage(
   VkFormat              format,
   uint32                width,
@@ -90,7 +104,7 @@ auto createImageView(VkImage image, VkFormat format, uint32 mip_levels) -> rs::I
       .a = VK_COMPONENT_SWIZZLE_IDENTITY,
     },
     // view 访问 image 资源的范围
-    .subresourceRange = getSubresourceRange(getAspect(format), {0, mip_levels}),
+    .subresourceRange = getSubresourceRange(getFormatAspect(format), {0, mip_levels}),
   };
   return { create_info };
 }
@@ -144,19 +158,26 @@ Image::Image(
   uint32                width,
   uint32                height,
   VkImageUsageFlags     usage,
-  uint32                mip_levels,
+  bool                  mipmap,
   VkSampleCountFlagBits sample_count
-)
-  : ImageResource(format, width, height, usage, mip_levels, sample_count),
-    ImageManager(
-      ImageResource::_image,
-      ImageResource::_image_view,
-      usage,
-      VkExtent2D{ width, height },
-      format,
-      mip_levels,
-      sample_count
-    ) {}
+) {
+  auto mipmap_extents = std::vector<VkExtent2D>{};
+  auto mipmap_levels = 1u;
+  if (mipmap) {
+    mipmap_extents = computeMipExtents(VkExtent2D{ width, height });
+    mipmap_levels = mipmap_extents.size();
+  }
+  ImageResource::operator=({ format, width, height, usage, mipmap_levels, sample_count });
+  ImageManager::operator=({
+    ImageResource::_image,
+    ImageResource::_image_view,
+    usage,
+    VkExtent2D{ width, height },
+    format,
+    std::move(mipmap_extents),
+    sample_count,
+  });
+}
 
 auto Image::operator=(Image&& e) noexcept -> Image& {
   ImageManager::operator=(std::move(e));

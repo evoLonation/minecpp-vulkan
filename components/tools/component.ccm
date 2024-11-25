@@ -26,9 +26,9 @@ public:
       self->_model = mt::translate(self->location) * mt::rotate(self->rotate_euler) *
                      mt::scale(self->scale_factor);
     };
-    location.addObserver(changer);
-    rotate_euler.addObserver(changer);
-    scale_factor.addObserver(changer);
+    _model_observers[0] = toy::Observer{ location, changer };
+    _model_observers[1] = toy::Observer{ rotate_euler, changer };
+    _model_observers[2] = toy::Observer{ scale_factor, changer, true };
   }
   void translate(glm::vec3 const& delta) {
     if (mode == WORLD) {
@@ -116,10 +116,11 @@ public:
   enum Mode { LOCAL, WORLD };
   Mode mode = WORLD;
 
-  DEFAULT_COPYABLE_MOVEABLE(ModelTransform);
+  ONLY_MOVEABLE(ModelTransform);
 
 private:
-  glm::mat4 _model;
+  glm::mat4                               _model;
+  std::array<toy::Observer<glm::vec3>, 3> _model_observers;
 };
 
 class SceneComponent : public cp::Component {
@@ -255,6 +256,5 @@ private:
   }
   cp::ptr<SceneComponent> _component;
 };
-
 
 } // namespace cp

@@ -11,6 +11,7 @@ import render.format;
 import render.executor;
 import render.tracker;
 import render.sync;
+import render.device;
 import <vulkan_config.h>;
 
 export namespace rd {
@@ -45,8 +46,6 @@ struct ImageBlit {
 
 void blitImage(VkCommandBuffer cmdbuf, ImageBlit src, ImageBlit dst);
 
-auto computeMipExtents(VkExtent2D extent) -> std::vector<VkExtent2D>;
-
 class ImageLocalReader {
 public:
   ImageLocalReader() = default;
@@ -69,26 +68,22 @@ private:
   VkExtent2D _local_extent;
 };
 
-class ImageWriter {
+class ImageLocalWriter {
 public:
-  ImageWriter() = default;
-  ImageWriter(VkFormat format, VkExtent2D max_extent);
+  ImageLocalWriter() = default;
+  ImageLocalWriter(VkFormat format, VkExtent2D max_extent);
   void writeImage(
-    ImageManager&         manager,
-    VkImageAspectFlagBits aspect,
-    VkOffset2D            offset,
-    VkExtent2D            extent,
-    MipRange              mip_range
+    ImageManager&              image,
+    VkImageAspectFlagBits      aspect,
+    std::span<std::byte const> data,
+    Scope                      dst_scope,
+    VkImageLayout              dst_layout
   );
-  auto readPixel(uint32 x, uint32 y) -> std::byte*;
 
 private:
   VkFormat   _format;
   VkExtent2D _max_extent;
-
   HostBuffer _buffer;
-  // the sub image extent store in host_buffer
-  VkExtent2D _local_extent;
 };
 
 } // namespace rd

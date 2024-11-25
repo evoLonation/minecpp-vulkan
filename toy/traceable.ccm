@@ -16,9 +16,9 @@ class Traceable {
 public:
   Traceable() = default;
   ~Traceable();
-  Traceable(const Traceable&) noexcept;
+  Traceable(const Traceable&) noexcept = delete;
   Traceable(Traceable&&) noexcept;
-  auto operator=(const Traceable&) noexcept -> Traceable&;
+  auto operator=(const Traceable&) noexcept -> Traceable& = delete;
   auto operator=(Traceable&&) noexcept -> Traceable&;
 
   auto getTracer(this auto&& self) -> TracerFor<std::remove_reference_t<decltype(self)>>;
@@ -105,20 +105,16 @@ private:
   Tracer proxy;
 };
 
-Traceable::Traceable(const Traceable& e) noexcept {
-  // do nothing
-}
 Traceable::Traceable(Traceable&& e) noexcept {
   _proxies = std::move(e._proxies);
   for (auto* p : _proxies) {
     p->ptr = this;
   }
 }
-auto Traceable::operator=(const Traceable& e) noexcept -> Traceable& {
-  // do nothing
-  return *this;
-}
 auto Traceable::operator=(Traceable&& e) noexcept -> Traceable& {
+  for (auto* p : _proxies) {
+    p->ptr = nullptr;
+  }
   _proxies = std::move(e._proxies);
   for (auto* p : _proxies) {
     p->ptr = this;

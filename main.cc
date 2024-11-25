@@ -45,13 +45,13 @@ int main() {
     render_pass.setCamera(&camera.getData());
 
     auto [positions, normals, tex_coords, indices] = model::getModelInfo("model/viking_room.obj");
-    // auto object1 = tool::SceneComponent{ {
-    //   pl::LightMesh{
-    //     std::move(positions), std::move(normals), std::move(tex_coords), std::move(indices) },
-    //   rd::SampledTexture::fromFile(
-    //     "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
-    //   ),
-    // } };
+    auto object1 = cp::SceneComponent{ {
+      pl::LightMesh{
+        std::move(positions), std::move(normals), std::move(tex_coords), std::move(indices) },
+      rd::SampledTexture::fromFile(
+        "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+      ),
+    } };
     auto cube = cp::SceneComponent{
       cp::createShape(cp::generateCube(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f })
     };

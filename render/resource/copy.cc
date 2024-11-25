@@ -74,20 +74,6 @@ void blitImage(VkCommandBuffer cmdbuf, ImageBlit src, ImageBlit dst) {
   vkCmdBlitImage(cmdbuf, src.image, src.layout, dst.image, dst.layout, 1, &blit, VK_FILTER_LINEAR);
 }
 
-auto computeMipExtents(VkExtent2D extent) -> std::vector<VkExtent2D> {
-  auto mip_levels = uint32(std::floor(std::log2(std::max(extent.width, extent.height)))) + 1;
-  auto mip_extents = std::vector<VkExtent2D>{};
-  auto now_extent = extent;
-  for (auto i : views::iota(0u, mip_levels)) {
-    mip_extents.emplace_back(now_extent);
-    now_extent = VkExtent2D{
-      std::max(now_extent.width / 2, 1u),
-      std::max(now_extent.height / 2, 1u),
-    };
-  }
-  return mip_extents;
-}
-
 /**
  * @brief
  * @param max_extent the max sub range read from image
@@ -111,6 +97,7 @@ void ImageLocalReader::loadImage(
   TOY_ASSERT(_format == manager.getFormat());
   TOY_ASSERT(extent.width <= _max_extent.width && extent.height <= _max_extent.height);
   TOY_ASSERT(manager.getSampleCount() == VK_SAMPLE_COUNT_1_BIT);
+  TOY_ASSERT(manager.getAspect() & aspect);
 
   auto& executor = ExecutorManager::getInstance()[FamilyType::TRANSFER];
 
@@ -159,6 +146,175 @@ void ImageLocalReader::loadImage(
 auto ImageLocalReader::readPixel(uint32 x, uint32 y) -> std::byte* {
   auto unit = getFormatSize(_format);
   return _buffer.getMemory().data().begin().base() + _local_extent.width * unit * y + unit * x;
+}
+
+ImageLocalWriter::ImageLocalWriter(VkFormat format, VkExtent2D max_extent) {
+  _format = format;
+  _max_extent = max_extent;
+  TOY_DEBUG(_max_extent.width, _max_extent.height);
+  _buffer = HostBuffer{
+    getFormatSize(format) * max_extent.width * max_extent.height,
+    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+  };
+}
+
+void ImageLocalWriter::writeImage(
+  ImageManager&              image,
+  VkImageAspectFlagBits      aspect,
+  std::span<std::byte const> data,
+  Scope                      dst_scope,
+  VkImageLayout              dst_layout
+) {
+  TOY_ASSERT(image.getUsage() & VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+  TOY_ASSERT(image.getFormat() == _format);
+  TOY_ASSERT(
+    data.size() ==
+    getFormatSize(image.getFormat()) * image.getExtent().width * image.getExtent().height
+  );
+  TOY_ASSERT(data.size() <= _buffer.size(), data.size(), _buffer.size());
+  TOY_ASSERT(image.getSampleCount() == VK_SAMPLE_COUNT_1_BIT);
+
+  auto& copy_executor = ExecutorManager::getInstance()[FamilyType::TRANSFER];
+  auto& graphics_executor = ExecutorManager::getInstance()[FamilyType::GRAPHICS];
+  auto  family_transfer =
+    FamilyTransferInfo{ copy_executor.getFamily(), graphics_executor.getFamily() };
+  auto mip_range = MipRange{
+    .base_level = 0,
+    .count = 1,
+  };
+  auto mip_levels = 1u;
+  if (image.enableMipmap()) {
+    mip_range.count = image.getMipmapExtents().size();
+    mip_levels = mip_range.count;
+  }
+  auto recorder_copy = [&](VkCommandBuffer cmdbuf) {
+    copyBufferToImage(cmdbuf, _buffer, image.getImage(), aspect, { 0, 0 }, image.getExtent(), 0);
+
+    recordImageBarrier(
+      cmdbuf,
+      image.getImage(),
+      getSubresourceRange(image.getAspect(), mip_range),
+      {
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        image.enableMipmap() ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : dst_layout,
+      },
+      BarrierScope::release(Scope{
+        .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+        .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
+      }),
+      family_transfer
+    );
+  };
+
+  auto recorder_blit = [&](VkCommandBuffer cmdbuf) {
+    recordImageBarrier(
+        cmdbuf,
+        image.getImage(),
+        getSubresourceRange(image.getAspect(), mip_range),
+        {
+          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+          image.enableMipmap() ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : dst_layout,
+        },
+        BarrierScope::acquire(image.enableMipmap() ? Scope{
+          .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+          .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT,
+        }: dst_scope),
+        family_transfer
+      );
+
+    if (image.enableMipmap()) {
+      for (auto dst_mip_level : views::iota(1u, image.getMipmapExtents().size())) {
+        recordImageBarrier(
+          cmdbuf,
+          image.getImage(),
+          getSubresourceRange(
+            image.getAspect(), MipRange{ .base_level = dst_mip_level - 1, .count = 1 }
+          ),
+          { VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL },
+          { Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT },
+            Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT } },
+          {}
+        );
+        blitImage(
+          cmdbuf,
+          ImageBlit{
+            .image = image.getImage(),
+            .aspect = aspect,
+            .layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            .mip_level = dst_mip_level - 1,
+            .extent = image.getMipmapExtents()[dst_mip_level - 1],
+          },
+          ImageBlit{
+            .image = image.getImage(),
+            .aspect = aspect,
+            .layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .mip_level = dst_mip_level,
+            .extent = image.getMipmapExtents()[dst_mip_level],
+          }
+        );
+      }
+      recordImageBarrier(
+        cmdbuf,
+        image.getImage(),
+        getSubresourceRange(image.getAspect(), { .base_level = mip_levels - 1, .count = 1 }),
+        { VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, dst_layout },
+        { Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT }, dst_scope },
+        {}
+      );
+      if (mip_levels > 1) {
+        recordImageBarrier(
+          cmdbuf,
+          image.getImage(),
+          getSubresourceRange(image.getAspect(), { .base_level = 0, .count = mip_levels - 1 }),
+          { VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst_layout },
+          { Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, 0 }, dst_scope },
+          {}
+        );
+      }
+    }
+  };
+
+  // _buffer is read only for host, so just wait for idle, no need to sync
+  _buffer.getTracker().waitIdle();
+  _buffer.getMemory().fill(data);
+
+  auto recorder_copy_with_sync = std::function<void(VkCommandBuffer)>{};
+  auto sync = image.getTracker().syncScope(
+    Scope{
+      .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
+      .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
+    },
+    copy_executor.getFamily(),
+    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+  );
+  auto waitable_opt = std::optional<Waitable>{};
+  if (auto* recorder = std::get_if<BarrierRecorder>(&sync)) {
+    recorder_copy_with_sync = [recorder, &recorder_copy](VkCommandBuffer cmdbuf) {
+      (*recorder)(cmdbuf);
+      recorder_copy(cmdbuf);
+    };
+  } else if (auto* recorder = std::get_if<FamilyTransferRecorder>(&sync)) {
+    waitable_opt = recorder->executeRelease();
+    recorder_copy_with_sync = [recorder, &recorder_copy](VkCommandBuffer cmdbuf) {
+      recorder->acquire(cmdbuf);
+      recorder_copy(cmdbuf);
+    };
+  } else {
+    recorder_copy_with_sync = recorder_copy;
+  }
+  auto copy_batch = CommandBatch{ .recorder = std::move(recorder_copy_with_sync) };
+  if (waitable_opt) {
+    copy_batch.waits = { { &*waitable_opt, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } };
+  }
+  auto waitable = copy_executor.submit(copy_batch);
+  graphics_executor.submit(CommandBatch{
+    .recorder = recorder_blit,
+    .waits = { { &waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
+  });
+  image.getTracker().setNewScope(dst_scope, family_transfer.dst_family, dst_layout);
+  _buffer.getTracker().setNewScope(
+    Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT }, copy_executor.getFamily()
+  );
 }
 
 } // namespace rd

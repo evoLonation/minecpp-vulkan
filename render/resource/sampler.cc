@@ -66,172 +66,19 @@ SampledTexture::SampledTexture(
 )
   : DescriptorResource{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER } {
   TOY_ASSERT(toy::find(_formats, format));
-  auto& ctx = Device::getInstance();
   // todo: just execute once in whole program
-  _max_anisotropy = ctx.getPdevice().getProperties().limits.maxSamplerAnisotropy;
+  _max_anisotropy = Device::getInstance().getPdevice().getProperties().limits.maxSamplerAnisotropy;
   auto [width, height] = extent;
-
-  _staging_buffer = StagingBuffer{ data };
-  auto mip_extents = std::vector<VkExtent2D>{};
-  auto mip_range = MipRange{
-    .base_level = 0,
-    .count = 1,
-  };
-  auto mip_levels = uint32{ 1 };
-  if (mipmap) {
-    mip_extents = computeMipExtents({ width, height });
-    mip_levels = mip_extents.size();
-    mip_range.count = mip_levels;
-  }
-  TOY_DEBUG(mip_levels);
+  _writer = ImageLocalWriter{ format, extent };
   _image = Image{
-    format, width, height, _usage, mip_levels, VK_SAMPLE_COUNT_1_BIT,
+    format, width, height, _usage, mipmap, VK_SAMPLE_COUNT_1_BIT,
   };
   _sampler = createSampler(_max_anisotropy);
-
-  auto& copy_executor = ExecutorManager::getInstance()[FamilyType::TRANSFER];
-  auto& graphics_executor = ExecutorManager::getInstance()[FamilyType::GRAPHICS];
-  auto  family_transfer =
-    FamilyTransferInfo{ copy_executor.getFamily(), graphics_executor.getFamily() };
-
-  auto recorder_copy = [&](VkCommandBuffer cmdbuf) {
-    recordImageBarrier(
-      cmdbuf,
-      _image.getImage(),
-      getSubresourceRange(_aspect, mip_range),
-      { VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL },
-      {
-        Scope{
-          .stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-        },
-        Scope{
-          .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-          .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        },
-      },
-      {}
-    );
-
-    copyBufferToImage(
-      cmdbuf, _staging_buffer, _image.getImage(), _aspect, { 0, 0 }, { width, height }, 0
-    );
-
-    recordImageBarrier(
-      cmdbuf,
-      _image.getImage(),
-      getSubresourceRange(_aspect, mip_range),
-      {
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        mipmap ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-      },
-      BarrierScope::release(Scope{
-        .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-        .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
-      }),
-      family_transfer
-    );
-  };
-
-  auto recorder_blit = [&](VkCommandBuffer cmdbuf) {
-    recordImageBarrier(
-        cmdbuf,
-        _image.getImage(),
-        getSubresourceRange(_aspect, mip_range),
-        {
-          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-          mipmap ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        },
-        BarrierScope::acquire(mipmap ? Scope{
-          .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-          .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-        }: Scope{
-          .stage_mask = use_stage,
-          .access_mask = VK_ACCESS_SHADER_READ_BIT,
-        }),
-        family_transfer
-      );
-
-    if (mipmap) {
-      for (auto dst_mip_level : views::iota(1u, mip_extents.size())) {
-        recordImageBarrier(
-          cmdbuf,
-          _image.getImage(),
-          getSubresourceRange(_aspect, MipRange{ .base_level = dst_mip_level - 1, .count = 1 }),
-          { VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL },
-          { Scope{
-              .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-              .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
-            },
-            Scope{
-              .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-              .access_mask = VK_ACCESS_TRANSFER_READ_BIT,
-            } },
-          {}
-        );
-        blitImage(
-          cmdbuf,
-          ImageBlit{
-            .image = _image.getImage(),
-            .aspect = _aspect,
-            .layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            .mip_level = dst_mip_level - 1,
-            .extent = mip_extents[dst_mip_level - 1],
-          },
-          ImageBlit{
-            .image = _image.getImage(),
-            .aspect = _aspect,
-            .layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            .mip_level = dst_mip_level,
-            .extent = mip_extents[dst_mip_level],
-          }
-        );
-      }
-      recordImageBarrier(
-        cmdbuf,
-        _image.getImage(),
-        getSubresourceRange(_aspect, { .base_level = mip_levels - 1, .count = 1 }),
-        { VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-        { Scope{
-            .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-            .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
-          },
-          Scope{
-            .stage_mask = use_stage,
-            .access_mask = VK_ACCESS_SHADER_READ_BIT,
-          } },
-        {}
-      );
-      if (mip_levels > 1) {
-        recordImageBarrier(
-          cmdbuf,
-          _image.getImage(),
-          getSubresourceRange(_aspect, { .base_level = 0, .count = mip_levels - 1 }),
-          { VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-          { Scope{
-              .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-              .access_mask = 0,
-            },
-            Scope{
-              .stage_mask = use_stage,
-              .access_mask = VK_ACCESS_SHADER_READ_BIT,
-            } },
-          {}
-        );
-      }
-    }
-  };
-
-  auto waitable = copy_executor.submit(recorder_copy);
-  graphics_executor.submit(CommandBatch{
-    .recorder = recorder_blit,
-    .waits = { { &waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
-  });
-  getImage().getTracker().setNewScope(
-    Scope{
-      .stage_mask = use_stage,
-      .access_mask = VK_ACCESS_SHADER_READ_BIT,
-    },
-    family_transfer.dst_family,
+  _writer.writeImage(
+    _image,
+    _aspect,
+    data,
+    Scope{ use_stage, VK_ACCESS_SHADER_READ_BIT },
     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
   );
 }

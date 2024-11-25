@@ -4,8 +4,41 @@ export module toy.observer;
 
 import std;
 import toy.traceable;
+import toy.log;
 
 export namespace toy {
+
+/**
+ * @brief the Observer and Observable's lifetime is NOT need to relative
+ */
+template <typename T>
+class Observable;
+template <typename T>
+class Observer : public Traceable {
+public:
+  Observer() = default;
+  Observer(Observable<T>& observable, std::function<void(T const&)> f, bool init = false)
+    : _f(std::move(f)) {
+    if (init) {
+      initApply(observable);
+    }
+    add(observable);
+  }
+  ONLY_MOVEABLE(Observer);
+  ~Observer() = default;
+
+private:
+  friend Observable<T>;
+  std::function<void(T const&)> _f;
+
+  void add(Observable<T>& observable);
+  void initApply(Observable<T>& observable);
+};
+
+template <typename T>
+Observer(Observable<T>& observable, auto, bool) -> Observer<T>;
+template <typename T>
+Observer(Observable<T>& observable, auto) -> Observer<T>;
 
 template <typename T>
 class Observable : public Traceable {
@@ -14,20 +47,8 @@ public:
   Observable(T const& v) : value{ v } {}
   Observable(T&& v) : value{ std::move(v) } {}
   // Observable(auto&&... args) : value{ FORWARD(args)... } {}
-  Observable(Observable const& e) noexcept : value{ e.value } {}
-  Observable(Observable&& e) noexcept
-    : value{ std::move(e.value) }, observers{ std::move(e.observers) } {}
-  auto operator=(Observable const& e) noexcept -> Observable& {
-    value = e.value;
-    trigger();
-    return *this;
-  }
-  auto operator=(Observable&& e) noexcept -> Observable& {
-    value = std::move(e.value);
-    observers = std::move(e.observers);
-    trigger();
-    return *this;
-  }
+  ONLY_MOVEABLE(Observable);
+  auto get() -> T const& { return value; }
   auto operator=(T const& v) -> Observable& {
     value = v;
     trigger();
@@ -131,74 +152,102 @@ public:
   }
   // the lifetime of result must shorter than this
   auto operator[](auto&& i) -> decltype(auto) {
-    auto e = Observable<std::remove_cvref_t<decltype(value[FORWARD(i)])>>{ value[FORWARD(i)] };
-    e.addObserver([this, i](auto const& v) {
+    using E = std::remove_cvref_t<decltype(value[FORWARD(i)])>;
+    auto observable = Observable<E>{ value[FORWARD(i)] };
+    observable._observer_for_element = Observer(observable, [this, i](auto const& v) {
       this->value[i] = v;
       this->trigger();
     });
-    return e;
+    return observable;
   }
   auto operator==(Observable const& e) const -> bool { return value == e.value; }
   template <typename S>
-    requires(!std::is_same_v<std::remove_cvref_t<S>, Observable>)
+    requires(!std::derived_from<std::remove_cvref_t<S>, Observable>)
   auto operator==(S&& e) const -> bool {
     return value == FORWARD(e);
   }
 
-  operator T() const { return value; }
+  operator const T&() const { return value; }
 
   void change(std::function<void(T&)> const& f) {
     f(value);
     trigger();
   }
-  void addObserver(std::function<void(T const&)> f, bool init = true) {
-    if (init) {
-      f(value);
-    }
-    observers.push_back(std::move(f));
-  }
 
 private:
   T value;
 
-  std::vector<std::function<void(T const&)>> observers;
+  friend class Observer<T>;
+  std::vector<toy::TracerFor<Observer<T>>> _observers;
+  template <typename>
+  friend class Observable;
+  Observer<T> _observer_for_element;
 
   void trigger() {
-    for (auto& f : observers) {
-      f(value);
+    auto [begin, end] = ranges::remove_if(_observers, [](auto& x) { return !x.valid(); });
+    _observers.erase(begin, end);
+    for (auto& observer : _observers) {
+      observer->_f(value);
     }
   }
 };
 
 template <typename T>
+void Observer<T>::add(Observable<T>& observable) {
+  observable._observers.emplace_back(this);
+}
+
+template <typename T>
+void Observer<T>::initApply(Observable<T>& observable) {
+  _f(observable);
+}
+
+/**
+ * @brief The lifetime can longer than Observable
+ */
+template <typename T>
 class Bidirectional : public Traceable {
 public:
   Bidirectional() = default;
-  Bidirectional(Observable<T>* a, Observable<T>* b) : _a(a), _b(b) {
-    _a->addObserver(
+  Bidirectional(Observable<T>& a, Observable<T>& b) : _a(&a), _b(&b) {
+    _oa = Observer{
+      a,
       [self = getTracer()](T const& v) {
         if (self->_doing)
           return;
         self->_doing = true;
-        *self->_b = v;
+        if (!self->_b.valid()) {
+          self->_oa = {};
+        } else {
+          *self->_b = v;
+        }
         self->_doing = false;
       },
-      true
-    );
-    _b->addObserver([self = getTracer()](T const& v) {
-      if (self->_doing)
-        return;
-      self->_doing = true;
-      *self->_a = v;
-      self->_doing = false;
-    });
+      true,
+    };
+    _ob = Observer{
+      b,
+      [self = getTracer()](T const& v) {
+        if (self->_doing)
+          return;
+        self->_doing = true;
+        if (!self->_a.valid()) {
+          self->_ob = {};
+        } else {
+          *self->_a = v;
+        }
+        self->_doing = false;
+      },
+    };
   }
   ONLY_MOVEABLE(Bidirectional);
 
 private:
-  toy::TracerFor<Observable<T>> _a;
-  toy::TracerFor<Observable<T>> _b;
-  bool                          _doing = false;
+  TracerFor<Observable<T>> _a;
+  TracerFor<Observable<T>> _b;
+  Observer<T>              _oa;
+  Observer<T>              _ob;
+  bool                     _doing = false;
 };
 
 } // namespace toy

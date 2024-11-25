@@ -16,6 +16,7 @@ auto createBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage) -> rs::Buf
 }
 
 auto Buffer::operator=(Buffer&& e) noexcept -> Buffer& {
+  _size = e._size;
   _tracker = std::move(e._tracker);
   _memory = std::move(e._memory);
   rs::Buffer::operator=(std::move(e));
@@ -34,7 +35,7 @@ DeviceLocalBuffer::DeviceLocalBuffer(
     buffer_data.size(),
     usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-  }, _staging_buffer{buffer_data} {
+  }, _staging_buffer{buffer_data, VK_BUFFER_USAGE_TRANSFER_SRC_BIT} {
 
   auto& copy_executor = ExecutorManager::getInstance()[FamilyType::TRANSFER];
   copy_executor.submit([&](VkCommandBuffer cmdbuf) {
