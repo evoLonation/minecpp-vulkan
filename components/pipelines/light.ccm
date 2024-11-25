@@ -86,6 +86,7 @@ public:
   auto getModelTrans() -> glm::mat4& { return _resource->uniform_vertex->model; }
   auto getShininess() -> float& { return _resource->uniform_frag->shininess; }
   auto getId() -> uint32 { return _resource->uniform_id_frag.get(); }
+  auto getTexture() -> rd::SampledTexture& { return _resource->textures[0]; }
 
   static auto getSelectedId() -> uint32;
 

@@ -27,6 +27,7 @@ public:
   );
   static auto fromFile(const std::string& path, bool mipmap, VkPipelineStageFlagBits use_stage)
     -> SampledTexture;
+  void writeContent(std::span<std::byte const> data);
   auto getImage() -> Image& { return _image; }
   auto getSampler() const -> VkSampler { return _sampler; }
   auto getLayout() const -> VkImageLayout { return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; }
@@ -40,9 +41,10 @@ public:
   })
 
 private:
-  ImageLocalWriter _writer;
-  Image            _image;
-  rs::Sampler      _sampler;
+  VkPipelineStageFlagBits _use_stage;
+  ImageLocalWriter        _writer;
+  Image                   _image;
+  rs::Sampler             _sampler;
 
 private:
   static std::vector<VkFormat> _formats;

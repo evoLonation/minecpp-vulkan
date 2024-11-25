@@ -64,7 +64,7 @@ SampledTexture::SampledTexture(
   bool                       mipmap,
   VkPipelineStageFlagBits    use_stage
 )
-  : DescriptorResource{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER } {
+  : DescriptorResource{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER }, _use_stage{ use_stage } {
   TOY_ASSERT(toy::find(_formats, format));
   // todo: just execute once in whole program
   _max_anisotropy = Device::getInstance().getPdevice().getProperties().limits.maxSamplerAnisotropy;
@@ -78,7 +78,7 @@ SampledTexture::SampledTexture(
     _image,
     _aspect,
     data,
-    Scope{ use_stage, VK_ACCESS_SHADER_READ_BIT },
+    Scope{ _use_stage, VK_ACCESS_SHADER_READ_BIT },
     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
   );
 }
@@ -101,6 +101,16 @@ auto SampledTexture::fromFile(
 
   stbi_image_free(pixels);
   return texture;
+}
+
+void SampledTexture::writeContent(std::span<std::byte const> data) {
+  _writer.writeImage(
+    _image,
+    _aspect,
+    data,
+    Scope{ _use_stage, VK_ACCESS_SHADER_READ_BIT },
+    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+  );
 }
 
 auto SampledTexture::getDescriptorContext() -> Context {

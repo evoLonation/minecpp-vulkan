@@ -64,6 +64,51 @@ private:
   constexpr static float _edge = 0.5f;
 };
 
+class MoveArrow {
+public:
+  MoveArrow() = default;
+  MoveArrow(mt::Axis axis, SceneComponent* component) {
+    _axis = axis;
+    _component = component;
+    _draging = false;
+    auto unit = mt::unitVec(axis);
+    auto arrow = SceneComponent{ createShape(generateArrow(), unit) };
+    auto arrow_dir = glm::vec3{ 0, 0, 1 };
+    if (auto cross = glm::cross(arrow_dir, unit); !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
+      arrow.getTransform().rotate(cross, 90);
+    }
+    arrow.getObject().setUplayer();
+    _component->addSubcomponent(std::move(arrow));
+  }
+  auto isSelected() -> bool {
+    return ranges::find_if(_component->getSubComponents(), [](auto& c) {
+             return c.isSelected();
+           }) != _component->getSubComponents().end();
+  }
+  void setDraging(bool draging) {
+    if (_draging != draging) {
+      auto color = glm::vec4{};
+      if (draging) {
+        color = { 1, 1, 0, 1 };
+      } else {
+        color = { mt::unitVec(_axis), 1 };
+      }
+      _component->getSubComponents()[0].getObject().getTexture().writeContent(
+        std::as_bytes(std::span{ &color, 1 })
+      );
+    }
+    _draging = draging;
+  }
+
+private:
+  mt::Axis                _axis;
+  cp::ptr<SceneComponent> _component;
+  bool                    _draging;
+
+  constexpr static float _thickness = 0.05f;
+  constexpr static float _edge = 0.5f;
+};
+
 // 1. 监听_component的Transform，如果mode为WORLD，只绑定location，
 // 如果mode为LOCAL，绑定location和rotate
 // 2. 只对_component的Transform的location进行操作
@@ -85,20 +130,15 @@ public:
         _root.getTransform().rotate_euler,
       };
     }
-    auto x_axis = SceneComponent{};
-    _axises[0] = &x_axis;
-    x_axis.getTransform().rotate(mt::Axis::Y, 90);
-    auto y_axis = SceneComponent{};
-    _axises[1] = &y_axis;
-    y_axis.getTransform().rotate(mt::Axis::X, -90);
-    auto z_axis = SceneComponent{};
-    _axises[2] = &z_axis;
-    _root.addSubcomponent(std::move(x_axis));
-    _root.addSubcomponent(std::move(y_axis));
-    _root.addSubcomponent(std::move(z_axis));
-    setAxisObject(mt::Axis::X, glm::vec3{ 1, 0, 0 });
-    setAxisObject(mt::Axis::Y, glm::vec3{ 0, 1, 0 });
-    setAxisObject(mt::Axis::Z, glm::vec3{ 0, 0, 1 });
+    auto x_arrow = SceneComponent{};
+    _arrows[0] = MoveArrow{ mt::Axis::X, &x_arrow };
+    auto y_arrow = SceneComponent{};
+    _arrows[1] = MoveArrow{ mt::Axis::Y, &y_arrow };
+    auto z_arrow = SceneComponent{};
+    _arrows[2] = MoveArrow{ mt::Axis::Z, &z_arrow };
+    _root.addSubcomponent(std::move(x_arrow));
+    _root.addSubcomponent(std::move(y_arrow));
+    _root.addSubcomponent(std::move(z_arrow));
     auto x_plane = SceneComponent{};
     _planes[0] = MovePlane(mt::Axis::X, &x_plane);
     auto y_plane = SceneComponent{};
@@ -111,20 +151,20 @@ public:
   }
 
 private:
-  cp::ptr<SceneComponent>                _component;
-  SceneComponent                         _root;
-  Mode                                   _mode = WORLD;
-  toy::Bidirectional<glm::vec3>          _location_bind;
-  toy::Bidirectional<glm::vec3>          _rotate_bind;
-  std::array<cp::ptr<SceneComponent>, 3> _axises;
-  std::array<MovePlane, 3>               _planes;
+  cp::ptr<SceneComponent>       _component;
+  SceneComponent                _root;
+  Mode                          _mode = WORLD;
+  toy::Bidirectional<glm::vec3> _location_bind;
+  toy::Bidirectional<glm::vec3> _rotate_bind;
+  std::array<MoveArrow, 3>      _arrows;
+  std::array<MovePlane, 3>      _planes;
 
   void runLoop(fw::ActionContext const& ctx) override {
     auto& input = fw::InputProcessor::getInstance();
     if (input.getState(fw::Mouse::LEFT)->state == fw::ButtonState::DOWN) {
-      auto& x_axis = _root.getSubComponents()[0];
-      auto& y_axis = _root.getSubComponents()[1];
-      auto& z_axis = _root.getSubComponents()[2];
+      auto& x_axis = _arrows[0];
+      auto& y_axis = _arrows[1];
+      auto& z_axis = _arrows[2];
       auto& x_plane = _planes[0];
       auto& y_plane = _planes[1];
       auto& z_plane = _planes[2];
@@ -142,7 +182,7 @@ private:
         _plane_norm = mt::Axis::Z;
       }
       if (_axis) {
-        setAxisObject(*_axis, glm::vec3{ 1, 1, 0 });
+        _arrows[(int)*_axis].setDraging(true);
         auto ret = getAxisPos(*_axis);
         TOY_ASSERT(ret);
         _start_pos = *ret;
@@ -154,7 +194,7 @@ private:
       }
     } else if (input[fw::Mouse::LEFT]->state == fw::ButtonState::RELEASE) {
       if (_axis) {
-        setAxisObject(*_axis, mt::unitVec(*_axis));
+        _arrows[(int)*_axis].setDraging(false);
       } else if (_plane_norm) {
         // todo
       }
@@ -195,12 +235,6 @@ private:
         }
       }
     }
-  }
-
-  void setAxisObject(mt::Axis axis, glm::vec3 const& color) {
-    auto& axis_obj = _axises[(int)axis];
-    axis_obj->setObject(createShape(generateArrow(), color));
-    axis_obj->getObject().setUplayer();
   }
 
   auto getAxisPos(mt::Axis axis) -> std::optional<float> {
