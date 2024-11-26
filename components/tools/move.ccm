@@ -20,45 +20,46 @@ export namespace cp {
 class MovePlane {
 public:
   MovePlane() = default;
-  MovePlane(mt::Axis normal_axis, SceneComponent* component) {
-    _component = component;
+  MovePlane(mt::Axis normal_axis) {
     auto normal = mt::unitVec(normal_axis);
-    auto cube = SceneComponent{ createShape(generateCube(), glm::vec3{ 0.5, 0.5, 0.5 }) };
-    cube.getTransform().scale_factor =
+    _cube = SceneComponent{ createShape(generateCube(), glm::vec3{ 0.5, 0.5, 0.5 }) };
+    _cube.getTransform().scale_factor =
       glm::vec3{ 1, 1, 1 } - normal * (1 - _thickness) - (glm::vec3{ 1, 1, 1 } - normal) * _edge;
-    cube.getTransform().location = -normal * (_thickness / 2);
+    _cube.getTransform().location = -normal * (_thickness / 2);
 
     auto unit_2 = mt::unitVec(mt::Axis(((int)normal_axis + 2) % 3));
     auto unit_1 = mt::unitVec(mt::Axis(((int)normal_axis + 1) % 3));
-    auto edge_1 = SceneComponent{ createShape(generateCylinder(_thickness / 2, _edge), unit_1) };
+    _edge_1 = SceneComponent{ createShape(generateCylinder(_thickness / 2, _edge), unit_1) };
     if (auto cross = glm::cross(glm::vec3{ 0, 0, 1 }, unit_1);
         !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
-      edge_1.getTransform().rotate(cross, 90);
+      _edge_1.getTransform().rotate(cross, 90);
     }
-    edge_1.getTransform().translate(unit_2 * _edge);
-    auto edge_2 = SceneComponent{ createShape(generateCylinder(_thickness / 2, _edge), unit_2) };
+    _edge_1.getTransform().translate(unit_2 * _edge);
+    _edge_2 = SceneComponent{ createShape(generateCylinder(_thickness / 2, _edge), unit_2) };
     if (auto cross = glm::cross(glm::vec3{ 0, 0, 1 }, unit_2);
         !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
-      edge_2.getTransform().rotate(cross, 90);
+      _edge_2.getTransform().rotate(cross, 90);
     }
-    edge_2.getTransform().translate(unit_1 * _edge);
+    _edge_2.getTransform().translate(unit_1 * _edge);
 
-    cube.getObject().setUplayer();
-    edge_1.getObject().setUplayer();
-    edge_2.getObject().setUplayer();
-    _component->addSubcomponent(std::move(cube));
-    _component->addSubcomponent(std::move(edge_1));
-    _component->addSubcomponent(std::move(edge_2));
+    _cube.getObject().setUplayer();
+    _edge_1.getObject().setUplayer();
+    _edge_2.getObject().setUplayer();
+    _cube.attachTo(&_root);
+    _edge_1.attachTo(&_root);
+    _edge_2.attachTo(&_root);
   }
   auto isSelected() -> bool {
-    return ranges::find_if(_component->getSubComponents(), [](auto& c) {
-             return c.isSelected();
-           }) != _component->getSubComponents().end();
+    return _cube.isSelected() || _edge_1.isSelected() || _edge_2.isSelected();
   }
+  auto getRoot() -> SceneComponent& { return _root; }
   // todo: set color
 
 private:
-  cp::ptr<SceneComponent> _component;
+  SceneComponent _root;
+  SceneComponent _cube;
+  SceneComponent _edge_1;
+  SceneComponent _edge_2;
 
   constexpr static float _thickness = 0.05f;
   constexpr static float _edge = 0.5f;
@@ -67,24 +68,19 @@ private:
 class MoveArrow {
 public:
   MoveArrow() = default;
-  MoveArrow(mt::Axis axis, SceneComponent* component) {
+  MoveArrow(mt::Axis axis) {
     _axis = axis;
-    _component = component;
     _draging = false;
     auto unit = mt::unitVec(axis);
-    auto arrow = SceneComponent{ createShape(generateArrow(), unit) };
+    _arrow = SceneComponent{ createShape(generateArrow(), unit) };
     auto arrow_dir = glm::vec3{ 0, 0, 1 };
     if (auto cross = glm::cross(arrow_dir, unit); !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
-      arrow.getTransform().rotate(cross, 90);
+      _arrow.getTransform().rotate(cross, 90);
     }
-    arrow.getObject().setUplayer();
-    _component->addSubcomponent(std::move(arrow));
+    _arrow.getObject().setUplayer();
+    _arrow.attachTo(&_root);
   }
-  auto isSelected() -> bool {
-    return ranges::find_if(_component->getSubComponents(), [](auto& c) {
-             return c.isSelected();
-           }) != _component->getSubComponents().end();
-  }
+  auto isSelected() -> bool { return _arrow.isSelected(); }
   void setDraging(bool draging) {
     if (_draging != draging) {
       auto color = glm::vec4{};
@@ -93,17 +89,17 @@ public:
       } else {
         color = { mt::unitVec(_axis), 1 };
       }
-      _component->getSubComponents()[0].getObject().getTexture().writeContent(
-        std::as_bytes(std::span{ &color, 1 })
-      );
+      _arrow.getObject().getTexture().writeContent(std::as_bytes(std::span{ &color, 1 }));
     }
     _draging = draging;
   }
+  auto getRoot() -> SceneComponent& { return _root; }
 
 private:
-  mt::Axis                _axis;
-  cp::ptr<SceneComponent> _component;
-  bool                    _draging;
+  mt::Axis       _axis;
+  SceneComponent _root;
+  SceneComponent _arrow;
+  bool           _draging;
 
   constexpr static float _thickness = 0.05f;
   constexpr static float _edge = 0.5f;
@@ -130,24 +126,18 @@ public:
         _root.getTransform().rotate_euler,
       };
     }
-    auto x_arrow = SceneComponent{};
-    _arrows[0] = MoveArrow{ mt::Axis::X, &x_arrow };
-    auto y_arrow = SceneComponent{};
-    _arrows[1] = MoveArrow{ mt::Axis::Y, &y_arrow };
-    auto z_arrow = SceneComponent{};
-    _arrows[2] = MoveArrow{ mt::Axis::Z, &z_arrow };
-    _root.addSubcomponent(std::move(x_arrow));
-    _root.addSubcomponent(std::move(y_arrow));
-    _root.addSubcomponent(std::move(z_arrow));
-    auto x_plane = SceneComponent{};
-    _planes[0] = MovePlane(mt::Axis::X, &x_plane);
-    auto y_plane = SceneComponent{};
-    _planes[1] = MovePlane(mt::Axis::Y, &y_plane);
-    auto z_plane = SceneComponent{};
-    _planes[2] = MovePlane(mt::Axis::Z, &z_plane);
-    _root.addSubcomponent(std::move(x_plane));
-    _root.addSubcomponent(std::move(y_plane));
-    _root.addSubcomponent(std::move(z_plane));
+    _arrows[0] = MoveArrow{ mt::Axis::X };
+    _arrows[1] = MoveArrow{ mt::Axis::Y };
+    _arrows[2] = MoveArrow{ mt::Axis::Z };
+    _arrows[0].getRoot().attachTo(&_root);
+    _arrows[1].getRoot().attachTo(&_root);
+    _arrows[2].getRoot().attachTo(&_root);
+    _planes[0] = MovePlane(mt::Axis::X);
+    _planes[1] = MovePlane(mt::Axis::Y);
+    _planes[2] = MovePlane(mt::Axis::Z);
+    _planes[0].getRoot().attachTo(&_root);
+    _planes[1].getRoot().attachTo(&_root);
+    _planes[2].getRoot().attachTo(&_root);
   }
 
 private:

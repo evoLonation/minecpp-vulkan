@@ -108,7 +108,7 @@ public:
       scale_factor[static_cast<int>(axis)] *= factor;
     }
   }
-  auto get() const -> glm::mat4 const& { return _model; }
+  auto get() -> toy::Observable<glm::mat4>& { return _model; }
 
   toy::Observable<glm::vec3> location = { { 0, 0, 0 } };
   toy::Observable<glm::vec3> rotate_euler = { { 0, 0, 0 } };
@@ -119,15 +119,31 @@ public:
   ONLY_MOVEABLE(ModelTransform);
 
 private:
-  glm::mat4                               _model;
+  toy::Observable<glm::mat4>              _model;
   std::array<toy::Observer<glm::vec3>, 3> _model_observers;
+};
+
+template <typename Derived>
+class MoveOperation {
+public:
+  MoveOperation() = default;
+  MoveOperation(const MoveOperation&) noexcept = delete;
+  MoveOperation(MoveOperation&& e) noexcept { self().additionalMoveOp(std::move(e)); }
+  auto operator=(const MoveOperation&) noexcept -> MoveOperation& = delete;
+  auto operator=(MoveOperation&& e) noexcept -> MoveOperation& {
+    self().additionalMoveOp(std::move(e));
+    return *this;
+  }
+
+private:
+  auto self() -> Derived& { return static_cast<Derived&>(*this); }
 };
 
 class SceneComponent : public cp::Component {
 public:
   SceneComponent() {
     setStage(fw::Stage::BEFORE_RENDER);
-    _to_world = _to_parent.get();
+    setObserver();
   }
   SceneComponent(pl::LightObject object) : SceneComponent() { setObject(std::move(object)); }
   void setObject(pl::LightObject object) {
@@ -139,14 +155,18 @@ public:
     _id_components[_object.getId()] = this;
   }
   auto getObject() -> pl::LightObject& { return _object; }
-  void addSubcomponent(SceneComponent component) {
-    component._is_root = false;
-    _sub_components.push_back(std::move(component));
+  void attachTo(SceneComponent* component) {
+    detach();
+    _parent = component;
+    setObserver();
   }
-  auto getSubComponents() -> std::span<SceneComponent> { return _sub_components; }
-  auto isRoot() -> bool { return _is_root; }
-  auto getTransform() -> ModelTransform& { return _to_parent; }
-  auto getTransToParent() -> glm::mat4 const& { return _to_parent.get(); }
+  void detach() {
+    _parent = nullptr;
+    setObserver();
+  }
+  auto isRoot() -> bool { return !_parent.valid(); }
+  auto getTransform() -> ModelTransform& { return _transform; }
+  auto getTransToParent() -> glm::mat4 const& { return _transform.get(); }
   auto getTransToWorld() -> glm::mat4 const& { return _to_world; }
   auto isSelected() -> bool { return getSelected() == this; }
 
@@ -157,32 +177,33 @@ public:
     return nullptr;
   }
 
-  ONLY_MOVEABLE(SceneComponent);
-
 private:
-  bool                        _is_root = true;
-  ModelTransform              _to_parent;
-  pl::LightObject             _object;
-  glm::mat4                   _to_world;
-  std::vector<SceneComponent> _sub_components;
+  ModelTransform             _transform;
+  toy::Observable<glm::mat4> _to_world;
+  cp::ptr<SceneComponent>    _parent;
+  toy::Observer<glm::mat4>   _transform_observer;
+  toy::Observer<glm::mat4>   _parent_observer;
+  pl::LightObject            _object;
+
+  void setObserver() {
+    if (_parent.valid()) {
+      auto observer = [self = getTracer()](auto) {
+        self->_to_world = self->_parent->_to_world * self->_transform.get().get();
+      };
+      _parent_observer = toy::Observer{ _parent->_to_world, observer };
+      _transform_observer = toy::Observer{ _transform.get(), observer, true };
+    } else {
+      auto observer = [self = getTracer()](auto) {
+        self->_to_world = self->_transform.get().get();
+      };
+      _parent_observer = {};
+      _transform_observer = toy::Observer{ _transform.get(), observer, true };
+    }
+  }
 
   void runLoop(fw::ActionContext const& ctx) override {
-    if (_is_root) {
-      auto handleComponent = std::function<void(SceneComponent & component, glm::mat4 * father)>{};
-      handleComponent = [&handleComponent](SceneComponent& component, glm::mat4* father) {
-        if (father == nullptr) {
-          component._to_world = component._to_parent.get();
-        } else {
-          component._to_world = *father * component._to_parent.get();
-        }
-        if (component._object.valid()) {
-          component._object.getModelTrans() = component._to_world;
-        }
-        for (auto& sub : component._sub_components) {
-          handleComponent(sub, &component._to_world);
-        }
-      };
-      handleComponent(*this, nullptr);
+    if (_object.valid()) {
+      _object.getModelTrans() = _to_world;
     }
   }
 

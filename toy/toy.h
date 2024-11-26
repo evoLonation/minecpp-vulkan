@@ -90,4 +90,8 @@
 private:                                                                                           \
 void beforeDestroy() __VA_ARGS__ public:
 
+#define ADDTIONAL_MOVE_OPERATION(cls, ...)                                                         \
+  friend MoveOperation<cls>;                                                                  \
+  void additionalMoveOp(cls&& e) __VA_ARGS__
+
 #endif

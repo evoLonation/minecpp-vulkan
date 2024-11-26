@@ -7,27 +7,11 @@ import std;
 
 export namespace toy {
 
-class Tracer;
+class Traceable;
 template <typename T>
 class TracerFor;
+class Tracer;
 
-// 拷贝赋值的会使指向原本资源的所有tracer失效，然后将新的tracer指向该资源
-class Traceable {
-public:
-  Traceable() = default;
-  ~Traceable();
-  Traceable(const Traceable&) noexcept = delete;
-  Traceable(Traceable&&) noexcept;
-  auto operator=(const Traceable&) noexcept -> Traceable& = delete;
-  auto operator=(Traceable&&) noexcept -> Traceable&;
-
-  auto getTracer(this auto&& self) -> TracerFor<std::remove_reference_t<decltype(self)>>;
-
-private:
-  friend Tracer;
-  // todo: more efficient data structure
-  std::unordered_set<Tracer*> _proxies;
-};
 struct Tracer {
 public:
   Tracer() = default;
@@ -72,24 +56,47 @@ public:
 private:
   friend Traceable;
   Traceable* ptr = nullptr;
-  void       set(Traceable* ptr) {
-    remove();
-    this->ptr = ptr;
-    add();
-  }
 
-  void add() {
-    if (ptr) {
-      ptr->_proxies.insert(this);
-    }
-  }
-  void remove() {
-    if (ptr) {
-      ptr->_proxies.erase(this);
-    }
-  }
+  void add();
+  void remove();
 };
 
+class Traceable {
+public:
+  Traceable() = default;
+  ~Traceable() {
+    for (auto* p : _proxies) {
+      p->ptr = nullptr;
+    }
+  }
+  Traceable(const Traceable&) noexcept = delete;
+  Traceable(Traceable&& e) noexcept {
+    _proxies = std::move(e._proxies);
+    for (auto* p : _proxies) {
+      p->ptr = this;
+    }
+  }
+  auto operator=(const Traceable&) noexcept -> Traceable& = delete;
+  auto operator=(Traceable&& e) noexcept -> Traceable& {
+    for (auto* p : _proxies) {
+      p->ptr = nullptr;
+    }
+    _proxies = std::move(e._proxies);
+    for (auto* p : _proxies) {
+      p->ptr = this;
+    }
+    return *this;
+  }
+
+  auto getTracer(this auto&& self) -> TracerFor<std::remove_reference_t<decltype(self)>> {
+    return { &self };
+  }
+
+private:
+  friend Tracer;
+  // todo: more efficient data structure
+  std::unordered_set<Tracer*> _proxies;
+};
 template <typename T>
 class TracerFor {
 public:
@@ -105,30 +112,15 @@ private:
   Tracer proxy;
 };
 
-Traceable::Traceable(Traceable&& e) noexcept {
-  _proxies = std::move(e._proxies);
-  for (auto* p : _proxies) {
-    p->ptr = this;
+void Tracer::add() {
+  if (ptr) {
+    ptr->_proxies.insert(this);
   }
-}
-auto Traceable::operator=(Traceable&& e) noexcept -> Traceable& {
-  for (auto* p : _proxies) {
-    p->ptr = nullptr;
-  }
-  _proxies = std::move(e._proxies);
-  for (auto* p : _proxies) {
-    p->ptr = this;
-  }
-  return *this;
 }
 
-auto Traceable::getTracer(this auto&& self) -> TracerFor<std::remove_reference_t<decltype(self)>> {
-  return { &self };
-}
-
-Traceable::~Traceable() {
-  for (auto* p : _proxies) {
-    p->ptr = nullptr;
+void Tracer::remove() {
+  if (ptr) {
+    ptr->_proxies.erase(this);
   }
 }
 

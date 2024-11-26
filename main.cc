@@ -69,14 +69,16 @@ int main() {
     auto move = cp::MoveController{};
 
     auto selector_cone = cp::MoveTransformSelector{};
+    auto cone = cp::SceneComponent{};
     {
-      auto cone = cp::SceneComponent{ cp::createShape(
+      auto cone_ = cp::SceneComponent{ cp::createShape(
         cp::generateCone(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 5.0f }
       ) };
-      selector_cone = { &cone };
-      cube.addSubcomponent(std::move(cone));
+      selector_cone = { &cone_ };
+      cone_.attachTo(&cube);
       cube.getTransform().translate(glm::vec3{ 0.0f, 0.0f, 1.0f });
       // move = tool::MoveController{ &cube };
+      cone = std::move(cone_);
     }
 
     fw::Loop::getInstance().run();
