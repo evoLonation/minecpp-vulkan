@@ -1,9 +1,9 @@
 module;
 #include <toy.h>
 export module math;
+export import glm;
 
 import std;
-import glm;
 import toy;
 
 export namespace mt {

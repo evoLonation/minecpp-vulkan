@@ -5,3 +5,5 @@ module:
     provide: tool.shape
 - component.ccm:
     provide: component
+- rotate.ccm:
+    provide: tool.rotate

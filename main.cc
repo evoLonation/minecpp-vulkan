@@ -23,6 +23,7 @@ import component;
 // import pipeline.resources;
 // import pipeline.drawunit;
 import tool.move;
+import tool.rotate;
 import tool.shape;
 import camera;
 import drag;
@@ -38,7 +39,8 @@ int main() {
     auto  transform_gui = cp::ModelTransformGuiController{};
     auto  render_pass = pl::LightPipeline{};
     auto  click_observer = cp::ObjectClickObserver{};
-    auto  move_manager = cp::MoveControllerManager{};
+    // auto  move_manager = cp::MoveControllerManager{};
+    auto rotate_manager = cp::RotateControllerManager{};
 
     auto camera = camera::Camera{};
     auto controller = camera::Controller{ &camera };
@@ -52,6 +54,10 @@ int main() {
         "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
       ),
     } };
+    auto cylinder = cp::SceneComponent{ cp::createShape(
+      cp::generateCylinder(1, 2, 77), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f }
+    ) };
+    cylinder.getTransform().location = { 0, 3, 0 };
     auto cube = cp::SceneComponent{
       cp::createShape(cp::generateCube(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f })
     };

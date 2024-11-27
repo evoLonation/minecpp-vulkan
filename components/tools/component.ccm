@@ -123,22 +123,6 @@ private:
   std::array<toy::Observer<glm::vec3>, 3> _model_observers;
 };
 
-template <typename Derived>
-class MoveOperation {
-public:
-  MoveOperation() = default;
-  MoveOperation(const MoveOperation&) noexcept = delete;
-  MoveOperation(MoveOperation&& e) noexcept { self().additionalMoveOp(std::move(e)); }
-  auto operator=(const MoveOperation&) noexcept -> MoveOperation& = delete;
-  auto operator=(MoveOperation&& e) noexcept -> MoveOperation& {
-    self().additionalMoveOp(std::move(e));
-    return *this;
-  }
-
-private:
-  auto self() -> Derived& { return static_cast<Derived&>(*this); }
-};
-
 class SceneComponent : public cp::Component {
 public:
   SceneComponent() {

@@ -21,6 +21,7 @@ class MovePlane {
 public:
   MovePlane() = default;
   MovePlane(mt::Axis normal_axis) {
+    _norm_axis = normal_axis;
     auto normal = mt::unitVec(normal_axis);
     _cube = SceneComponent{ createShape(generateCube(), glm::vec3{ 0.5, 0.5, 0.5 }) };
     _cube.getTransform().scale_factor =
@@ -53,13 +54,34 @@ public:
     return _cube.isSelected() || _edge_1.isSelected() || _edge_2.isSelected();
   }
   auto getRoot() -> SceneComponent& { return _root; }
-  // todo: set color
+  void setDragging(bool dragging) {
+    if (_dragging != dragging) {
+      auto cube_color = glm::vec4{};
+      auto edge1_color = glm::vec4{};
+      auto edge2_color = glm::vec4{};
+      if (dragging) {
+        cube_color = { 1, 1, 0, 1 };
+        edge1_color = { 1, 1, 0, 1 };
+        edge2_color = { 1, 1, 0, 1 };
+      } else {
+        cube_color = { 0.5, 0.5, 0.5, 1 };
+        edge1_color = { mt::unitVec(mt::Axis{ ((int)_norm_axis + 1) % 3 }), 1 };
+        edge2_color = { mt::unitVec(mt::Axis{ ((int)_norm_axis + 2) % 3 }), 1 };
+      }
+      _cube.getObject().getTexture().writeContent(std::as_bytes(std::span{ &cube_color, 1 }));
+      _edge_1.getObject().getTexture().writeContent(std::as_bytes(std::span{ &edge1_color, 1 }));
+      _edge_2.getObject().getTexture().writeContent(std::as_bytes(std::span{ &edge2_color, 1 }));
+    }
+    _dragging = dragging;
+  }
 
 private:
+  mt::Axis       _norm_axis;
   SceneComponent _root;
   SceneComponent _cube;
   SceneComponent _edge_1;
   SceneComponent _edge_2;
+  bool           _dragging;
 
   constexpr static float _thickness = 0.05f;
   constexpr static float _edge = 0.5f;
@@ -70,7 +92,7 @@ public:
   MoveArrow() = default;
   MoveArrow(mt::Axis axis) {
     _axis = axis;
-    _draging = false;
+    _dragging = false;
     auto unit = mt::unitVec(axis);
     _arrow = SceneComponent{ createShape(generateArrow(), unit) };
     auto arrow_dir = glm::vec3{ 0, 0, 1 };
@@ -81,17 +103,17 @@ public:
     _arrow.attachTo(&_root);
   }
   auto isSelected() -> bool { return _arrow.isSelected(); }
-  void setDraging(bool draging) {
-    if (_draging != draging) {
+  void setDragging(bool dragging) {
+    if (_dragging != dragging) {
       auto color = glm::vec4{};
-      if (draging) {
+      if (dragging) {
         color = { 1, 1, 0, 1 };
       } else {
         color = { mt::unitVec(_axis), 1 };
       }
       _arrow.getObject().getTexture().writeContent(std::as_bytes(std::span{ &color, 1 }));
     }
-    _draging = draging;
+    _dragging = dragging;
   }
   auto getRoot() -> SceneComponent& { return _root; }
 
@@ -99,16 +121,13 @@ private:
   mt::Axis       _axis;
   SceneComponent _root;
   SceneComponent _arrow;
-  bool           _draging;
+  bool           _dragging;
 
   constexpr static float _thickness = 0.05f;
   constexpr static float _edge = 0.5f;
 };
 
-// 1. 监听_component的Transform，如果mode为WORLD，只绑定location，
-// 如果mode为LOCAL，绑定location和rotate
-// 2. 只对_component的Transform的location进行操作
-class MoveController : public cp::Component {
+class MoveController : public Component {
 public:
   MoveController() = default;
   enum Mode { LOCAL, WORLD };
@@ -117,7 +136,6 @@ public:
     TOY_ASSERT(component->isRoot());
     _mode = mode;
     _component = component;
-    _root = {};
     _root.getTransform().mode = ModelTransform::LOCAL;
     _location_bind = { _component->getTransform().location, _root.getTransform().location };
     if (_mode == LOCAL) {
@@ -141,7 +159,7 @@ public:
   }
 
 private:
-  cp::ptr<SceneComponent>       _component;
+  ptr<SceneComponent>           _component;
   SceneComponent                _root;
   Mode                          _mode = WORLD;
   toy::Bidirectional<glm::vec3> _location_bind;
@@ -172,21 +190,21 @@ private:
         _plane_norm = mt::Axis::Z;
       }
       if (_axis) {
-        _arrows[(int)*_axis].setDraging(true);
+        _arrows[(int)*_axis].setDragging(true);
         auto ret = getAxisPos(*_axis);
         TOY_ASSERT(ret);
         _start_pos = *ret;
       } else if (_plane_norm) {
-        // todo
+        _planes[(int)*_plane_norm].setDragging(true);
         auto ret = getPlanePos(*_plane_norm);
         TOY_ASSERT(ret);
         _start_plane_pos = *ret;
       }
     } else if (input[fw::Mouse::LEFT]->state == fw::ButtonState::RELEASE) {
       if (_axis) {
-        _arrows[(int)*_axis].setDraging(false);
+        _arrows[(int)*_axis].setDragging(false);
       } else if (_plane_norm) {
-        // todo
+        _planes[(int)*_plane_norm].setDragging(false);
       }
       _plane_norm = {};
       _axis = {};

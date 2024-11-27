@@ -108,48 +108,77 @@ auto generateCone(float radius = 1.0f, float height = 2.0f) -> ShapeMesh {
   return ret;
 }
 
-auto generateCylinder(float radius = 1.0f, float height = 2.0f) -> ShapeMesh {
-  auto bottom_split_num = 40;
+auto generateCylinder(float radius = 1.0f, float height = 2.0f, float sector_degree = 360.0f)
+  -> ShapeMesh {
+  TOY_ASSERT(sector_degree <= 360.0f);
+  auto is_full_cylinder = sector_degree == 360.0f;
+  auto split_num = 40;
   auto ret = ShapeMesh{};
   auto& [vertices, normals, indices] = ret;
-  vertices.push_back(glm::vec3{ 0, 0, 0 });
-  normals.push_back(glm::vec3{ 0, 0, -1 });
+  auto generateBottomOrTop = [&](bool bottom) {
+    vertices.push_back(glm::vec3{ 0, 0, bottom ? 0 : height });
+    auto normal = glm::vec3{ 0, 0, bottom ? -1 : 1 };
+    normals.push_back(normal);
+    auto offset = vertices.size();
+    for (auto i : views::iota(0, is_full_cylinder ? split_num : split_num + 1)) {
+      auto x = radius * glm::cos(glm::radians(sector_degree * i / split_num));
+      auto y = radius * glm::sin(glm::radians(sector_degree * i / split_num));
+      vertices.push_back(glm::vec3{ x, y, bottom ? 0 : height });
+      normals.push_back(normal);
+      if (!is_full_cylinder && i == split_num) {
+        break;
+      }
+      indices.push_back(offset - 1);
+      indices.push_back(offset + (i + 1) % (is_full_cylinder ? split_num : split_num + 1));
+      indices.push_back(offset + i);
+      if (!bottom) {
+        std::swap(indices.back(), *(indices.end() - 2));
+      }
+    }
+  };
+  generateBottomOrTop(true);
+  generateBottomOrTop(false);
   auto offset = vertices.size();
-  for (auto i : views::iota(0, bottom_split_num)) {
-    auto x = radius * glm::cos(glm::radians(360.0f * i / bottom_split_num));
-    auto y = radius * glm::sin(glm::radians(360.0f * i / bottom_split_num));
-    vertices.push_back(glm::vec3{ x, y, 0 });
-    normals.push_back(glm::vec3{ 0, 0, -1 });
-    indices.push_back(0);
-    indices.push_back(offset + (i + 1) % bottom_split_num);
-    indices.push_back(offset + i);
-  }
-  vertices.push_back(glm::vec3{ 0, 0, height });
-  normals.push_back(glm::vec3{ 0, 0, 1 });
-  offset = vertices.size();
-  for (auto i : views::iota(0, bottom_split_num)) {
-    auto x = radius * glm::cos(glm::radians(360.0f * i / bottom_split_num));
-    auto y = radius * glm::sin(glm::radians(360.0f * i / bottom_split_num));
-    vertices.push_back(glm::vec3{ x, y, height });
-    normals.push_back(glm::vec3{ 0, 0, 1 });
-    indices.push_back(bottom_split_num + 1);
-    indices.push_back(offset + i);
-    indices.push_back(offset + (i + 1) % bottom_split_num);
-  }
-  offset = vertices.size();
-  for (auto i : views::iota(0, bottom_split_num)) {
-    auto x = radius * glm::cos(glm::radians(360.0f * i / bottom_split_num));
-    auto y = radius * glm::sin(glm::radians(360.0f * i / bottom_split_num));
+  for (auto i : views::iota(0, is_full_cylinder ? split_num : split_num + 1)) {
+    auto x = radius * glm::cos(glm::radians(sector_degree * i / split_num));
+    auto y = radius * glm::sin(glm::radians(sector_degree * i / split_num));
     vertices.push_back(glm::vec3{ x, y, 0 });
     normals.push_back(glm::normalize(glm::vec3{ x, y, 0 }));
     vertices.push_back(glm::vec3{ x, y, height });
     normals.push_back(glm::normalize(glm::vec3{ x, y, 0 }));
+    if (!is_full_cylinder && i == split_num) {
+      break;
+    }
     indices.push_back(offset + i * 2 + 1);
     indices.push_back(offset + i * 2);
-    indices.push_back(offset + (i + 1) * 2 % (bottom_split_num * 2));
-    indices.push_back(offset + (i + 1) * 2 % (bottom_split_num * 2));
-    indices.push_back(offset + (i + 1) * 2 % (bottom_split_num * 2) + 1);
+    indices.push_back(offset + (i + 1) * 2 % ((is_full_cylinder ? split_num : split_num + 1) * 2));
+    indices.push_back(offset + (i + 1) * 2 % ((is_full_cylinder ? split_num : split_num + 1) * 2));
+    indices.push_back(
+      offset + (i + 1) * 2 % ((is_full_cylinder ? split_num : split_num + 1) * 2) + 1
+    );
     indices.push_back(offset + i * 2 + 1);
+  }
+  auto generateSection = [&](float degree, bool start) {
+    auto x = radius * glm::cos(glm::radians(degree));
+    auto y = radius * glm::sin(glm::radians(degree));
+    auto offset = vertices.size();
+    vertices.push_back(glm::vec3{ x, y, height });
+    vertices.push_back(glm::vec3{ x, y, 0 });
+    vertices.push_back(glm::vec3{ 0, 0, 0 });
+    vertices.push_back(glm::vec3{ 0, 0, height });
+    auto normal =
+      glm::normalize(glm::cross(glm::vec3{ x, y, 0 }, glm::vec3{ 0, 0, start ? height : -height }));
+    normals.append_range(views::repeat(normal) | views::take(4));
+    indices.push_back(offset);
+    indices.push_back(offset + (start ? 2 : 1));
+    indices.push_back(offset + (start ? 1 : 2));
+    indices.push_back(offset + (start ? 3 : 2));
+    indices.push_back(offset + (start ? 2 : 3));
+    indices.push_back(offset);
+  };
+  if (!is_full_cylinder) {
+    generateSection(0, true);
+    generateSection(sector_degree, false);
   }
   return ret;
 }
