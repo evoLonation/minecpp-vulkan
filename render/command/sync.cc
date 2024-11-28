@@ -8,6 +8,16 @@ import render.tool;
 
 namespace rd {
 
+auto device_checkers::sync(DeviceCapabilityBuilder& builder) -> bool {
+  if (!builder.enableFeature(&VkPhysicalDeviceVulkan13Features::synchronization2)) {
+    return false;
+  }
+  if (!builder.enableFeature(&VkPhysicalDeviceVulkan12Features::timelineSemaphore)) {
+    return false;
+  }
+  return true;
+}
+
 TimelineSemaphore::TimelineSemaphore(uint64 initial_value) {
   auto type_info = VkSemaphoreTypeCreateInfo{
     .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
@@ -199,6 +209,95 @@ auto Fence::isSignaled() -> bool {
   auto result =
     CHECK_VK_RESULT(vkGetFenceStatus(Device::getInstance(), get()), { VK_SUCCESS, VK_NOT_READY });
   return result == VK_SUCCESS;
+}
+
+auto scope2str(Scope scope) -> std::string {
+  return "{" + refl::flags<VkPipelineStageFlagBits2>(scope.stage_mask) + " / " +
+         refl::flags<VkAccessFlagBits2>(scope.access_mask) + "}";
+}
+
+void recordPipelineBarrier(
+  VkCommandBuffer                         cmdbuf,
+  std::span<const VkMemoryBarrier2>       memory_barriers,
+  std::span<const VkBufferMemoryBarrier2> buffer_barriers,
+  std::span<const VkImageMemoryBarrier2>  image_barriers
+) {
+  auto dependency_info = VkDependencyInfo{
+    .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+    //  VK_DEPENDENCY_BY_REGION_BIT:
+    //  实现可以分区域进行同步(前面写一部分，后面就可以先读一部分)
+    .dependencyFlags = 0,
+    .memoryBarrierCount = static_cast<uint32>(memory_barriers.size()),
+    .pMemoryBarriers = memory_barriers.data(),
+    .bufferMemoryBarrierCount = static_cast<uint32>(buffer_barriers.size()),
+    .pBufferMemoryBarriers = buffer_barriers.data(),
+    .imageMemoryBarrierCount = static_cast<uint32>(image_barriers.size()),
+    .pImageMemoryBarriers = image_barriers.data(),
+  };
+  vkCmdPipelineBarrier2(cmdbuf, &dependency_info);
+};
+
+void recordBufferBarrier(
+  VkCommandBuffer    cmdbuf,
+  VkBuffer           buffer,
+  BarrierScope       barrier_scope,
+  FamilyTransferInfo family_info
+) {
+  auto [src_scope, dst_scope] = barrier_scope;
+  auto buffer_barrier = VkBufferMemoryBarrier2{
+    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+    .pNext = nullptr,
+    .srcStageMask = src_scope.stage_mask,
+    .srcAccessMask = src_scope.access_mask,
+    .dstStageMask = dst_scope.stage_mask,
+    .dstAccessMask = dst_scope.access_mask,
+    .srcQueueFamilyIndex = family_info.src_family,
+    .dstQueueFamilyIndex = family_info.dst_family,
+    .buffer = buffer,
+    .offset = 0,
+    .size = VK_WHOLE_SIZE,
+  };
+  recordPipelineBarrier(cmdbuf, {}, { &buffer_barrier, 1 }, {});
+}
+
+void recordImageBarrier(
+  VkCommandBuffer         cmdbuf,
+  VkImage                 image,
+  VkImageSubresourceRange subresource_range,
+  LayoutTransitionInfo    layout_info,
+  BarrierScope            barrier_scope,
+  FamilyTransferInfo      family_info
+) {
+  if constexpr (false) {
+    toy::debugf(
+      {},
+      "record image barrier:\n  image = {},\n  layout = {} -> {},\n  scope = {} -> {},\n  family = "
+      "{} -> {}",
+      reinterpret_cast<void*>(image),
+      layout_info.src_layout,
+      layout_info.dst_layout,
+      barrier_scope.src_scope,
+      barrier_scope.dst_scope,
+      family_info.src_family,
+      family_info.dst_family
+    );
+  }
+  auto [src_scope, dst_scope] = barrier_scope;
+  auto image_barrier = VkImageMemoryBarrier2{
+    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+    .pNext = nullptr,
+    .srcStageMask = src_scope.stage_mask,
+    .srcAccessMask = src_scope.access_mask,
+    .dstStageMask = dst_scope.stage_mask,
+    .dstAccessMask = dst_scope.access_mask,
+    .oldLayout = layout_info.src_layout,
+    .newLayout = layout_info.dst_layout,
+    .srcQueueFamilyIndex = family_info.src_family,
+    .dstQueueFamilyIndex = family_info.dst_family,
+    .image = image,
+    .subresourceRange = subresource_range,
+  };
+  recordPipelineBarrier(cmdbuf, {}, {}, { &image_barrier, 1 });
 }
 
 } // namespace rd

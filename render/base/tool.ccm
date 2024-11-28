@@ -15,12 +15,7 @@ auto checkVkResult(
   std::source_location            location = std::source_location::current()
 ) -> VkResult {
   if (!ranges::contains(expected_result, result)) {
-    toy::throwf(
-      "{}: failed to {}, VkResult: {}",
-      toy::formatSourceLocation(location),
-      action,
-      refl::result(result)
-    );
+    toy::throwf("{}: failed to {}, VkResult: {}", location, action, result);
   }
   return result;
 }

@@ -178,7 +178,7 @@ struct FormatInfo {
 };
 
 consteval auto computeFormatInfo(VkFormat format) -> FormatInfo {
-  auto str = refl::format(format);
+  auto str = refl::enum2str(format);
   using namespace std::string_literals;
   using enum FormatType;
   str = str.substr("VK_FORMAT_"s.size());
@@ -314,8 +314,8 @@ consteval auto computeFormatInfo(VkFormat format) -> FormatInfo {
   }
   toy::throwf("unsupported format");
 }
-consteval auto computeFormatInfos(std::initializer_list<VkFormat> formats
-) -> std::array<std::optional<FormatInfo>, 200> {
+consteval auto computeFormatInfos(std::initializer_list<VkFormat> formats)
+  -> std::array<std::optional<FormatInfo>, 200> {
   auto ret = std::array<std::optional<FormatInfo>, 200>{};
   for (auto format : formats) {
     ret[format] = computeFormatInfo(format);

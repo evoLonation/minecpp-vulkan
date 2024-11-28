@@ -523,10 +523,10 @@ RenderPass::RenderPass(
     };
     attachment_sync_infos.push_back(info);
     TOY_DEBUG(
-      stageMask2Str(info.initial_stage),
-      stageMask2Str(info.final_stage),
-      refl::imageLayout(info.initial_layout),
-      refl::imageLayout(info.final_layout)
+      refl::stageMask(info.initial_stage),
+      refl::stageMask(info.final_stage),
+      info.initial_layout,
+      info.final_layout
     );
   }
   rs::RenderPass::operator=({ render_pass_create_info });

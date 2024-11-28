@@ -14,15 +14,7 @@ export namespace rd {
 
 namespace device_checkers {
 
-auto sync(DeviceCapabilityBuilder& builder) -> bool {
-  if (!builder.enableFeature(&VkPhysicalDeviceVulkan13Features::synchronization2)) {
-    return false;
-  }
-  if (!builder.enableFeature(&VkPhysicalDeviceVulkan12Features::timelineSemaphore)) {
-    return false;
-  }
-  return true;
-}
+auto sync(DeviceCapabilityBuilder& builder) -> bool;
 
 } // namespace device_checkers
 
@@ -201,26 +193,14 @@ struct Scope {
   }
 };
 
+auto scope2str(Scope scope) -> std::string;
+
 void recordPipelineBarrier(
   VkCommandBuffer                         cmdbuf,
   std::span<const VkMemoryBarrier2>       memory_barriers,
   std::span<const VkBufferMemoryBarrier2> buffer_barriers,
   std::span<const VkImageMemoryBarrier2>  image_barriers
-) {
-  auto dependency_info = VkDependencyInfo{
-    .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-    //  VK_DEPENDENCY_BY_REGION_BIT:
-    //  实现可以分区域进行同步(前面写一部分，后面就可以先读一部分)
-    .dependencyFlags = 0,
-    .memoryBarrierCount = static_cast<uint32>(memory_barriers.size()),
-    .pMemoryBarriers = memory_barriers.data(),
-    .bufferMemoryBarrierCount = static_cast<uint32>(buffer_barriers.size()),
-    .pBufferMemoryBarriers = buffer_barriers.data(),
-    .imageMemoryBarrierCount = static_cast<uint32>(image_barriers.size()),
-    .pImageMemoryBarriers = image_barriers.data(),
-  };
-  vkCmdPipelineBarrier2(cmdbuf, &dependency_info);
-};
+);
 
 /**
  * @brief In case of ownership transfer that with src_use_stage/access and dst_use_stage/access
@@ -272,64 +252,12 @@ void recordBufferBarrier(
   VkBuffer           buffer,
   BarrierScope       barrier_scope,
   FamilyTransferInfo family_info
-) {
-  auto [src_scope, dst_scope] = barrier_scope;
-  auto buffer_barrier = VkBufferMemoryBarrier2{
-    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-    .pNext = nullptr,
-    .srcStageMask = src_scope.stage_mask,
-    .srcAccessMask = src_scope.access_mask,
-    .dstStageMask = dst_scope.stage_mask,
-    .dstAccessMask = dst_scope.access_mask,
-    .srcQueueFamilyIndex = family_info.src_family,
-    .dstQueueFamilyIndex = family_info.dst_family,
-    .buffer = buffer,
-    .offset = 0,
-    .size = VK_WHOLE_SIZE,
-  };
-  recordPipelineBarrier(cmdbuf, {}, { &buffer_barrier, 1 }, {});
-}
+);
 
 struct LayoutTransitionInfo {
   VkImageLayout src_layout;
   VkImageLayout dst_layout;
 };
-
-auto stageMask2Str(VkPipelineStageFlags2 stage_mask) -> std::string {
-  auto str_list = std::vector<std::string>{};
-  for (auto i = 0; i < sizeof(VkPipelineStageFlagBits) * 8; ++i) {
-    auto stage = static_cast<VkPipelineStageFlagBits>(1 << i);
-    if (stage & stage_mask) {
-      str_list.push_back(std::string{ refl::stageFlag(stage) } + " | ");
-    }
-  }
-  if (str_list.empty()) {
-    return std::string{ refl::stageFlag(VK_PIPELINE_STAGE_NONE) };
-  } else {
-    return views::join(str_list) | views::reverse | views::drop(3) | views::reverse |
-           ranges::to<std::string>();
-  }
-}
-
-auto accessMask2Str(VkAccessFlags2 access_mask) -> std::string {
-  auto str_list = std::vector<std::string>{};
-  for (auto i = 0; i < sizeof(VkAccessFlagBits) * 8; ++i) {
-    auto access = static_cast<VkAccessFlagBits>(1 << i);
-    if (access & access_mask) {
-      str_list.push_back(std::string{ refl::accessFlag(access) } + " | ");
-    }
-  }
-  if (str_list.empty()) {
-    return std::string{ refl::accessFlag(VK_ACCESS_NONE) };
-  } else {
-    return views::join(str_list) | views::reverse | views::drop(3) | views::reverse |
-           ranges::to<std::string>();
-  }
-}
-
-auto scope2Str(Scope scope) -> std::string {
-  return "{" + stageMask2Str(scope.stage_mask) + " / " + accessMask2Str(scope.access_mask) + "}";
-}
 
 void recordImageBarrier(
   VkCommandBuffer         cmdbuf,
@@ -338,39 +266,8 @@ void recordImageBarrier(
   LayoutTransitionInfo    layout_info,
   BarrierScope            barrier_scope,
   FamilyTransferInfo      family_info
-) {
-  if constexpr (false) {
-    toy::debugf(
-      {},
-      "record image barrier:\n  image = {},\n  layout = {} -> {},\n  scope = {} -> {},\n  family = "
-      "{} -> {}",
-      reinterpret_cast<void*>(image),
-      refl::imageLayout(layout_info.src_layout),
-      refl::imageLayout(layout_info.dst_layout),
-      scope2Str(barrier_scope.src_scope),
-      scope2Str(barrier_scope.dst_scope),
-      family_info.src_family,
-      family_info.dst_family
-    );
-  }
-  auto [src_scope, dst_scope] = barrier_scope;
-  auto image_barrier = VkImageMemoryBarrier2{
-    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-    .pNext = nullptr,
-    .srcStageMask = src_scope.stage_mask,
-    .srcAccessMask = src_scope.access_mask,
-    .dstStageMask = dst_scope.stage_mask,
-    .dstAccessMask = dst_scope.access_mask,
-    .oldLayout = layout_info.src_layout,
-    .newLayout = layout_info.dst_layout,
-    .srcQueueFamilyIndex = family_info.src_family,
-    .dstQueueFamilyIndex = family_info.dst_family,
-    .image = image,
-    .subresourceRange = subresource_range,
-  };
-  recordPipelineBarrier(cmdbuf, {}, {}, { &image_barrier, 1 });
-}
+);
 
 } // namespace rd
 
-CUSTOM_FORMATTER(rd::Scope, scope2Str);
+CUSTOM_FORMATTER(rd::Scope, scope2str);

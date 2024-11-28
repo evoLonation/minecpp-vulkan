@@ -213,12 +213,7 @@ auto CommonBarrierTracker<IsImage>::generateRecorder(
     toy::debug({}, NAME_TUPLE_STRING(src_scope));
     toy::debug({}, NAME_TUPLE_STRING(dst_scope));
     if constexpr (IsImage) {
-      toy::debugf(
-        {},
-        "  layout transition: {} -> {}",
-        refl::imageLayout(ImageAdditionalInfo::_layout),
-        refl::imageLayout(layout)
-      );
+      toy::debugf({}, "  layout transition: {} -> {}", ImageAdditionalInfo::_layout, layout);
     }
   }
   return recorder;

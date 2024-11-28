@@ -38,7 +38,7 @@ auto Presentation::acquireNextImage() -> std::pair<uint32, VkResult> {
   );
   CHECK_VK_RESULT(result, { VK_SUCCESS, VK_ERROR_OUT_OF_DATE_KHR, VK_SUBOPTIMAL_KHR });
   if (result != VK_SUCCESS) {
-    toy::debugf("acquire next image return: {}", refl::result(result));
+    toy::debugf("acquire next image return: {}", result);
   }
   return { image_index, result };
 }
@@ -116,7 +116,7 @@ auto Presentation::vkPresent(uint32 image_index, VkSemaphore wait_sema, VkFence 
   );
   CHECK_VK_RESULT(result, { VK_SUCCESS, VK_ERROR_OUT_OF_DATE_KHR, VK_SUBOPTIMAL_KHR });
   if (result != VK_SUCCESS) {
-    toy::debugf("present return: {}", refl::result(result));
+    toy::debugf("present return: {}", result);
   }
   return result;
 }

@@ -8,13 +8,49 @@ import <vulkan_config.h>;
 
 export namespace rd::refl {
 
+template <typename T>
+concept Enum =
+  (std::same_as<T, VkImageLayout> ||            //
+   std::same_as<T, VkPipelineStageFlagBits> ||  //
+   std::same_as<T, VkPipelineStageFlagBits2> || //
+   std::same_as<T, VkAccessFlagBits> ||         //
+   std::same_as<T, VkAccessFlagBits2> ||        //
+   std::same_as<T, VkColorSpaceKHR> ||          //
+   std::same_as<T, VkResult> ||                 //
+   std::same_as<T, VkSampleCountFlagBits>);
+auto enum2str(Enum auto value) -> std::string_view;
+
+template <typename T>
+concept ConstexprEnum = std::same_as<VkFormat, T>;
+constexpr auto enum2str(ConstexprEnum auto value) -> std::string_view;
+
+template <typename Resource>
+consteval auto resource() -> std::string_view;
+
+template <typename FlagBitsT>
+auto flags(uint64 flags) -> std::string;
+
+auto stageMask(VkPipelineStageFlags2 stage_mask) -> std::string;
+
+auto accessMask(VkAccessFlags2 access_mask) -> std::string;
+
+} // namespace rd::refl
+
+CUSTOM_FORMATTER(VkImageLayout, [](auto e) { return std::string{ rd::refl::enum2str(e) }; });
+CUSTOM_FORMATTER(VkFormat, [](auto e) { return std::string{ rd::refl::enum2str(e) }; });
+CUSTOM_FORMATTER(VkColorSpaceKHR, [](auto e) { return std::string{ rd::refl::enum2str(e) }; });
+CUSTOM_FORMATTER(VkResult, [](auto e) { return std::string{ rd::refl::enum2str(e) }; });
+CUSTOM_FORMATTER(VkSampleCountFlagBits, [](auto e) {
+  return std::string{ rd::refl::enum2str(e) };
+});
+
+namespace rd::refl {
+
 auto imageLayout(VkImageLayout image_layout) -> std::string_view;
 
 auto stageFlag(VkPipelineStageFlagBits2 stage) -> std::string_view;
 
 auto accessFlag(VkAccessFlagBits2 access) -> std::string_view;
-
-constexpr auto format(VkFormat format) -> std::string_view;
 
 auto colorSpace(VkColorSpaceKHR color_space) -> std::string_view;
 
@@ -22,20 +58,62 @@ auto result(VkResult result) -> std::string_view;
 
 auto sampleCount(VkSampleCountFlagBits sample_count) -> std::string_view;
 
-template <typename Resource>
-consteval auto resource() -> std::string_view;
+auto enum2str(Enum auto value) -> std::string_view {
+  if constexpr (std::same_as<decltype(value), VkImageLayout>) {
+    return imageLayout(value);
+  } else if constexpr (std::same_as<decltype(value), VkPipelineStageFlagBits>) {
+    return stageFlag(static_cast<VkPipelineStageFlagBits2>(value));
+  } else if constexpr (std::same_as<decltype(value), VkPipelineStageFlagBits2>) {
+    return stageFlag(value);
+  } else if constexpr (std::same_as<decltype(value), VkAccessFlagBits>) {
+    return accessFlag(static_cast<VkAccessFlagBits2>(value));
+  } else if constexpr (std::same_as<decltype(value), VkAccessFlagBits2>) {
+    return accessFlag(value);
+  } else if constexpr (std::same_as<decltype(value), VkColorSpaceKHR>) {
+    return colorSpace(value);
+  } else if constexpr (std::same_as<decltype(value), VkResult>) {
+    return result(value);
+  } else if constexpr (std::same_as<decltype(value), VkSampleCountFlagBits>) {
+    return sampleCount(value);
+  } else {
+    static_assert(false, "unknown enum type");
+  }
+}
 
-} // namespace rd::refl
+constexpr auto format(VkFormat format) -> std::string_view;
 
-CUSTOM_FORMATTER(VkImageLayout, [](auto e) { return std::string{ rd::refl::imageLayout(e) }; });
-CUSTOM_FORMATTER(VkFormat, [](auto e) { return std::string{ rd::refl::format(e) }; });
-CUSTOM_FORMATTER(VkColorSpaceKHR, [](auto e) { return std::string{ rd::refl::colorSpace(e) }; });
-CUSTOM_FORMATTER(VkResult, [](auto e) { return std::string{ rd::refl::result(e) }; });
-CUSTOM_FORMATTER(VkSampleCountFlagBits, [](auto e) {
-  return std::string{ rd::refl::sampleCount(e) };
-});
+constexpr auto enum2str(ConstexprEnum auto value) -> std::string_view {
+  if constexpr (std::same_as<decltype(value), VkFormat>) {
+    return format(value);
+  } else {
+    static_assert(false, "unknown enum type");
+  }
+}
 
-namespace rd::refl {
+template <typename FlagBitsT>
+auto flags(uint64 flags) -> std::string {
+  auto str_list = std::vector<std::string>{};
+  for (auto i = 0; i < sizeof(FlagBitsT) * 8; ++i) {
+    auto access = static_cast<FlagBitsT>(1 << i);
+    if (access & flags) {
+      str_list.push_back(std::string{ enum2str(access) } + " | ");
+    }
+  }
+  if (str_list.empty()) {
+    return std::string{ enum2str(static_cast<FlagBitsT>(0)) };
+  } else {
+    return views::join(str_list) | views::reverse | views::drop(3) | views::reverse |
+           ranges::to<std::string>();
+  }
+}
+
+auto stageMask(VkPipelineStageFlags2 stage_mask) -> std::string {
+  return flags<VkPipelineStageFlagBits2>(stage_mask);
+}
+
+auto accessMask(VkAccessFlags2 access_mask) -> std::string {
+  return flags<VkAccessFlagBits2>(access_mask);
+}
 
 template <typename Resource>
 consteval auto resource() -> std::string_view {

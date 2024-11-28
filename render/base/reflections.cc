@@ -23,7 +23,8 @@ auto imageLayout(VkImageLayout image_layout) -> std::string_view {
     CASE(VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL);
     CASE(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
   default:
-    toy::throwf("unknown VkImageLayout: {}", static_cast<size_t>(image_layout));
+    toy::debugf("error: unknown VkImageLayout: {}", static_cast<size_t>(image_layout));
+    return "unknown";
   }
 }
 
@@ -41,7 +42,8 @@ auto stageFlag(VkPipelineStageFlagBits2 stage) -> std::string_view {
     CASE(VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT);
     CASE(VK_PIPELINE_STAGE_NONE);
   default:
-    toy::throwf("unknown VkPipelineStageFlagBits2: {}", static_cast<size_t>(stage));
+    toy::debugf("error: unknown VkPipelineStageFlagBits2: {}", static_cast<size_t>(stage));
+    return "unknown";
   }
 }
 
@@ -61,7 +63,8 @@ auto accessFlag(VkAccessFlagBits2 access) -> std::string_view {
     CASE(VK_ACCESS_TRANSFER_WRITE_BIT);
     CASE(VK_ACCESS_NONE);
   default:
-    toy::throwf("unknown VkAccessFlagBits2: {}", static_cast<size_t>(access));
+    toy::debugf("error: unknown VkAccessFlagBits2: {}", static_cast<size_t>(access));
+    return "unknown";
   };
 }
 
@@ -134,7 +137,8 @@ auto result(VkResult result) -> std::string_view {
     CASE(VK_OPERATION_DEFERRED_KHR);
     CASE(VK_OPERATION_NOT_DEFERRED_KHR);
   default:
-    toy::throwf("unknown VkResult: {}", static_cast<size_t>(result));
+    toy::debugf("error: unknown VkResult: {}", static_cast<size_t>(result));
+    return "unknown";
   }
 }
 
@@ -148,7 +152,8 @@ auto sampleCount(VkSampleCountFlagBits sample_count) -> std::string_view {
     CASE(VK_SAMPLE_COUNT_32_BIT);
     CASE(VK_SAMPLE_COUNT_64_BIT);
   default:
-    toy::throwf("unknown VkSampleCountFlagBits: {}", static_cast<size_t>(sample_count));
+    toy::debugf("error: unknown VkSampleCountFlagBits: {}", static_cast<size_t>(sample_count));
+    return "unknown";
   }
 }
 
