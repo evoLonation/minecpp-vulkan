@@ -84,12 +84,15 @@ def cached(func: Callable[Param, RetType]) -> Callable[Param, RetType]:
         dep_file_cached = False
         if need_dep_file:
             if path.exists(ctx.Ninja.get_path()):
-                result = ctx.Ninja.execute(stdout=sp.PIPE)
-                dep_file_cached = (
-                    result.stdout.decode("utf-8")
-                    .rstrip()
-                    .endswith("ninja: no work to do.")
-                )
+                try:
+                    result = ctx.Ninja.execute(stdout=sp.PIPE)
+                    dep_file_cached = (
+                        result.stdout.decode("utf-8")
+                        .rstrip()
+                        .endswith("ninja: no work to do.")
+                    )
+                except sp.CalledProcessError:
+                    dep_file_cached = False
         else:
             dep_file_cached = True
         cached = (param_cached and dep_file_cached) or (

@@ -48,7 +48,9 @@ class Resource:
         value = asdict(self)
         value.pop("file")
         remain_member_size = len(value)
-        value = {k: v for k, v in value.items() if v is not None}
+        value = {k: v for k, v in value.items() if v is not None and v != [] and v != {}}
+        if len(value) == 0:
+            return self.file
         if remain_member_size == 0:
             return self.file
         elif remain_member_size == 1:

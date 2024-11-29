@@ -431,6 +431,12 @@ def build_total(clangd: bool):
         if clangd:
             writer.subninja(RemoveInvalidNinja.get_file())
 
+@cached
+def generate_modules(modules: list[Module]):
+    with open(path.join(Workspace.build.get_dir(), "modules.txt"), "wt") as f:
+        for module in modules:
+            f.write(f"{module.implement if module.implement else module.provide}\n")
+
 
 def build_ninja(clangd: bool):
     resources = get_file_resources()
@@ -450,6 +456,7 @@ def build_ninja(clangd: bool):
     build_target(resources.targets, resources.sources, resources.dylib_files)
     if clangd:
         build_remove_invalid()
+        generate_modules(resources.modules)
     build_total(clangd)
 
 
