@@ -17,7 +17,7 @@ sub_dir:
 - render
 - shader
 - framework
-- components
+- engine
 target:
 - main.cc: hello_vulkan
 test:
