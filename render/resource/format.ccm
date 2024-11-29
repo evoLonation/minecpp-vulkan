@@ -51,48 +51,6 @@ template <VkFormat format>
 using formatToType =
   FormatTypeInfos::filter<[]<typename T>() { return T::format == format; }>::template at<0>::type;
 
-/**
- * @brief use to get the size of a format store in buffer or image
- */
-constexpr auto getFormatSize(VkFormat format) -> uint32 {
-
-#define FROM_TYPE(format)                                                                          \
-  case format:                                                                                     \
-    return sizeof(formatToType<format>);
-
-  switch (format) {
-    FROM_TYPE(VK_FORMAT_R32_SFLOAT);
-    FROM_TYPE(VK_FORMAT_R32G32_SFLOAT);
-    FROM_TYPE(VK_FORMAT_R32G32B32_SFLOAT);
-    FROM_TYPE(VK_FORMAT_R32G32B32A32_SFLOAT);
-    FROM_TYPE(VK_FORMAT_R64_SFLOAT);
-    FROM_TYPE(VK_FORMAT_R64G64_SFLOAT);
-    FROM_TYPE(VK_FORMAT_R64G64B64_SFLOAT);
-    FROM_TYPE(VK_FORMAT_R64G64B64A64_SFLOAT);
-    FROM_TYPE(VK_FORMAT_R32_SINT);
-    FROM_TYPE(VK_FORMAT_R32G32_SINT);
-    FROM_TYPE(VK_FORMAT_R32G32B32_SINT);
-    FROM_TYPE(VK_FORMAT_R32G32B32A32_SINT);
-    FROM_TYPE(VK_FORMAT_R32_UINT);
-    FROM_TYPE(VK_FORMAT_R32G32_UINT);
-    FROM_TYPE(VK_FORMAT_R32G32B32_UINT);
-    FROM_TYPE(VK_FORMAT_R32G32B32A32_UINT);
-    // color and depth format that could not directly map with a type
-  case VK_FORMAT_R8G8B8A8_SRGB:
-  case VK_FORMAT_B8G8R8A8_SRGB:
-  case VK_FORMAT_R8G8B8A8_UNORM:
-  case VK_FORMAT_B8G8R8A8_UNORM:
-  case VK_FORMAT_R8G8B8A8_UINT:
-  case VK_FORMAT_B8G8R8A8_UINT:
-  case VK_FORMAT_D24_UNORM_S8_UINT:
-    return 4;
-  default:
-    toy::throwf("unsupported format: {}", format);
-  }
-
-#undef FROM_TYPE
-}
-
 constexpr auto _color_formats = std::array{
   VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UINT,
   VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_B8G8R8A8_UINT,
@@ -157,24 +115,48 @@ enum FormatType {
 };
 
 struct ColorFormatInfo {
-  uint32        color_size;
-  ComponentType component_type;
-  ScalarType    scalar_type;
+  // by byte each component
+  uint32        component_size;
+  ComponentType components;
+  ScalarType    scalar;
 };
 
 struct DepstFormatInfo {
+  // by byte
   uint32     depth_size;
-  ScalarType depth_type;
+  ScalarType depth_scalar;
+  // by byte
   uint32     stencil_size;
-  ScalarType stencil_type;
+  ScalarType stencil_scalar;
 };
 
 struct FormatInfo {
   FormatType type;
+  uint32     size;
   union {
     ColorFormatInfo color;
     DepstFormatInfo depst;
-  } info;
+  };
+
+  constexpr auto getSize() -> uint32 {
+    switch (type) {
+    case COLOR: {
+      using enum ComponentType;
+      auto component_n = color.components & NUM_1   ? 1
+                         : color.components & NUM_2 ? 2
+                         : color.components & NUM_3 ? 3
+                                                    : 4;
+
+      return color.component_size * component_n;
+    }
+    case DEPTH:
+      return depst.depth_size;
+    case STENCIL:
+      return depst.stencil_size;
+    case DEPTH_STENCIL:
+      return depst.depth_size + depst.stencil_size;
+    }
+  }
 };
 
 consteval auto computeFormatInfo(VkFormat format) -> FormatInfo {
@@ -202,15 +184,15 @@ consteval auto computeFormatInfo(VkFormat format) -> FormatInfo {
   auto getSize = [&]() -> uint32 {
     skip();
     if (forwardCompare(str, "8")) {
-      return 8;
+      return 1;
     } else if (forwardCompare(str, "16")) {
-      return 16;
+      return 2;
     } else if (forwardCompare(str, "24")) {
-      return 24;
+      return 3;
     } else if (forwardCompare(str, "32")) {
-      return 32;
+      return 4;
     } else if (forwardCompare(str, "64")) {
-      return 64;
+      return 8;
     }
     toy::throwf("unsupported format: {}", format);
   };
@@ -246,71 +228,79 @@ consteval auto computeFormatInfo(VkFormat format) -> FormatInfo {
     if (str.size() == 0) {
       auto info = DepstFormatInfo{
         .depth_size = depth_size,
-        .depth_type = depth_type,
+        .depth_scalar = depth_type,
       };
-      return { .type = DEPTH, .info = { .depst = info } };
+      return { .type = DEPTH, .size = info.depth_size, .depst = info };
     } else {
       TOY_ASSERT(compareWith('S'));
       auto stencil_size = getSize();
       auto stencil_type = getScalarType();
       auto info = DepstFormatInfo{
         .depth_size = depth_size,
-        .depth_type = depth_type,
+        .depth_scalar = depth_type,
         .stencil_size = stencil_size,
-        .stencil_type = stencil_type,
+        .stencil_scalar = stencil_type,
       };
-      return { .type = DEPTH_STENCIL, .info = { .depst = info } };
+      return { .type = DEPTH_STENCIL, .size = info.stencil_size + info.depth_size, .depst = info };
     }
   } else if (compareWith('S')) {
     auto stencil_size = getSize();
     auto stencil_type = getScalarType();
     auto info = DepstFormatInfo{
       .stencil_size = stencil_size,
-      .stencil_type = stencil_type,
+      .stencil_scalar = stencil_type,
     };
-    return { .type = STENCIL, .info = { .depst = info } };
-  } else if (compareWith('R')) {
-    uint32 r_size{}, g_size{}, b_size{}, a_size{};
-    r_size = getSize();
-    auto component = ComponentType::R;
-    if (compareWith('G')) {
-      g_size = getSize();
-      component = ComponentType::RG;
-      if (compareWith('B')) {
-        b_size = getSize();
-        component = ComponentType::RGB;
-        if (compareWith('A')) {
-          a_size = getSize();
-          component = ComponentType::RGBA;
+    return { .type = STENCIL, .size = info.stencil_size, .depst = info };
+  } else {
+    auto info = ColorFormatInfo{};
+    if (compareWith('R')) {
+      uint32 r_size{}, g_size{}, b_size{}, a_size{};
+      r_size = getSize();
+      auto component = ComponentType::R;
+      if (compareWith('G')) {
+        g_size = getSize();
+        component = ComponentType::RG;
+        if (compareWith('B')) {
+          b_size = getSize();
+          component = ComponentType::RGB;
+          if (compareWith('A')) {
+            a_size = getSize();
+            component = ComponentType::RGBA;
+          }
         }
       }
+      auto type = getScalarType();
+      info = ColorFormatInfo{
+        .component_size = r_size,
+        .components = component,
+        .scalar = type,
+      };
+    } else if (compareWith('B')) {
+      uint32 b_size = getSize();
+      TOY_ASSERT(compareWith('G'));
+      uint32 g_size = getSize();
+      TOY_ASSERT(compareWith('R'));
+      uint32 r_size = getSize();
+      uint32 a_size{};
+      auto   component = ComponentType::BGR;
+      if (compareWith('A')) {
+        uint32 a_size = getSize();
+        component = ComponentType::BGRA;
+      }
+      auto type = getScalarType();
+      info = ColorFormatInfo{
+        .component_size = b_size,
+        .components = component,
+        .scalar = type,
+      };
     }
-    auto type = getScalarType();
-    auto info = ColorFormatInfo{
-      .color_size = r_size,
-      .component_type = component,
-      .scalar_type = type,
-    };
-    return { .type = COLOR, .info = { .color = info } };
-  } else if (compareWith('B')) {
-    uint32 b_size = getSize();
-    TOY_ASSERT(compareWith('G'));
-    uint32 g_size = getSize();
-    TOY_ASSERT(compareWith('R'));
-    uint32 r_size = getSize();
-    uint32 a_size{};
-    auto   component = ComponentType::BGR;
-    if (compareWith('A')) {
-      uint32 a_size = getSize();
-      component = ComponentType::BGRA;
-    }
-    auto type = getScalarType();
-    auto info = ColorFormatInfo{
-      .color_size = b_size,
-      .component_type = component,
-      .scalar_type = type,
-    };
-    return { .type = COLOR, .info = { .color = info } };
+    using enum ComponentType;
+    auto component_n = //
+      info.components & NUM_1   ? 1
+      : info.components & NUM_2 ? 2
+      : info.components & NUM_3 ? 3
+                                : 4;
+    return { .type = COLOR, .size = info.component_size * component_n, .color = info };
   }
   toy::throwf("unsupported format");
 }

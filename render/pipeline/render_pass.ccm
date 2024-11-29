@@ -99,8 +99,8 @@ struct ColorClearValue {
 
   void checkFormat(VkFormat format) {
     auto info = getFormatInfo(format);
-    TOY_ASSERT(info.type == FormatType::COLOR && (info.info.color.scalar_type & scalar_type));
-    TOY_ASSERT(component_n & info.info.color.component_type);
+    TOY_ASSERT(info.type == FormatType::COLOR && (info.color.scalar & scalar_type));
+    TOY_ASSERT(component_n & info.color.components);
   }
 };
 

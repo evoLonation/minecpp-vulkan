@@ -81,7 +81,7 @@ void blitImage(VkCommandBuffer cmdbuf, ImageBlit src, ImageBlit dst) {
 ImageLocalReader::ImageLocalReader(VkFormat format, VkExtent2D max_extent)
   : _format(format), _max_extent(max_extent) {
   _buffer = HostBuffer{
-    getFormatSize(format) * max_extent.width * max_extent.height,
+    getFormatInfo(format).size * max_extent.width * max_extent.height,
     VK_BUFFER_USAGE_TRANSFER_DST_BIT,
   };
 }
@@ -144,7 +144,7 @@ void ImageLocalReader::loadImage(
 }
 
 auto ImageLocalReader::readPixel(uint32 x, uint32 y) -> std::byte* {
-  auto unit = getFormatSize(_format);
+  auto unit = getFormatInfo(_format).size;
   return _buffer.getMemory().data().begin().base() + _local_extent.width * unit * y + unit * x;
 }
 
@@ -153,7 +153,7 @@ ImageLocalWriter::ImageLocalWriter(VkFormat format, VkExtent2D max_extent) {
   _max_extent = max_extent;
   TOY_DEBUG(_max_extent.width, _max_extent.height);
   _buffer = HostBuffer{
-    getFormatSize(format) * max_extent.width * max_extent.height,
+    getFormatInfo(format).size * max_extent.width * max_extent.height,
     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
   };
 }
@@ -169,7 +169,7 @@ void ImageLocalWriter::writeImage(
   TOY_ASSERT(image.getFormat() == _format);
   TOY_ASSERT(
     data.size() ==
-    getFormatSize(image.getFormat()) * image.getExtent().width * image.getExtent().height
+    getFormatInfo(image.getFormat()).size * image.getExtent().width * image.getExtent().height
   );
   TOY_ASSERT(data.size() <= _buffer.size(), data.size(), _buffer.size());
   TOY_ASSERT(image.getSampleCount() == VK_SAMPLE_COUNT_1_BIT);
