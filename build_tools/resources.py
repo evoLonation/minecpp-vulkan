@@ -2,7 +2,7 @@ from dataclasses import asdict, dataclass, field, fields
 from os import path
 from pathlib import Path
 import pickle
-from typing import Any, Callable, ClassVar, Type, get_args
+from typing import Any, ClassVar, Literal, Type, get_args
 from dacite import from_dict
 import dacite
 import yaml
@@ -37,7 +37,11 @@ class Resource:
                 if cls.get_auto_match_name() != "":
                     args = {"file": k, cls.get_auto_match_name(): v}
                 else:
-                    args = {"file": k, **v}
+                    try:
+                        args = {"file": k, **v}
+                    except Exception as e:
+                        e.add_note(f"v: {v}")
+                        raise
         elif isinstance(args, str):
             args = {"file": args}
         else:
@@ -48,7 +52,9 @@ class Resource:
         value = asdict(self)
         value.pop("file")
         remain_member_size = len(value)
-        value = {k: v for k, v in value.items() if v is not None and v != [] and v != {}}
+        value = {
+            k: v for k, v in value.items() if v is not None and v != [] and v != {}
+        }
         if len(value) == 0:
             return self.file
         if remain_member_size == 0:
@@ -80,6 +86,7 @@ class SubDir(Resource):
 @dataclass
 class Target(Resource):
     name: str
+    type: Literal["executable", "dll"]
 
 
 @dataclass

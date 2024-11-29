@@ -85,18 +85,21 @@ def build_gen_shader(resources: list[Shader]) -> list[Module]:
             command=command,
             description="SHADERCODE TOTAL GEN $out",
         )
-        total_output = path.join(Workspace.gen_shader.get_dir(), "shader_code.cc")
-        total_module_name = "render.shader_code"
-        ninja_writer.build(
-            rule=Rule.shader_code_total,
-            outputs=total_output,
-            variables={
-                "module": total_module_name,
-                "modules": " ".join([x for x in module_names]),
-                "names": " ".join([x for x in shader_names]),
-            },
-        )
-        module_resources.append(Module(file=total_output, implement=total_module_name))
+        if len(resources) != 0:
+            total_output = path.join(Workspace.gen_shader.get_dir(), "shader_code.cc")
+            total_module_name = "render.shader_code"
+            ninja_writer.build(
+                rule=Rule.shader_code_total,
+                outputs=total_output,
+                variables={
+                    "module": total_module_name,
+                    "modules": " ".join([x for x in module_names]),
+                    "names": " ".join([x for x in shader_names]),
+                },
+            )
+            module_resources.append(
+                Module(file=total_output, implement=total_module_name)
+            )
     return module_resources
 
 
@@ -117,7 +120,7 @@ def build_gen_test(resources: list[Test]) -> tuple[list[Source], list[Target]]:
                 rule=TestGenNinja.Rule.test_main,
                 variables={"ids": test.get_id()},
             )
-            targets.append(Target(file=output, name=test.get_id()))
+            targets.append(Target(file=output, name=test.get_id(), type="executable"))
             sources.append(
                 Source(
                     file=test.file,
@@ -385,7 +388,9 @@ def build_target(
     with TargetNinja.open() as writer:
         writer.rule(
             name=Rule.link,
-            command=Script.get_command(Script.link, [Root.dir, "$input", "$out"]),
+            command=Script.get_command(
+                Script.link, [Root.dir, "$type", "$input", "$out"]
+            ),
             description="LINK $out",
         )
         writer.rule(
@@ -401,19 +406,26 @@ def build_target(
             )
         for target in targets:
             writer.build(
-                outputs=Compiler.target_file(target.name),
+                outputs=(
+                    Compiler.executable_file(target.name)
+                    if target.type == "executable"
+                    else Compiler.dll_file(target.name)
+                ),
                 rule=Rule.link,
                 implicit=[
                     CompleteDepNinja.Phony.source(source.file)
                     for source in sources
                     if source.needed_by(target)
                 ],
-                variables={"input": target.file},
+                variables={
+                    "input": target.file,
+                    "type": "exe" if target.type == "executable" else "dll",
+                },
             )
             writer.build(
                 outputs=Phony.target(target.name),
                 rule="phony",
-                inputs=[Compiler.target_file(target.name)]
+                inputs=[Compiler.executable_file(target.name)]
                 + [Compiler.dynamic_dest(dylib.file) for dylib in dynamic_libs],
             )
 
@@ -430,6 +442,7 @@ def build_total(clangd: bool):
         writer.subninja(TestGenNinja.get_file())
         if clangd:
             writer.subninja(RemoveInvalidNinja.get_file())
+
 
 @cached
 def generate_modules(modules: list[Module]):

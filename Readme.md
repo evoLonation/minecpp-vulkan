@@ -64,25 +64,24 @@ github: https://github.com/syoyo/tinyobjloader-c
 github: https://github.com/ocornut/imgui
 
 将源码下载下来后使用本构建系统将其编译为动态库(imgui.dll，注意静态链接时也要加上)
+使用docking分支的代码以支持docking和viewport
 
-根目录:
-```
-sub_dir:
-- third_party/imgui
-lib:
-- third_party/static_library/libglfw3dll.a
-- third_party/static_library/vulkan-1.lib
-include_dir:
-- third_party/include
-```
-third_party/imgui目录下：
+resource.yml(include文件里需要包括imgui自身的头文件，vulkan，vk_video和GLFW):
 ```
 source:
-- imgui.cpp
 - imgui_demo.cpp
 - imgui_draw.cpp
 - imgui_tables.cpp
 - imgui_widgets.cpp
 - imgui_impl_glfw.cpp
 - imgui_impl_vulkan.cpp
+lib:
+- libglfw3dll.a
+- vulkan-1.lib
+target:
+- file: imgui.cpp
+  name: imgui
+  type: dll
+include_dir:
+- include
 ```

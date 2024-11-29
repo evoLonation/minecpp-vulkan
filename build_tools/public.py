@@ -208,7 +208,9 @@ class Script(Enum):
     @staticmethod
     def get_command(script: "Script", args: list[str]) -> str:
         # add norm case to norm standardize the capitalization of paths from __file__
-        abspath = path.join(path.dirname(path.normcase(path.abspath(__file__))), script.value)
+        abspath = path.join(
+            path.dirname(path.normcase(path.abspath(__file__))), script.value
+        )
         command = ["python", abspath] + args
         return sp.list2cmdline(command)
 
@@ -287,7 +289,7 @@ class Compiler:
         )
 
     @staticmethod
-    def link(link_files: list[str], inputs: list[str], output: str):
+    def link(link_files: list[str], inputs: list[str], output: str, shared: bool):
         link_dirs = list(set([path.dirname(file) for file in link_files]))
         link_libs = []
         for file in link_files:
@@ -299,6 +301,7 @@ class Compiler:
         return (
             Compiler.base_flag
             + inputs
+            + (["-shared"] if shared else [])
             + ["-L" + dir for dir in link_dirs + Compiler.system_link_dirs]
             + ["-l" + lib for lib in link_libs + Compiler.system_link_libs]
             + ["-o", output]
@@ -326,8 +329,12 @@ class Compiler:
         return path.join(Workspace.hpcm.get_dir(), path.basename(file) + ".pcm")
 
     @staticmethod
-    def target_file(target: str):
+    def executable_file(target: str):
         return path.join(Workspace.out.get_dir(), target + ".exe")
+
+    @staticmethod
+    def dll_file(target: str):
+        return path.join(Workspace.out.get_dir(), target + ".dll")
 
     @staticmethod
     def dynamic_dest(file: str):

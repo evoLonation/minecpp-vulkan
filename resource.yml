@@ -19,6 +19,8 @@ sub_dir:
 - framework
 - engine
 target:
-- main.cc: hello_vulkan
+- main.cc:
+    name: hello_vulkan
+    type: executable
 test:
 - transform_test.cc

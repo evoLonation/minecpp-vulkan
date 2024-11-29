@@ -4,6 +4,7 @@ from public import Compiler, DepCtx, Root
 
 parser = argparse.ArgumentParser()
 parser.add_argument("root_dir", type=str)
+parser.add_argument("type", type=str, choices=["exe", "dll"], help="the target type")
 parser.add_argument("input", type=str, help="the target source file")
 parser.add_argument("output", type=str, help="the target file")
 args = parser.parse_args()
@@ -37,7 +38,9 @@ obj_files = []
 sources = [source for source in resources.sources if source.needed_by(args.input)]
 obj_files.extend(Compiler.obj_file(source.file) for source in sources)
 
-dep_modules_stack = list(set(module for source in sources for module in get_dep_modules(source.file)))
+dep_modules_stack = list(
+    set(module for source in sources for module in get_dep_modules(source.file))
+)
 found_modules: set[str] = set(dep_modules_stack)
 while len(dep_modules_stack) > 0:
     # print(f"dep_modules: {dep_modules}")
@@ -60,6 +63,11 @@ while len(dep_modules_stack) > 0:
 link_files = [lib.file for lib in resources.lib_files]
 
 sp.run(
-    Compiler.link(link_files=link_files, inputs=obj_files, output=args.output),
+    Compiler.link(
+        link_files=link_files,
+        inputs=obj_files,
+        output=args.output,
+        shared=args.type == "dll",
+    ),
     check=True,
 )
