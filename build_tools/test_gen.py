@@ -9,7 +9,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     map_declarations = "\n".join(
-        f"extern std::unordered_map<std::string_view, std::function<void()>> {id}_map;"
+        f"extern std::vector<std::pair<std::string_view, void(*)()>> {id}_list;"
         for id in args.ids
     )
 
@@ -17,7 +17,7 @@ if __name__ == "__main__":
         textwrap.dedent(
             f"""\
             std::println("start test {id}");
-            for (auto& [name, func] : {id}_map) {{
+            for (auto& [name, func] : {id}_list) {{
               std::println("start test {{}}", name);
               try {{
                 func();

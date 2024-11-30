@@ -27,3 +27,4 @@ module:
     provide: toy.observer
 test:
 - test.cc
+- persistent.cc

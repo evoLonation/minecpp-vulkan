@@ -79,9 +79,6 @@
 
 #define PROACTIVE_SINGLETON(cls) toy::ProactiveSingleton<cls, #cls>
 
-#define APPLY_INDEX_SEQUENCE_TYPE(size, ...)                                                       \
-  decltype(toy::applyIndexSequence<size>([]<size_t... indices>() __VA_ARGS__))::type;
-
 #define REGISTER_BEFORE_DESTROY(cls, ...)                                                          \
   friend toy::AutoMoveAssigner<cls>;                                                               \
   DEFAULT_MOVEABLE(cls);                                                                           \
@@ -91,7 +88,7 @@ private:                                                                        
 void beforeDestroy() __VA_ARGS__ public:
 
 #define ADDTIONAL_MOVE_OPERATION(cls, ...)                                                         \
-  friend MoveOperation<cls>;                                                                  \
+  friend MoveOperation<cls>;                                                                       \
   void additionalMoveOp(cls&& e) __VA_ARGS__
 
 #endif

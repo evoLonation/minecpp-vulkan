@@ -126,8 +126,11 @@ private:
  * @tparam layout must be type of @ref DescriptorLayout
  */
 template <auto layout>
-using DescriptorSet = APPLY_INDEX_SEQUENCE_TYPE(std::tuple_size_v<decltype(layout.toTuple())>, {
-  return type<DescriptorSet_<layout, std::get<indices>(layout.toTuple())...>>{};
-});
+using DescriptorSet =
+  decltype(toy::applyIndexSequence<std::tuple_size_v<decltype(layout.toTuple())>>(
+    []<size_t... indices>() {
+      return type<DescriptorSet_<layout, std::get<indices>(layout.toTuple())...>>{};
+    }
+  ))::type;
 
 } // namespace rd::meta
