@@ -11,7 +11,7 @@ import framework;
 import camera;
 import tool.shape;
 
-export namespace cp {
+export namespace eg {
 
 class RotatePlane {
 public:
@@ -180,4 +180,4 @@ private:
   RotateController _controller;
 };
 
-} // namespace cp
+} // namespace eg

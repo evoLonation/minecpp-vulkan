@@ -15,7 +15,7 @@ import pipeline.base;
 import pipeline.uniform;
 import camera;
 
-export namespace cp {
+export namespace eg {
 
 using LightVertex = rd::Vertex<glm::vec3, glm::vec3, glm::vec2>;
 
@@ -239,4 +239,4 @@ private:
 
 auto LightObject::getSelectedId() -> uint32 { return LightPipeline::getInstance().getSelectedId(); }
 
-} // namespace cp
+} // namespace eg

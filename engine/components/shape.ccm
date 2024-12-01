@@ -10,7 +10,7 @@ import math;
 import pipeline.light;
 import <vulkan_config.h>;
 
-export namespace cp {
+export namespace eg {
 
 struct ShapeMesh {
   std::vector<glm::vec3> positions;
@@ -255,4 +255,4 @@ auto createShape(
   return object;
 }
 
-} // namespace cp
+} // namespace eg

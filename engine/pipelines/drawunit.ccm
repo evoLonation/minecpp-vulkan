@@ -12,7 +12,7 @@ import model;
 import math;
 import pipeline.resources;
 
-export namespace cp {
+export namespace eg {
 
 struct BasicDrawUnit {
   virtual auto getModelTrans() -> UniformBuffer<ModelTrans>& = 0;
@@ -51,4 +51,4 @@ private:
   rd::IndexBuffer           _index_buf;
 };
 
-} // namespace cp
+} // namespace eg

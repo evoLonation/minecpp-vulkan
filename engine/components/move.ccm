@@ -14,7 +14,7 @@ import tool.shape;
 import component;
 import camera;
 
-export namespace cp {
+export namespace eg {
 
 class MovePlane {
 public:
@@ -335,4 +335,4 @@ private:
   MoveController _controller;
 };
 
-} // namespace cp
+} // namespace eg

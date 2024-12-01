@@ -11,7 +11,7 @@ import math;
 import render;
 import <vulkan_config.h>;
 
-export namespace cp {
+export namespace eg {
 
 struct CameraData {
   rd::align::mat4 view;
@@ -134,4 +134,4 @@ private:
   float _rotate_speed = 0.2f;
 };
 
-} // namespace cp
+} // namespace eg

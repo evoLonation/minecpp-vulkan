@@ -12,7 +12,7 @@ import pipeline.light;
 import glm;
 import <imgui_config.h>;
 
-export namespace cp {
+export namespace eg {
 
 template <typename T>
 using ptr = toy::TracerFor<T>;
@@ -263,4 +263,4 @@ private:
   ptr<SceneComponent> _component;
 };
 
-} // namespace cp
+} // namespace eg
