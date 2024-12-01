@@ -2,10 +2,11 @@ module;
 #include <toy.h>
 export module component;
 
+import gui.tool;
 import std;
 import toy;
 import framework;
-import gui;
+import gui.context;
 import math;
 import pipeline.light;
 import glm;

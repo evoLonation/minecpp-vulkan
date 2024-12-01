@@ -1,0 +1,5 @@
+module:
+- context.ccm:
+    provide: gui.context
+- tool.ccm:
+    provide: gui.tool

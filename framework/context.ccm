@@ -13,7 +13,7 @@ import render.image;
 import render.framebuffer;
 import render.presentation;
 
-import gui;
+import gui.context;
 
 import glfw;
 import framework;

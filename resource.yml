@@ -18,6 +18,7 @@ sub_dir:
 - shader
 - framework
 - engine
+- gui
 target:
 - main.cc:
     name: hello_vulkan
