@@ -63,7 +63,11 @@ private:
 };
 
 template <typename T>
-  requires(std::is_trivially_copyable_v<T> && std::is_default_constructible_v<T>)
+concept TriviallySerializable =
+  std::is_trivially_copyable_v<T> && std::is_default_constructible_v<T> && !std::is_pointer_v<T> &&
+  !std::is_reference_v<T> && !std::is_const_v<T>;
+
+template <TriviallySerializable T>
 struct TrivialSerializer {
   static void serialize(Pickle& pickle, T const& t) {
     pickle.pushBytes({ reinterpret_cast<std::byte const*>(&t), sizeof(T) });
@@ -74,8 +78,7 @@ struct TrivialSerializer {
     return t;
   }
 };
-template <typename T>
-  requires(std::is_trivially_copyable_v<T> && std::is_default_constructible_v<T>)
+template <TriviallySerializable T>
 struct DefaultSerializerS<T> {
   using type = TrivialSerializer<T>;
 };
@@ -96,11 +99,11 @@ TEST(TrivialSerializer) {
   TOY_ASSERT(test.a == test2.a && test.b == test2.b && test.c[0] == test2.c[0]);
 }
 
-template <typename T>
+template <typename T, typename ES = DefaultSerializer<typename T::value_type>>
 struct SequenceSerializer {
   static void serialize(Pickle& pickle, T const& t) {
     for (auto const& e : t) {
-      pickle.push(e);
+      pickle.push(e, ES{});
     }
     pickle.push(static_cast<std::size_t>(t.size()));
   }
@@ -109,7 +112,7 @@ struct SequenceSerializer {
     auto t = T{};
     t.resize(size);
     for (auto& e : t | views::reverse) {
-      e = pickle.pop<typename T::value_type>();
+      e = pickle.pop<typename T::value_type, ES>();
     }
     return t;
   }
@@ -131,7 +134,91 @@ struct DefaultSerializerS<std::string> {
   using type = SequenceSerializer<std::string>;
 };
 
-TEST(SequenceSerializer) {
+template <
+  typename T,
+  typename KS = DefaultSerializer<typename T::key_type>,
+  typename VS = DefaultSerializer<typename T::mapped_type>>
+struct MapSerializer {
+  static void serialize(Pickle& pickle, T const& t) {
+    for (auto const& [k, v] : t) {
+      pickle.push(k, KS{});
+      pickle.push(v, VS{});
+    }
+    pickle.push(static_cast<std::size_t>(t.size()));
+  }
+  static auto deserialize(Pickle& pickle) -> T {
+    auto size = pickle.pop<std::size_t>();
+    auto t = T{};
+    for (auto i = 0; i < size; ++i) {
+      auto v = pickle.pop<typename T::mapped_type, VS>();
+      auto k = pickle.pop<typename T::key_type, KS>();
+      t.insert({ std::move(k), std::move(v) });
+    }
+    return t;
+  }
+};
+
+template <typename K, typename V>
+struct DefaultSerializerS<std::map<K, V>> {
+  using type = MapSerializer<std::map<K, V>>;
+};
+template <typename K, typename V>
+struct DefaultSerializerS<std::unordered_map<K, V>> {
+  using type = MapSerializer<std::unordered_map<K, V>>;
+};
+
+template <
+  typename T,
+  typename FS = DefaultSerializer<typename T::first_type>,
+  typename SS = DefaultSerializer<typename T::second_type>>
+struct PairSerializer {
+  static void serialize(Pickle& pickle, T const& t) {
+    pickle.push(t.first, FS{});
+    pickle.push(t.second, SS{});
+  }
+  static auto deserialize(Pickle& pickle) -> T {
+    auto second = pickle.pop<typename T::second_type, SS>();
+    auto first = pickle.pop<typename T::first_type, FS>();
+    return { std::move(first), std::move(second) };
+  }
+};
+
+template <typename T1, typename T2>
+struct DefaultSerializerS<std::pair<T1, T2>> {
+  using type = PairSerializer<std::pair<T1, T2>>;
+};
+
+// todo: custom element serializer
+template <typename T>
+struct TupleSeiralizer {
+  using SerializerPack = decltype(applyIndexSequence<std::tuple_size_v<T>>([]<size_t... is> {
+    return TypePack<DefaultSerializer<std::tuple_element_t<is, T>>...>{};
+  }));
+
+  static void serialize(Pickle& pickle, T const& t) {
+    // reverse order
+    templateForEach<std::tuple_size_v<T>>(
+      [&]<size_t index, size_t i = std::tuple_size_v<T> - 1 - index>() {
+        pickle.push(std::get<i>(t), typename SerializerPack::template at<i>{});
+      }
+    );
+  }
+  static auto deserialize(Pickle& pickle) -> T {
+    T t;
+    templateForEach<std::tuple_size_v<T>>([&]<size_t i>() {
+      std::get<i>(t) =
+        pickle.pop<std::tuple_element_t<i, T>, typename SerializerPack::template at<i>>();
+    });
+    return t;
+  }
+};
+
+template <typename... Ts>
+struct DefaultSerializerS<std::tuple<Ts...>> {
+  using type = TupleSeiralizer<std::tuple<Ts...>>;
+};
+
+TEST(StlSerializer) {
   auto pickle = Pickle{};
   auto test = std::vector<int>{ 1, 2, 3 };
   pickle.push(test);
@@ -154,6 +241,33 @@ TEST(SequenceSerializer) {
   pickle = Pickle{ "test.pkl" };
   auto test6 = pickle.pop<std::deque<double>>();
   TOY_ASSERT(test5 == test6);
+
+  auto test7 = std::map<int, std::string>{ { 1, "1" }, { 2, "2" }, { 3, "3" } };
+  pickle.push(test7);
+  pickle.dump("test.pkl");
+  pickle = Pickle{ "test.pkl" };
+  auto test8 = pickle.pop<std::map<int, std::string>>();
+  TOY_ASSERT(test7 == test8);
+  auto test9 = std::unordered_map<int, std::string>{ { 4, "4" }, { 5, "5" }, { 6, "6" } };
+  pickle.push(test9);
+  pickle.dump("test.pkl");
+  pickle = Pickle{ "test.pkl" };
+  auto test10 = pickle.pop<std::unordered_map<int, std::string>>();
+  TOY_ASSERT(test9 == test10);
+
+  auto test11 = std::pair<int, std::string>{ 7, "7" };
+  pickle.push(test11);
+  pickle.dump("test.pkl");
+  pickle = Pickle{ "test.pkl" };
+  auto test12 = pickle.pop<std::pair<int, std::string>>();
+  TOY_ASSERT(test11 == test12);
+
+  auto test13 = std::tuple{ 8, std::string{ "8" }, 9.0 };
+  pickle.push(test13);
+  pickle.dump("test.pkl");
+  pickle = Pickle{ "test.pkl" };
+  auto test14 = pickle.pop<std::tuple<int, std::string, double>>();
+  TOY_ASSERT(test13 == test14);
 }
 
 template <typename T, typename M, typename S>
