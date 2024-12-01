@@ -20,7 +20,7 @@ struct Component : public toy::Traceable, public fw::Action {
   void runLoop(fw::ActionContext const& ctx) override {}
 };
 
-class ModelTransform : public cp::Component {
+class ModelTransform : public Component {
 public:
   ModelTransform() {
     auto changer = [self = getTracer()](auto&& any) {
@@ -124,14 +124,14 @@ private:
   std::array<toy::Observer<glm::vec3>, 3> _model_observers;
 };
 
-class SceneComponent : public cp::Component {
+class SceneComponent : public Component {
 public:
   SceneComponent() {
     setStage(fw::Stage::BEFORE_RENDER);
     setObserver();
   }
-  SceneComponent(pl::LightObject object) : SceneComponent() { setObject(std::move(object)); }
-  void setObject(pl::LightObject object) {
+  SceneComponent(LightObject object) : SceneComponent() { setObject(std::move(object)); }
+  void setObject(LightObject object) {
     if (_object.valid()) {
       _id_components.erase(_object.getId());
     }
@@ -139,7 +139,7 @@ public:
     _object.getModelTrans() = _to_world;
     _id_components[_object.getId()] = this;
   }
-  auto getObject() -> pl::LightObject& { return _object; }
+  auto getObject() -> LightObject& { return _object; }
   void attachTo(SceneComponent* component) {
     detach();
     _parent = component;
@@ -156,8 +156,8 @@ public:
   auto isSelected() -> bool { return getSelected() == this; }
 
   static auto getSelected() -> SceneComponent* {
-    if (_id_components.contains(pl::LightObject::getSelectedId())) {
-      return _id_components[pl::LightObject::getSelectedId()];
+    if (_id_components.contains(LightObject::getSelectedId())) {
+      return _id_components[LightObject::getSelectedId()];
     }
     return nullptr;
   }
@@ -165,10 +165,10 @@ public:
 private:
   ModelTransform             _transform;
   toy::Observable<glm::mat4> _to_world;
-  cp::ptr<SceneComponent>    _parent;
+  ptr<SceneComponent>        _parent;
   toy::Observer<glm::mat4>   _transform_observer;
   toy::Observer<glm::mat4>   _parent_observer;
-  pl::LightObject            _object;
+  LightObject                _object;
 
   void setObserver() {
     if (_parent.valid()) {
@@ -192,7 +192,7 @@ private:
     }
   }
 
-  inline static std::unordered_map<uint32, cp::ptr<SceneComponent>> _id_components;
+  inline static std::unordered_map<uint32, ptr<SceneComponent>> _id_components;
 };
 
 class ObjectClickObserver : public fw::Action, public PROACTIVE_SINGLETON(ObjectClickObserver) {
@@ -219,8 +219,8 @@ private:
       }
     }
   }
-  cp::ptr<SceneComponent> _down = nullptr;
-  cp::ptr<SceneComponent> _clicked = nullptr;
+  ptr<SceneComponent> _down = nullptr;
+  ptr<SceneComponent> _clicked = nullptr;
 };
 
 class ModelTransformGuiController : public PROACTIVE_SINGLETON(ModelTransformGuiController),
@@ -243,10 +243,10 @@ public:
 
 private:
   friend class MoveTransformSelector;
-  cp::ptr<ModelTransform> _transform;
+  ptr<ModelTransform> _transform;
 };
 
-class MoveTransformSelector : public cp::Component {
+class MoveTransformSelector : public Component {
 public:
   MoveTransformSelector() = default;
   MoveTransformSelector(SceneComponent* component) {
@@ -260,7 +260,7 @@ private:
       ModelTransformGuiController::getInstance()._transform = &_component->getTransform();
     }
   }
-  cp::ptr<SceneComponent> _component;
+  ptr<SceneComponent> _component;
 };
 
 } // namespace cp

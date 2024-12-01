@@ -246,7 +246,7 @@ private:
 
   auto getAxisPos(mt::Axis axis) -> std::optional<float> {
     auto  cursor = fw::InputProcessor::getInstance().getCursorState();
-    auto& camera = camera::Camera::getInstance();
+    auto& camera = Camera::getInstance();
     auto  extent = rd::Presentation::getInstance().getSwapchain().getExtent();
     auto  ndc_x = float(cursor.x) / extent.width * 2 - 1;
     auto  ndc_y = float(cursor.y) / extent.height * 2 - 1;
@@ -278,7 +278,7 @@ private:
   }
   auto getPlanePos(mt::Axis axis) -> std::optional<glm::vec2> {
     auto  cursor = fw::InputProcessor::getInstance().getCursorState();
-    auto& camera = camera::Camera::getInstance();
+    auto& camera = Camera::getInstance();
     auto  extent = rd::Presentation::getInstance().getSwapchain().getExtent();
     auto  ndc_x = float(cursor.x) / extent.width * 2 - 1;
     auto  ndc_y = float(cursor.y) / extent.height * 2 - 1;

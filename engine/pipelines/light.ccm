@@ -15,7 +15,7 @@ import pipeline.base;
 import pipeline.uniform;
 import camera;
 
-export namespace pl {
+export namespace cp {
 
 using LightVertex = rd::Vertex<glm::vec3, glm::vec3, glm::vec2>;
 
@@ -228,7 +228,7 @@ private:
     } else {
       _current_id = 0;
     }
-    _uniform_light->view_pos = camera::Camera::getInstance().getViewPos();
+    _uniform_light->view_pos = Camera::getInstance().getViewPos();
     draw(ctx);
   }
   UniformBuffer<LightData>                     _uniform_light;
@@ -239,4 +239,4 @@ private:
 
 auto LightObject::getSelectedId() -> uint32 { return LightPipeline::getInstance().getSelectedId(); }
 
-} // namespace pl
+} // namespace cp

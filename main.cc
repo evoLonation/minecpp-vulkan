@@ -12,7 +12,7 @@ import glm;
 import model;
 import glfw;
 import math;
-import gui;
+import gui.context;
 import framework;
 // import pipeline.outline;
 import pipeline.basic;
@@ -27,6 +27,7 @@ import tool.rotate;
 import tool.shape;
 import camera;
 import drag;
+// import editor.transform;
 
 int main() {
   try {
@@ -37,18 +38,18 @@ int main() {
     auto  dset_pools = rd::meta::DescriptorPools{};
     auto& input = fw::InputProcessor::getInstance();
     auto  transform_gui = cp::ModelTransformGuiController{};
-    auto  render_pass = pl::LightPipeline{};
+    auto  render_pass = cp::LightPipeline{};
     auto  click_observer = cp::ObjectClickObserver{};
     // auto  move_manager = cp::MoveControllerManager{};
     auto rotate_manager = cp::RotateControllerManager{};
 
-    auto camera = camera::Camera{};
-    auto controller = camera::Controller{ &camera };
+    auto camera = cp::Camera{};
+    auto controller = cp::CameraController{ &camera };
     render_pass.setCamera(&camera.getData());
 
     auto [positions, normals, tex_coords, indices] = model::getModelInfo("model/viking_room.obj");
     auto object1 = cp::SceneComponent{ {
-      pl::LightMesh{
+      cp::LightMesh{
         std::move(positions), std::move(normals), std::move(tex_coords), std::move(indices) },
       rd::SampledTexture::fromFile(
         "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
@@ -61,7 +62,7 @@ int main() {
     auto cube = cp::SceneComponent{
       cp::createShape(cp::generateCube(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f })
     };
-    auto selector_cube = cp::MoveTransformSelector{ &cube };
+    // auto selector_cube = cp::MoveTransformSelector{ &cube };
 
     // auto cylinder = std::make_unique<tool::SceneComponent>(tool::createShape(
     //   tool::generateCylinder(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 10.0f }
@@ -74,13 +75,13 @@ int main() {
     // ));
     auto move = cp::MoveController{};
 
-    auto selector_cone = cp::MoveTransformSelector{};
+    // auto selector_cone = cp::MoveTransformSelector{};
     auto cone = cp::SceneComponent{};
     {
       auto cone_ = cp::SceneComponent{ cp::createShape(
         cp::generateCone(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 5.0f }
       ) };
-      selector_cone = { &cone_ };
+      // selector_cone = { &cone_ };
       cone_.attachTo(&cube);
       cube.getTransform().translate(glm::vec3{ 0.0f, 0.0f, 1.0f });
       // move = tool::MoveController{ &cube };

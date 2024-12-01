@@ -12,7 +12,7 @@ import framework;
 
 import pipeline.base;
 
-export namespace pl {
+export namespace cp {
 
 using BasicVertex = rd::Vertex<glm::vec3, glm::vec2>;
 
@@ -80,4 +80,4 @@ public:
   }
 };
 
-} // namespace pl
+} // namespace cp

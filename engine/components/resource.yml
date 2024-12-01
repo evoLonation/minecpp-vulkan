@@ -7,3 +7,5 @@ module:
     provide: component
 - rotate.ccm:
     provide: tool.rotate
+- camera.ccm:
+    provide: camera

@@ -11,7 +11,7 @@ import math;
 import render;
 import <vulkan_config.h>;
 
-export namespace camera {
+export namespace cp {
 
 struct CameraData {
   rd::align::mat4 view;
@@ -87,9 +87,9 @@ private:
   }
 };
 
-class Controller : public fw::Action {
+class CameraController : public fw::Action {
 public:
-  Controller(Camera* camera) : _camera(camera) { setStage(fw::Stage::BEFORE_RENDER); }
+  CameraController(Camera* camera) : _camera(camera) { setStage(fw::Stage::BEFORE_RENDER); }
 
   void runLoop(fw::ActionContext const& ctx) override {
     auto delta = ctx.interval;
@@ -134,4 +134,4 @@ private:
   float _rotate_speed = 0.2f;
 };
 
-} // namespace camera
+} // namespace cp

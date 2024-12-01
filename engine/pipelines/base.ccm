@@ -11,7 +11,7 @@ import framework;
 import pipeline.uniform;
 import camera;
 
-export namespace pl {
+export namespace cp {
 
 struct PipelineInfo {
   std::vector<uint32>            colors;
@@ -156,8 +156,8 @@ public:
         .push_constants = { 
           rd::PushConstantInfo{ 
             .stage = VK_SHADER_STAGE_VERTEX_BIT, 
-            .size = sizeof(camera::CameraData), 
-            .alignment = alignof(camera::CameraData),
+            .size = sizeof(CameraData), 
+            .alignment = alignof(CameraData),
           },
         },
       };
@@ -192,7 +192,7 @@ public:
     index += _present_color_image.valid() ? 2 * _color_images.size() + 2 : _color_images.size() + 1;
     _render_pass.setDepstClear(index, clear_value);
   }
-  void setCamera(camera::CameraData* camera) { _camera = camera; }
+  void setCamera(CameraData* camera) { _camera = camera; }
   void setGlobalDescriptorSet(uint32 index, rd::DescriptorSet* dset) {
     _global_dsets.at(index) = dset;
   }
@@ -251,7 +251,7 @@ private:
   std::vector<rd::FrameImage> _resolve_images;
   std::vector<rd::FrameImage> _depst_images;
 
-  camera::CameraData* _camera = nullptr;
+  CameraData* _camera = nullptr;
 
   std::vector<bool>               _dynamic_references;
   std::vector<rd::DescriptorSet*> _global_dsets;
@@ -355,4 +355,4 @@ auto getLayoutHandle() -> VkDescriptorSetLayout {
   return rd::meta::DescriptorPools::getInstance().getPool<dset_layout>();
 }
 
-} // namespace pl
+} // namespace cp

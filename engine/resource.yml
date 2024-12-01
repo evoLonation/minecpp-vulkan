@@ -1,8 +1,7 @@
 module:
-- camera.ccm:
-    provide: camera
 - drag.ccm:
     provide: drag
 sub_dir:
 - pipelines
-- tools
+- components
+- editor

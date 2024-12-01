@@ -8,7 +8,7 @@ import glm;
 
 import <vulkan_config.h>;
 
-export namespace pl {
+export namespace cp {
 
 template <typename DataType>
 class UniformBuffer : public fw::Action, public rd::UniformBuffer<DataType> {
@@ -42,4 +42,4 @@ private:
   DataType _cache_data;
 };
 
-} // namespace pl
+} // namespace cp

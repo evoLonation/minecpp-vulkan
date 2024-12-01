@@ -232,8 +232,8 @@ auto generateAxis() -> ShapeMesh {
 
 auto createShape(
   ShapeMesh shape, glm::vec3 color = { 0.7f, 0.2f, 0.5f }, glm::vec3 location = { 0.0f, 0.0f, 0.0f }
-) -> pl::LightObject {
-  auto mesh = pl::LightMesh{
+) -> LightObject {
+  auto mesh = LightMesh{
     .positions = shape.positions,
     .normals = shape.normals,
     .tex_coords = views::repeat(glm::vec2{ 0, 0 }) | views::take(shape.positions.size()) |
@@ -241,7 +241,7 @@ auto createShape(
     .indices = shape.indices,
   };
   auto color_a = glm::vec4{ color, 1.0f };
-  auto object = pl::LightObject{
+  auto object = LightObject{
     std::move(mesh),
     rd::SampledTexture{
       std::as_bytes(std::span{ &color_a, 1 }),
