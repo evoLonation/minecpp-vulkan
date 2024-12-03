@@ -4,7 +4,8 @@ gen
 compile_commands.json
 **/__pycache__
 .VSCodeCounter
-test.cc
+test_.cc
 imgui.ini
 save
 imgui
+assets

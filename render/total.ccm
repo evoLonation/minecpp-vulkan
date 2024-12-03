@@ -12,6 +12,7 @@ export import render.render_pass;
 export import render.framebuffer;
 export import render.swapchain;
 export import render.presentation;
+export import render.format;
 export import render.buffer;
 export import render.image;
 export import render.copy;
