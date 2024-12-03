@@ -9,3 +9,11 @@ module:
     provide: tool.rotate
 - camera.ccm:
     provide: camera
+- mesh.ccm:
+    provide: engine.mesh
+- texture.ccm:
+    provide: engine.texture
+- assets.ccm:
+    provide: engine.assets
+test:
+- test.cc

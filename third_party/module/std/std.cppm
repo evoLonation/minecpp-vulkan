@@ -18,6 +18,7 @@ module;
 // by zzy
 #define _LIBCPP_HAS_FILESYSTEM 1
 #define _LIBCPP_HAS_LOCALIZATION 1
+#define _LIBCPP_HAS_RANDOM_DEVICE 1
 
 // The headers of Table 24: C++ library headers [tab:headers.cpp]
 // and the headers of Table 25: C++ headers for C library facilities [tab:headers.cpp.c]
@@ -321,6 +322,7 @@ export {
   namespace views = std::views;
   namespace ranges = std::ranges;
   namespace chrono = std::chrono;
+  namespace fs = std::filesystem;
 
   using std::size_t;
   using int8 = std::int8_t;

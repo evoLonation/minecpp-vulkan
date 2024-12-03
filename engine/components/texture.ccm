@@ -1,0 +1,26 @@
+module;
+#include <toy.h>
+export module engine.texture;
+
+import render;
+import std;
+import toy;
+
+export namespace eg {
+
+using FormatInfo = rd::FormatInfo;
+
+class Texture {
+public:
+  Texture(FormatInfo format, uint32 width, uint32 height, std::vector<std::byte> data);
+
+private:
+  std::vector<std::byte> data;
+  std::vector<size_t>    mip_offsets;
+  VkExtent2D             extent;
+  FormatInfo             format;
+};
+
+// todo: serializer
+
+} // namespace eg

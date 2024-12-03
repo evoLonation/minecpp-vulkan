@@ -1,0 +1,105 @@
+module;
+#include <toy.h>
+export module engine.mesh;
+
+import render;
+import toy.persistent;
+import engine.assets;
+import math;
+import std;
+import toy;
+
+export namespace eg {
+
+struct MeshData {
+  std::vector<glm::vec3> positions;
+  std::vector<glm::vec3> normals;
+  std::vector<glm::vec2> tex_coords;
+  std::vector<uint16>    indices;
+
+  void transform(glm::mat4 const& trans) {
+    for (auto& pos : positions) {
+      pos = mt::transformDot(trans, pos);
+    }
+    for (auto& normal : normals) {
+      normal = mt::getNormalModel(trans) * normal;
+    }
+  }
+  static auto merge(std::initializer_list<MeshData> meshes) -> MeshData {
+    auto ret = MeshData{};
+    for (auto& mesh : meshes | views::drop(1)) {
+      TOY_ASSERT(meshes.begin()->positions.empty() == mesh.positions.empty());
+      TOY_ASSERT(meshes.begin()->normals.empty() == mesh.normals.empty());
+      TOY_ASSERT(meshes.begin()->tex_coords.empty() == mesh.tex_coords.empty());
+      TOY_ASSERT(meshes.begin()->indices.empty() == mesh.indices.empty());
+    }
+    for (auto& mesh : meshes) {
+      ret.positions.append_range(mesh.positions);
+      ret.normals.append_range(mesh.normals);
+      ret.tex_coords.append_range(mesh.tex_coords);
+      ret.indices.append_range(
+        mesh.indices |
+        views::transform([delta = ret.positions.size()](auto& i) { return i + delta; })
+      );
+    }
+    return ret;
+  }
+};
+
+using Vertex = rd::Vertex<glm::vec3, glm::vec3, glm::vec2>;
+
+struct Mesh : public Asset {
+public:
+  Mesh(MeshData const& data) {
+    auto light_vertices = std::vector<Vertex>{};
+    for (auto [pos, norm, tex] : views::zip(data.positions, data.normals, data.tex_coords)) {
+      light_vertices.push_back({ pos, norm, tex });
+    }
+    _vertex_buffer = rd::VertexBuffer{ light_vertices };
+    _index_buffer = rd::IndexBuffer{ data.indices };
+  }
+  auto getData() -> MeshData {
+    auto reader = rd::BufferLocalReader{ std::max(_vertex_buffer.size(), _index_buffer.size()) };
+    reader.loadBuffer(_vertex_buffer, 0, _vertex_buffer.size());
+    auto data = reader.readData(0, _vertex_buffer.size());
+    auto ret = MeshData{};
+    for (auto& vertex : std::span<Vertex>{ reinterpret_cast<Vertex*>(data.begin().base()),
+                                           _vertex_buffer.getVertexNumber() }) {
+      auto [position, normal, tex_coord] = vertex.getDataTuple();
+      ret.positions.push_back(position);
+      ret.normals.push_back(normal);
+      ret.tex_coords.push_back(tex_coord);
+    }
+    reader.loadBuffer(_index_buffer, 0, _index_buffer.size());
+    data = reader.readData(0, _index_buffer.size());
+    for (auto& index : std::span<uint16>{ reinterpret_cast<uint16*>(data.begin().base()),
+                                          _index_buffer.getIndexNumber() }) {
+      ret.indices.push_back(index);
+    }
+    return ret;
+  }
+
+private:
+  rd::VertexBuffer _vertex_buffer;
+  rd::IndexBuffer  _index_buffer;
+
+  auto assetSerialize() {
+    auto [positions, normals, tex_coords, indices] = getData();
+    return std::tuple{ positions, normals, tex_coords, indices };
+  }
+
+  static auto assetDeserialize(
+    std::vector<glm::vec3> positions,
+    std::vector<glm::vec3> normals,
+    std::vector<glm::vec2> tex_coords,
+    std::vector<uint16>    indices
+  ) -> std::shared_ptr<Mesh> {
+    auto data = MeshData{ positions, normals, tex_coords, indices };
+    auto ret = std::make_shared<Mesh>(data);
+    return std::move(ret);
+  }
+
+  static inline fs::path _asset_path = "meshes";
+};
+
+} // namespace eg

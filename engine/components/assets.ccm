@@ -1,0 +1,273 @@
+module;
+#include <toy.h>
+export module engine.assets;
+
+import toy.persistent;
+import std;
+import toy;
+
+export namespace eg {
+
+class Guid {
+public:
+  Guid() = default;
+  Guid(std::string const& guid) : _guid(guid) {}
+  auto get() const -> std::string const& { return _guid; }
+  auto valid() const -> bool { return !_guid.empty(); }
+  void clear() { _guid.clear(); }
+
+  static auto generate() -> Guid { return Guid{ generateHex(16) }; }
+  friend auto operator==(Guid const& lhs, Guid const& rhs) -> bool {
+    return lhs._guid == rhs._guid;
+  }
+
+private:
+  static auto randomChar() -> unsigned char {
+    std::random_device              rd;
+    std::mt19937                    gen(rd());
+    std::uniform_int_distribution<> dis(0, 255);
+    return static_cast<unsigned char>(dis(gen));
+  }
+
+  static auto generateHex(const unsigned int len) -> std::string {
+    std::stringstream ss;
+    for (auto i = 0; i < len; i++) {
+      auto              rc = randomChar();
+      std::stringstream hexstream;
+      hexstream << std::hex << int(rc);
+      auto hex = hexstream.str();
+      ss << (hex.length() < 2 ? '0' + hex : hex);
+    }
+    return ss.str();
+  }
+
+  std::string _guid;
+
+  friend class GuidSerializer;
+};
+
+struct GuidHasher {
+  size_t operator()(const Guid& x) const { return std::hash<std::string>{}(x.get()); }
+};
+
+struct GuidSerializer : toy::CustomSerializer<
+                          Guid,
+                          [](std::string a) { return Guid{ std::move(a) }; },
+                          toy::MemberSerializerInfo{ &Guid::_guid }> {};
+
+template <typename T>
+class AssetRef {
+public:
+  AssetRef(std::shared_ptr<T> asset) : _asset{ std::move(asset) } {}
+  auto consume() -> std::shared_ptr<T> { return std::move(_asset); }
+
+private:
+  template <typename>
+  friend struct AssetRefSerializer;
+  std::shared_ptr<T> _asset;
+};
+
+template <typename T>
+concept Assetable = std::derived_from<T, class Asset> && requires(T t) {
+  t.assetSerialize();
+  T::assetDeserialize;
+  std::same_as<decltype(T::_asset_path), fs::path>;
+};
+
+class Asset {
+public:
+  Asset() = default;
+  // lazy load
+  auto getAssetGuid() const -> Guid const& {
+    if (!_guid.valid()) {
+      generateGuid();
+    }
+    return _guid;
+  }
+  void setAssetName(std::string name) { _name = std::move(name); }
+  auto getAssetName() const -> std::string const& { return _name; }
+
+  ONLY_MOVEABLE(Asset);
+
+private:
+  Asset(Guid guid, std::string name) : _guid{ std::move(guid) }, _name{ std::move(name) } {}
+  void generateGuid() const { _guid = Guid::generate(); }
+  void clear() {
+    _guid.clear();
+    _name.clear();
+  }
+
+  friend class AssetManager;
+  template <typename T>
+  static void serialize(toy::Pickle& pickle, T const& self) {
+    pickle.push(self.getAssetGuid(), GuidSerializer{});
+    if (self.getAssetName().empty()) {
+      pickle.push(false);
+    } else {
+      pickle.push(self.getAssetName());
+      pickle.push(true);
+    }
+    auto asset_info = self.assetSerialize();
+    pickle.push(asset_info);
+  }
+
+  template <typename T>
+  static auto deserialize(toy::Pickle& pickle) -> std::shared_ptr<T> {
+    using AssetInfoT = decltype(std::declval<T>().assetSerialize());
+    auto asset_info = pickle.pop<AssetInfoT>();
+    auto name = std::string{};
+    auto guid = Guid{};
+    if (pickle.pop<bool>()) {
+      name = pickle.pop<std::string>();
+    }
+    guid = pickle.pop<Guid, GuidSerializer>();
+    auto asset = Asset{ std::move(guid), std::move(name) };
+    auto ret = std::apply(
+      [&](auto&... args) { return T::assetDeserialize(std::move(args)...); }, asset_info
+    );
+    static_cast<Asset&>(*ret) = std::move(asset);
+    return ret;
+  }
+
+private:
+  Guid mutable _guid;
+  std::string _name;
+};
+
+class AssetManager : public PROACTIVE_SINGLETON(AssetManager) {
+public:
+  AssetManager() {
+    if (!fs::exists(_root_dir)) {
+      fs::create_directories(_root_dir);
+    }
+  }
+  ~AssetManager() {
+    for (auto const& asset_dir : _named_asset_map | views::keys) {
+      saveNamedAssets(asset_dir);
+    }
+  }
+
+  template <Assetable T>
+  void save(std::shared_ptr<T> const& t) {
+    auto guid = t->getAssetGuid();
+    auto name = t->getAssetName();
+    auto asset_dir = T::_asset_path;
+    _assets[asset_dir][guid] = t;
+    if (!name.empty()) {
+      if (!_named_asset_map.contains(asset_dir)) {
+        loadNamedAssets(asset_dir);
+      }
+      toy::throwf(
+        !_named_asset_map[asset_dir].contains(name), "Asset name {} already exists", name
+      );
+      _named_asset_map[asset_dir][name] = guid;
+    }
+    auto pickle = toy::Pickle{};
+    T::Asset::serialize(pickle, *t);
+    auto path = _root_dir / asset_dir / (guid.get() + ".asset");
+    if (auto parent_dir = path.parent_path(); !fs::exists(parent_dir)) {
+      fs::create_directories(parent_dir);
+    }
+    pickle.dump(path);
+  }
+
+  template <Assetable T>
+  auto load(Guid const& guid) -> std::shared_ptr<T> {
+    auto asset_dir = T::_asset_path;
+    auto assets = _assets[asset_dir];
+    if (auto it = assets.find(guid); it != assets.end() && !it->second.expired()) {
+      return std::static_pointer_cast<T>(it->second.lock());
+    }
+    auto pickle = toy::Pickle{ _root_dir / asset_dir / (guid.get() + ".asset") };
+    auto asset = T::Asset::template deserialize<T>(pickle);
+    assets[guid] = asset;
+    return asset;
+  }
+
+  template <Assetable T>
+  auto load(std::string const& name) -> std::shared_ptr<T> {
+    auto path = T::_asset_path;
+    if (!_named_asset_map.contains(path)) {
+      loadNamedAssets(path);
+    }
+    auto guid = _named_asset_map[path].at(name);
+    return load<T>(guid);
+  }
+
+  template <Assetable T>
+  auto getAssetNames() -> std::vector<std::string> {
+    auto path = T::_asset_path;
+    if (!_named_asset_map.contains(path)) {
+      loadNamedAssets(path);
+    }
+    return _named_asset_map[path] | views::keys | ranges::to<std::vector>();
+  }
+  /**
+   * @brief clear all asset files of T, if has asset already in memory, reset its asset info
+   */
+  template <Assetable T>
+  auto clearAssets() {
+    auto path = T::_asset_path;
+    for (auto& [guid, asset] : _assets[path]) {
+      if (!asset.expired()) {
+        asset.lock()->clear();
+      }
+    }
+    _assets.erase(path);
+    _named_asset_map.erase(path);
+    fs::remove_all(_root_dir / path);
+  }
+
+private:
+  void loadNamedAssets(fs::path const& asset_dir) {
+    auto filepath = _root_dir / asset_dir / _named_asset_meta_file;
+    if (!fs::exists(filepath)) {
+      return;
+    }
+    auto named_assets =
+      json::Json::parse(std::ifstream{ _root_dir / asset_dir / _named_asset_meta_file });
+    for (auto const& [name, guid] : named_assets.to<json::Object>()) {
+      _named_asset_map[asset_dir][name] = Guid{ guid.to<std::string>() };
+    }
+  }
+  void saveNamedAssets(fs::path const& asset_dir) {
+    auto filepath = _root_dir / asset_dir / _named_asset_meta_file;
+    if (auto parent_dir = filepath.parent_path(); !fs::exists(parent_dir)) {
+      fs::create_directories(parent_dir);
+    }
+    auto named_assets = json::Object{};
+    for (auto const& [name, guid] : _named_asset_map[asset_dir]) {
+      named_assets[name] = guid.get();
+    }
+    std::ofstream ofs{ filepath };
+    ofs << json::Json{ named_assets }.dump();
+  }
+
+  std::unordered_map<fs::path, std::unordered_map<std::string, Guid>> _named_asset_map;
+
+  std::unordered_map<fs::path, std::unordered_map<Guid, std::weak_ptr<Asset>, GuidHasher>> _assets;
+
+  fs::path _root_dir = "assets";
+  fs::path _named_asset_meta_file = "named_assets.json";
+};
+
+template <typename T>
+struct AssetRefSerializer {
+  static void serialize(toy::Pickle& pickle, AssetRef<T> const& t) {
+    auto& manager = AssetManager::getInstance();
+    manager.save(t._asset);
+    pickle.push(t._asset->getAssetGuid(), GuidSerializer{});
+  }
+  static auto deserialize(toy::Pickle& pickle) -> AssetRef<T> {
+    auto& manager = AssetManager::getInstance();
+    auto  guid = pickle.pop<Guid, GuidSerializer>();
+    return AssetRef<T>{ manager.load<T>(guid) };
+  }
+};
+
+} // namespace eg
+
+template <typename T>
+struct toy::DefaultSerializerS<eg::AssetRef<T>> {
+  using type = eg::AssetRefSerializer<T>;
+};
