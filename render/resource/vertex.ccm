@@ -35,14 +35,18 @@ struct Vertex {
 public:
   Vertex(const DataTypes&... data) {
     int i = 0;
-    ((*reinterpret_cast<DataTypes*>(
-        std::launder(reinterpret_cast<char*>(&storage) + align_info.second[i])
-      ) = data,
-      i++),
-     ...);
+    ((new (reinterpret_cast<char*>(&storage) + align_info.second[i]) DataTypes{ data }, i++), ...);
   }
   static auto getVertexInfo() -> VertexInfo {
     return { &binding_description<>, attribute_descriptions<> };
+  }
+  auto getDataTuple() -> std::tuple<DataTypes...> {
+    auto tuple = std::tuple<DataTypes...>{};
+    return toy::applyIndexSequence<sizeof...(DataTypes)>([&]<size_t... is> {
+      return std::tuple<DataTypes...>{ *std::launder(
+        reinterpret_cast<DataTypes*>(reinterpret_cast<char*>(&storage) + align_info.second[is])
+      )... };
+    });
   }
 
 private:

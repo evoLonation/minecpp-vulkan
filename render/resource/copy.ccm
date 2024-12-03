@@ -5,6 +5,7 @@ export module render.copy;
 import std;
 import toy;
 
+import render.buffer;
 import render.image;
 import render.buffer;
 import render.format;
@@ -45,6 +46,18 @@ struct ImageBlit {
 };
 
 void blitImage(VkCommandBuffer cmdbuf, ImageBlit src, ImageBlit dst);
+
+class BufferLocalReader {
+public:
+  BufferLocalReader() = default;
+  BufferLocalReader(VkDeviceSize max_size);
+  void loadBuffer(Buffer& buffer, VkDeviceSize offset, VkDeviceSize size);
+  auto readData(VkDeviceSize offset, VkDeviceSize size) -> std::span<std::byte>;
+
+private:
+  HostBuffer   _buffer;
+  VkDeviceSize _local_size;
+};
 
 class ImageLocalReader {
 public:

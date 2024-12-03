@@ -74,6 +74,51 @@ void blitImage(VkCommandBuffer cmdbuf, ImageBlit src, ImageBlit dst) {
   vkCmdBlitImage(cmdbuf, src.image, src.layout, dst.image, dst.layout, 1, &blit, VK_FILTER_LINEAR);
 }
 
+BufferLocalReader::BufferLocalReader(VkDeviceSize max_size) {
+  _buffer = HostBuffer{ max_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT };
+}
+
+void BufferLocalReader::loadBuffer(Buffer& buffer, VkDeviceSize offset, VkDeviceSize size) {
+  TOY_ASSERT(size <= _buffer.size());
+  TOY_ASSERT(offset + size <= buffer.size());
+  TOY_ASSERT(buffer.getUsage() & VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+
+  auto& executor = ExecutorManager::getInstance()[FamilyType::TRANSFER];
+
+  auto batches = std::vector<CommandBatch>{};
+  auto waitable_keep_lifetime = std::list<Waitable>{};
+  auto syncDealer = [&](SyncContext sync) {
+    if (auto* recorder = std::get_if<BarrierRecorder>(&sync)) {
+      batches.push_back(CommandBatch{ std::move(*recorder) });
+    } else if (auto* recorder = std::get_if<FamilyTransferRecorder>(&sync)) {
+      auto waitable = recorder->executeRelease();
+      waitable_keep_lifetime.push_back(std::move(waitable));
+      batches.push_back(recorder->toAcquireBatch(&waitable_keep_lifetime.back()));
+    }
+  };
+  syncDealer(buffer.getTracker().syncScope(
+    Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT }, executor.getFamily()
+  ));
+  syncDealer(_buffer.getTracker().syncScope(
+    Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT }, executor.getFamily()
+  ));
+  batches.push_back(CommandBatch{ [&](VkCommandBuffer cmdbuf) {
+    copyBuffer(cmdbuf, buffer.get(), _buffer.get(), offset, 0, size);
+  } });
+  // need make device access is available to host access
+  syncDealer(_buffer.getTracker().syncScope(
+    Scope{ VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT }, executor.getFamily()
+  ));
+  executor.submit(batches).back().wait();
+  _buffer.getTracker().clearScope();
+  _local_size = size;
+}
+
+auto BufferLocalReader::readData(VkDeviceSize offset, VkDeviceSize size) -> std::span<std::byte> {
+  TOY_ASSERT(offset + size <= _local_size);
+  return _buffer.getMemory().data().subspan(offset, size);
+}
+
 /**
  * @brief
  * @param max_extent the max sub range read from image

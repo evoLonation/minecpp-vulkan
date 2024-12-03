@@ -5,6 +5,23 @@ import render.sync;
 
 namespace rd {
 
+void copyBuffer(
+  VkCommandBuffer transfer_cmdbuf,
+  VkBuffer        src_buffer,
+  VkBuffer        dst_buffer,
+  VkDeviceSize    src_offset,
+  VkDeviceSize    dst_offset,
+  VkDeviceSize    buffer_size
+) {
+  auto copy_info = VkBufferCopy{
+    // this offset is about buffer, not about memory
+    .srcOffset = src_offset,
+    .dstOffset = dst_offset,
+    .size = buffer_size,
+  };
+  vkCmdCopyBuffer(transfer_cmdbuf, src_buffer, dst_buffer, 1, &copy_info);
+}
+
 auto createBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage) -> rs::Buffer {
   auto buffer_info = VkBufferCreateInfo{
     .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -17,6 +34,7 @@ auto createBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage) -> rs::Buf
 
 auto Buffer::operator=(Buffer&& e) noexcept -> Buffer& {
   _size = e._size;
+  _usage = e._usage;
   _tracker = std::move(e._tracker);
   _memory = std::move(e._memory);
   rs::Buffer::operator=(std::move(e));
@@ -39,7 +57,7 @@ DeviceLocalBuffer::DeviceLocalBuffer(
 
   auto& copy_executor = ExecutorManager::getInstance()[FamilyType::TRANSFER];
   copy_executor.submit([&](VkCommandBuffer cmdbuf) {
-    recordCopyBuffer(cmdbuf, _staging_buffer, *this, buffer_data.size());
+    copyBuffer(cmdbuf, _staging_buffer, *this, 0, 0, buffer_data.size());
   });
   getTracker().setNewScope(
     Scope{
@@ -48,21 +66,6 @@ DeviceLocalBuffer::DeviceLocalBuffer(
     },
     copy_executor.getFamily()
   );
-}
-
-void recordCopyBuffer(
-  VkCommandBuffer transfer_cmdbuf,
-  VkBuffer        src_buffer,
-  VkBuffer        dst_buffer,
-  VkDeviceSize    buffer_size
-) {
-  auto copy_info = VkBufferCopy{
-    // this offset is about buffer, not about memory
-    .srcOffset = 0,
-    .dstOffset = 0,
-    .size = buffer_size,
-  };
-  vkCmdCopyBuffer(transfer_cmdbuf, src_buffer, dst_buffer, 1, &copy_info);
 }
 
 } // namespace rd

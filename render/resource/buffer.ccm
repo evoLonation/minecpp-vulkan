@@ -11,23 +11,34 @@ import render.descriptor;
 
 export namespace rd {
 
+void copyBuffer(
+  VkCommandBuffer transfer_cmdbuf,
+  VkBuffer        src_buffer,
+  VkBuffer        dst_buffer,
+  VkDeviceSize    src_offset,
+  VkDeviceSize    dst_offset,
+  VkDeviceSize    buffer_size
+);
+
 auto createBuffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage) -> rs::Buffer;
 
 class Buffer : public rs::Buffer {
 public:
   Buffer() = default;
   Buffer(VkDeviceSize buffer_size, VkBufferUsageFlags usage, VkMemoryPropertyFlags property_flags)
-    : _size(buffer_size), rs::Buffer{ createBuffer(buffer_size, usage) },
+    : _size(buffer_size), _usage(usage), rs::Buffer{ createBuffer(buffer_size, usage) },
       _memory{ get(), property_flags }, _tracker{ get() } {}
   auto getMemory() const -> VkDeviceMemory { return _memory; }
   auto getTracker() -> BufferBarrierTracker& { return _tracker; }
   auto size() const -> VkDeviceSize { return _size; }
+  auto getUsage() const -> VkBufferUsageFlags { return _usage; }
 
   Buffer(Buffer&&) noexcept = default;
   auto operator=(Buffer&& e) noexcept -> Buffer&;
 
 private:
   VkDeviceSize         _size = 0;
+  VkBufferUsageFlags   _usage;
   Memory               _memory;
   BufferBarrierTracker _tracker;
 };
@@ -99,12 +110,5 @@ private:
   // todo: destroy after transfer
   HostBuffer _staging_buffer;
 };
-
-void recordCopyBuffer(
-  VkCommandBuffer transfer_cmdbuf,
-  VkBuffer        src_buffer,
-  VkBuffer        dst_buffer,
-  VkDeviceSize    buffer_size
-);
 
 } // namespace rd
