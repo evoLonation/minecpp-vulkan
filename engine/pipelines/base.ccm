@@ -20,7 +20,7 @@ struct PipelineInfo {
   std::string                    frag_shader_name;
   VkPrimitiveTopology            topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
   VkCullModeFlagBits             cull_mode = VK_CULL_MODE_BACK_BIT;
-  rd::VertexInfo                 vertex_info;
+  rd::VertexLayout               vertex_layout;
   VkDescriptorSetLayout          unit_dset_layout;
   VkDescriptorSetLayout          global_dset_layout; // nullable
 };
@@ -68,16 +68,16 @@ public:
    * @param index_buffer nullable
    */
   DrawUnit(
-    uint32               subpass_n,
-    rd::VertexBuffer*    vertex_buffer,
-    rd::IndexBuffer*     index_buffer,
-    rd::DescriptorSet    dset,
-    std::optional<uint8> stencil_ref = {}
+    uint32                         subpass_n,
+    std::vector<rd::VertexBuffer*> vertex_buffers,
+    rd::IndexBuffer*               index_buffer,
+    rd::DescriptorSet              dset,
+    std::optional<uint8>           stencil_ref = {}
   )
-    : DrawUnitLoader<DrawUnit>{ subpass_n }, _vertex_buffer(vertex_buffer),
+    : DrawUnitLoader<DrawUnit>{ subpass_n }, _vertex_buffers(std::move(vertex_buffers)),
       _index_buffer(index_buffer), _dset(std::move(dset)), _stencil_ref(stencil_ref) {}
   ONLY_MOVEABLE(DrawUnit);
-  auto getVertexBuffer() -> rd::VertexBuffer& { return *_vertex_buffer; }
+  auto getVertexBuffers() -> std::span<rd::VertexBuffer*> { return _vertex_buffers; }
   auto getIndexBuffer() -> rd::IndexBuffer* { return _index_buffer; }
   auto getDescriptorSet() -> rd::DescriptorSet& { return _dset; }
   auto getStencilRef() -> uint8 {
@@ -86,10 +86,10 @@ public:
   }
 
 private:
-  rd::VertexBuffer*    _vertex_buffer;
-  rd::IndexBuffer*     _index_buffer;
-  rd::DescriptorSet    _dset;
-  std::optional<uint8> _stencil_ref;
+  std::vector<rd::VertexBuffer*> _vertex_buffers;
+  rd::IndexBuffer*               _index_buffer;
+  rd::DescriptorSet              _dset;
+  std::optional<uint8>           _stencil_ref;
 };
 
 class RenderPass : public PROACTIVE_SINGLETON(RenderPass) {
@@ -151,7 +151,7 @@ public:
         .frag_shader_name = pipeline.frag_shader_name,
         .topology = pipeline.topology,
         .cull_mode = pipeline.cull_mode,
-        .vertex_info = pipeline.vertex_info,
+        .vertex_layout = pipeline.vertex_layout,
         .dset_layouts = std::move(dset_layouts),
         .push_constants = { 
           rd::PushConstantInfo{ 
@@ -209,7 +209,9 @@ public:
           drawer.bindDescriptorSet(1, global_dset);
         }
         for (auto& draw_unit : draw_units) {
-          drawer.bindVertexBuffer(&draw_unit->getVertexBuffer());
+          for (auto [binding, vertex_buf] : draw_unit->getVertexBuffers() | toy::enumerate) {
+            drawer.bindVertexBuffer(binding, vertex_buf);
+          }
           auto* index_buf = draw_unit->getIndexBuffer();
           if (index_buf) {
             drawer.bindIndexBuffer(index_buf);
@@ -342,12 +344,12 @@ class DrawUnitTemplate : public DrawUnit {
 public:
   DrawUnitTemplate() = default;
   DrawUnitTemplate(
-    rd::VertexBuffer*                    vertex_buffer,
+    std::vector<rd::VertexBuffer*>       vertex_buffers,
     rd::IndexBuffer*                     index_buffer,
     rd::meta::DescriptorSet<dset_layout> dset,
     std::optional<uint8>                 stencil_ref = {}
   )
-    : DrawUnit(subpass_n, vertex_buffer, index_buffer, std::move(dset), stencil_ref) {}
+    : DrawUnit(subpass_n, std::move(vertex_buffers), index_buffer, std::move(dset), stencil_ref) {}
 };
 
 template <auto dset_layout>

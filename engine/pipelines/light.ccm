@@ -2,6 +2,8 @@ module;
 #include <toy.h>
 export module pipeline.light;
 
+import engine.texture;
+import engine.mesh;
 import std;
 import toy;
 import glm;
@@ -17,7 +19,13 @@ import camera;
 
 export namespace eg {
 
-using LightVertex = rd::Vertex<glm::vec3, glm::vec3, glm::vec2>;
+auto vertex_layout_light = rd::VertexLayout{ {
+  { Vertex::getVertexInfo(), { 0, 1, 2 } },
+} };
+
+auto vertex_layout_id = rd::VertexLayout{ {
+  { Vertex::getVertexInfo(), { 0 } },
+} };
 
 struct LightModelVertexData {
   rd::align::mat4 model;
@@ -47,102 +55,15 @@ constexpr auto layout_global_light = rd::meta::DescriptorLayout{
   rd::meta::UniformBinding{ rd::meta::type<LightData>(), rd::meta::Stage::FRAGMENT },
 };
 
-using IdVertex = rd::Vertex<glm::vec3>;
-
 constexpr auto layout_id = rd::meta::DescriptorLayout{
   rd::meta::UniformBinding{ rd::meta::type<rd::align::mat4>(), rd::meta::Stage::VERTEX },
   rd::meta::UniformBinding{ rd::meta::type<uint32>(), rd::meta::Stage::FRAGMENT },
 };
 
-struct LightMesh {
-  std::vector<glm::vec3> positions;
-  std::vector<glm::vec3> normals;
-  std::vector<glm::vec2> tex_coords;
-  std::vector<uint16>    indices;
-};
-
-class LightObject : fw::Action {
-public:
-  LightObject() = default;
-  LightObject(LightMesh mesh, rd::SampledTexture texture, bool uplayer = false) {
-    setStage(fw::Stage::BEFORE_RENDER);
-    auto light_vertices = std::vector<LightVertex>{};
-    auto id_vertices = std::vector<IdVertex>{};
-    for (auto [pos, norm, tex] : views::zip(mesh.positions, mesh.normals, mesh.tex_coords)) {
-      light_vertices.push_back({ pos, norm, tex });
-      id_vertices.push_back(pos);
-    }
-    _resource = std::make_unique<Resource>();
-    _resource->light_vertex = light_vertices;
-    _resource->id_vertex = id_vertices;
-    _resource->index_buf = { mesh.indices };
-    _resource->uniform_id_frag = _max_id++;
-    _resource->textures[0] = std::move(texture);
-    setUnit(uplayer);
-  }
-  auto valid() const -> bool { return _resource.get(); }
-
-  void setUplayer() { setUnit(true); }
-  auto getModelTrans() -> glm::mat4& { return _resource->uniform_vertex->model; }
-  auto getShininess() -> float& { return _resource->uniform_frag->shininess; }
-  auto getId() -> uint32 { return _resource->uniform_id_frag.get(); }
-  auto getTexture() -> rd::SampledTexture& { return _resource->textures[0]; }
-
-  static auto getSelectedId() -> uint32;
-
-  ONLY_MOVEABLE(LightObject);
-
-private:
-  inline static uint32 _max_id = 114514;
-
-  struct Resource {
-    rd::VertexBuffer                      light_vertex;
-    rd::VertexBuffer                      id_vertex;
-    rd::IndexBuffer                       index_buf;
-    UniformBuffer<LightModelVertexData>   uniform_vertex;
-    UniformBuffer<LightModelFragmentData> uniform_frag;
-    UniformBuffer<rd::align::mat4>        uniform_id_vert;
-    UniformBuffer<uint32>                 uniform_id_frag;
-    std::array<rd::SampledTexture, 2>     textures;
-  };
-  template <bool uplayer>
-  using LightUnit = DrawUnitTemplate<layout_model_light, uplayer ? 1 : 0>;
-  template <bool uplayer>
-  using IdUnit = DrawUnitTemplate<layout_id, uplayer ? 3 : 2>;
-  std::unique_ptr<Resource>                       _resource;
-  std::variant<LightUnit<false>, LightUnit<true>> _light_unit;
-  std::variant<IdUnit<false>, IdUnit<true>>       _id_unit;
-
-  void runLoop(fw::ActionContext const& ctx) override {
-    auto& trans = _resource->uniform_vertex->model;
-    _resource->uniform_vertex->normal_model = mt::getNormalModel(trans);
-    _resource->uniform_id_vert = trans;
-  }
-  void setUnit(bool uplayer) {
-    auto setter = [&]<bool uplayer>() {
-      _light_unit = LightUnit<uplayer>{
-        &_resource->light_vertex,
-        &_resource->index_buf,
-        {
-          &_resource->uniform_vertex,
-          &_resource->uniform_frag,
-          &_resource->textures[0],
-          &_resource->textures[0],
-        },
-      };
-      _id_unit = IdUnit<uplayer>{
-        &_resource->id_vertex,
-        &_resource->index_buf,
-        { &_resource->uniform_id_vert, &_resource->uniform_id_frag },
-      };
-    };
-    if (uplayer) {
-      setter.operator()<true>();
-    } else {
-      setter.operator()<false>();
-    }
-  }
-};
+template <bool uplayer>
+using LightUnit = DrawUnitTemplate<layout_model_light, uplayer ? 1 : 0>;
+template <bool uplayer>
+using IdUnit = DrawUnitTemplate<layout_id, uplayer ? 3 : 2>;
 
 class LightPipeline : public PROACTIVE_SINGLETON(LightPipeline),
                       public RenderPass,
@@ -157,7 +78,7 @@ public:
         .depst = { { .attachment = 0, .depth = { {} } } },
         .vertex_shader_name = "light.vert",
         .frag_shader_name = "light.frag",
-        .vertex_info = LightVertex::getVertexInfo(),
+        .vertex_layout = vertex_layout_light,
         .unit_dset_layout = getLayoutHandle<layout_model_light>(),
         .global_dset_layout = getLayoutHandle<layout_global_light>(),
       },
@@ -167,7 +88,7 @@ public:
         .depst = { { .attachment = 1, .depth = { {} } } },
         .vertex_shader_name = "light.vert",
         .frag_shader_name = "light.frag",
-        .vertex_info = LightVertex::getVertexInfo(),
+        .vertex_layout = vertex_layout_light,
         .unit_dset_layout = getLayoutHandle<layout_model_light>(),
         .global_dset_layout = getLayoutHandle<layout_global_light>(),
       },
@@ -176,7 +97,7 @@ public:
         .depst = { { .attachment = 2, .depth = { {} } } },
         .vertex_shader_name = "id.vert",
         .frag_shader_name = "id.frag",
-        .vertex_info = IdVertex::getVertexInfo(),
+        .vertex_layout = vertex_layout_id,
         .unit_dset_layout = getLayoutHandle<layout_id>(),
       },
       PipelineInfo{
@@ -184,7 +105,7 @@ public:
         .depst = { { .attachment = 3, .depth = { {} } } },
         .vertex_shader_name = "id.vert",
         .frag_shader_name = "id.frag",
-        .vertex_info = IdVertex::getVertexInfo(),
+        .vertex_layout = vertex_layout_id,
         .unit_dset_layout = getLayoutHandle<layout_id>(),
       },
     };
@@ -236,7 +157,5 @@ private:
   rd::ImageLocalReader                         _reader;
   uint32                                       _current_id = 0;
 };
-
-auto LightObject::getSelectedId() -> uint32 { return LightPipeline::getInstance().getSelectedId(); }
 
 } // namespace eg

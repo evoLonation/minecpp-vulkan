@@ -2,6 +2,7 @@ module;
 #include <toy.h>
 export module pipeline.basic;
 
+import engine.mesh;
 import std;
 import toy;
 import glm;
@@ -14,7 +15,13 @@ import pipeline.base;
 
 export namespace eg {
 
-using BasicVertex = rd::Vertex<glm::vec3, glm::vec2>;
+auto vertex_layout_basic = rd::VertexLayout{ {
+  { Vertex::getVertexInfo(), { 0, 2 } },
+} };
+
+auto vertex_layout_color = rd::VertexLayout{ {
+  { Vertex::getVertexInfo(), { 0 } },
+} };
 
 constexpr auto layout_model_texture = rd::meta::DescriptorLayout{
   rd::meta::UniformBinding{ rd::meta::type<rd::align::mat4>(), rd::meta::Stage::VERTEX },
@@ -25,8 +32,6 @@ constexpr auto layout_model_color = rd::meta::DescriptorLayout{
   rd::meta::UniformBinding{ rd::meta::type<rd::align::mat4>(), rd::meta::Stage::VERTEX },
   rd::meta::UniformBinding{ rd::meta::type<rd::align::vec3>(), rd::meta::Stage::FRAGMENT },
 };
-
-using ColorVertex = rd::Vertex<glm::vec3>;
 
 using BasicTextureUnit = DrawUnitTemplate<layout_model_texture, 0>;
 using BasicColorUnit = DrawUnitTemplate<layout_model_color, 1>;
@@ -45,7 +50,7 @@ public:
         .frag_shader_name = "hello.frag",
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .cull_mode = VK_CULL_MODE_BACK_BIT,
-        .vertex_info = BasicVertex::getVertexInfo(),
+        .vertex_layout = vertex_layout_basic,
         .unit_dset_layout = getLayoutHandle<layout_model_texture>(),
       },
       PipelineInfo{
@@ -55,7 +60,7 @@ public:
         .frag_shader_name = "solid_color.frag",
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .cull_mode = VK_CULL_MODE_BACK_BIT,
-        .vertex_info = ColorVertex::getVertexInfo(),
+        .vertex_layout = vertex_layout_color,
         .unit_dset_layout = getLayoutHandle<layout_model_color>(),
       },
       PipelineInfo{
@@ -65,7 +70,7 @@ public:
         .frag_shader_name = "solid_color.frag",
         .topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
         .cull_mode = VK_CULL_MODE_NONE,
-        .vertex_info = ColorVertex::getVertexInfo(),
+        .vertex_layout = vertex_layout_color,
         .unit_dset_layout = getLayoutHandle<layout_model_color>(),
       },
     };
