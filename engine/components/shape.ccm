@@ -2,12 +2,14 @@ module;
 #include <toy.h>
 export module tool.shape;
 
+import engine.texture;
+import engine.mesh;
+import engine.object;
 import std;
 import toy;
 import glm;
 import render;
 import math;
-import pipeline.light;
 import <vulkan_config.h>;
 
 export namespace eg {
@@ -232,26 +234,25 @@ auto generateAxis() -> ShapeMesh {
 
 auto createShape(
   ShapeMesh shape, glm::vec3 color = { 0.7f, 0.2f, 0.5f }, glm::vec3 location = { 0.0f, 0.0f, 0.0f }
-) -> LightObject {
-  auto mesh = LightMesh{
+) -> uptr<LightObject> {
+  auto mesh_data = MeshData{
     .positions = shape.positions,
     .normals = shape.normals,
     .tex_coords = views::repeat(glm::vec2{ 0, 0 }) | views::take(shape.positions.size()) |
                   ranges::to<std::vector>(),
     .indices = shape.indices,
   };
+  auto mesh = std::make_shared<Mesh>(mesh_data);
   auto color_a = glm::vec4{ color, 1.0f };
-  auto object = LightObject{
-    std::move(mesh),
-    rd::SampledTexture{
-      std::as_bytes(std::span{ &color_a, 1 }),
-      VK_FORMAT_R32G32B32A32_SFLOAT,
-      { 1, 1 },
-      false,
-      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-    },
-  };
-  object.getModelTrans() = mt::model::create(location);
+  auto texture = std::make_shared<Texture>(rd::SampledTexture{
+    std::as_bytes(std::span{ &color_a, 1 }),
+    VK_FORMAT_R32G32B32A32_SFLOAT,
+    { 1, 1 },
+    false,
+    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+  });
+  auto object = std::make_unique<LightObject>(std::move(mesh), std::move(texture));
+  object->setModelTrans(mt::model::create(location));
   return object;
 }
 

@@ -3,8 +3,8 @@ module:
     provide: tool.move
 - shape.ccm:
     provide: tool.shape
-- component.ccm:
-    provide: component
+- node.ccm:
+    provide: engine.node
 - rotate.ccm:
     provide: tool.rotate
 - camera.ccm:
@@ -15,5 +15,7 @@ module:
     provide: engine.texture
 - assets.ccm:
     provide: engine.assets
+- object.ccm:
+    provide: engine.object
 test:
 - test.cc

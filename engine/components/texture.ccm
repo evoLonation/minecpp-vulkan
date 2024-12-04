@@ -2,6 +2,7 @@ module;
 #include <toy.h>
 export module engine.texture;
 
+import engine.assets;
 import render;
 import std;
 import toy;
@@ -10,15 +11,42 @@ export namespace eg {
 
 using FormatInfo = rd::FormatInfo;
 
-class Texture {
+class Texture : public Asset {
 public:
-  Texture(FormatInfo format, uint32 width, uint32 height, std::vector<std::byte> data);
+  Texture(rd::SampledTexture texture) : _texture{ std::move(texture) } {}
+
+  auto getTexture() -> rd::SampledTexture& { return _texture; }
 
 private:
-  std::vector<std::byte> data;
-  std::vector<size_t>    mip_offsets;
-  VkExtent2D             extent;
-  FormatInfo             format;
+  rd::SampledTexture _texture;
+
+  auto assetSerialize() {
+    auto format = _texture.getImage().getFormat();
+    auto extent = _texture.getImage().getExtent();
+    auto mipmap = _texture.getImage().enableMipmap();
+    auto use_stage = _texture.getUseStage();
+    auto reader = rd::ImageLocalReader{ format, extent };
+    reader.loadImage(_texture.getImage(), VK_IMAGE_ASPECT_COLOR_BIT, { 0, 0 }, extent, 0);
+    auto first_pixel = reader.readPixel(0, 0);
+    auto data = std::vector<std::byte>{
+      first_pixel,
+      first_pixel + extent.width * extent.height * rd::getFormatInfo(format).size,
+    };
+    return std::tuple{ std::move(data), format, extent, mipmap, use_stage };
+  }
+
+  static auto assetDeserialize(
+    std::vector<std::byte>  data,
+    VkFormat                format,
+    VkExtent2D              extent,
+    bool                    mipmap,
+    VkPipelineStageFlagBits use_stage
+  ) -> std::shared_ptr<Texture> {
+    auto texture = rd::SampledTexture{ std::span{ data }, format, extent, mipmap, use_stage };
+    return std::make_shared<Texture>(std::move(texture));
+  }
+
+  static inline fs::path _asset_path = "textures";
 };
 
 // todo: serializer
