@@ -137,26 +137,6 @@ struct FormatInfo {
     ColorFormatInfo color;
     DepstFormatInfo depst;
   };
-
-  constexpr auto getSize() -> uint32 {
-    switch (type) {
-    case COLOR: {
-      using enum ComponentType;
-      auto component_n = color.components & NUM_1   ? 1
-                         : color.components & NUM_2 ? 2
-                         : color.components & NUM_3 ? 3
-                                                    : 4;
-
-      return color.component_size * component_n;
-    }
-    case DEPTH:
-      return depst.depth_size;
-    case STENCIL:
-      return depst.stencil_size;
-    case DEPTH_STENCIL:
-      return depst.depth_size + depst.stencil_size;
-    }
-  }
 };
 
 consteval auto computeFormatInfo(VkFormat format) -> FormatInfo {

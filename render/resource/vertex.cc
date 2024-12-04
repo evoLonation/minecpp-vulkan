@@ -5,8 +5,7 @@ import render.executor;
 namespace rd {
 
 auto operator==(const VertexInfo& a, const VertexInfo& b) -> bool {
-  return a.binding_description == b.binding_description &&
-         a.attribute_descriptions.begin() == b.attribute_descriptions.begin() &&
+  return a.attribute_descriptions.begin() == b.attribute_descriptions.begin() &&
          a.attribute_descriptions.end() == b.attribute_descriptions.end();
 }
 

@@ -1,3 +1,5 @@
+module;
+#include <toy.h>
 export module render.vertex;
 
 import <vulkan_config.h>;
@@ -18,15 +20,14 @@ auto vertex(DeviceCapabilityBuilder&) -> bool;
 }
 
 struct VertexInfo {
-  const VkVertexInputBindingDescription*             binding_description;
   std::span<const VkVertexInputAttributeDescription> attribute_descriptions;
+  uint32                                             stride;
   friend auto operator==(const VertexInfo& a, const VertexInfo& b) -> bool;
   VertexInfo() = default;
   VertexInfo(
-    const VkVertexInputBindingDescription*             binding_description,
-    std::span<const VkVertexInputAttributeDescription> attribute_descriptions
+    std::span<const VkVertexInputAttributeDescription> attribute_descriptions, uint32 stride
   )
-    : binding_description(binding_description), attribute_descriptions(attribute_descriptions) {}
+    : attribute_descriptions(attribute_descriptions), stride(stride) {}
 };
 
 template <typename... DataTypes>
@@ -37,8 +38,8 @@ public:
     int i = 0;
     ((new (reinterpret_cast<char*>(&storage) + align_info.second[i]) DataTypes{ data }, i++), ...);
   }
-  static auto getVertexInfo() -> VertexInfo {
-    return { &binding_description<>, attribute_descriptions<> };
+  static constexpr auto getVertexInfo() -> VertexInfo {
+    return { attribute_descriptions<>, sizeof(Vertex) };
   }
   auto getDataTuple() -> std::tuple<DataTypes...> {
     auto tuple = std::tuple<DataTypes...>{};
@@ -73,14 +74,7 @@ private:
 
   // must make the static member as template variable, otherwise the Vertex is incomplete type when
   // construct the variable
-  template <typename = void>
-  static constexpr auto binding_description = VkVertexInputBindingDescription{
-    .binding = 0,
-    .stride = sizeof(Vertex),
-    // VK_VERTEX_INPUT_RATE_{VERTEX|INSTANCE}:
-    // 是在每个vertex或者instance后移动到下一个data entry
-    .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-  };
+  // member binding is undefined
   template <typename = void>
   static constexpr auto attribute_descriptions = []() {
     auto attribute_descriptions =
@@ -97,6 +91,40 @@ private:
      ...);
     return attribute_descriptions;
   }();
+};
+
+struct VertexLayout {
+  struct VertexBinding {
+    VertexInfo          vertex_info;
+    std::vector<uint32> locations;
+  };
+  std::vector<VertexBinding> bindings;
+  auto getBindingDescriptions() const -> std::vector<VkVertexInputBindingDescription> {
+    auto binding_descriptions = std::vector<VkVertexInputBindingDescription>{};
+    for (auto [i, binding] : bindings | toy::enumerate) {
+      binding_descriptions.push_back({
+        .binding = i,
+        .stride = binding.vertex_info.stride,
+        // VK_VERTEX_INPUT_RATE_{VERTEX|INSTANCE}:
+        // 是在每个vertex或者instance后移动到下一个data entry
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+      });
+    }
+    return binding_descriptions;
+  }
+  auto getAttributeDescriptions() const -> std::vector<VkVertexInputAttributeDescription> {
+    auto attribute_descriptions = std::vector<VkVertexInputAttributeDescription>{};
+    for (auto [i, binding] : bindings | toy::enumerate) {
+      for (auto location : binding.locations) {
+        auto& vertex_info = binding.vertex_info;
+        TOY_ASSERT(location < vertex_info.attribute_descriptions.size());
+        auto attribute_description = vertex_info.attribute_descriptions[location];
+        attribute_description.binding = i;
+        attribute_descriptions.push_back(attribute_description);
+      }
+    }
+    return attribute_descriptions;
+  }
 };
 
 class VertexBuffer : public DeviceLocalBuffer {

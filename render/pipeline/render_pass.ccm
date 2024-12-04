@@ -165,7 +165,7 @@ struct SubpassPipelineInfo {
   std::string                             frag_shader_name;
   VkPrimitiveTopology                     topology;
   VkCullModeFlagBits                      cull_mode;
-  VertexInfo                              vertex_info;
+  VertexLayout                            vertex_layout;
   std::vector<VkDescriptorSetLayout>      dset_layouts;
   std::vector<PushConstantInfo>           push_constants;
 };

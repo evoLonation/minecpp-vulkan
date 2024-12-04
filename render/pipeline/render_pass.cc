@@ -120,7 +120,7 @@ RenderPassPipeline::RenderPassPipeline(
       .output_n = static_cast<uint32_t>(subpass.colors.size()),
       .stencil_option = subpass.depst ? subpass.depst->stencil : std::nullopt,
       .depth_option = subpass.depst ? subpass.depst->depth : std::nullopt,
-      .vertex_info = subpass.vertex_info,
+      .vertex_layout = subpass.vertex_layout,
     };
     if (subpass.depst) {
       auto format = attachments[subpass.depst->attachment].format;

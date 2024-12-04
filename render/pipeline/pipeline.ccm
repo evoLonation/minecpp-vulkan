@@ -57,7 +57,7 @@ struct PipelineInfo {
   uint32                             output_n;
   std::optional<StencilOption>       stencil_option;
   std::optional<DepthOption>         depth_option;
-  VertexInfo                         vertex_info;
+  VertexLayout                       vertex_layout;
 };
 
 struct PipelineResource {
@@ -91,7 +91,7 @@ public:
     VkPipelineLayout                 layout,
     VkExtent2D                       extent,
     bool                             dyn_ref,
-    VertexInfo                       vertex_info,
+    VertexLayout                     vertex_layout,
     std::span<VkPushConstantRange>   push_constants,
     std::span<VkDescriptorSetLayout> dset_layouts
   ) -> PipelineDrawer;
@@ -101,7 +101,7 @@ public:
     std::vector<DescriptorSet*>* dsets
   ) -> PipelineDrawer;
 
-  void bindVertexBuffer(VertexBuffer* vertex_buffer);
+  void bindVertexBuffer(uint32 binding, VertexBuffer* vertex_buffer);
   void bindIndexBuffer(IndexBuffer* index_buffer);
   void bindDescriptorSet(uint32 index, DescriptorSet* dset);
   void bindPushConstant(VkShaderStageFlags stage, std::span<std::byte const> data);
@@ -119,7 +119,7 @@ private:
     VkPipelineLayout                 layout,
     VkExtent2D                       extent,
     bool                             dyn_ref,
-    VertexInfo                       vertex_info,
+    VertexLayout                     vertex_layout,
     std::span<VkPushConstantRange>   push_constants,
     std::span<VkDescriptorSetLayout> dset_layouts,
     std::vector<Buffer*>*            vertex_buffers,
@@ -128,10 +128,11 @@ private:
     ExecuteType                      execute_type
   )
     : _cmdbuf(cmdbuf), _pipeline(pipeline), _layout(layout), _extent(extent), _dyn_ref(dyn_ref),
-      _vertex_info(vertex_info), _push_constants(push_constants), _dset_layouts(dset_layouts),
+      _vertex_layout(vertex_layout), _push_constants(push_constants), _dset_layouts(dset_layouts),
       _execute_type(execute_type), _vertex_count(0), _index(false),
-      _bound_sets(dset_layouts.size()), _bound_pushes(push_constants.size()),
-      _vertex_buffers(vertex_buffers), _index_buffers(index_buffers), _dsets(dsets) {}
+      _bound_vertex_bufs(vertex_layout.bindings.size()), _bound_sets(dset_layouts.size()),
+      _bound_pushes(push_constants.size()), _vertex_buffers(vertex_buffers),
+      _index_buffers(index_buffers), _dsets(dsets) {}
 
   // only for RECORD
   VkCommandBuffer                  _cmdbuf;
@@ -139,7 +140,7 @@ private:
   VkPipelineLayout                 _layout;
   VkExtent2D                       _extent;
   bool                             _dyn_ref;
-  VertexInfo                       _vertex_info;
+  VertexLayout                     _vertex_layout;
   std::span<VkPushConstantRange>   _push_constants;
   std::span<VkDescriptorSetLayout> _dset_layouts;
 
@@ -147,6 +148,7 @@ private:
 
   uint32            _vertex_count;
   bool              _index;
+  std::vector<bool> _bound_vertex_bufs;
   std::vector<bool> _bound_sets;
   std::vector<bool> _bound_pushes;
 
@@ -161,13 +163,13 @@ class Pipeline : public PipelineResource {
 public:
   Pipeline(const PipelineInfo& info)
     : PipelineResource(info), _dyn_ref(info.stencil_option ? info.stencil_option->dyn_ref : false),
-      _vertex_info(info.vertex_info), _push_constants(info.push_constants),
+      _vertex_layout(info.vertex_layout), _push_constants(info.push_constants),
       _dset_layouts(info.dset_layouts) {}
   void record(VkCommandBuffer cmdbuf, VkExtent2D extent, PipelineRecorder recorder);
 
 private:
   bool                               _dyn_ref;
-  VertexInfo                         _vertex_info;
+  VertexLayout                       _vertex_layout;
   std::vector<VkPushConstantRange>   _push_constants;
   std::vector<VkDescriptorSetLayout> _dset_layouts;
 };

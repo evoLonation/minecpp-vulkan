@@ -12,12 +12,12 @@ auto PipelineDrawer::forRecord(
   VkPipelineLayout                 layout,
   VkExtent2D                       extent,
   bool                             dyn_ref,
-  VertexInfo                       vertex_info,
+  VertexLayout                     vertex_layout,
   std::span<VkPushConstantRange>   push_constants,
   std::span<VkDescriptorSetLayout> dset_layouts
 ) -> PipelineDrawer {
   return PipelineDrawer{
-    cmdbuf,         pipeline,     layout,  extent,  dyn_ref, vertex_info,
+    cmdbuf,         pipeline,     layout,  extent,  dyn_ref, vertex_layout,
     push_constants, dset_layouts, nullptr, nullptr, nullptr, RECORD,
   };
 }
@@ -32,15 +32,22 @@ auto PipelineDrawer::forCollect(
   };
 }
 
-void PipelineDrawer::bindVertexBuffer(VertexBuffer* vertex_buffer) {
+void PipelineDrawer::bindVertexBuffer(uint32 binding, VertexBuffer* vertex_buffer) {
   if (_execute_type == RECORD) {
-    TOY_CHECK_ASSERT(vertex_buffer->getVertexInfo() == _vertex_info);
+    TOY_CHECK_ASSERT(
+      vertex_buffer->getVertexInfo() == _vertex_layout.bindings.at(binding).vertex_info
+    );
     auto offset = VkDeviceSize{ 0 };
     auto buffer = vertex_buffer->get();
-    vkCmdBindVertexBuffers(_cmdbuf, 0, 1, &buffer, &offset);
+    vkCmdBindVertexBuffers(_cmdbuf, binding, 1, &buffer, &offset);
     if (!_index) {
-      _vertex_count = vertex_buffer->getVertexNumber();
+      if (_vertex_count != 0) {
+        TOY_CHECK_ASSERT(_vertex_count == vertex_buffer->getVertexNumber());
+      } else {
+        _vertex_count = vertex_buffer->getVertexNumber();
+      }
     }
+    _bound_vertex_bufs[binding] = true;
   } else {
     _vertex_buffers->push_back(vertex_buffer);
   }
@@ -90,8 +97,9 @@ void PipelineDrawer::setStencilReference(uint32 reference) {
 void PipelineDrawer::draw() {
   if (_execute_type == RECORD) {
     TOY_CHECK_ASSERT(_vertex_count > 0);
-    TOY_CHECK_ASSERT(ranges::all_of(_bound_sets, [](auto x) { return x; }), _bound_sets);
-    TOY_CHECK_ASSERT(ranges::all_of(_bound_pushes, [](auto x) { return x; }), _bound_pushes);
+    TOY_CHECK_ASSERT(ranges::all_of(_bound_vertex_bufs, std::identity{}), _bound_vertex_bufs);
+    TOY_CHECK_ASSERT(ranges::all_of(_bound_sets, std::identity{}), _bound_sets);
+    TOY_CHECK_ASSERT(ranges::all_of(_bound_pushes, std::identity{}), _bound_pushes);
     if (_index) {
       vkCmdDrawIndexed(_cmdbuf, _vertex_count, 1, 0, 0, 0);
     } else {
@@ -124,7 +132,7 @@ void Pipeline::record(VkCommandBuffer cmdbuf, VkExtent2D extent, PipelineRecorde
     getLayout(),
     extent,
     _dyn_ref,
-    _vertex_info,
+    _vertex_layout,
     _push_constants,
     _dset_layouts
   ));

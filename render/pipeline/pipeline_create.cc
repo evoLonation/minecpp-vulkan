@@ -252,8 +252,8 @@ PipelineResource::PipelineResource(const PipelineInfo& info) {
     info.output_n,
     info.stencil_option,
     info.depth_option,
-    std::array{ *info.vertex_info.binding_description },
-    info.vertex_info.attribute_descriptions
+    info.vertex_layout.getBindingDescriptions(),
+    info.vertex_layout.getAttributeDescriptions()
   );
 }
 

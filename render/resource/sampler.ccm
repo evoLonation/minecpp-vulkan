@@ -30,6 +30,7 @@ public:
   void writeContent(std::span<std::byte const> data);
   auto getImage() -> Image& { return _image; }
   auto getSampler() const -> VkSampler { return _sampler; }
+  auto getUseStage() const -> VkPipelineStageFlagBits { return _use_stage; }
   auto getLayout() const -> VkImageLayout { return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; }
 
   auto getDescriptorContext() -> Context override;
