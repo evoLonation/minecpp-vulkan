@@ -1,0 +1,131 @@
+module;
+#include <toy.h>
+export module pipeline.id;
+
+import engine.base;
+import engine.draw_unit;
+import engine.texture;
+import engine.mesh;
+import std;
+import toy;
+import glm;
+
+import render;
+import model;
+import framework;
+
+import math;
+import pipeline.base;
+import pipeline.uniform;
+import camera;
+
+namespace eg {
+
+auto vertex_layout_id = rd::VertexLayout{ {
+  { Vertex::getVertexInfo(), { 0 } },
+} };
+
+constexpr auto layout_id = rd::meta::DescriptorLayout{
+  rd::meta::UniformBinding{ rd::meta::type<rd::align::mat4>(), rd::meta::Stage::VERTEX },
+  rd::meta::UniformBinding{ rd::meta::type<uint32>(), rd::meta::Stage::FRAGMENT },
+};
+
+struct IdContext : public CustomDrawContext<layout_id> {
+  UniformBuffer<rd::align::mat4> transform;
+  UniformBuffer<uint32>          id;
+};
+
+export class IdPipeline : public CustomRenderPass, public PROACTIVE_SINGLETON(IdPipeline) {
+public:
+  void beforeRender(DrawUnit& draw_unit, DrawContextBase* draw_ctx) override {
+    dynamic_cast<IdContext*>(draw_ctx)->transform = draw_unit.getTransform();
+  }
+  auto fromDrawUnit(uint32 subpass_n, DrawUnit& draw_unit)
+    -> std::optional<uptr<DrawContextBase>> override {
+    if ((subpass_n == 1) == draw_unit.isUpLayer()) {
+      auto ret = std::make_unique<IdContext>();
+      ret->id = _last_allocated_id++;
+      ret->init(draw_unit, { &ret->transform, &ret->id });
+      _draw_unit2id[&draw_unit] = ret->id;
+      _id2draw_unit[ret->id] = &draw_unit;
+      return ret;
+    }
+    return std::nullopt;
+  }
+
+  IdPipeline() {
+    auto pipeline_infos = std::vector<PipelineInfo>{
+      PipelineInfo{
+        .colors = { 0 },
+        .depst = { { .attachment = 0, .depth = { {} } } },
+        .vertex_shader_name = "id.vert",
+        .frag_shader_name = "id.frag",
+        .vertex_layout = vertex_layout_id,
+        .unit_dset_layout = getLayoutHandle<layout_id>(),
+      },
+      PipelineInfo{
+        .colors = { 0 },
+        .depst = { { .attachment = 1, .depth = { {} } } },
+        .vertex_shader_name = "id.vert",
+        .frag_shader_name = "id.frag",
+        .vertex_layout = vertex_layout_id,
+        .unit_dset_layout = getLayoutHandle<layout_id>(),
+      },
+    };
+    auto info = RenderPassInfo{
+      .color_formats = { VK_FORMAT_R32_UINT },
+      .depst_formats = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT },
+      .multi_sampling = {},
+      .pipelines = std::move(pipeline_infos),
+      .use_present_attachment = false,
+    };
+    init({ info });
+    setColorClearValue(0, { 0u });
+    setDepstClearValue(0, 1.0f);
+    setDepstClearValue(1, 1.0f);
+    _reader = { VK_FORMAT_R32_UINT, { 1, 1 } };
+
+    _before_destroy = [this](DrawUnit& draw_unit) {
+      if (_draw_unit2id.contains(&draw_unit)) {
+        auto id = _draw_unit2id[&draw_unit];
+        _id2draw_unit.erase(id);
+        _draw_unit2id.erase(&draw_unit);
+      }
+    };
+  }
+  ~IdPipeline() { DrawUnit::removeBeforeDestroy(&_before_destroy); }
+
+  auto getSelectedDrawUnit() -> DrawUnit* {
+    if (auto it = _id2draw_unit.find(_current_id); it != _id2draw_unit.end()) {
+      return it->second;
+    } else {
+      return nullptr;
+    }
+  }
+
+  UNCOPYABLE_MOVEABLE(IdPipeline);
+
+  void draw(fw::ActionContext const& ctx) override {
+    auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
+    auto cursor = fw::InputProcessor::getInstance().getCursorState();
+    if (cursor.visible) {
+      int32 x = std::clamp(cursor.x, 0u, extent.width - 1);
+      int32 y = std::clamp(cursor.y, 0u, extent.height - 1);
+      _reader.loadImage(getColorAttachment(0), VK_IMAGE_ASPECT_COLOR_BIT, { x, y }, { 1, 1 }, 0);
+      _current_id = *reinterpret_cast<uint32*>(_reader.readPixel(0, 0));
+    } else {
+      _current_id = 0;
+    }
+    CustomRenderPass::draw(ctx);
+  }
+
+private:
+  rd::ImageLocalReader                  _reader;
+  uint32                                _current_id = 0;
+  uint32                                _last_allocated_id = 1;
+  std::function<void(DrawUnit&)>        _before_destroy;
+  std::unordered_map<uint32, DrawUnit*> _id2draw_unit;
+  std::unordered_map<DrawUnit*, uint32> _draw_unit2id;
+};
+
+} // namespace eg

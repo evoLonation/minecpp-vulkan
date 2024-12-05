@@ -11,3 +11,5 @@ module:
     provide: pipeline.loop
 - render_pass.ccm:
     provide: pipeline.render_pass
+- id.ccm:
+    provide: pipeline.id

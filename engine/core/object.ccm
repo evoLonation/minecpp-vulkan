@@ -2,7 +2,7 @@ module;
 #include <toy.h>
 export module engine.object;
 
-import pipeline.light;
+import pipeline.id;
 import engine.draw_unit;
 import engine.base;
 import framework;
@@ -41,12 +41,11 @@ public:
   }
   auto getDrawUnit() -> DrawUnit* { return _draw_unit.get(); }
   auto isSelected() -> bool {
-    return _draw_unit.get() &&
-           LightPipeline::getInstance().getSelectedDrawUnit() == _draw_unit.get();
+    return _draw_unit.get() && IdPipeline::getInstance().getSelectedDrawUnit() == _draw_unit.get();
   }
 
   static auto getSelected() -> SceneObject* {
-    if (auto iter = _draw_unit2object.find(LightPipeline::getInstance().getSelectedDrawUnit());
+    if (auto iter = _draw_unit2object.find(IdPipeline::getInstance().getSelectedDrawUnit());
         iter != _draw_unit2object.end()) {
       return iter->second;
     }

@@ -54,7 +54,7 @@ void checkSubpassAttachmentMatch(
     }
     TOY_ASSERT(ranges::all_of(subpass.inputs, [&](auto x) { return x < attachments.size(); }));
     if (subpass.depst) {
-      TOY_ASSERT(subpass.depst.value() < attachments.size());
+      TOY_ASSERT(subpass.depst.value() < attachments.size(), subpass.depst.value(), attachments.size());
     }
     auto sample_count =
       subpass.multi_sample ? subpass.multi_sample->sample_count : VK_SAMPLE_COUNT_1_BIT;
