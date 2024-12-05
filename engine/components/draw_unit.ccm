@@ -1,0 +1,75 @@
+module;
+#include <toy.h>
+export module engine.draw_unit;
+
+import engine.base;
+import framework;
+import math;
+import render;
+import engine.texture;
+import engine.mesh;
+import engine.node;
+import std;
+import toy;
+
+export namespace eg {
+
+struct MaterialInfo {
+  float shininess = 16.0f;
+};
+
+class DrawUnit : public Component {
+public:
+  DrawUnit() = default;
+  DrawUnit(ptr<Mesh> mesh, ptr<Texture> texture, bool up_layer = false) {
+    init(std::move(mesh), std::move(texture), up_layer);
+  }
+  void init(ptr<Mesh> mesh, ptr<Texture> texture, bool up_layer = false) {
+    _mesh = std::move(mesh);
+    _texture = std::move(texture);
+    _up_layer = up_layer;
+    _draw_units.insert(this);
+    for (auto& callback : _on_created) {
+      (*callback)(*this);
+    }
+  }
+  ~DrawUnit() {
+    for (auto& callback : _before_destroy) {
+      (*callback)(*this);
+    }
+    _draw_units.erase(this);
+  }
+  auto getTransform() -> glm::mat4& { return _transform; }
+  auto getMesh() -> Mesh& { return *_mesh; }
+  auto getTexture() -> Texture& { return *_texture; }
+  auto getMaterial() -> MaterialInfo& { return _material; }
+  auto isUpLayer() -> bool { return _up_layer; }
+
+  static auto getAll() -> std::unordered_set<DrawUnit*>& { return _draw_units; }
+  static void setOnCreated(std::function<void(DrawUnit&)>* callback) {
+    _on_created.insert(callback);
+  }
+  static void removeOnCreated(std::function<void(DrawUnit&)>* callback) {
+    _on_created.erase(callback);
+  }
+  static void setBeforeDestroy(std::function<void(DrawUnit&)>* callback) {
+    _before_destroy.insert(callback);
+  }
+  static void removeBeforeDestroy(std::function<void(DrawUnit&)>* callback) {
+    _before_destroy.erase(callback);
+  }
+
+private:
+  glm::mat4    _transform;
+  ptr<Mesh>    _mesh;
+  ptr<Texture> _texture;
+  MaterialInfo _material;
+  bool         _up_layer = false;
+
+private:
+  static inline std::unordered_set<DrawUnit*>                       _draw_units;
+  static inline std::unordered_set<std::function<void(DrawUnit&)>*> _on_created;
+  static inline std::unordered_set<std::function<void(DrawUnit&)>*> _before_destroy;
+};
+
+} // namespace eg

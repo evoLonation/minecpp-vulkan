@@ -1,0 +1,29 @@
+module;
+#include <toy.h>
+export module pipeline.loop;
+
+import pipeline.basic;
+import pipeline.light;
+import framework;
+import std;
+import toy;
+
+export namespace eg {
+
+class RenderPassLoop : public fw::Action {
+public:
+  RenderPassLoop() : fw::Action(fw::Stage::RENDER) {}
+
+  void runLoop(fw::ActionContext const& ctx) override { 
+    // _basic.draw(ctx);
+    _light.draw(ctx); 
+  }
+
+  UNCOPYABLE_MOVEABLE(RenderPassLoop);
+
+private:
+  BasicPipeline _basic;
+  LightPipeline _light;
+};
+
+} // namespace eg

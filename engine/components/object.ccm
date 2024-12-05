@@ -2,6 +2,9 @@ module;
 #include <toy.h>
 export module engine.object;
 
+import pipeline.light;
+import engine.draw_unit;
+import engine.base;
 import framework;
 import math;
 import render;
@@ -15,98 +18,47 @@ import toy;
 
 export namespace eg {
 
-template <typename T>
-using uptr = std::unique_ptr<T>;
-
-template <typename T>
-using wptr = std::weak_ptr<T>;
-
-class LightObject : public Component {
-public:
-  LightObject(std::shared_ptr<Mesh> mesh, std::shared_ptr<Texture> texture, bool uplayer = false) {
-    _mesh = std::move(mesh);
-    _texture = std::move(texture);
-    _uniform_id_frag = _max_id++;
-    setUnit(uplayer);
-  }
-
-  void setUplayer() { setUnit(true); }
-  void setModelTrans(glm::mat4 const& trans) { _uniform_vertex->model = trans; }
-  void setShininess(float shininess) { _uniform_frag->shininess = shininess; }
-  auto getId() -> uint32 { return _uniform_id_frag.get(); }
-  auto getTexture() -> Texture& { return *_texture; }
-
-  static auto getSelectedId() -> uint32 { return LightPipeline::getInstance().getSelectedId(); }
-
-private:
-  inline static uint32 _max_id = 114514;
-
-  ptr<Mesh>                                       _mesh;
-  ptr<Texture>                                    _texture;
-  UniformBuffer<LightModelVertexData>             _uniform_vertex;
-  UniformBuffer<LightModelFragmentData>           _uniform_frag;
-  UniformBuffer<rd::align::mat4>                  _uniform_id_vert;
-  UniformBuffer<uint32>                           _uniform_id_frag;
-  std::variant<LightUnit<false>, LightUnit<true>> _light_unit;
-  std::variant<IdUnit<false>, IdUnit<true>>       _id_unit;
-
-  void runLoop(fw::ActionContext const& ctx) override {
-    auto& trans = _uniform_vertex->model;
-    _uniform_vertex->normal_model = mt::getNormalModel(trans);
-    _uniform_id_vert = trans;
-  }
-  void setUnit(bool uplayer) {
-    auto setter = [&]<bool uplayer>() {
-      _light_unit = LightUnit<uplayer>{
-        { &_mesh->getVertexBuffer() },
-        &_mesh->getIndexBuffer(),
-        { &_uniform_vertex, &_uniform_frag, &_texture->getTexture(), &_texture->getTexture() },
-      };
-      _id_unit = IdUnit<uplayer>{
-        { &_mesh->getVertexBuffer() },
-        &_mesh->getIndexBuffer(),
-        { &_uniform_id_vert, &_uniform_id_frag },
-      };
-    };
-    if (uplayer) {
-      setter.operator()<true>();
-    } else {
-      setter.operator()<false>();
-    }
-  }
-};
-
 class SceneObject : public Node {
 public:
-  SceneObject(uptr<LightObject> object) { setObject(std::move(object)); }
-  void setObject(uptr<LightObject> object) {
-    if (_object.get()) {
-      _id2object.erase(_object->getId());
-    }
-    _object = std::move(object);
-    _object->setModelTrans(getTransToWorld());
-    _id2object[_object->getId()] = this;
+  SceneObject() = default;
+  SceneObject(ptr<Mesh> mesh, ptr<Texture> texture) {
+    auto draw_unit = std::make_unique<DrawUnit>(std::move(mesh), std::move(texture));
+    setDrawUnit(std::move(draw_unit));
   }
-  auto getObject() -> LightObject& { return *_object; }
-  auto isSelected() -> bool { return getSelected() == this; }
+  ~SceneObject() {
+    if (_draw_unit.get()) {
+      _draw_unit2object.erase(_draw_unit.get());
+    }
+  }
+  void setDrawUnit(uptr<DrawUnit> draw_unit) {
+    if (_draw_unit.get()) {
+      _draw_unit2object.erase(_draw_unit.get());
+    }
+    _draw_unit = std::move(draw_unit);
+    _draw_unit2object[_draw_unit.get()] = this;
+  }
+  auto getDrawUnit() -> DrawUnit* { return _draw_unit.get(); }
+  auto isSelected() -> bool {
+    return _draw_unit.get() &&
+           LightPipeline::getInstance().getSelectedDrawUnit() == _draw_unit.get();
+  }
 
   static auto getSelected() -> SceneObject* {
-    if (_id2object.contains(LightObject::getSelectedId())) {
-      return _id2object[LightObject::getSelectedId()];
+    if (auto iter = _draw_unit2object.find(LightPipeline::getInstance().getSelectedDrawUnit());
+        iter != _draw_unit2object.end()) {
+      return iter->second;
     }
     return nullptr;
   }
 
 private:
-  uptr<LightObject> _object;
+  uptr<DrawUnit> _draw_unit;
 
   void runLoop(fw::ActionContext const& ctx) override {
-    if (_object.get()) {
-      _object->setModelTrans(getTransToWorld());
-    }
+    _draw_unit->getTransform() = getTransToWorld();
   }
 
-  inline static std::unordered_map<uint32, SceneObject*> _id2object;
+  static inline std::unordered_map<DrawUnit*, SceneObject*> _draw_unit2object;
 };
 
 class ObjectClickObserver : public fw::Action, public PROACTIVE_SINGLETON(ObjectClickObserver) {

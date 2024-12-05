@@ -7,3 +7,7 @@ module:
     provide: pipeline.base
 - light.ccm:
     provide: pipeline.light
+- loop.ccm:
+    provide: pipeline.loop
+- render_pass.ccm:
+    provide: pipeline.render_pass

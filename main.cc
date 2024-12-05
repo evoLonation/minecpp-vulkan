@@ -16,7 +16,9 @@ import gui.context;
 import framework;
 // import pipeline.outline;
 import pipeline.basic;
-import pipeline.light;
+import pipeline.loop;
+import engine.draw_unit;
+;
 import pipeline.uniform;
 import engine.object;
 import engine.mesh;
@@ -41,14 +43,13 @@ int main() {
     auto  dset_pools = rd::meta::DescriptorPools{};
     auto& input = fw::InputProcessor::getInstance();
     // auto  transform_gui = eg::ModelTransformGuiController{};
-    auto render_pass = eg::LightPipeline{};
+    auto render_pass = eg::RenderPassLoop{};
     // auto  click_observer = eg::ObjectClickObserver{};
     // auto  move_manager = eg::MoveControllerManager{};
     // auto rotate_manager = eg::RotateControllerManager{};
 
     auto camera = eg::Camera{};
     auto controller = eg::CameraController{ &camera };
-    render_pass.setCamera(&camera.getData());
 
     auto [positions, normals, tex_coords, indices] = model::getModelInfo("model/viking_room.obj");
     auto mesh = std::make_shared<eg::Mesh>(eg::MeshData{
@@ -56,14 +57,14 @@ int main() {
     auto texture = std::make_shared<eg::Texture>(eg::Texture{ rd::SampledTexture::fromFile(
       "model/viking_room.png", true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
     ) });
-    auto object1 = std::make_shared<eg::SceneObject>(
-      std::make_unique<eg::LightObject>(std::move(mesh), std::move(texture))
-    );
-    auto cylinder = std::make_shared<eg::SceneObject>(eg::createShape(
+    auto object1 = std::make_shared<eg::SceneObject>(std::move(mesh), std::move(texture));
+    auto cylinder = std::make_shared<eg::SceneObject>();
+    cylinder->setDrawUnit(eg::createShape(
       eg::generateCylinder(1, 2, 77), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f }
     ));
     cylinder->getTransform().location = { 0, 3, 0 };
-    auto cube = std::make_shared<eg::SceneObject>(
+    auto cube = std::make_shared<eg::SceneObject>();
+    cube->setDrawUnit(
       eg::createShape(eg::generateCube(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f })
     );
     // auto selector_cube = eg::MoveTransformSelector{ &cube };

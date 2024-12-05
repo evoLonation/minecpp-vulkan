@@ -2,6 +2,7 @@ module;
 #include <toy.h>
 export module engine.node;
 
+import engine.base;
 import std;
 import toy;
 import framework;
@@ -10,18 +11,6 @@ import glm;
 import <imgui_config.h>;
 
 export namespace eg {
-
-template <typename T>
-using ptr = std::shared_ptr<T>;
-struct Component : public fw::Action, private std::enable_shared_from_this<Component> {
-  Component() { setStage(fw::Stage::BEFORE_RENDER); }
-  UNCOPYABLE_MOVEABLE(Component);
-  void runLoop(fw::ActionContext const& ctx) override {}
-  auto getPtr(this auto&& self) {
-    return std::static_pointer_cast<std::remove_reference_t<decltype(self)>>(self.shared_from_this()
-    );
-  }
-};
 
 class ModelTransform : public Component {
 public:

@@ -1,0 +1,28 @@
+module;
+#include <toy.h>
+export module engine.base;
+
+import framework;
+import std;
+import toy;
+
+export namespace eg {
+
+template <typename T>
+using ptr = std::shared_ptr<T>;
+template <typename T>
+using uptr = std::unique_ptr<T>;
+template <typename T>
+using wptr = std::weak_ptr<T>;
+
+struct Component : public fw::Action, private std::enable_shared_from_this<Component> {
+  Component() { setStage(fw::Stage::BEFORE_RENDER); }
+  UNCOPYABLE_MOVEABLE(Component);
+  void runLoop(fw::ActionContext const& ctx) override {}
+  auto getPtr(this auto&& self) {
+    return std::static_pointer_cast<std::remove_reference_t<decltype(self)>>(self.shared_from_this()
+    );
+  }
+};
+
+} // namespace eg

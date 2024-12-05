@@ -2,6 +2,9 @@ module;
 #include <toy.h>
 export module pipeline.basic;
 
+import engine.base;
+import pipeline.uniform;
+import engine.draw_unit;
 import engine.mesh;
 import std;
 import toy;
@@ -13,7 +16,7 @@ import framework;
 
 import pipeline.base;
 
-export namespace eg {
+namespace eg {
 
 auto vertex_layout_basic = rd::VertexLayout{ {
   { Vertex::getVertexInfo(), { 0, 2 } },
@@ -33,15 +36,40 @@ constexpr auto layout_model_color = rd::meta::DescriptorLayout{
   rd::meta::UniformBinding{ rd::meta::type<rd::align::vec3>(), rd::meta::Stage::FRAGMENT },
 };
 
-using BasicTextureUnit = DrawUnitTemplate<layout_model_texture, 0>;
-using BasicColorUnit = DrawUnitTemplate<layout_model_color, 1>;
-using BasicColorLineUnit = DrawUnitTemplate<layout_model_color, 2>;
+struct TextureContext : public CustomDrawContext<layout_model_texture> {
+  UniformBuffer<rd::align::mat4> transform;
+};
 
-class BasicPipeline : public RenderPass {
+struct ColorContext : public CustomDrawContext<layout_model_color> {
+  UniformBuffer<rd::align::mat4> transform;
+  UniformBuffer<rd::align::vec3> color;
+};
+
+export class BasicPipeline : public CustomRenderPass {
 public:
-  BasicPipeline() {
-    auto& swapchain = rd::Presentation::getInstance().getSwapchain();
+  void beforeRender(DrawUnit& draw_unit, DrawContextBase* draw_ctx) override {
+    if (auto* ctx = dynamic_cast<TextureContext*>(draw_ctx)) {
+      ctx->transform = draw_unit.getTransform();
+    } else if (auto* ctx = dynamic_cast<ColorContext*>(draw_ctx)) {
+      ctx->transform = draw_unit.getTransform();
+    }
+  }
+  auto fromDrawUnit(uint32 subpass_n, DrawUnit& draw_unit)
+    -> std::optional<uptr<DrawContextBase>> override {
+    if (subpass_n == 0) {
+      auto ret = std::make_unique<TextureContext>();
+      ret->init(draw_unit, { &ret->transform, &draw_unit.getTexture().getTexture() });
+      return ret;
+    } else if (subpass_n == 1 || subpass_n == 2) {
+      auto ret = std::make_unique<ColorContext>();
+      ret->init(draw_unit, { &ret->transform, &ret->color });
+      ret->color = glm::vec3{ 0.5f, 0.5f, 0.5f }; // default color
+      return ret;
+    }
+    return std::nullopt;
+  }
 
+  BasicPipeline() {
     auto pipeline_infos = std::vector<PipelineInfo>{
       PipelineInfo{
         .colors = { 0 },
@@ -79,7 +107,7 @@ public:
       .multi_sampling = VK_SAMPLE_COUNT_8_BIT,
       .pipelines = std::move(pipeline_infos),
     };
-    RenderPass::operator=(RenderPass{ info });
+    init(info);
     setColorClearValue(0, { 0.5f, 0.5f, 0.5f, 1.0f });
     setDepstClearValue(0, 1.0f);
   }

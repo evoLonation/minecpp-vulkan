@@ -17,5 +17,9 @@ module:
     provide: engine.assets
 - object.ccm:
     provide: engine.object
+- base.ccm:
+    provide: engine.base
+- draw_unit.ccm:
+    provide: engine.draw_unit
 test:
 - test.cc

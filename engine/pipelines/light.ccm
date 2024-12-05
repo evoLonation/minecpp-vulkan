@@ -2,6 +2,8 @@ module;
 #include <toy.h>
 export module pipeline.light;
 
+import engine.base;
+import engine.draw_unit;
 import engine.texture;
 import engine.mesh;
 import std;
@@ -17,7 +19,7 @@ import pipeline.base;
 import pipeline.uniform;
 import camera;
 
-export namespace eg {
+namespace eg {
 
 auto vertex_layout_light = rd::VertexLayout{ {
   { Vertex::getVertexInfo(), { 0, 1, 2 } },
@@ -60,18 +62,52 @@ constexpr auto layout_id = rd::meta::DescriptorLayout{
   rd::meta::UniformBinding{ rd::meta::type<uint32>(), rd::meta::Stage::FRAGMENT },
 };
 
-template <bool uplayer>
-using LightUnit = DrawUnitTemplate<layout_model_light, uplayer ? 1 : 0>;
-template <bool uplayer>
-using IdUnit = DrawUnitTemplate<layout_id, uplayer ? 3 : 2>;
+struct LightContext : public CustomDrawContext<layout_model_light> {
+  UniformBuffer<LightModelVertexData>   vertex_data;
+  UniformBuffer<LightModelFragmentData> frag_data;
+};
 
-class LightPipeline : public PROACTIVE_SINGLETON(LightPipeline),
-                      public RenderPass,
-                      public fw::Action {
+struct IdContext : public CustomDrawContext<layout_id> {
+  UniformBuffer<rd::align::mat4> transform;
+  UniformBuffer<uint32>          id;
+};
+
+export class LightPipeline : public CustomRenderPass, public PROACTIVE_SINGLETON(LightPipeline) {
 public:
-  using PROACTIVE_SINGLETON(LightPipeline)::getInstance;
+  void beforeRender(DrawUnit& draw_unit, DrawContextBase* draw_ctx) override {
+    if (auto* ctx = dynamic_cast<LightContext*>(draw_ctx)) {
+      ctx->vertex_data->model = draw_unit.getTransform();
+      ctx->vertex_data->normal_model = mt::getNormalModel(draw_unit.getTransform());
+    } else if (auto* ctx = dynamic_cast<IdContext*>(draw_ctx)) {
+      ctx->transform = draw_unit.getTransform();
+    }
+  }
+  auto fromDrawUnit(uint32 subpass_n, DrawUnit& draw_unit)
+    -> std::optional<uptr<DrawContextBase>> override {
+    if ((subpass_n == 0 || subpass_n == 1) && (subpass_n == 1) == draw_unit.isUpLayer()) {
+      auto ret = std::make_unique<LightContext>();
+      ret->init(
+        draw_unit,
+        {
+          &ret->vertex_data,
+          &ret->frag_data,
+          &draw_unit.getTexture().getTexture(),
+          &draw_unit.getTexture().getTexture(),
+        }
+      );
+      return ret;
+    } else if ((subpass_n == 2 || subpass_n == 3) && (subpass_n == 3) == draw_unit.isUpLayer()) {
+      auto ret = std::make_unique<IdContext>();
+      ret->id = _last_allocated_id++;
+      ret->init(draw_unit, { &ret->transform, &ret->id });
+      _draw_unit2id[&draw_unit] = ret->id;
+      _id2draw_unit[ret->id] = &draw_unit;
+      return ret;
+    }
+    return std::nullopt;
+  }
+
   LightPipeline() {
-    setStage(fw::Stage::RENDER);
     auto pipeline_infos = std::vector<PipelineInfo>{
       PipelineInfo{
         .colors = { 0 },
@@ -118,7 +154,7 @@ public:
       .multi_sampling = VK_SAMPLE_COUNT_8_BIT,
       .pipelines = std::move(pipeline_infos),
     };
-    RenderPass::operator=({ info });
+    init({ info });
     setColorClearValue(0, { 0.5f, 0.5f, 0.5f, 1.0f });
     setColorClearValue(1, { 0u });
     setDepstClearValue(0, 1.0f);
@@ -129,16 +165,30 @@ public:
     setGlobalDescriptorSet(0, &_dset_global_light);
     setGlobalDescriptorSet(1, &_dset_global_light);
     _reader = { VK_FORMAT_R32_UINT, { 1, 1 } };
+
+    _before_destroy = [this](DrawUnit& draw_unit) {
+      if (_draw_unit2id.contains(&draw_unit)) {
+        auto id = _draw_unit2id[&draw_unit];
+        _id2draw_unit.erase(id);
+        _draw_unit2id.erase(&draw_unit);
+      }
+    };
   }
+  ~LightPipeline() { DrawUnit::removeBeforeDestroy(&_before_destroy); }
 
   auto getLight() -> LightData& { return _uniform_light.get(); }
 
-  auto getSelectedId() -> uint32 { return _current_id; }
+  auto getSelectedDrawUnit() -> DrawUnit* {
+    if (auto it = _id2draw_unit.find(_current_id); it != _id2draw_unit.end()) {
+      return it->second;
+    } else {
+      return nullptr;
+    }
+  }
 
   UNCOPYABLE_MOVEABLE(LightPipeline);
 
-private:
-  void runLoop(fw::ActionContext const& ctx) override {
+  void draw(fw::ActionContext const& ctx) override {
     auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
     auto cursor = fw::InputProcessor::getInstance().getCursorState();
     if (cursor.visible) {
@@ -150,12 +200,18 @@ private:
       _current_id = 0;
     }
     _uniform_light->view_pos = Camera::getInstance().getViewPos();
-    draw(ctx);
+    CustomRenderPass::draw(ctx);
   }
+
+private:
   UniformBuffer<LightData>                     _uniform_light;
   rd::meta::DescriptorSet<layout_global_light> _dset_global_light;
   rd::ImageLocalReader                         _reader;
   uint32                                       _current_id = 0;
+  uint32                                       _last_allocated_id = 1;
+  std::function<void(DrawUnit&)>               _before_destroy;
+  std::unordered_map<uint32, DrawUnit*>        _id2draw_unit;
+  std::unordered_map<DrawUnit*, uint32>        _draw_unit2id;
 };
 
 } // namespace eg
