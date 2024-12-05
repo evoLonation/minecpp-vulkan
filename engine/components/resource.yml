@@ -1,12 +1,8 @@
 module:
-- move.ccm:
-    provide: tool.move
 - shape.ccm:
     provide: tool.shape
 - node.ccm:
     provide: engine.node
-- rotate.ccm:
-    provide: tool.rotate
 - camera.ccm:
     provide: camera
 - mesh.ccm:

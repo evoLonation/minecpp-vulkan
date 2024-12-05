@@ -1,11 +1,13 @@
 module;
 #include <toy.h>
-export module tool.rotate;
+export module editor.rotate;
 
+import engine.node;
+import engine.base;
+import engine.object;
 import std;
 import toy;
 import math;
-import component;
 import render;
 import framework;
 import camera;
@@ -16,19 +18,20 @@ export namespace eg {
 class RotatePlane {
 public:
   RotatePlane() = default;
-  RotatePlane(mt::Axis norm_axis) {
+  void init(mt::Axis norm_axis) {
     _norm_axis = norm_axis;
+    _root = std::make_shared<Node>();
+    _plane = std::make_shared<SceneObject>();
     auto norm = mt::unitVec(norm_axis);
-    _plane.setObject({ createShape(generateCylinder(1, _height, 90), norm) });
-    _plane.getObject().setUplayer();
+    _plane->setDrawUnit(createShape(generateCylinder(1, _height, 90), norm, true));
     auto origin_norm = glm::vec3{ 0, 0, 1 };
     if (auto cross = glm::cross(norm, origin_norm); !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
-      _plane.getTransform().rotate(cross, 90);
+      _plane->getTransform().rotate(cross, 90);
     }
-    _plane.attachTo(&_root);
+    _plane->attachTo(_root.get());
   }
-  auto getRoot() -> SceneComponent& { return _root; }
-  auto isSelected() -> bool { return _plane.isSelected(); }
+  auto getRoot() -> Node& { return *_root; }
+  auto isSelected() -> bool { return _plane->isSelected(); }
   void setDragging(bool dragging) {
     if (_dragging != dragging) {
       auto color = glm::vec4{};
@@ -37,16 +40,17 @@ public:
       } else {
         color = glm::vec4{ mt::unitVec(_norm_axis), 1 };
       }
-      _plane.getObject().getTexture().writeContent(std::as_bytes(std::span{ &color, 1 }));
+      _plane->getDrawUnit()->getTexture().getTexture().writeContent(std::as_bytes(std::span{ &color,
+                                                                                             1 }));
     }
     _dragging = dragging;
   }
 
 private:
-  mt::Axis       _norm_axis;
-  SceneComponent _root;
-  SceneComponent _plane;
-  bool           _dragging = false;
+  mt::Axis         _norm_axis;
+  ptr<Node>        _root;
+  ptr<SceneObject> _plane;
+  bool             _dragging = false;
 
   static constexpr auto _height = 0.1f;
 };
@@ -55,26 +59,27 @@ class RotateController : Component {
 public:
   RotateController() = default;
   enum Mode { LOCAL, WORLD };
-  RotateController(SceneComponent* component, Mode mode) {
+  RotateController(ptr<SceneObject> target, Mode mode) {
     setStage(fw::Stage::BEFORE_RENDER);
-    TOY_ASSERT(component->isRoot());
-    _component = component;
+    TOY_ASSERT(target->isRoot());
+    _target = target;
     _mode = mode;
-    _root.getTransform().mode = ModelTransform::LOCAL;
-    _location_bind = { _component->getTransform().location, _root.getTransform().location };
+    _root = std::make_shared<Node>();
+    _root->getTransform().mode = ModelTransform::LOCAL;
+    _location_bind = { target->getTransform().location, _root->getTransform().location };
     if (_mode == LOCAL) {
-      _rotate_bind = { _component->getTransform().rotate_euler, _root.getTransform().rotate_euler };
+      _rotate_bind = { target->getTransform().rotate_euler, _root->getTransform().rotate_euler };
     }
     for (auto [i, plane] : _planes | toy::enumerate) {
-      plane = RotatePlane{ static_cast<mt::Axis>(i) };
-      plane.getRoot().attachTo(&_root);
+      plane.init(static_cast<mt::Axis>(i));
+      plane.getRoot().attachTo(_root.get());
     }
   }
 
 private:
-  ptr<SceneComponent>           _component;
+  wptr<SceneObject>             _target;
   Mode                          _mode;
-  SceneComponent                _root;
+  ptr<Node>                     _root;
   toy::Bidirectional<glm::vec3> _location_bind;
   toy::Bidirectional<glm::vec3> _rotate_bind;
   std::array<RotatePlane, 3>    _planes;
@@ -104,8 +109,12 @@ private:
         _planes[int(*_plane_norm)].setDragging(false);
         _plane_norm = std::nullopt;
         if (_mode == LOCAL) {
-          _rotate_bind = { _component->getTransform().rotate_euler,
-                           _root.getTransform().rotate_euler };
+          if (auto target = _target.lock()) {
+            _rotate_bind = {
+              target->getTransform().rotate_euler,
+              _root->getTransform().rotate_euler,
+            };
+          }
         }
       }
     } else if (_plane_norm) {
@@ -118,11 +127,13 @@ private:
             delta = -delta;
           }
           _last_pos += delta;
-          auto origin_mode = _component->getTransform().mode;
-          _component->getTransform().mode =
-            _mode == WORLD ? ModelTransform::WORLD : ModelTransform::LOCAL;
-          _component->getTransform().rotate(*_plane_norm, delta * 360 / _cycle_length);
-          _component->getTransform().mode = origin_mode;
+          if (auto target = _target.lock()) {
+            auto origin_mode = target->getTransform().mode;
+            target->getTransform().mode =
+              _mode == WORLD ? ModelTransform::WORLD : ModelTransform::LOCAL;
+            target->getTransform().rotate(*_plane_norm, delta * 360 / _cycle_length);
+            target->getTransform().mode = origin_mode;
+          }
         }
       }
     }
@@ -147,8 +158,8 @@ private:
     auto unit2 = mt::unitVec(mt::Axis{ ((int)norm_axis + 2) % 3 });
     auto line_rotate_base = mt::Line{
       // 在扇形底部的45度斜线
-      .direction = mt::transformVec(_root.getTransToWorld(), unit2 - unit1),
-      .point = mt::transformDot(_root.getTransToWorld(), glm::vec3{ 0, 0, 0 }),
+      .direction = mt::transformVec(_root->getTransToWorld(), unit2 - unit1),
+      .point = mt::transformDot(_root->getTransToWorld(), glm::vec3{ 0, 0, 0 }),
     };
     if (mt::eq(
           glm::cross(line_cursor.direction, line_rotate_base.direction), glm::vec3{ 0, 0, 0 }
@@ -173,11 +184,12 @@ private:
   void runLoop(fw::ActionContext const& ctx) override {
     if (auto selected = ObjectClickObserver::getInstance().getClick()) {
       if (selected->isRoot()) {
-        _controller = { selected, RotateController::LOCAL };
+        _controller =
+          std::make_shared<RotateController>(selected->getPtr(), RotateController::LOCAL);
       }
     }
   }
-  RotateController _controller;
+  ptr<RotateController> _controller;
 };
 
 } // namespace eg

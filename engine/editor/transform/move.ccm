@@ -1,7 +1,10 @@
 module;
 #include <toy.h>
-export module tool.move;
+export module editor.move;
 
+import engine.node;
+import engine.base;
+import engine.object;
 import std;
 import toy;
 import glm;
@@ -11,7 +14,6 @@ import pipeline.light;
 import math;
 import pipeline.uniform;
 import tool.shape;
-import component;
 import camera;
 
 export namespace eg {
@@ -19,40 +21,40 @@ export namespace eg {
 class MovePlane {
 public:
   MovePlane() = default;
-  MovePlane(mt::Axis normal_axis) {
+  void init(mt::Axis normal_axis) {
     _norm_axis = normal_axis;
+    _root = std::make_shared<Node>();
     auto normal = mt::unitVec(normal_axis);
-    _cube = SceneComponent{ createShape(generateCube(), glm::vec3{ 0.5, 0.5, 0.5 }) };
-    _cube.getTransform().scale_factor =
+    _cube = std::make_shared<SceneObject>();
+    _cube->setDrawUnit(createShape(generateCube(), glm::vec3{ 0.5, 0.5, 0.5 }, true));
+    _cube->getTransform().scale_factor =
       glm::vec3{ 1, 1, 1 } - normal * (1 - _thickness) - (glm::vec3{ 1, 1, 1 } - normal) * _edge;
-    _cube.getTransform().location = -normal * (_thickness / 2);
+    _cube->getTransform().location = -normal * (_thickness / 2);
 
     auto unit_2 = mt::unitVec(mt::Axis(((int)normal_axis + 2) % 3));
     auto unit_1 = mt::unitVec(mt::Axis(((int)normal_axis + 1) % 3));
-    _edge_1 = SceneComponent{ createShape(generateCylinder(_thickness / 2, _edge), unit_1) };
+    _edge_1 = std::make_shared<SceneObject>();
+    _edge_1->setDrawUnit(createShape(generateCylinder(_thickness / 2, _edge), unit_1, true));
     if (auto cross = glm::cross(glm::vec3{ 0, 0, 1 }, unit_1);
         !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
-      _edge_1.getTransform().rotate(cross, 90);
+      _edge_1->getTransform().rotate(cross, 90);
     }
-    _edge_1.getTransform().translate(unit_2 * _edge);
-    _edge_2 = SceneComponent{ createShape(generateCylinder(_thickness / 2, _edge), unit_2) };
+    _edge_1->getTransform().translate(unit_2 * _edge);
+    _edge_2 = std::make_shared<SceneObject>();
+    _edge_2->setDrawUnit(createShape(generateCylinder(_thickness / 2, _edge), unit_2, true));
     if (auto cross = glm::cross(glm::vec3{ 0, 0, 1 }, unit_2);
         !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
-      _edge_2.getTransform().rotate(cross, 90);
+      _edge_2->getTransform().rotate(cross, 90);
     }
-    _edge_2.getTransform().translate(unit_1 * _edge);
-
-    _cube.getObject().setUplayer();
-    _edge_1.getObject().setUplayer();
-    _edge_2.getObject().setUplayer();
-    _cube.attachTo(&_root);
-    _edge_1.attachTo(&_root);
-    _edge_2.attachTo(&_root);
+    _edge_2->getTransform().translate(unit_1 * _edge);
+    _cube->attachTo(_root.get());
+    _edge_1->attachTo(_root.get());
+    _edge_2->attachTo(_root.get());
   }
   auto isSelected() -> bool {
-    return _cube.isSelected() || _edge_1.isSelected() || _edge_2.isSelected();
+    return _cube->isSelected() || _edge_1->isSelected() || _edge_2->isSelected();
   }
-  auto getRoot() -> SceneComponent& { return _root; }
+  auto getRoot() -> Node& { return *_root; }
   void setDragging(bool dragging) {
     if (_dragging != dragging) {
       auto cube_color = glm::vec4{};
@@ -67,20 +69,23 @@ public:
         edge1_color = { mt::unitVec(mt::Axis{ ((int)_norm_axis + 1) % 3 }), 1 };
         edge2_color = { mt::unitVec(mt::Axis{ ((int)_norm_axis + 2) % 3 }), 1 };
       }
-      _cube.getObject().getTexture().writeContent(std::as_bytes(std::span{ &cube_color, 1 }));
-      _edge_1.getObject().getTexture().writeContent(std::as_bytes(std::span{ &edge1_color, 1 }));
-      _edge_2.getObject().getTexture().writeContent(std::as_bytes(std::span{ &edge2_color, 1 }));
+      _cube->getDrawUnit()->getTexture().getTexture().writeContent(std::as_bytes(std::span{
+        &cube_color, 1 }));
+      _edge_1->getDrawUnit()->getTexture().getTexture().writeContent(std::as_bytes(std::span{
+        &edge1_color, 1 }));
+      _edge_2->getDrawUnit()->getTexture().getTexture().writeContent(std::as_bytes(std::span{
+        &edge2_color, 1 }));
     }
     _dragging = dragging;
   }
 
 private:
-  mt::Axis       _norm_axis;
-  SceneComponent _root;
-  SceneComponent _cube;
-  SceneComponent _edge_1;
-  SceneComponent _edge_2;
-  bool           _dragging;
+  mt::Axis         _norm_axis;
+  ptr<Node>        _root;
+  ptr<SceneObject> _cube;
+  ptr<SceneObject> _edge_1;
+  ptr<SceneObject> _edge_2;
+  bool             _dragging;
 
   constexpr static float _thickness = 0.05f;
   constexpr static float _edge = 0.5f;
@@ -89,19 +94,20 @@ private:
 class MoveArrow {
 public:
   MoveArrow() = default;
-  MoveArrow(mt::Axis axis) {
+  void init(mt::Axis axis) {
     _axis = axis;
+    _root = std::make_shared<Node>();
     _dragging = false;
     auto unit = mt::unitVec(axis);
-    _arrow = SceneComponent{ createShape(generateArrow(), unit) };
+    _arrow = std::make_shared<SceneObject>();
+    _arrow->setDrawUnit(createShape(generateArrow(), unit, true));
     auto arrow_dir = glm::vec3{ 0, 0, 1 };
     if (auto cross = glm::cross(arrow_dir, unit); !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
-      _arrow.getTransform().rotate(cross, 90);
+      _arrow->getTransform().rotate(cross, 90);
     }
-    _arrow.getObject().setUplayer();
-    _arrow.attachTo(&_root);
+    _arrow->attachTo(_root.get());
   }
-  auto isSelected() -> bool { return _arrow.isSelected(); }
+  auto isSelected() -> bool { return _arrow->isSelected(); }
   void setDragging(bool dragging) {
     if (_dragging != dragging) {
       auto color = glm::vec4{};
@@ -110,17 +116,20 @@ public:
       } else {
         color = { mt::unitVec(_axis), 1 };
       }
-      _arrow.getObject().getTexture().writeContent(std::as_bytes(std::span{ &color, 1 }));
+      _arrow->getDrawUnit()
+        ->getTexture() //
+        .getTexture()
+        .writeContent(std::as_bytes(std::span{ &color, 1 }));
     }
     _dragging = dragging;
   }
-  auto getRoot() -> SceneComponent& { return _root; }
+  auto getRoot() -> Node& { return *_root; }
 
 private:
-  mt::Axis       _axis;
-  SceneComponent _root;
-  SceneComponent _arrow;
-  bool           _dragging;
+  mt::Axis         _axis;
+  ptr<Node>        _root;
+  ptr<SceneObject> _arrow;
+  bool             _dragging;
 
   constexpr static float _thickness = 0.05f;
   constexpr static float _edge = 0.5f;
@@ -128,38 +137,35 @@ private:
 
 class MoveController : public Component {
 public:
-  MoveController() = default;
   enum Mode { LOCAL, WORLD };
-  MoveController(SceneComponent* component, Mode mode) {
-    setStage(fw::Stage::BEFORE_RENDER);
-    TOY_ASSERT(component->isRoot());
+  MoveController(ptr<Node> target, Mode mode) {
+    TOY_ASSERT(target->isRoot());
     _mode = mode;
-    _component = component;
-    _root.getTransform().mode = ModelTransform::LOCAL;
-    _location_bind = { _component->getTransform().location, _root.getTransform().location };
+    _root = std::make_shared<Node>();
+    _root->getTransform().mode = ModelTransform::LOCAL;
+    _location_bind = { target->getTransform().location, _root->getTransform().location };
     if (_mode == LOCAL) {
       _rotate_bind = {
-        _component->getTransform().rotate_euler,
-        _root.getTransform().rotate_euler,
+        target->getTransform().rotate_euler,
+        _root->getTransform().rotate_euler,
       };
     }
-    _arrows[0] = MoveArrow{ mt::Axis::X };
-    _arrows[1] = MoveArrow{ mt::Axis::Y };
-    _arrows[2] = MoveArrow{ mt::Axis::Z };
-    _arrows[0].getRoot().attachTo(&_root);
-    _arrows[1].getRoot().attachTo(&_root);
-    _arrows[2].getRoot().attachTo(&_root);
-    _planes[0] = MovePlane(mt::Axis::X);
-    _planes[1] = MovePlane(mt::Axis::Y);
-    _planes[2] = MovePlane(mt::Axis::Z);
-    _planes[0].getRoot().attachTo(&_root);
-    _planes[1].getRoot().attachTo(&_root);
-    _planes[2].getRoot().attachTo(&_root);
+    _arrows[0].init(mt::Axis::X);
+    _arrows[1].init(mt::Axis::Y);
+    _arrows[2].init(mt::Axis::Z);
+    _arrows[0].getRoot().attachTo(_root.get());
+    _arrows[1].getRoot().attachTo(_root.get());
+    _arrows[2].getRoot().attachTo(_root.get());
+    _planes[0].init(mt::Axis::X);
+    _planes[1].init(mt::Axis::Y);
+    _planes[2].init(mt::Axis::Z);
+    _planes[0].getRoot().attachTo(_root.get());
+    _planes[1].getRoot().attachTo(_root.get());
+    _planes[2].getRoot().attachTo(_root.get());
   }
 
 private:
-  ptr<SceneComponent>           _component;
-  SceneComponent                _root;
+  ptr<Node>                     _root;
   Mode                          _mode = WORLD;
   toy::Bidirectional<glm::vec3> _location_bind;
   toy::Bidirectional<glm::vec3> _rotate_bind;
@@ -216,7 +222,7 @@ private:
           if (now_pos - _start_pos < 0) {
             delta = -delta;
           }
-          _root.getTransform().translate(*_axis, delta);
+          _root->getTransform().translate(*_axis, delta);
         }
       }
     } else if (_plane_norm) {
@@ -231,14 +237,14 @@ private:
           if (now_pos_1 - start_pos_1 < 0) {
             delta = -delta;
           }
-          _root.getTransform().translate(mt::Axis(((int)*_plane_norm + 1) % 3), delta);
+          _root->getTransform().translate(mt::Axis(((int)*_plane_norm + 1) % 3), delta);
         }
         if (glm::abs(now_pos_2 - start_pos_2) >= _unit_length) {
           auto delta = _unit_length;
           if (now_pos_2 - start_pos_2 < 0) {
             delta = -delta;
           }
-          _root.getTransform().translate(mt::Axis(((int)*_plane_norm + 2) % 3), delta);
+          _root->getTransform().translate(mt::Axis(((int)*_plane_norm + 2) % 3), delta);
         }
       }
     }
@@ -261,8 +267,8 @@ private:
       .point = start,
     };
     auto line_axis = mt::Line{
-      .direction = mt::transformVec(_root.getTransToWorld(), mt::unitVec(*_axis)),
-      .point = mt::transformDot(_root.getTransToWorld(), glm::vec3{ 0, 0, 0 }),
+      .direction = mt::transformVec(_root->getTransToWorld(), mt::unitVec(*_axis)),
+      .point = mt::transformDot(_root->getTransToWorld(), glm::vec3{ 0, 0, 0 }),
     };
     if (mt::eq(glm::cross(line_cursor.direction, line_axis.direction), glm::vec3{ 0, 0, 0 })) {
       return std::nullopt;
@@ -291,9 +297,9 @@ private:
       .direction = end - start,
       .point = start,
     };
-    auto plane_point = mt::transformDot(_root.getTransToWorld(), glm::vec3{ 0, 0, 0 });
+    auto plane_point = mt::transformDot(_root->getTransToWorld(), glm::vec3{ 0, 0, 0 });
     auto plane = mt::Surface{
-      .normal = mt::transformVec(_root.getTransToWorld(), mt::unitVec(axis)),
+      .normal = mt::transformVec(_root->getTransToWorld(), mt::unitVec(axis)),
     };
     plane.dot = glm::dot(plane_point, plane.normal);
     // TOY_DEBUG(plane.normal, plane.dot);
@@ -302,9 +308,9 @@ private:
       auto point = std::get<glm::vec3>(ret) - plane_point;
       // TOY_DEBUG(point);
       auto unit_1 =
-        mt::transformVec(_root.getTransToWorld(), mt::unitVec(mt::Axis(((int)axis + 1) % 3)));
+        mt::transformVec(_root->getTransToWorld(), mt::unitVec(mt::Axis(((int)axis + 1) % 3)));
       auto unit_2 =
-        mt::transformVec(_root.getTransToWorld(), mt::unitVec(mt::Axis(((int)axis + 2) % 3)));
+        mt::transformVec(_root->getTransToWorld(), mt::unitVec(mt::Axis(((int)axis + 2) % 3)));
       auto res = glm::vec2{ glm::dot(point, unit_1), glm::dot(point, unit_2) };
       // TOY_DEBUG(glm::vec3{ res, 0 });
       return res;
@@ -328,11 +334,11 @@ private:
   void runLoop(fw::ActionContext const& ctx) override {
     if (auto selected = ObjectClickObserver::getInstance().getClick()) {
       if (selected->isRoot()) {
-        _controller = { selected, MoveController::LOCAL };
+        _controller = std::make_shared<MoveController>(selected->getPtr(), MoveController::LOCAL);
       }
     }
   }
-  MoveController _controller;
+  ptr<MoveController> _controller;
 };
 
 } // namespace eg

@@ -233,9 +233,8 @@ auto generateAxis() -> ShapeMesh {
   return ShapeMesh::merge({ arrow_x, arrow_y, arrow_z });
 }
 
-auto createShape(
-  ShapeMesh shape, glm::vec3 color = { 0.7f, 0.2f, 0.5f }, glm::vec3 location = { 0.0f, 0.0f, 0.0f }
-) -> uptr<DrawUnit> {
+auto createShape(ShapeMesh shape, glm::vec3 color = { 0.7f, 0.2f, 0.5f }, bool up_layer = false)
+  -> uptr<DrawUnit> {
   auto mesh_data = MeshData{
     .positions = shape.positions,
     .normals = shape.normals,
@@ -252,8 +251,7 @@ auto createShape(
     false,
     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
   });
-  auto object = std::make_unique<DrawUnit>(std::move(mesh), std::move(texture));
-  object->getTransform() = mt::model::create(location);
+  auto object = std::make_unique<DrawUnit>(std::move(mesh), std::move(texture), up_layer);
   return object;
 }
 

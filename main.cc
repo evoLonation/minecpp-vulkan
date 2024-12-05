@@ -18,7 +18,7 @@ import framework;
 import pipeline.basic;
 import pipeline.loop;
 import engine.draw_unit;
-;
+import editor.move;
 import pipeline.uniform;
 import engine.object;
 import engine.mesh;
@@ -28,7 +28,7 @@ import render;
 // import pipeline.resources;
 // import pipeline.drawunit;
 // import tool.move;
-// import tool.rotate;
+import editor.rotate;
 import tool.shape;
 import camera;
 import drag;
@@ -44,9 +44,9 @@ int main() {
     auto& input = fw::InputProcessor::getInstance();
     // auto  transform_gui = eg::ModelTransformGuiController{};
     auto render_pass = eg::RenderPassLoop{};
-    // auto  click_observer = eg::ObjectClickObserver{};
-    // auto  move_manager = eg::MoveControllerManager{};
-    // auto rotate_manager = eg::RotateControllerManager{};
+    auto  click_observer = eg::ObjectClickObserver{};
+    // auto move_manager = eg::MoveControllerManager{};
+    auto rotate_manager = eg::RotateControllerManager{};
 
     auto camera = eg::Camera{};
     auto controller = eg::CameraController{ &camera };
@@ -59,14 +59,12 @@ int main() {
     ) });
     auto object1 = std::make_shared<eg::SceneObject>(std::move(mesh), std::move(texture));
     auto cylinder = std::make_shared<eg::SceneObject>();
-    cylinder->setDrawUnit(eg::createShape(
-      eg::generateCylinder(1, 2, 77), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f }
-    ));
+    cylinder->setDrawUnit(
+      eg::createShape(eg::generateCylinder(1, 2, 77), glm::vec3{ 0.3, 0.5, 0.1 })
+    );
     cylinder->getTransform().location = { 0, 3, 0 };
     auto cube = std::make_shared<eg::SceneObject>();
-    cube->setDrawUnit(
-      eg::createShape(eg::generateCube(), glm::vec3{ 0.3, 0.5, 0.1 }, glm::vec3{ 0.0f, 0.0f, 1.0f })
-    );
+    cube->setDrawUnit(eg::createShape(eg::generateCube(), glm::vec3{ 0.3, 0.5, 0.1 }));
     // auto selector_cube = eg::MoveTransformSelector{ &cube };
 
     // auto cylinder = std::make_unique<tool::SceneComponent>(tool::createShape(

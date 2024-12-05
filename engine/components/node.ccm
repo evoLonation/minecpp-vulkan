@@ -117,12 +117,15 @@ class Node : public Component {
 public:
   Node() { setObserver(); }
   void attachTo(Node* node) {
-    detach();
+    if (_parent) {
+      detach();
+    }
     _parent = node;
     _parent->_children.insert(getPtr());
     setObserver();
   }
   void detach() {
+    TOY_ASSERT(_parent);
     _parent->_children.erase(getPtr());
     _parent = nullptr;
     setObserver();

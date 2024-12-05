@@ -1,0 +1,7 @@
+module:
+- move.ccm:
+    provide: editor.move
+- transform.ccm:
+    provide: editor.transform
+- rotate.ccm:
+    provide: editor.rotate

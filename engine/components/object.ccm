@@ -35,7 +35,9 @@ public:
       _draw_unit2object.erase(_draw_unit.get());
     }
     _draw_unit = std::move(draw_unit);
-    _draw_unit2object[_draw_unit.get()] = this;
+    if (_draw_unit.get()) {
+      _draw_unit2object[_draw_unit.get()] = this;
+    }
   }
   auto getDrawUnit() -> DrawUnit* { return _draw_unit.get(); }
   auto isSelected() -> bool {
