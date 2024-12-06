@@ -74,7 +74,7 @@ private:
 
   // must make the static member as template variable, otherwise the Vertex is incomplete type when
   // construct the variable
-  // member binding is undefined
+  // member binding and location is undefined
   template <typename = void>
   static constexpr auto attribute_descriptions = []() {
     auto attribute_descriptions =
@@ -82,7 +82,7 @@ private:
     uint32 i = 0;
     ((attribute_descriptions[i] =
         VkVertexInputAttributeDescription{
-          .location = i,
+          .location = 0,
           .binding = 0,
           .format = typeToFormat<DataTypes>(),
           .offset = align_info.second[i],
@@ -96,7 +96,7 @@ private:
 struct VertexLayout {
   struct VertexBinding {
     VertexInfo          vertex_info;
-    std::vector<uint32> locations;
+    std::vector<uint32> selecteds;
   };
   std::vector<VertexBinding> bindings;
   auto getBindingDescriptions() const -> std::vector<VkVertexInputBindingDescription> {
@@ -114,12 +114,14 @@ struct VertexLayout {
   }
   auto getAttributeDescriptions() const -> std::vector<VkVertexInputAttributeDescription> {
     auto attribute_descriptions = std::vector<VkVertexInputAttributeDescription>{};
+    auto location = 0;
     for (auto [i, binding] : bindings | toy::enumerate) {
-      for (auto location : binding.locations) {
+      for (auto selected : binding.selecteds) {
         auto& vertex_info = binding.vertex_info;
-        TOY_ASSERT(location < vertex_info.attribute_descriptions.size());
-        auto attribute_description = vertex_info.attribute_descriptions[location];
+        TOY_ASSERT(selected < vertex_info.attribute_descriptions.size());
+        auto attribute_description = vertex_info.attribute_descriptions[selected];
         attribute_description.binding = i;
+        attribute_description.location = location++;
         attribute_descriptions.push_back(attribute_description);
       }
     }

@@ -79,8 +79,8 @@ public:
   void assetDeserialize(AssetUnpacker unpacker) override {
     Node::assetDeserialize(unpacker.extractInherited());
     auto [mesh_ref, texture_ref, up_layer] = unpacker.extract<AssetRef, AssetRef, bool>();
-    _draw_unit = std::make_unique<DrawUnit>(
-      mesh_ref.consume<Mesh>(), texture_ref.consume<Texture>(), up_layer
+    setDrawUnit(
+      std::make_unique<DrawUnit>(mesh_ref.consume<Mesh>(), texture_ref.consume<Texture>(), up_layer)
     );
   }
   REGISTER_ASSET_PATH("scene_object")
