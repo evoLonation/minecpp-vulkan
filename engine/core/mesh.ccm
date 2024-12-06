@@ -1,7 +1,10 @@
 module;
+#include <engine.h>
 #include <toy.h>
+
 export module engine.mesh;
 
+import engine.base;
 import render;
 import toy.persistent;
 import engine.assets;
@@ -48,15 +51,17 @@ struct MeshData {
 
 using Vertex = rd::Vertex<glm::vec3, glm::vec3, glm::vec2>;
 
-struct Mesh : public Asset {
+struct Mesh : public Component, public Asset {
 public:
-  Mesh(MeshData const& data) {
+  Mesh() = default;
+  Mesh(MeshData const& data) { init(data); }
+  void init(MeshData const& data) {
     auto light_vertices = std::vector<Vertex>{};
     for (auto [pos, norm, tex] : views::zip(data.positions, data.normals, data.tex_coords)) {
       light_vertices.push_back({ pos, norm, tex });
     }
-    _vertex_buffer = rd::VertexBuffer{ light_vertices };
-    _index_buffer = rd::IndexBuffer{ data.indices };
+    _vertex_buffer = rd::VertexBuffer{ light_vertices, VK_BUFFER_USAGE_TRANSFER_SRC_BIT };
+    _index_buffer = rd::IndexBuffer{ data.indices, VK_BUFFER_USAGE_TRANSFER_SRC_BIT };
   }
   auto getData() -> MeshData {
     auto reader = rd::BufferLocalReader{ std::max(_vertex_buffer.size(), _index_buffer.size()) };
@@ -85,23 +90,24 @@ private:
   rd::VertexBuffer _vertex_buffer;
   rd::IndexBuffer  _index_buffer;
 
-  auto assetSerialize() {
+public:
+  auto assetSerialize() -> AssetPackager override {
     auto [positions, normals, tex_coords, indices] = getData();
-    return std::tuple{ positions, normals, tex_coords, indices };
+    return { std::tuple{ positions, normals, tex_coords, indices }, Asset::assetSerialize() };
   }
-
-  static auto assetDeserialize(
-    std::vector<glm::vec3> positions,
-    std::vector<glm::vec3> normals,
-    std::vector<glm::vec2> tex_coords,
-    std::vector<uint16>    indices
-  ) -> std::shared_ptr<Mesh> {
-    auto data = MeshData{ positions, normals, tex_coords, indices };
-    auto ret = std::make_shared<Mesh>(data);
-    return std::move(ret);
+  void assetDeserialize(AssetUnpacker unpacker) override {
+    Asset::assetDeserialize(unpacker.extractInherited());
+    auto [positions, normals, tex_coords, indices] = unpacker.extract<
+      std::vector<glm::vec3>,
+      std::vector<glm::vec3>,
+      std::vector<glm::vec2>,
+      std::vector<uint16>>();
+    auto data = MeshData{
+      std::move(positions), std::move(normals), std::move(tex_coords), std::move(indices)
+    };
+    init(data);
   }
-
-  static inline fs::path _asset_path = "meshes";
+  REGISTER_ASSET_PATH("mesh")
 };
 
 } // namespace eg

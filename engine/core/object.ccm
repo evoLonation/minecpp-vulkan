@@ -1,7 +1,10 @@
 module;
+#include <engine.h>
 #include <toy.h>
+
 export module engine.object;
 
+import engine.assets;
 import pipeline.id;
 import engine.draw_unit;
 import engine.base;
@@ -60,6 +63,27 @@ private:
   }
 
   static inline std::unordered_map<DrawUnit*, SceneObject*> _draw_unit2object;
+
+public:
+  auto assetSerialize() -> AssetPackager override {
+    // todo: how to deal with invalid _draw_unit
+    return {
+      std::tuple{
+        AssetRef{ _draw_unit->getMesh().getPtr() },
+        AssetRef{ _draw_unit->getTexture().getPtr() },
+        _draw_unit->isUpLayer(),
+      },
+      Node::assetSerialize(),
+    };
+  }
+  void assetDeserialize(AssetUnpacker unpacker) override {
+    Node::assetDeserialize(unpacker.extractInherited());
+    auto [mesh_ref, texture_ref, up_layer] = unpacker.extract<AssetRef, AssetRef, bool>();
+    _draw_unit = std::make_unique<DrawUnit>(
+      mesh_ref.consume<Mesh>(), texture_ref.consume<Texture>(), up_layer
+    );
+  }
+  REGISTER_ASSET_PATH("scene_object")
 };
 
 class ObjectClickObserver : public fw::Action, public PROACTIVE_SINGLETON(ObjectClickObserver) {

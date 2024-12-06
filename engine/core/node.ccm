@@ -1,7 +1,10 @@
 module;
+#include <engine.h>
 #include <toy.h>
+
 export module engine.node;
 
+import engine.assets;
 import engine.base;
 import std;
 import toy;
@@ -12,7 +15,7 @@ import <imgui_config.h>;
 
 export namespace eg {
 
-class ModelTransform : public Component {
+class ModelTransform {
 public:
   ModelTransform() {
     auto changer = [this](auto&& any) {
@@ -113,7 +116,7 @@ private:
   std::array<toy::Observer<glm::vec3>, 3> _model_observers;
 };
 
-class Node : public Component {
+class Node : public Component, public Asset {
 public:
   Node() { setObserver(); }
   void attachTo(Node* node) {
@@ -154,6 +157,36 @@ private:
       _transform_observer = toy::Observer{ _transform.get(), observer, true };
     }
   }
+
+public:
+  auto assetSerialize() -> AssetPackager override {
+    auto transform_data = std::tuple{
+      _transform.location.get(),
+      _transform.rotate_euler.get(),
+      _transform.scale_factor.get(),
+      _transform.mode,
+    };
+    auto children_data = std::vector<AssetRef>{};
+    for (auto& child : _children) {
+      children_data.push_back(AssetRef{ child });
+    }
+    return { std::tuple_cat(transform_data, std::tuple{ children_data }), Asset::assetSerialize() };
+  }
+  void assetDeserialize(AssetUnpacker unpacker) override {
+    Asset::assetDeserialize(unpacker.extractInherited());
+    auto [location, rotate_euler, scale_factor, mode, children_data] =
+      unpacker
+        .extract<glm::vec3, glm::vec3, glm::vec3, ModelTransform::Mode, std::vector<AssetRef>>();
+    _transform.location = location;
+    _transform.rotate_euler = rotate_euler;
+    _transform.scale_factor = scale_factor;
+    _transform.mode = mode;
+    for (auto& child_data : children_data) {
+      auto child = child_data.consume<Node>();
+      child->attachTo(this);
+    }
+  }
+  REGISTER_ASSET_PATH("node")
 };
 
 } // namespace eg

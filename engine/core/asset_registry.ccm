@@ -1,0 +1,24 @@
+module;
+#include <toy.h>
+export module engine.assets.registry;
+
+import engine.mesh;
+import engine.texture;
+import engine.node;
+import engine.object;
+import engine.assets;
+import std;
+import toy;
+
+#define REGISTER_ASSET(cls) { cls::asset_path, []() { return std::make_shared<cls>(); } }
+
+namespace eg {
+
+export std::unordered_map<fs::path, std::function<std::shared_ptr<Asset>()>> default_asset_map = {
+  REGISTER_ASSET(Mesh),
+  REGISTER_ASSET(Texture),
+  REGISTER_ASSET(Node),
+  REGISTER_ASSET(SceneObject),
+};
+
+}

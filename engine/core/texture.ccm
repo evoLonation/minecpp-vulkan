@@ -1,7 +1,10 @@
 module;
+#include <engine.h>
 #include <toy.h>
+
 export module engine.texture;
 
+import engine.base;
 import engine.assets;
 import render;
 import std;
@@ -11,8 +14,9 @@ export namespace eg {
 
 using FormatInfo = rd::FormatInfo;
 
-class Texture : public Asset {
+class Texture : public Component, public Asset {
 public:
+  Texture() = default;
   Texture(rd::SampledTexture texture) : _texture{ std::move(texture) } {}
 
   auto getTexture() -> rd::SampledTexture& { return _texture; }
@@ -20,7 +24,8 @@ public:
 private:
   rd::SampledTexture _texture;
 
-  auto assetSerialize() {
+public:
+  auto assetSerialize() -> AssetPackager override {
     auto format = _texture.getImage().getFormat();
     auto extent = _texture.getImage().getExtent();
     auto mipmap = _texture.getImage().enableMipmap();
@@ -32,21 +37,19 @@ private:
       first_pixel,
       first_pixel + extent.width * extent.height * rd::getFormatInfo(format).size,
     };
-    return std::tuple{ std::move(data), format, extent, mipmap, use_stage };
+    return {
+      std::tuple{ std::move(data), format, extent, mipmap, use_stage },
+      Asset::assetSerialize(),
+    };
   }
-
-  static auto assetDeserialize(
-    std::vector<std::byte>  data,
-    VkFormat                format,
-    VkExtent2D              extent,
-    bool                    mipmap,
-    VkPipelineStageFlagBits use_stage
-  ) -> std::shared_ptr<Texture> {
-    auto texture = rd::SampledTexture{ std::span{ data }, format, extent, mipmap, use_stage };
-    return std::make_shared<Texture>(std::move(texture));
+  void assetDeserialize(AssetUnpacker unpacker) override {
+    Asset::assetDeserialize(unpacker.extractInherited());
+    auto [data, format, extent, mipmap, use_stage] =
+      unpacker.extract<std::vector<std::byte>, VkFormat, VkExtent2D, bool, VkPipelineStageFlagBits>(
+      );
+    _texture = rd::SampledTexture{ std::span{ data }, format, extent, mipmap, use_stage };
   }
-
-  static inline fs::path _asset_path = "textures";
+  REGISTER_ASSET_PATH("texture")
 };
 
 // todo: serializer
