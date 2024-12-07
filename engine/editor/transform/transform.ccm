@@ -1,0 +1,180 @@
+module;
+#include <toy.h>
+export module editor.transform;
+
+import editor.move;
+import editor.rotate;
+import engine.object;
+import engine.base;
+import engine.node;
+import glm;
+import <imgui_config.h>;
+import gui.context;
+import gui.tool;
+import framework;
+import std;
+import toy;
+
+export namespace eg {
+
+void input(std::string const& label, glm::vec3& value) {
+  ImGui::PushItemWidth(150);
+  ImGui::InputFloat(std::format("x##{}", label).c_str(), &value.x, 0.01f, 1.0f, "%.3f");
+  ImGui::SameLine();
+  ImGui::InputFloat(std::format("y##{}", label).c_str(), &value.y, 0.01f, 1.0f, "%.3f");
+  ImGui::SameLine();
+  ImGui::InputFloat(std::format("z##{}", label).c_str(), &value.z, 0.01f, 1.0f, "%.3f");
+  ImGui::SameLine();
+  ImGui::Text("%s", label.c_str());
+  ImGui::PopItemWidth();
+}
+
+class TransformControllerPanel : public PROACTIVE_SINGLETON(TransformControllerPanel),
+                                 public gui::Drawer,
+                                 public fw::Action {
+public:
+  TransformControllerPanel() : fw::Action(fw::Stage::BEFORE_RENDER) {}
+  void draw() override {
+    ImGui::SeparatorText("Transform Tools");
+    static int _mode = 0;
+    ImGui::RadioButton("None", &_mode, 0);
+    ImGui::RadioButton("Translate", &_mode, 1);
+    ImGui::RadioButton("Rotate", &_mode, 2);
+    ImGui::RadioButton("Scale", &_mode, 3);
+    static int _last_mode = 0;
+    if (_mode != _last_mode) {
+      _last_mode = _mode;
+      _move_controller_manager.reset();
+      _rotate_controller_manager.reset();
+      // _scale_controller_manager.reset();
+      if (_mode == 1) {
+        _move_controller_manager = std::make_unique<MoveControllerManager>();
+      } else if (_mode == 2) {
+        _rotate_controller_manager = std::make_unique<RotateControllerManager>();
+      } else if (_mode == 3) {
+        // _scale_controller_manager = std::make_unique<ScaleControllerManager>();
+      }
+    }
+    if (_mode != 0) {
+      ImGui::Text("Transform Mode:");
+      ImGui::SameLine();
+      static int radio = 0;
+      ImGui::RadioButton("Local", &radio, 0);
+      ImGui::SameLine();
+      ImGui::RadioButton("World", &radio, 1);
+    }
+    if (_mode == 1) {
+      static float translate_delta = 0;
+      ImGui::InputFloat("Translate delta", &translate_delta);
+    } else if (_mode == 2) {
+      static float rotate_delta = 0;
+      ImGui::InputFloat("Rotate delta", &rotate_delta);
+    } else if (_mode == 3) {
+      static float scale_delta = 0;
+      ImGui::InputFloat("Scale delta", &scale_delta);
+    }
+
+    if (_selected.expired()) {
+      ImGui::SeparatorText("No object selected.");
+    } else {
+      ImGui::SeparatorText("Selected object transform info:");
+      auto  selected = _selected.lock();
+      auto& transform = selected->getTransform();
+      transform.location.change([](glm::vec3& location) {
+        ImGui::InputFloat3("Location", &location[0]);
+      });
+      transform.rotate_euler.change([](glm::vec3& rotate_euler) {
+        ImGui::InputFloat3("Rotate Euler", &rotate_euler[0]);
+      });
+      transform.scale_factor.change([](glm::vec3& scale_factor) {
+        ImGui::InputFloat3("Scale Factor", &scale_factor[0]);
+      });
+      ImGui::Text("Transform Mode:");
+      static int radio = 0;
+      ImGui::RadioButton("Local", &radio, 0);
+      ImGui::SameLine();
+      ImGui::RadioButton("World", &radio, 1);
+    }
+
+    // enable which translate/rotate/scale tool
+    // direct set location/rotation/scale
+    // direct set MODE
+  }
+
+private:
+  void runLoop(fw::ActionContext const& ctx) override {
+    if (auto object = ObjectClickObserver::getInstance().getClick()) {
+      _selected = object->getPtr();
+    }
+  }
+  wptr<SceneObject> _selected;
+
+  uptr<MoveControllerManager>   _move_controller_manager;
+  uptr<RotateControllerManager> _rotate_controller_manager;
+  // uptr<ScaleControllerManager>  _scale_controller_manager;
+};
+
+// class ModelTransformGuiController : public PROACTIVE_SINGLETON(ModelTransformGuiController),
+//                                     public gui::Drawer {
+// public:
+//   ModelTransformGuiController() = default;
+//   void draw() override {
+//     if (!_transform.valid()) {
+//       ImGui::Text("There is no any valid ModelTransform.");
+//       return;
+//     }
+//     _transform->location.change([](auto& location) { gui::slider("location", location); });
+//     _transform->rotate_euler.change([](auto& rotate_euler) {
+//       gui::slider("euler_angle", rotate_euler, glm::vec3{ -180 }, glm::vec3{ 180 });
+//     });
+//     _transform->scale_factor.change([](auto& scale_factor) { gui::slider("scale", scale_factor);
+//     });
+//   }
+
+//   UNCOPYABLE_MOVEABLE(ModelTransformGuiController);
+
+// private:
+//   friend class MoveTransformSelector;
+//   ptr<ModelTransform> _transform;
+// };
+
+// class MoveTransformSelector : public Component {
+// public:
+//   MoveTransformSelector() = default;
+//   MoveTransformSelector(SceneComponent* component) {
+//     fw::Action::setStage(fw::Stage::BEFORE_RENDER);
+//     _component = { component };
+//   }
+
+// private:
+//   void runLoop(fw::ActionContext const& ctx) override {
+//     if (ObjectClickObserver::getInstance().getClick() == _component) {
+//       ModelTransformGuiController::getInstance()._transform = &_component->getTransform();
+//     }
+//   }
+//   ptr<SceneComponent> _component;
+// };
+
+// class ModelTransformGuiController : public PROACTIVE_SINGLETON(ModelTransformGuiController),
+//                                     public gui::Drawer {
+// public:
+//   ModelTransformGuiController() = default;
+//   void draw() override {
+//     static glm::vec3 test = { 0.0f, 0.0f, 0.0f };
+//     // if (!_transform.valid()) {
+//     //   ImGui::Text("There is no any valid ModelTransform.");
+//     //   return;
+//     // }
+//     input("test", test);
+//     ImGui::Text("Transform Mode:");
+//     ImGui::SameLine();
+//     static int radio = 0;
+//     ImGui::RadioButton("Local", &radio, 0);
+//     ImGui::SameLine();
+//     ImGui::RadioButton("World", &radio, 1);
+//   }
+
+//   UNCOPYABLE_MOVEABLE(ModelTransformGuiController);
+// };
+
+} // namespace eg

@@ -34,7 +34,7 @@ import editor.rotate;
 import tool.shape;
 import camera;
 import drag;
-// import editor.transform;
+import editor.transform;
 
 int main() {
   try {
@@ -48,11 +48,11 @@ int main() {
     auto render_pass = eg::RenderPassLoop{};
     auto click_observer = eg::ObjectClickObserver{};
     // auto move_manager = eg::MoveControllerManager{};
-    auto rotate_manager = eg::RotateControllerManager{};
     auto manager = eg::AssetManager{ eg::default_asset_map };
 
     auto camera = eg::Camera{};
     auto controller = eg::CameraController{ &camera };
+    auto panel = eg::TransformControllerPanel{};
 
     // auto [positions, normals, tex_coords, indices] =
     // model::getModelInfo("model/viking_room.obj"); auto mesh =
