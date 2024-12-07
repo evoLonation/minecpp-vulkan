@@ -2,6 +2,7 @@ module;
 #include <toy.h>
 export module pipeline.render_pass;
 
+import pipeline.render_target;
 import framework;
 import camera;
 import render;
@@ -32,7 +33,6 @@ struct RenderPassInfo {
   std::vector<VkFormat>                depst_formats;
   std::optional<VkSampleCountFlagBits> multi_sampling;
   std::vector<PipelineInfo>            pipelines;
-  bool                                 use_present_attachment = true;
 };
 
 class DrawContext {
@@ -81,15 +81,9 @@ public:
   RenderPass() = default;
   RenderPass(RenderPassInfo const& info) { init(info); }
   void init(RenderPassInfo const& info) {
-    auto& swapchain = rd::Presentation::getInstance().getSwapchain();
-    auto  attachment_infos = std::vector<rd::AttachmentInfo>{};
+    auto attachment_infos = std::vector<rd::AttachmentInfo>{};
     {
-      auto color_formats = std::vector<VkFormat>{};
-      if (info.use_present_attachment) {
-        color_formats.push_back(swapchain.getFormat());
-      }
-      color_formats.append_range(info.color_formats);
-      for (auto& color_format : color_formats) {
+      for (auto& color_format : info.color_formats) {
         attachment_infos.push_back(rd::AttachmentInfo{
           .format = color_format,
           .sample_count = info.multi_sampling.value_or(VK_SAMPLE_COUNT_1_BIT),
@@ -149,25 +143,19 @@ public:
         },
       };
       if (subpass_info.depst) {
-        auto color_attachment_size = info.color_formats.size();
-        if (info.use_present_attachment) {
-          color_attachment_size += 1;
-        }
         subpass_info.depst->attachment +=
-          info.multi_sampling ? color_attachment_size * 2 : color_attachment_size;
+          info.multi_sampling ? info.color_formats.size() * 2 : info.color_formats.size();
       }
       subpass_infos.push_back(subpass_info);
       auto dyn_ref =
         pipeline.depst ? pipeline.depst->stencil ? pipeline.depst->stencil->dyn_ref : false : false;
-      _dynamic_references.push_back(dyn_ref);
+      _enable_dyrefs.push_back(dyn_ref);
     }
     _render_pass = rd::RenderPassPipeline{ attachment_infos, subpass_infos };
     _multi_sampling = info.multi_sampling;
-    _use_present_attachment = info.use_present_attachment;
+    _color_n = info.color_formats.size();
     _draw_contexts.resize(info.pipelines.size());
     _global_dsets.resize(info.pipelines.size());
-
-    createFramebuffers(info.color_formats, info.depst_formats);
   }
   void addDrawContext(uint32 index, DrawContext* draw_context) {
     _draw_contexts.at(index).insert(draw_context);
@@ -175,28 +163,17 @@ public:
   void removeDrawContext(uint32 index, DrawContext* draw_context) {
     _draw_contexts.at(index).erase(draw_context);
   }
-  auto getColorAttachment(uint32 index, bool resolved = true) -> rd::FrameImageManager& {
-    if (resolved && _multi_sampling) {
-      return _resolve_images.at(index);
-    } else {
-      return _color_images.at(index);
-    }
-  }
-  auto getDepstAttachment(uint32 index) -> rd::FrameImageManager& { return _depst_images[index]; }
   void setColorClearValue(uint32 index, rd::ColorClearValue clear_value) {
-    _render_pass.setColorClear(getColorIndex(index), clear_value);
+    _render_pass.setColorClear(_multi_sampling ? index * 2 : index, clear_value);
   }
   void setDepstClearValue(uint32 index, rd::DepstClearValue clear_value) {
-    _render_pass.setDepstClear(getDepstIndex(index), clear_value);
+    _render_pass.setDepstClear((_multi_sampling ? _color_n * 2 : _color_n) + index, clear_value);
   }
   void setGlobalDescriptorSet(uint32 index, rd::DescriptorSet* dset) {
     _global_dsets.at(index) = dset;
   }
 
-  void draw(fw::ActionContext const& ctx) {
-    if (ctx.recreated) {
-      recreateFramebuffers();
-    }
+  void draw(std::vector<RenderTarget*> colors, std::vector<RenderTarget*> depsts) {
     for (auto [index, draw_contexts, global_dset] :
          views::zip(views::iota(0u), _draw_contexts, _global_dsets)) {
       _render_pass.setRecorder(index, [&](rd::PipelineDrawer drawer) {
@@ -216,7 +193,7 @@ public:
             drawer.bindIndexBuffer(index_buf);
           }
           drawer.bindDescriptorSet(0, &draw_ctx->getDescriptorSet());
-          if (_dynamic_references[index]) {
+          if (_enable_dyrefs[index]) {
             drawer.setStencilReference(draw_ctx->getStencilRef());
           }
           drawer.draw();
@@ -225,24 +202,21 @@ public:
     }
     auto attachments = std::vector<rd::FrameImageManager*>{};
     if (_multi_sampling) {
-      if (_use_present_attachment) {
-        attachments.push_back(&_present_color_image);
-        attachments.push_back(ctx.image_manager);
-      }
-      for (auto [color, resolve] : views::zip(_color_images, _resolve_images)) {
-        attachments.push_back(&color);
-        attachments.push_back(&resolve);
+      for (auto render_target : colors) {
+        attachments.push_back(&render_target->getMSTarget(_multi_sampling.value()));
+        attachments.push_back(render_target);
       }
     } else {
-      if (_use_present_attachment) {
-        attachments.push_back(ctx.image_manager);
-      }
-      for (auto& color : _color_images) {
-        attachments.push_back(&color);
+      for (auto render_target : colors) {
+        attachments.push_back(render_target);
       }
     }
-    for (auto& depst : _depst_images) {
-      attachments.push_back(&depst);
+    for (auto& depst : depsts) {
+      if (_multi_sampling) {
+        attachments.push_back(&depst->getMSTarget(_multi_sampling.value()));
+      } else {
+        attachments.push_back(depst);
+      }
     }
     _render_pass.recordDraw(attachments);
   }
@@ -250,91 +224,12 @@ public:
   UNCOPYABLE_MOVEABLE(RenderPass);
 
 private:
-  rd::RenderPassPipeline               _render_pass;
-  std::optional<VkSampleCountFlagBits> _multi_sampling;
-  bool                                 _use_present_attachment;
-  rd::FrameImage                       _present_color_image;
-  std::vector<rd::FrameImage>          _color_images;
-  std::vector<rd::FrameImage>          _resolve_images;
-  std::vector<rd::FrameImage>          _depst_images;
-
-  std::vector<bool>               _dynamic_references;
-  std::vector<rd::DescriptorSet*> _global_dsets;
-
+  rd::RenderPassPipeline                        _render_pass;
+  std::optional<VkSampleCountFlagBits>          _multi_sampling;
+  uint32                                        _color_n;
+  std::vector<bool>                             _enable_dyrefs;
+  std::vector<rd::DescriptorSet*>               _global_dsets;
   std::vector<std::unordered_set<DrawContext*>> _draw_contexts;
-
-  auto getColorIndex(uint32 index) -> uint32 { return _multi_sampling ? index * 2 : index; }
-  auto getResolveIndex(uint32 index) -> uint32 {
-    TOY_ASSERT(_multi_sampling);
-    return index * 2 + 1;
-  }
-  auto getDepstIndex(uint32 index) -> uint32 {
-    auto color_attachment_size = _color_images.size();
-    if (_use_present_attachment) {
-      color_attachment_size += 1;
-    }
-    return index + (_multi_sampling ? 2 * color_attachment_size : color_attachment_size);
-  }
-
-  void createFramebuffers(
-    std::span<VkFormat const> color_formats, std::span<VkFormat const> depst_formats
-  ) {
-    _color_images.clear();
-    _resolve_images.clear();
-    _depst_images.clear();
-    auto& swapchain = rd::Presentation::getInstance().getSwapchain();
-    if (_use_present_attachment && _multi_sampling) {
-      _present_color_image = rd::FrameImage{
-        swapchain.getFormat(),
-        swapchain.getExtent().width,
-        swapchain.getExtent().height,
-        _multi_sampling.value(),
-        {},
-      };
-    }
-    for (auto& color_format : color_formats) {
-      _color_images.push_back(rd::FrameImage{
-        color_format,
-        swapchain.getExtent().width,
-        swapchain.getExtent().height,
-        _multi_sampling.value_or(VK_SAMPLE_COUNT_1_BIT),
-        VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-      });
-      if (_multi_sampling) {
-        _resolve_images.push_back(rd::FrameImage{
-          color_format,
-          swapchain.getExtent().width,
-          swapchain.getExtent().height,
-          VK_SAMPLE_COUNT_1_BIT,
-          VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-        });
-      }
-    }
-    for (auto& depst_format : depst_formats) {
-      _depst_images.push_back(rd::FrameImage{
-        depst_format,
-        swapchain.getExtent().width,
-        swapchain.getExtent().height,
-        _multi_sampling.value_or(VK_SAMPLE_COUNT_1_BIT),
-        {},
-      });
-    }
-  }
-  void recreateFramebuffers() {
-    auto color_formats = std::vector<VkFormat>{};
-    for (auto& image : _color_images) {
-      color_formats.push_back(image.getFormat());
-    }
-    auto depst_formats = std::vector<VkFormat>{};
-    for (auto& image : _depst_images) {
-      depst_formats.push_back(image.getFormat());
-    }
-    auto multi_sampling = std::optional<VkSampleCountFlagBits>{};
-    if (_present_color_image.valid()) {
-      multi_sampling = _present_color_image.getSampleCount();
-    }
-    createFramebuffers(color_formats, depst_formats);
-  }
 };
 
 } // namespace eg

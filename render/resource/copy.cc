@@ -62,6 +62,33 @@ void copyImageToBuffer(
   );
 }
 
+void copyImageToImage(
+  VkCommandBuffer    cmdbuf,
+  VkImage            src_image,
+  VkImage            dst_image,
+  VkImageAspectFlags aspect,
+  VkOffset2D         src_offset,
+  VkOffset2D         dst_offset,
+  VkExtent2D         extent
+) {
+  auto image_copy = VkImageCopy{
+    .srcSubresource = getSubresourceLayers(aspect, 0),
+    .srcOffset = VkOffset3D{ src_offset.x, src_offset.y, 0 },
+    .dstSubresource = getSubresourceLayers(aspect, 0),
+    .dstOffset = VkOffset3D{ dst_offset.x, dst_offset.y, 0 },
+    .extent = VkExtent3D{ .width = extent.width, .height = extent.height, .depth = 1 },
+  };
+  vkCmdCopyImage(
+    cmdbuf,
+    src_image,
+    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+    dst_image,
+    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    1,
+    &image_copy
+  );
+}
+
 void blitImage(VkCommandBuffer cmdbuf, ImageBlit src, ImageBlit dst) {
   auto blit = VkImageBlit{
     .srcSubresource = getSubresourceLayers(src.aspect, src.mip_level),

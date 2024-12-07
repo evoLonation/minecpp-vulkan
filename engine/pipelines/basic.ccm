@@ -2,6 +2,7 @@ module;
 #include <toy.h>
 export module pipeline.basic;
 
+import pipeline.render_target;
 import engine.base;
 import pipeline.uniform;
 import engine.draw_unit;
@@ -103,6 +104,7 @@ public:
       },
     };
     auto info = RenderPassInfo{
+      .color_formats = { VK_FORMAT_R8G8B8A8_SRGB },
       .depst_formats = { VK_FORMAT_D32_SFLOAT },
       .multi_sampling = VK_SAMPLE_COUNT_8_BIT,
       .pipelines = std::move(pipeline_infos),
@@ -110,6 +112,10 @@ public:
     init(info);
     setColorClearValue(0, { 0.5f, 0.5f, 0.5f, 1.0f });
     setDepstClearValue(0, 1.0f);
+  }
+
+  void draw(RenderTarget* color, RenderTarget* depth) {
+    CustomRenderPass::draw({ color }, { depth });
   }
 };
 

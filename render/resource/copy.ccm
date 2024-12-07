@@ -37,6 +37,16 @@ void copyImageToBuffer(
   uint32                mip_level
 );
 
+void copyImageToImage(
+  VkCommandBuffer    cmdbuf,
+  VkImage            src_image,
+  VkImage            dst_image,
+  VkImageAspectFlags aspect,
+  VkOffset2D         src_offset,
+  VkOffset2D         dst_offset,
+  VkExtent2D         extent
+);
+
 struct ImageBlit {
   VkImage               image;
   VkImageAspectFlagBits aspect;

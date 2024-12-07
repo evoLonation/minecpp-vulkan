@@ -2,6 +2,7 @@ module;
 #include <toy.h>
 export module pipeline.id;
 
+import pipeline.render_target;
 import engine.base;
 import engine.draw_unit;
 import engine.texture;
@@ -77,7 +78,6 @@ public:
       .depst_formats = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT },
       .multi_sampling = {},
       .pipelines = std::move(pipeline_infos),
-      .use_present_attachment = false,
     };
     init({ info });
     setColorClearValue(0, { 0u });
@@ -103,20 +103,18 @@ public:
     }
   }
 
-  UNCOPYABLE_MOVEABLE(IdPipeline);
-
-  void draw(fw::ActionContext const& ctx) override {
+  void draw(RenderTarget* id_output, RenderTarget* depth, RenderTarget* depth_uplayer) {
     auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
     auto cursor = fw::InputProcessor::getInstance().getCursorState();
     if (cursor.visible) {
       int32 x = std::clamp(cursor.x, 0u, extent.width - 1);
       int32 y = std::clamp(cursor.y, 0u, extent.height - 1);
-      _reader.loadImage(getColorAttachment(0), VK_IMAGE_ASPECT_COLOR_BIT, { x, y }, { 1, 1 }, 0);
+      _reader.loadImage(*id_output, VK_IMAGE_ASPECT_COLOR_BIT, { x, y }, { 1, 1 }, 0);
       _current_id = *reinterpret_cast<uint32*>(_reader.readPixel(0, 0));
     } else {
       _current_id = 0;
     }
-    CustomRenderPass::draw(ctx);
+    CustomRenderPass::draw({ id_output }, { depth, depth_uplayer });
   }
 
 private:

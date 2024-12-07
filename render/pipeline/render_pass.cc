@@ -45,7 +45,8 @@ auto RenderPass::record(
   std::span<std::function<void(VkCommandBuffer, VkExtent2D)> const> pipeline_recorders
 ) -> Waitable {
   for (auto [image, format, sample] : views::zip(images, _formats, _sample_counts)) {
-    TOY_ASSERT(image->getFormat() == format && image->getSampleCount() == sample);
+    TOY_ASSERT(image->getFormat() == format, image->getFormat(), format);
+    TOY_ASSERT(image->getSampleCount() == sample, image->getSampleCount(), sample);
   }
   TOY_ASSERT(_need_clears == _is_set_clears, _need_clears, _is_set_clears);
   auto [framebuffer, extent] = FramebufferPool::getInstance().getFramebuffer(get(), images);

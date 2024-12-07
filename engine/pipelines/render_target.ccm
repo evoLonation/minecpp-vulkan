@@ -1,0 +1,80 @@
+module;
+#include <toy.h>
+export module pipeline.render_target;
+
+import render;
+import <vulkan_config.h>;
+import std;
+import toy;
+
+export namespace eg {
+
+class RenderTarget : public rd::FrameImage {
+public:
+  RenderTarget() = default;
+  RenderTarget(VkFormat format, toy::Observable<VkExtent2D>* extent_observable) {
+    init(format, extent_observable);
+  }
+  void init(VkFormat format, toy::Observable<VkExtent2D>* extent_observable) {
+    _format = format;
+    _observer = {
+      *extent_observable,
+      [this](auto extent) { _need_resize_targets.push_back({ this, extent }); },
+    };
+    rd::FrameImage::operator=({
+      format,
+      extent_observable->get().width,
+      extent_observable->get().height,
+      VK_SAMPLE_COUNT_1_BIT,
+      VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+    });
+  }
+  UNCOPYABLE_MOVEABLE(RenderTarget);
+
+  auto getMSTarget(VkSampleCountFlagBits sample_count) -> rd::FrameImage& {
+    if (auto iter = _ms_targets.find(sample_count); iter == _ms_targets.end()) {
+      auto extent = getExtent();
+      return _ms_targets
+        .emplace(
+          sample_count, rd::FrameImage{ _format, extent.width, extent.height, sample_count, 0 }
+        )
+        .first->second;
+    } else {
+      return iter->second;
+    }
+  }
+
+  void tryResize(VkExtent2D extent) {
+    auto old_extent = getExtent();
+    if (old_extent.width == extent.width && old_extent.height == extent.height) {
+      return;
+    }
+    rd::FrameImage::operator=({
+      _format,
+      extent.width,
+      extent.height,
+      VK_SAMPLE_COUNT_1_BIT,
+      VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+    });
+    for (auto& [sample_count, target] : _ms_targets) {
+      target = { _format, extent.width, extent.height, sample_count, 0 };
+    }
+  }
+  static auto tryResizeAll() {
+    for (auto& [target, extent] : _need_resize_targets) {
+      target->tryResize(extent);
+    }
+    _need_resize_targets.clear();
+  }
+
+private:
+  VkFormat                                                  _format;
+  toy::Observer<VkExtent2D>                                 _observer;
+  std::unordered_map<VkSampleCountFlagBits, rd::FrameImage> _ms_targets;
+
+  static std::vector<std::pair<RenderTarget*, VkExtent2D>> _need_resize_targets;
+};
+
+decltype(RenderTarget::_need_resize_targets) RenderTarget::_need_resize_targets;
+
+} // namespace eg

@@ -13,3 +13,5 @@ module:
     provide: pipeline.render_pass
 - id.ccm:
     provide: pipeline.id
+- render_target.ccm:
+    provide: pipeline.render_target

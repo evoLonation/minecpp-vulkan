@@ -3,6 +3,7 @@ module;
 export module pipeline.base;
 
 export import pipeline.render_pass;
+import pipeline.render_target;
 import engine.base;
 import engine.draw_unit;
 import std;
@@ -75,13 +76,13 @@ public:
     DrawUnit::removeBeforeDestroy(&_before_destroy);
   }
 
-  virtual void draw(fw::ActionContext const& ctx) {
+  void draw(std::vector<RenderTarget*> colors, std::vector<RenderTarget*> depsts) {
     for (auto& draw_contexts : _draw_contexts) {
       for (auto& [draw_unit, draw_context] : draw_contexts) {
         beforeRender(*draw_unit, draw_context.get());
       }
     }
-    RenderPass::draw(ctx);
+    RenderPass::draw(std::move(colors), std::move(depsts));
   }
 
   virtual auto fromDrawUnit(uint32 subpass_n, DrawUnit& draw_unit)
