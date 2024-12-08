@@ -29,8 +29,12 @@ struct PipelineInfo {
  *
  */
 struct RenderPassInfo {
-  std::vector<VkFormat>                color_formats;
-  std::vector<VkFormat>                depst_formats;
+  struct AttachmentInfo {
+    VkFormat format;
+    bool     clear = false;
+  };
+  std::vector<AttachmentInfo>          colors;
+  std::vector<AttachmentInfo>          depsts;
   std::optional<VkSampleCountFlagBits> multi_sampling;
   std::vector<PipelineInfo>            pipelines;
 };
@@ -83,26 +87,25 @@ public:
   void init(RenderPassInfo const& info) {
     auto attachment_infos = std::vector<rd::AttachmentInfo>{};
     {
-      for (auto& color_format : info.color_formats) {
+      // todo: better is_store setting to improve performance
+      for (auto& [format, clear] : info.colors) {
         attachment_infos.push_back(rd::AttachmentInfo{
-          .format = color_format,
+          .format = format,
           .sample_count = info.multi_sampling.value_or(VK_SAMPLE_COUNT_1_BIT),
-          .load_op = rd::LoadOp::CLEAR,
-          .is_store = !info.multi_sampling,
+          .load_op = clear ? rd::LoadOp::CLEAR : rd::LoadOp::LOAD,
         });
         if (info.multi_sampling) {
           attachment_infos.push_back(rd::AttachmentInfo{
-            .format = color_format,
+            .format = format,
             .sample_count = VK_SAMPLE_COUNT_1_BIT,
           });
         }
       }
-      for (auto& depst_format : info.depst_formats) {
+      for (auto& [format, clear] : info.depsts) {
         attachment_infos.push_back(rd::AttachmentInfo{
-          .format = depst_format,
+          .format = format,
           .sample_count = info.multi_sampling.value_or(VK_SAMPLE_COUNT_1_BIT),
-          .load_op = rd::LoadOp::CLEAR,
-          .is_store = false,
+          .load_op = clear ? rd::LoadOp::CLEAR : rd::LoadOp::LOAD,
         });
       }
     }
@@ -144,7 +147,7 @@ public:
       };
       if (subpass_info.depst) {
         subpass_info.depst->attachment +=
-          info.multi_sampling ? info.color_formats.size() * 2 : info.color_formats.size();
+          info.multi_sampling ? info.colors.size() * 2 : info.colors.size();
       }
       subpass_infos.push_back(subpass_info);
       auto dyn_ref =
@@ -153,7 +156,7 @@ public:
     }
     _render_pass = rd::RenderPassPipeline{ attachment_infos, subpass_infos };
     _multi_sampling = info.multi_sampling;
-    _color_n = info.color_formats.size();
+    _color_n = info.colors.size();
     _draw_contexts.resize(info.pipelines.size());
     _global_dsets.resize(info.pipelines.size());
   }

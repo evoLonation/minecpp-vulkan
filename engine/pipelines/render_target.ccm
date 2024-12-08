@@ -9,6 +9,8 @@ import toy;
 
 export namespace eg {
 
+// todo: one RenderTarget should has one multi sampling type 
+// because the MS image will draw by multi RenderPasses, so need be the same one
 class RenderTarget : public rd::FrameImage {
 public:
   RenderTarget() = default;

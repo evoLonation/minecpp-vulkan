@@ -21,7 +21,10 @@ public:
     _color.init(VK_FORMAT_R8G8B8A8_SRGB, &_extent_observable);
     _id_output.init(VK_FORMAT_R32_UINT, &_extent_observable);
     _depth.init(VK_FORMAT_D32_SFLOAT, &_extent_observable);
-    _depth_uplayer.init(VK_FORMAT_D32_SFLOAT, &_extent_observable);
+    _depth_id.init(VK_FORMAT_D32_SFLOAT, &_extent_observable);
+
+    _light.init(false, LightPipeline::CLEAR_ALL);
+    _light_uplayer.init(true, LightPipeline::CLEAR_DEPST);
   }
 
   void runLoop(fw::ActionContext const& ctx) override {
@@ -30,8 +33,9 @@ public:
     }
     RenderTarget::tryResizeAll();
     // _basic.draw(ctx);
-    _light.draw(&_color, &_depth, &_depth_uplayer);
-    _id.draw(&_id_output, &_depth, &_depth_uplayer);
+    _light.draw(&_color, &_depth);
+    _light_uplayer.draw(&_color, &_depth);
+    _id.draw(&_id_output, &_depth, &_depth_id);
 
     auto& executor = rd::ExecutorManager::getInstance()[rd::FamilyType::TRANSFER];
     auto  waitables = std::vector<rd::Waitable>{};
@@ -74,7 +78,7 @@ public:
     }
     auto copy_batch = rd::CommandBatch{ .recorder = std::move(recorder) };
     for (auto& waitable : waitables) {
-      copy_batch.waits = { { &waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } };
+      copy_batch.waits.push_back({ &waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT });
     }
     executor.submit(copy_batch);
   }
@@ -84,11 +88,12 @@ private:
   RenderTarget                _color;
   RenderTarget                _id_output;
   RenderTarget                _depth;
-  RenderTarget                _depth_uplayer;
+  RenderTarget                _depth_id;
 
   BasicPipeline _basic;
   IdPipeline    _id;
   LightPipeline _light;
+  LightPipeline _light_uplayer;
 };
 
 } // namespace eg

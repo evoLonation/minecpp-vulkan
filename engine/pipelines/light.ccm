@@ -59,7 +59,7 @@ struct LightContext : public CustomDrawContext<layout_model_light> {
   UniformBuffer<LightModelFragmentData> frag_data;
 };
 
-export class LightPipeline : public CustomRenderPass, public PROACTIVE_SINGLETON(LightPipeline) {
+export class LightPipeline : public CustomRenderPass {
 public:
   void beforeRender(DrawUnit& draw_unit, DrawContextBase* draw_ctx) override {
     auto* ctx = dynamic_cast<LightContext*>(draw_ctx);
@@ -68,7 +68,7 @@ public:
   }
   auto fromDrawUnit(uint32 subpass_n, DrawUnit& draw_unit)
     -> std::optional<uptr<DrawContextBase>> override {
-    if ((subpass_n == 1) == draw_unit.isUpLayer()) {
+    if (_uplayer == draw_unit.isUpLayer()) {
       auto ret = std::make_unique<LightContext>();
       ret->init(
         draw_unit,
@@ -84,7 +84,10 @@ public:
     return std::nullopt;
   }
 
-  LightPipeline() {
+  LightPipeline() = default;
+  enum ClearOp { NONE, CLEAR_ALL, CLEAR_DEPST };
+  void init(bool uplayer, ClearOp clear_op) {
+    _uplayer = uplayer;
     auto pipeline_infos = std::vector<PipelineInfo>{
       PipelineInfo{
         .colors = { 0 },
@@ -95,40 +98,33 @@ public:
         .unit_dset_layout = getLayoutHandle<layout_model_light>(),
         .global_dset_layout = getLayoutHandle<layout_global_light>(),
       },
-      // for move tool
-      PipelineInfo{
-        .colors = { 0 },
-        .depst = { { .attachment = 1, .depth = { {} } } },
-        .vertex_shader_name = "light.vert",
-        .frag_shader_name = "light.frag",
-        .vertex_layout = vertex_layout_light,
-        .unit_dset_layout = getLayoutHandle<layout_model_light>(),
-        .global_dset_layout = getLayoutHandle<layout_global_light>(),
-      },
     };
     auto info = RenderPassInfo{
-      .color_formats = { VK_FORMAT_R8G8B8A8_SRGB },
-      .depst_formats = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT },
+      .colors = { { VK_FORMAT_R8G8B8A8_SRGB, clear_op == CLEAR_ALL } },
+      .depsts = { { VK_FORMAT_D32_SFLOAT, clear_op == CLEAR_ALL || clear_op == CLEAR_DEPST } },
       .multi_sampling = VK_SAMPLE_COUNT_8_BIT,
       .pipelines = std::move(pipeline_infos),
     };
-    init({ info });
-    setColorClearValue(0, { 0.5f, 0.5f, 0.5f, 1.0f });
-    setDepstClearValue(0, 1.0f);
-    setDepstClearValue(1, 1.0f);
+    CustomRenderPass::init({ info });
+    if (clear_op == CLEAR_DEPST) {
+      setDepstClearValue(0, 1.0f);
+    } else if (clear_op == CLEAR_ALL) {
+      setColorClearValue(0, { 0.5f, 0.5f, 0.5f, 1.0f });
+      setDepstClearValue(0, 1.0f);
+    }
     _dset_global_light = { &_uniform_light };
     setGlobalDescriptorSet(0, &_dset_global_light);
-    setGlobalDescriptorSet(1, &_dset_global_light);
   }
 
   auto getLight() -> LightData& { return _uniform_light.get(); }
 
-  void draw(RenderTarget* color, RenderTarget* depth, RenderTarget* depth_uplayer) {
+  void draw(RenderTarget* color, RenderTarget* depth) {
     _uniform_light->view_pos = Camera::getInstance().getViewPos();
-    CustomRenderPass::draw({ color }, { depth, depth_uplayer });
+    CustomRenderPass::draw({ color }, { depth });
   }
 
 private:
+  bool                                         _uplayer = false;
   UniformBuffer<LightData>                     _uniform_light;
   rd::meta::DescriptorSet<layout_global_light> _dset_global_light;
 };

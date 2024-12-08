@@ -74,8 +74,8 @@ public:
       },
     };
     auto info = RenderPassInfo{
-      .color_formats = { VK_FORMAT_R32_UINT },
-      .depst_formats = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT },
+      .colors = { { VK_FORMAT_R32_UINT, true } },
+      .depsts = { { VK_FORMAT_D32_SFLOAT, true }, { VK_FORMAT_D32_SFLOAT, true } },
       .multi_sampling = {},
       .pipelines = std::move(pipeline_infos),
     };
