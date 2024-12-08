@@ -54,7 +54,9 @@ void checkSubpassAttachmentMatch(
     }
     TOY_ASSERT(ranges::all_of(subpass.inputs, [&](auto x) { return x < attachments.size(); }));
     if (subpass.depst) {
-      TOY_ASSERT(subpass.depst.value() < attachments.size(), subpass.depst.value(), attachments.size());
+      TOY_ASSERT(
+        subpass.depst.value() < attachments.size(), subpass.depst.value(), attachments.size()
+      );
     }
     auto sample_count =
       subpass.multi_sample ? subpass.multi_sample->sample_count : VK_SAMPLE_COUNT_1_BIT;
@@ -530,7 +532,6 @@ RenderPass::RenderPass(
     );
   }
   rs::RenderPass::operator=({ render_pass_create_info });
-  _executor = &ExecutorManager::getInstance()[FamilyType::GRAPHICS];
   for (auto& attachment : attachments) {
     _formats.push_back(attachment.format);
     _sample_counts.push_back(attachment.sample_count);

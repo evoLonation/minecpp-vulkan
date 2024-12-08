@@ -40,7 +40,7 @@ void recordRenderPass(
 }
 
 auto RenderPass::record(
-  std::vector<CommandBatch>                                         batches,
+  std::function<void(Submitter&)> const&                            synchronizer,
   std::span<FrameImageManager* const>                               images,
   std::span<std::function<void(VkCommandBuffer, VkExtent2D)> const> pipeline_recorders
 ) -> Waitable {
@@ -51,21 +51,14 @@ auto RenderPass::record(
   TOY_ASSERT(_need_clears == _is_set_clears, _need_clears, _is_set_clears);
   auto [framebuffer, extent] = FramebufferPool::getInstance().getFramebuffer(get(), images);
 
+  auto submitter = Submitter{ getFamilyType() };
   auto waitables_keep_lifetime = std::list<Waitable>{};
   for (auto [image, info] : views::zip(images, getSyncInfos())) {
-    auto sync = image->getTracker().syncScope(
-      Scope{ .stage_mask = info.initial_stage }, _executor->getFamily(), info.initial_layout
+    submitter.addNeedSync(
+      &image->getTracker(), Scope{ .stage_mask = info.initial_stage }, info.initial_layout
     );
-    if (auto* ctx = std::get_if<BarrierRecorder>(&sync)) {
-      batches.push_back(CommandBatch{ std::move(*ctx) });
-    } else if (auto* ctx = std::get_if<FamilyTransferRecorder>(&sync)) {
-      auto waitable = ctx->executeRelease();
-      waitables_keep_lifetime.push_back(std::move(waitable));
-      batches.push_back(ctx->toAcquireBatch(&waitables_keep_lifetime.back()));
-    }
   }
-  using namespace std::placeholders;
-  batches.push_back(CommandBatch{ [&](VkCommandBuffer cmdbuf) {
+  auto waitable = submitter.submit([&](VkCommandBuffer cmdbuf) {
     recordRenderPass(
       cmdbuf,
       get(),
@@ -79,12 +72,13 @@ auto RenderPass::record(
       }) |
         ranges::to<std::vector>()
     );
-  } });
-  auto waitable = std::move(_executor->submit(batches).back());
+  });
 
   for (auto [image, info] : views::zip(images, getSyncInfos())) {
     image->getTracker().setNewScope(
-      Scope{ .stage_mask = info.final_stage }, _executor->getFamily(), info.final_layout
+      Scope{ .stage_mask = info.final_stage },
+      submitter.getExecutor().getFamily(),
+      info.final_layout
     );
   }
   return waitable;
@@ -141,113 +135,92 @@ RenderPassPipeline::RenderPassPipeline(
 }
 
 void RenderPassPipeline::recordDraw(std::span<FrameImageManager*> images) {
-  auto& executor = getExecutor();
-
-  auto batches = std::vector<CommandBatch>{};
-  auto waitables_keep_lifetime = std::list<Waitable>{};
-  auto addSync = [&](SyncContext sync) {
-    if (auto* ctx = std::get_if<BarrierRecorder>(&sync)) {
-      batches.push_back(CommandBatch{ std::move(*ctx) });
-    } else if (auto* ctx = std::get_if<FamilyTransferRecorder>(&sync)) {
-      auto waitable = ctx->executeRelease();
-      waitables_keep_lifetime.push_back(std::move(waitable));
-      batches.push_back(ctx->toAcquireBatch(&waitables_keep_lifetime.back()));
-    }
-  };
   auto total_dsets = std::vector<DescriptorSet*>{};
-  for (auto recorder : _recorders) {
-    auto vertex_buffers = std::vector<Buffer*>{};
-    auto index_buffers = std::vector<Buffer*>{};
-    auto dsets = std::vector<DescriptorSet*>{};
-    auto drawer = PipelineDrawer::forCollect(&vertex_buffers, &index_buffers, &dsets);
-    recorder(drawer);
-    total_dsets.append_range(dsets);
-    for (auto* vertex_buffer : vertex_buffers) {
-      auto sync = vertex_buffer->getTracker().syncScope(
-        Scope{
-          .stage_mask = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
-          .access_mask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
-        },
-        executor.getFamily()
-      );
-      addSync(std::move(sync));
-    }
-    for (auto* index_buffer : index_buffers) {
-      auto sync = index_buffer->getTracker().syncScope(
-        Scope{
-          .stage_mask = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
-          .access_mask = VK_ACCESS_INDEX_READ_BIT,
-        },
-        executor.getFamily()
-      );
-      addSync(std::move(sync));
-    }
-    for (auto* dset : dsets) {
-      for (auto resource : dset->getResources()) {
-        auto ctx = resource.resource->getDescriptorContext();
-        auto type = dset->getInfo()[resource.binding_i].type;
-        auto shader_stage = dset->getInfo()[resource.binding_i].stage;
-        using ImageContext = DescriptorResource::ImageContext;
-        using BufferContext = DescriptorResource::BufferContext;
-        if (auto* image_ctx = std::get_if<ImageContext>(&ctx)) {
-          auto stage = [&]() -> VkPipelineStageFlags {
-            switch (shader_stage) {
-            case VK_SHADER_STAGE_FRAGMENT_BIT:
-              return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-            default:
-              toy::throwf("unsupported shader stage");
-            }
-          }();
-          auto layout = [&]() -> VkImageLayout {
-            switch (type) {
-            case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-              return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            default:
-              toy::throwf("unsupported descriptor type");
-            }
-          }();
-          auto access = [&]() -> VkAccessFlags {
-            switch (type) {
-            case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-              return VK_ACCESS_SHADER_READ_BIT;
-            default:
-              toy::throwf("unsupported descriptor type");
-            }
-          }();
-          addSync(
-            image_ctx->tracker->syncScope(Scope{ stage, access }, executor.getFamily(), layout)
-          );
-        } else if (auto* buffer_ctx = std::get_if<BufferContext>(&ctx)) {
-          auto stage = [&]() -> VkPipelineStageFlags {
-            switch (shader_stage) {
-            case VK_SHADER_STAGE_FRAGMENT_BIT:
-              return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-            case VK_SHADER_STAGE_VERTEX_BIT:
-              return VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-            default:
-              toy::throwf("unsupported shader stage");
-            }
-          }();
-          auto access = [&]() -> VkAccessFlags {
-            switch (type) {
-            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-              return VK_ACCESS_UNIFORM_READ_BIT;
-            default:
-              toy::throwf("unsupported descriptor type");
-            }
-          }();
-          addSync(buffer_ctx->tracker->syncScope(Scope{ stage, access }, executor.getFamily()));
+  auto synchronizer = [&](Submitter& submitter) {
+    for (auto recorder : _recorders) {
+      auto vertex_buffers = std::vector<Buffer*>{};
+      auto index_buffers = std::vector<Buffer*>{};
+      auto dsets = std::vector<DescriptorSet*>{};
+      auto drawer = PipelineDrawer::forCollect(&vertex_buffers, &index_buffers, &dsets);
+      recorder(drawer);
+      total_dsets.append_range(dsets);
+      for (auto* vertex_buffer : vertex_buffers) {
+        submitter.addNeedSync(
+          &vertex_buffer->getTracker(),
+          Scope{ VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT }
+        );
+      }
+      for (auto* index_buffer : index_buffers) {
+        submitter.addNeedSync(
+          &index_buffer->getTracker(),
+          Scope{ VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, VK_ACCESS_INDEX_READ_BIT }
+        );
+      }
+      for (auto* dset : dsets) {
+        for (auto resource : dset->getResources()) {
+          auto ctx = resource.resource->getDescriptorContext();
+          auto type = dset->getInfo()[resource.binding_i].type;
+          auto shader_stage = dset->getInfo()[resource.binding_i].stage;
+          using ImageContext = DescriptorResource::ImageContext;
+          using BufferContext = DescriptorResource::BufferContext;
+          if (auto* image_ctx = std::get_if<ImageContext>(&ctx)) {
+            auto stage = [&]() -> VkPipelineStageFlags {
+              switch (shader_stage) {
+              case VK_SHADER_STAGE_FRAGMENT_BIT:
+                return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+              default:
+                toy::throwf("unsupported shader stage");
+              }
+            }();
+            auto layout = [&]() -> VkImageLayout {
+              switch (type) {
+              case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+                return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+              default:
+                toy::throwf("unsupported descriptor type");
+              }
+            }();
+            auto access = [&]() -> VkAccessFlags {
+              switch (type) {
+              case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+                return VK_ACCESS_SHADER_READ_BIT;
+              default:
+                toy::throwf("unsupported descriptor type");
+              }
+            }();
+            submitter.addNeedSync(image_ctx->tracker, Scope{ stage, access }, layout);
+          } else if (auto* buffer_ctx = std::get_if<BufferContext>(&ctx)) {
+            auto stage = [&]() -> VkPipelineStageFlags {
+              switch (shader_stage) {
+              case VK_SHADER_STAGE_FRAGMENT_BIT:
+                return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+              case VK_SHADER_STAGE_VERTEX_BIT:
+                return VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+              default:
+                toy::throwf("unsupported shader stage");
+              }
+            }();
+            auto access = [&]() -> VkAccessFlags {
+              switch (type) {
+              case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+                return VK_ACCESS_UNIFORM_READ_BIT;
+              default:
+                toy::throwf("unsupported descriptor type");
+              }
+            }();
+            submitter.addNeedSync(buffer_ctx->tracker, Scope{ stage, access });
+          }
         }
       }
     }
-  }
+  };
   auto pipeline_recorders = std::vector<std::function<void(VkCommandBuffer, VkExtent2D)>>{};
   for (auto [pipeline, recorder] : views::zip(_pipelines, _recorders)) {
     pipeline_recorders.push_back([&](VkCommandBuffer cmdbuf, VkExtent2D extent) {
       pipeline.record(cmdbuf, extent, recorder);
     });
   }
-  auto waitable = std::make_shared<Waitable>(record(batches, images, pipeline_recorders));
+  auto waitable = std::make_shared<Waitable>(record(synchronizer, images, pipeline_recorders));
   for (auto* dset : total_dsets) {
     dset->addWaitable(waitable);
   }

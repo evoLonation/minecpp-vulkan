@@ -9,12 +9,12 @@ import render.tool;
 import render.tracker;
 import render.reflections;
 import render.image;
+import render.submitter;
 
 namespace rd {
 
 Presentation::Presentation(VkSurfaceKHR surface) {
   _surface = surface;
-  _present_executor = &ExecutorManager::getInstance()[FamilyType::PRESENT];
   if (!recreate()) {
     toy::debugf("create swapchain failed when construct presentation");
   }
@@ -63,26 +63,16 @@ auto Presentation::prepare() -> std::optional<Context> {
   auto  image = _swapchain.getImages()[image_index];
   auto  image_view = _swapchain.getImageViews()[image_index].get();
 
-  auto previous_layout = ctx.getTracker().getNowLayout();
   // submit barrier(s) to wait _acquire_ctx.available_sema
   // toy::debugf({}, "prepare(): will call syncScope");
-  auto sync = ctx.getTracker().syncScope(
-    Scope{ .stage_mask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT },
-    _present_executor->getFamily(),
-    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+  auto submitter = Submitter{ FamilyType::PRESENT };
+  submitter.addNeedSync(
+    &ctx.getTracker(),
+    Scope{ VK_PIPELINE_STAGE_ALL_COMMANDS_BIT },
+    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+    { { _acquire_ctx.available_sema, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } }
   );
-  if (auto* sync_ctx = std::get_if<BarrierRecorder>(&sync)) {
-    auto batch = RawWaitCommandBatch{
-      .recorder = std::move(*sync_ctx),
-      .waits = { { _acquire_ctx.available_sema, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
-    };
-    _present_executor->submit(batch);
-  } else if (auto* sync_ctx = std::get_if<FamilyTransferRecorder>(&sync)) {
-    auto waitable = sync_ctx->executeRelease(RawWaitCommandBatch{
-      .waits = { { _acquire_ctx.available_sema, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
-    });
-    _present_executor->submit(sync_ctx->toAcquireBatch(&waitable));
-  }
+  submitter.submit([](auto) {});
   if (result == VK_SUCCESS) {
     return Context{
       .image_index = image_index,
@@ -129,25 +119,11 @@ auto Presentation::present(uint32 image_index) -> bool {
     ctx.present_signal_fence.wait(true);
     ctx.fence_waitable = false;
   }
-  auto sync = ctx.getTracker().syncScope(
-    Scope{ .stage_mask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT },
-    _present_executor->getFamily(),
-    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+  auto submitter = Submitter{ FamilyType::PRESENT };
+  submitter.addNeedSync(
+    &ctx.getTracker(), Scope{ VK_PIPELINE_STAGE_ALL_COMMANDS_BIT }, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
   );
-  if (auto* sync_ctx = std::get_if<BarrierRecorder>(&sync)) {
-    auto batch = RawSignalCommandBatch{
-      .recorder = std::move(*sync_ctx),
-      .signals = { { wait_sema, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
-    };
-    _present_executor->submit(batch);
-  } else if (auto* sync_ctx = std::get_if<FamilyTransferRecorder>(&sync)) {
-    auto waitable = sync_ctx->executeRelease();
-    auto acquire_batch = RawSignalCommandBatch{
-      .signals = { { wait_sema, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
-    };
-    sync_ctx->fillAcquireBatch(acquire_batch, &waitable);
-    _present_executor->submit(acquire_batch);
-  }
+  submitter.submit([](auto) {}, { { wait_sema, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } });
   auto result = vkPresent(image_index, wait_sema, signal_fence);
   // sema and fence is wait and signal in all result
   ctx.need_release = false;

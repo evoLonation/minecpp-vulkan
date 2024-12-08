@@ -149,53 +149,8 @@ auto CommandExecutor::submit(std::span<CommandBatch const> batches) -> std::vect
   return waitables;
 }
 
-auto CommandExecutor::submit(RawWaitCommandBatch batch) -> Waitable {
-  auto cmdbuf = DisposableCmdbuf{ &_cmdbuf_pool };
-  cmdbuf.record(batch.recorder);
-  auto cmdbuf_info = std::make_unique<VkCommandBufferSubmitInfo>(VkCommandBufferSubmitInfo{
-    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-    .commandBuffer = cmdbuf.get(),
-  });
-  auto wait_infos = getWaitInfos(batch.waits);
-  auto [waitable, signal_infos] = getSignalInfos(std::move(cmdbuf), batch.signals);
-  auto submit_info = VkSubmitInfo2{
-    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-    .waitSemaphoreInfoCount = static_cast<uint32>(wait_infos.size()),
-    .pWaitSemaphoreInfos = wait_infos.data(),
-    .commandBufferInfoCount = 1,
-    .pCommandBufferInfos = cmdbuf_info.get(),
-    .signalSemaphoreInfoCount = static_cast<uint32>(signal_infos.size()),
-    .pSignalSemaphoreInfos = signal_infos.data(),
-  };
-  CHECK_VK_RESULT(vkQueueSubmit2(_queue, 1, &submit_info, VK_NULL_HANDLE));
-  return std::move(waitable);
-}
-
-auto CommandExecutor::submit(RawSignalCommandBatch batch) -> Waitable {
-  auto cmdbuf = DisposableCmdbuf{ &_cmdbuf_pool };
-  cmdbuf.record(batch.recorder);
-  auto cmdbuf_info = std::make_unique<VkCommandBufferSubmitInfo>(VkCommandBufferSubmitInfo{
-    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-    .commandBuffer = cmdbuf.get(),
-  });
-  auto wait_infos = getWaitInfos(batch.waits);
-  auto [waitable, signal_infos] = getSignalInfos(std::move(cmdbuf), batch.signals);
-  auto submit_info = VkSubmitInfo2{
-    .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-    .waitSemaphoreInfoCount = static_cast<uint32>(wait_infos.size()),
-    .pWaitSemaphoreInfos = wait_infos.data(),
-    .commandBufferInfoCount = 1,
-    .pCommandBufferInfos = cmdbuf_info.get(),
-    .signalSemaphoreInfoCount = static_cast<uint32>(signal_infos.size()),
-    .pSignalSemaphoreInfos = signal_infos.data(),
-  };
-  CHECK_VK_RESULT(vkQueueSubmit2(_queue, 1, &submit_info, VK_NULL_HANDLE));
-  return std::move(waitable);
-}
-
-auto CommandExecutor::getWaitInfos(
-  std::vector<std::pair<Waitable*, VkPipelineStageFlags2>> const& waits
-) -> std::vector<VkSemaphoreSubmitInfo> {
+auto CommandExecutor::getWaitInfos(std::vector<CommandBatch::WaitInfo> const& waits)
+  -> std::vector<VkSemaphoreSubmitInfo> {
   auto wait_infos = std::vector<VkSemaphoreSubmitInfo>{};
   for (auto& wait : waits) {
     auto [sema, value] = wait.first->getWaitInfo(wait.second);
@@ -209,9 +164,8 @@ auto CommandExecutor::getWaitInfos(
   return wait_infos;
 }
 
-auto CommandExecutor::getWaitInfos(
-  std::vector<std::pair<VkSemaphore, VkPipelineStageFlags2>> const& raw_waits
-) -> std::vector<VkSemaphoreSubmitInfo> {
+auto CommandExecutor::getWaitInfos(std::vector<CommandBatch::RawWaitInfo> const& raw_waits)
+  -> std::vector<VkSemaphoreSubmitInfo> {
   auto wait_infos = std::vector<VkSemaphoreSubmitInfo>{};
   for (auto& [sema, stage] : raw_waits) {
     wait_infos.push_back(VkSemaphoreSubmitInfo{
@@ -233,19 +187,15 @@ auto CommandExecutor::getCmdbufSignalInfo(CommandBuffer& cmdbuf) -> VkSemaphoreS
   };
 }
 
-auto CommandExecutor::getSignalInfos(
-  DisposableCmdbuf cmdbuf, std::vector<std::pair<VkSemaphore, VkPipelineStageFlags2>> const& signals
-) -> std::pair<Waitable, std::vector<VkSemaphoreSubmitInfo>> {
-  auto signal_infos = getWaitInfos(signals);
-  signal_infos.push_back(getCmdbufSignalInfo(cmdbuf));
-  return { Waitable{ std::move(cmdbuf), {} }, std::move(signal_infos) };
+auto CommandExecutor::getSignalInfos(std::vector<CommandBatch::RawSignalInfo> const& signals)
+  -> std::pair<std::vector<VkSemaphoreSubmitInfo>, Waitable::StageSemaphoreMap> {
+  return { getWaitInfos(signals), {} };
 }
 
-auto CommandExecutor::getSignalInfos(
-  DisposableCmdbuf cmdbuf, std::vector<VkPipelineStageFlags2> const& signals
-) -> std::pair<Waitable, std::vector<VkSemaphoreSubmitInfo>> {
+auto CommandExecutor::getSignalInfos(std::vector<CommandBatch::SignalInfo> const& signals)
+  -> std::pair<std::vector<VkSemaphoreSubmitInfo>, Waitable::StageSemaphoreMap> {
   auto signal_infos = std::vector<VkSemaphoreSubmitInfo>{};
-  auto stage_signal_semas = std::unordered_map<VkPipelineStageFlags2, DisposableSemaphore>{};
+  auto stage_sema_map = Waitable::StageSemaphoreMap{};
   for (auto& signal : signals) {
     auto sema = DisposableSemaphore{ _sema_pool };
     auto [handle, value] = sema.getDeviceSyncInfo();
@@ -255,10 +205,9 @@ auto CommandExecutor::getSignalInfos(
       .value = value,
       .stageMask = signal,
     });
-    stage_signal_semas.emplace(signal, std::move(sema));
+    stage_sema_map.emplace(signal, std::move(sema));
   }
-  signal_infos.push_back(getCmdbufSignalInfo(cmdbuf));
-  return { Waitable{ std::move(cmdbuf), std::move(stage_signal_semas) }, std::move(signal_infos) };
+  return { std::move(signal_infos), std::move(stage_sema_map) };
 }
 
 auto CommandExecutor::getSubmitInfo(CommandBatch const& batch) -> std::pair<SubmitInfo, Waitable> {
@@ -268,8 +217,19 @@ auto CommandExecutor::getSubmitInfo(CommandBatch const& batch) -> std::pair<Subm
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
     .commandBuffer = cmdbuf.get(),
   });
-  auto wait_infos = getWaitInfos(batch.waits);
-  auto [waitable, signal_infos] = getSignalInfos(std::move(cmdbuf), batch.signals);
+  auto wait_infos = std::vector<VkSemaphoreSubmitInfo>{};
+  wait_infos.append_range(getWaitInfos(batch.waits));
+  wait_infos.append_range(getWaitInfos(batch.raw_waits));
+  auto signal_infos = std::vector<VkSemaphoreSubmitInfo>{};
+  auto stage_sema_map = Waitable::StageSemaphoreMap{};
+  signal_infos.push_back(getCmdbufSignalInfo(cmdbuf));
+  auto signal_ret = getSignalInfos(batch.signals);
+  signal_infos.append_range(signal_ret.first);
+  stage_sema_map.merge(std::move(signal_ret.second));
+  auto raw_signal_ret = getSignalInfos(batch.raw_signals);
+  signal_infos.append_range(raw_signal_ret.first);
+  stage_sema_map.merge(std::move(raw_signal_ret.second));
+  auto waitable = Waitable{ std::move(cmdbuf), std::move(stage_sema_map) };
   auto submit_info = VkSubmitInfo2{
     .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
     .waitSemaphoreInfoCount = static_cast<uint32>(wait_infos.size()),
@@ -290,9 +250,7 @@ auto CommandExecutor::getSubmitInfo(CommandBatch const& batch) -> std::pair<Subm
   };
 }
 
-ExecutorManager::ExecutorManager(
-  std::span<std::pair<EnumT, FamilyQueueCount> const> family_infos
-) {
+ExecutorManager::ExecutorManager(std::span<std::pair<EnumT, FamilyQueueCount> const> family_infos) {
   for (auto& [family, info] : family_infos) {
     auto& [family_i, count] = info;
     _families[family] = family_i;

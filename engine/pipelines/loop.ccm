@@ -37,13 +37,18 @@ public:
     _light_uplayer.draw(&_color, &_depth);
     _id.draw(&_id_output, &_depth, &_depth_id);
 
-    auto& executor = rd::ExecutorManager::getInstance()[rd::FamilyType::TRANSFER];
-    auto  waitables = std::vector<rd::Waitable>{};
-    auto  sync_recorders = std::vector<std::function<void(VkCommandBuffer)>>{};
-    auto  recorder = std::function<void(VkCommandBuffer)>{ [&](VkCommandBuffer cmdbuf) {
-      for (auto& rec : sync_recorders) {
-        rec(cmdbuf);
-      }
+    auto submitter = rd::Submitter{ rd::FamilyType::TRANSFER };
+    submitter.addNeedSync(
+      &_color.getTracker(),
+      { VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT },
+      VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+    );
+    submitter.addNeedSync(
+      &ctx.image_manager->getTracker(),
+      { VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT },
+      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+    );
+    submitter.submit([&](VkCommandBuffer cmdbuf) {
       rd::copyImageToImage(
         cmdbuf,
         _color.getImage(),
@@ -53,34 +58,7 @@ public:
         { 0, 0 },
         _color.getExtent()
       );
-    } };
-    auto sync = _color.getTracker().syncScope(
-      rd::Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT },
-      executor.getFamily(),
-      VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
-    );
-    if (auto* ctx = std::get_if<rd::BarrierRecorder>(&sync)) {
-      sync_recorders.push_back(std::move(*ctx));
-    } else if (auto* ctx = std::get_if<rd::FamilyTransferRecorder>(&sync)) {
-      waitables.push_back(ctx->executeRelease());
-      sync_recorders.push_back(ctx->acquire);
-    }
-    sync = ctx.image_manager->getTracker().syncScope(
-      rd::Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT },
-      executor.getFamily(),
-      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-    );
-    if (auto* ctx = std::get_if<rd::BarrierRecorder>(&sync)) {
-      sync_recorders.push_back(std::move(*ctx));
-    } else if (auto* ctx = std::get_if<rd::FamilyTransferRecorder>(&sync)) {
-      waitables.push_back(ctx->executeRelease());
-      sync_recorders.push_back(ctx->acquire);
-    }
-    auto copy_batch = rd::CommandBatch{ .recorder = std::move(recorder) };
-    for (auto& waitable : waitables) {
-      copy_batch.waits.push_back({ &waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT });
-    }
-    executor.submit(copy_batch);
+    });
   }
 
 private:

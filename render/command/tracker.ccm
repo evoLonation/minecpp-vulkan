@@ -15,27 +15,7 @@ using BarrierRecorder = std::function<void(VkCommandBuffer)>;
 struct FamilyTransferRecorder {
   std::function<void(VkCommandBuffer)> release;
   std::function<void(VkCommandBuffer)> acquire;
-  // std::function<CommandBatch(Waitable*)> acquire_getter;
-  uint32 release_family;
-
-  void fillAcquireBatch(auto& batch, Waitable* waitable) {
-    batch.recorder = acquire;
-    batch.waits = { { waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } };
-  }
-  auto toAcquireBatch(Waitable* waitable) -> CommandBatch {
-    auto batch = CommandBatch{};
-    fillAcquireBatch(batch, waitable);
-    return batch;
-  }
-  auto executeRelease(auto batch = CommandBatch{}) -> Waitable {
-    auto& release_executor = ExecutorManager::getInstance()[release_family];
-    batch.recorder = std::move(release);
-    return release_executor.submit(batch);
-  }
-  auto executeRelease() -> Waitable {
-    auto& release_executor = ExecutorManager::getInstance()[release_family];
-    return release_executor.submit(release);
-  }
+  uint32                               release_family;
 };
 
 using SyncContext = std::variant<std::monostate, BarrierRecorder, FamilyTransferRecorder>;

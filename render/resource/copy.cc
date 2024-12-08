@@ -2,6 +2,7 @@ module;
 #include <toy.h>
 module render.copy;
 
+import render.submitter;
 import <vulkan_config.h>;
 
 namespace rd {
@@ -110,33 +111,23 @@ void BufferLocalReader::loadBuffer(Buffer& buffer, VkDeviceSize offset, VkDevice
   TOY_ASSERT(offset + size <= buffer.size());
   TOY_ASSERT(buffer.getUsage() & VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 
-  auto& executor = ExecutorManager::getInstance()[FamilyType::TRANSFER];
-
-  auto batches = std::vector<CommandBatch>{};
-  auto waitable_keep_lifetime = std::list<Waitable>{};
-  auto syncDealer = [&](SyncContext sync) {
-    if (auto* recorder = std::get_if<BarrierRecorder>(&sync)) {
-      batches.push_back(CommandBatch{ std::move(*recorder) });
-    } else if (auto* recorder = std::get_if<FamilyTransferRecorder>(&sync)) {
-      auto waitable = recorder->executeRelease();
-      waitable_keep_lifetime.push_back(std::move(waitable));
-      batches.push_back(recorder->toAcquireBatch(&waitable_keep_lifetime.back()));
-    }
-  };
-  syncDealer(buffer.getTracker().syncScope(
-    Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT }, executor.getFamily()
-  ));
-  syncDealer(_buffer.getTracker().syncScope(
-    Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT }, executor.getFamily()
-  ));
-  batches.push_back(CommandBatch{ [&](VkCommandBuffer cmdbuf) {
+  auto submitter = Submitter{ FamilyType::TRANSFER };
+  submitter.addNeedSync(
+    &buffer.getTracker(), Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT }
+  );
+  submitter.addNeedSync(
+    &_buffer.getTracker(), Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT }
+  );
+  submitter.submit([&](VkCommandBuffer cmdbuf) {
     copyBuffer(cmdbuf, buffer.get(), _buffer.get(), offset, 0, size);
-  } });
+  });
+  submitter = Submitter{ FamilyType::TRANSFER };
   // need make device access is available to host access
-  syncDealer(_buffer.getTracker().syncScope(
-    Scope{ VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT }, executor.getFamily()
-  ));
-  executor.submit(batches).back().wait();
+  // todo: better way to sync host
+  submitter.addNeedSync(
+    &_buffer.getTracker(), Scope{ VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT }
+  );
+  submitter.submit([](auto) {}).wait();
   _buffer.getTracker().clearScope();
   _local_size = size;
 }
@@ -171,46 +162,24 @@ void ImageLocalReader::loadImage(
   TOY_ASSERT(manager.getSampleCount() == VK_SAMPLE_COUNT_1_BIT);
   TOY_ASSERT(manager.getAspect() & aspect);
 
-  auto& executor = ExecutorManager::getInstance()[FamilyType::TRANSFER];
-
-  auto batches = std::vector<CommandBatch>{};
-  auto waitable_keep_lifetime = std::list<Waitable>{};
-  auto syncDealer = [&](SyncContext sync) {
-    if (auto* recorder = std::get_if<BarrierRecorder>(&sync)) {
-      batches.push_back(CommandBatch{ std::move(*recorder) });
-    } else if (auto* recorder = std::get_if<FamilyTransferRecorder>(&sync)) {
-      auto waitable = recorder->executeRelease();
-      waitable_keep_lifetime.push_back(std::move(waitable));
-      batches.push_back(recorder->toAcquireBatch(&waitable_keep_lifetime.back()));
-    }
-  };
-  syncDealer(manager.getTracker().syncScope(
-    Scope{
-      .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-      .access_mask = VK_ACCESS_TRANSFER_READ_BIT,
-    },
-    executor.getFamily(),
+  auto submitter = Submitter{ FamilyType::TRANSFER };
+  submitter.addNeedSync(
+    &manager.getTracker(),
+    Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT },
     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
-  ));
-  syncDealer(_buffer.getTracker().syncScope(
-    Scope{
-      .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-      .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
-    },
-    executor.getFamily()
-  ));
-  batches.push_back(CommandBatch{ [&](VkCommandBuffer cmdbuf) {
+  );
+  submitter.addNeedSync(
+    &_buffer.getTracker(), Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT }
+  );
+  submitter.submit([&](VkCommandBuffer cmdbuf) {
     copyImageToBuffer(cmdbuf, manager.getImage(), _buffer.get(), aspect, offset, extent, mip_level);
-  } });
+  });
+  submitter = Submitter{ FamilyType::TRANSFER };
   // need make device access is available to host access
-  syncDealer(_buffer.getTracker().syncScope(
-    Scope{
-      .stage_mask = VK_PIPELINE_STAGE_HOST_BIT,
-      .access_mask = VK_ACCESS_HOST_READ_BIT | VK_ACCESS_HOST_WRITE_BIT,
-    },
-    executor.getFamily()
-  ));
-  executor.submit(batches).back().wait();
+  submitter.addNeedSync(
+    &_buffer.getTracker(), Scope{ VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT }
+  );
+  submitter.submit([](auto) {}).wait();
   _buffer.getTracker().clearScope();
   _local_extent = extent;
 }
@@ -246,10 +215,12 @@ void ImageLocalWriter::writeImage(
   TOY_ASSERT(data.size() <= _buffer.size(), data.size(), _buffer.size());
   TOY_ASSERT(image.getSampleCount() == VK_SAMPLE_COUNT_1_BIT);
 
-  auto& copy_executor = ExecutorManager::getInstance()[FamilyType::TRANSFER];
+  auto  copy_submitter = Submitter{ FamilyType::TRANSFER };
   auto& graphics_executor = ExecutorManager::getInstance()[FamilyType::GRAPHICS];
-  auto  family_transfer =
-    FamilyTransferInfo{ copy_executor.getFamily(), graphics_executor.getFamily() };
+  auto  family_transfer = FamilyTransferInfo{
+    copy_submitter.getExecutor().getFamily(),
+    graphics_executor.getFamily(),
+  };
   auto mip_range = MipRange{
     .base_level = 0,
     .count = 1,
@@ -351,41 +322,20 @@ void ImageLocalWriter::writeImage(
   _buffer.getMemory().fill(data);
 
   auto recorder_copy_with_sync = std::function<void(VkCommandBuffer)>{};
-  auto sync = image.getTracker().syncScope(
-    Scope{
-      .stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT,
-      .access_mask = VK_ACCESS_TRANSFER_WRITE_BIT,
-    },
-    copy_executor.getFamily(),
+  copy_submitter.addNeedSync(
+    &image.getTracker(),
+    Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT },
     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
   );
-  auto waitable_opt = std::optional<Waitable>{};
-  if (auto* recorder = std::get_if<BarrierRecorder>(&sync)) {
-    recorder_copy_with_sync = [recorder, &recorder_copy](VkCommandBuffer cmdbuf) {
-      (*recorder)(cmdbuf);
-      recorder_copy(cmdbuf);
-    };
-  } else if (auto* recorder = std::get_if<FamilyTransferRecorder>(&sync)) {
-    waitable_opt = recorder->executeRelease();
-    recorder_copy_with_sync = [recorder, &recorder_copy](VkCommandBuffer cmdbuf) {
-      recorder->acquire(cmdbuf);
-      recorder_copy(cmdbuf);
-    };
-  } else {
-    recorder_copy_with_sync = recorder_copy;
-  }
-  auto copy_batch = CommandBatch{ .recorder = std::move(recorder_copy_with_sync) };
-  if (waitable_opt) {
-    copy_batch.waits = { { &*waitable_opt, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } };
-  }
-  auto waitable = copy_executor.submit(copy_batch);
+  auto waitable = copy_submitter.submit(recorder_copy);
   graphics_executor.submit(CommandBatch{
     .recorder = recorder_blit,
     .waits = { { &waitable, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } },
   });
   image.getTracker().setNewScope(dst_scope, family_transfer.dst_family, dst_layout);
   _buffer.getTracker().setNewScope(
-    Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT }, copy_executor.getFamily()
+    Scope{ VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT },
+    copy_submitter.getExecutor().getFamily()
   );
 }
 

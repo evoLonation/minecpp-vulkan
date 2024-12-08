@@ -4,6 +4,7 @@ export import render.resource;
 export import render.sync;
 export import render.executor;
 export import render.tracker;
+export import render.submitter;
 export import render.device;
 export import render.descriptor;
 export import render.meta.descriptor;

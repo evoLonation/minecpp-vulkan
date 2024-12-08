@@ -15,3 +15,5 @@ module:
     implement: render.executor
 - queue_requestor.cc:
     implement: render.queue_requestor
+- submitter.ccm:
+    provide: render.submitter

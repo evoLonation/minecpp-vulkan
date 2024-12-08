@@ -72,10 +72,8 @@ using DisposableCmdbuf = toy::RecyclableObject<CommandBufferPool, CommandBuffer>
  */
 class Waitable {
 public:
-  Waitable(
-    DisposableCmdbuf                                               cmdbuf,
-    std::unordered_map<VkPipelineStageFlags2, DisposableSemaphore> stage_semas
-  )
+  using StageSemaphoreMap = std::unordered_map<VkPipelineStageFlags2, DisposableSemaphore>;
+  Waitable(DisposableCmdbuf cmdbuf, StageSemaphoreMap stage_semas)
     : _stage_semas(std::move(stage_semas)), _cmdbuf(std::move(cmdbuf)) {}
 
   auto wait(
@@ -93,14 +91,20 @@ public:
   DEFAULT_MOVEABLE(Waitable);
 
 private:
-  DisposableCmdbuf                                               _cmdbuf;
-  std::unordered_map<VkPipelineStageFlags2, DisposableSemaphore> _stage_semas;
+  DisposableCmdbuf  _cmdbuf;
+  StageSemaphoreMap _stage_semas;
 };
 
 struct CommandBatch {
-  std::function<void(VkCommandBuffer)>                     recorder;
-  std::vector<std::pair<Waitable*, VkPipelineStageFlags2>> waits;
-  std::vector<VkPipelineStageFlags2>                       signals;
+  using WaitInfo = std::pair<Waitable*, VkPipelineStageFlags2>;
+  using RawWaitInfo = std::pair<VkSemaphore, VkPipelineStageFlags2>;
+  using RawSignalInfo = std::pair<VkSemaphore, VkPipelineStageFlags2>;
+  using SignalInfo = VkPipelineStageFlags2;
+  std::function<void(VkCommandBuffer)> recorder;
+  std::vector<WaitInfo>                waits;
+  std::vector<SignalInfo>              signals;
+  std::vector<RawWaitInfo>             raw_waits;
+  std::vector<RawSignalInfo>           raw_signals;
 };
 
 struct RawWaitCommandBatch {
@@ -121,14 +125,12 @@ public:
     vkGetDeviceQueue(Device::getInstance(), family_index, queue_index, &_queue);
   }
   auto submit(std::function<void(VkCommandBuffer)> recorder) -> Waitable {
-    auto batch = CommandBatch{ std::move(recorder), {}, {} };
+    auto batch = CommandBatch{ std::move(recorder), {}, {}, {}, {} };
     return submit(batch);
   }
   auto submit(CommandBatch const& batch) -> Waitable;
 
   auto submit(std::span<CommandBatch const> batches) -> std::vector<Waitable>;
-  auto submit(RawWaitCommandBatch batch) -> Waitable;
-  auto submit(RawSignalCommandBatch batch) -> Waitable;
 
   auto getFamily() const -> uint32 { return _family_index; }
   auto getQueue() const -> VkQueue { return _queue; }
@@ -143,19 +145,16 @@ private:
     std::unique_ptr<VkCommandBufferSubmitInfo> cmdbuf_info;
   };
 
-  auto getWaitInfos(std::vector<std::pair<Waitable*, VkPipelineStageFlags2>> const& waits
-  ) -> std::vector<VkSemaphoreSubmitInfo>;
-  auto getWaitInfos(std::vector<std::pair<VkSemaphore, VkPipelineStageFlags2>> const& raw_waits
-  ) -> std::vector<VkSemaphoreSubmitInfo>;
+  auto getWaitInfos(std::vector<CommandBatch::WaitInfo> const& waits)
+    -> std::vector<VkSemaphoreSubmitInfo>;
+  auto getWaitInfos(std::vector<CommandBatch::RawWaitInfo> const& raw_waits)
+    -> std::vector<VkSemaphoreSubmitInfo>;
 
   auto getCmdbufSignalInfo(CommandBuffer& cmdbuf) -> VkSemaphoreSubmitInfo;
-  auto getSignalInfos(
-    DisposableCmdbuf                                                  cmdbuf,
-    std::vector<std::pair<VkSemaphore, VkPipelineStageFlags2>> const& signals
-  ) -> std::pair<Waitable, std::vector<VkSemaphoreSubmitInfo>>;
-
-  auto getSignalInfos(DisposableCmdbuf cmdbuf, std::vector<VkPipelineStageFlags2> const& signals)
-    -> std::pair<Waitable, std::vector<VkSemaphoreSubmitInfo>>;
+  auto getSignalInfos(std::vector<CommandBatch::RawSignalInfo> const& signals)
+    -> std::pair<std::vector<VkSemaphoreSubmitInfo>, Waitable::StageSemaphoreMap>;
+  auto getSignalInfos(std::vector<CommandBatch::SignalInfo> const& signals)
+    -> std::pair<std::vector<VkSemaphoreSubmitInfo>, Waitable::StageSemaphoreMap>;
 
   auto getSubmitInfo(CommandBatch const& batch) -> std::pair<SubmitInfo, Waitable>;
 

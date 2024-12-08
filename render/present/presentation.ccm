@@ -33,10 +33,11 @@ public:
   UNCOPYABLE_MOVEABLE(Presentation);
 
 private:
-  VkSurfaceKHR     _surface;
-  CommandExecutor* _present_executor;
-  bool             _need_recreate;
-  Swapchain        _swapchain;
+  VkSurfaceKHR _surface;
+  bool         _need_recreate;
+  Swapchain    _swapchain;
+
+  static inline FamilyType _family_type = FamilyType::PRESENT;
 
   /**
    * @brief

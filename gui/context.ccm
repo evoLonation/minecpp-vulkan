@@ -50,12 +50,13 @@ public:
       .format = rd::Swapchain::getFormat(),
       .sample_count = sample_count,
     };
-    auto subpass_info = rd::SubpassInfo{ .colors = { 0 } };
-    auto render_pass = rd::RenderPass{ std::array{ attachment_info }, std::array{ subpass_info } };
-    auto subpass_i = uint32{ 0 };
-    auto family_i = render_pass.getExecutor().getFamily();
-    auto queue = render_pass.getExecutor().getQueue();
-    auto pool_sizes = std::array{
+    auto  subpass_info = rd::SubpassInfo{ .colors = { 0 } };
+    auto  render_pass = rd::RenderPass{ std::array{ attachment_info }, std::array{ subpass_info } };
+    auto  subpass_i = uint32{ 0 };
+    auto& executor = rd::ExecutorManager::getInstance()[render_pass.getFamilyType()];
+    auto  family_i = executor.getFamily();
+    auto  queue = executor.getQueue();
+    auto  pool_sizes = std::array{
       VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
     };
     auto desc_pool = rd::rs::DescriptorPool{ VkDescriptorPoolCreateInfo{

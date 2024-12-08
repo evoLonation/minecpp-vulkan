@@ -13,6 +13,7 @@ import render.vertex;
 import render.executor;
 import render.device;
 import render.format;
+import render.submitter;
 
 import std;
 import toy;
@@ -123,7 +124,6 @@ public:
   RenderPass() = default;
   RenderPass(std::span<AttachmentInfo const> attachments, std::span<SubpassInfo const> subpasses);
   auto getSyncInfos() const -> std::span<AttachmentSyncInfo const> { return _attachment_syncs; }
-  auto getExecutor() -> CommandExecutor& { return *_executor; }
   void setDepstClear(uint32 index, DepstClearValue value) {
     value.checkFormat(_formats.at(index));
     _clear_values[index] = VkClearValue{ .depthStencil = value.clear_value };
@@ -135,19 +135,22 @@ public:
     _is_set_clears[index] = true;
   }
   auto record(
-    std::vector<CommandBatch>                                         batches,
+    std::function<void(Submitter&)> const&                            synchronizer,
     std::span<FrameImageManager* const>                               images,
     std::span<std::function<void(VkCommandBuffer, VkExtent2D)> const> pipeline_recorders
   ) -> Waitable;
 
+  static auto getFamilyType() -> FamilyType { return _family_type; }
+
 private:
-  CommandExecutor*                   _executor;
   std::vector<VkFormat>              _formats;
   std::vector<VkSampleCountFlagBits> _sample_counts;
   std::vector<bool>                  _need_clears;
   std::vector<bool>                  _is_set_clears;
   std::vector<AttachmentSyncInfo>    _attachment_syncs;
   std::vector<VkClearValue>          _clear_values;
+
+  static inline FamilyType _family_type = FamilyType::GRAPHICS;
 };
 
 struct DepstOption {
