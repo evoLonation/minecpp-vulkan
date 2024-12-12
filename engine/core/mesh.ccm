@@ -37,13 +37,13 @@ struct MeshData {
       TOY_ASSERT(meshes.begin()->indices.empty() == mesh.indices.empty());
     }
     for (auto& mesh : meshes) {
-      ret.positions.append_range(mesh.positions);
-      ret.normals.append_range(mesh.normals);
-      ret.tex_coords.append_range(mesh.tex_coords);
       ret.indices.append_range(
         mesh.indices |
         views::transform([delta = ret.positions.size()](auto& i) { return i + delta; })
       );
+      ret.positions.append_range(mesh.positions);
+      ret.normals.append_range(mesh.normals);
+      ret.tex_coords.append_range(mesh.tex_coords);
     }
     return ret;
   }

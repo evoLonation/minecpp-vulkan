@@ -89,7 +89,7 @@ private:
 
 class CameraController : public fw::Action {
 public:
-  CameraController(Camera* camera) : _camera(camera) { setStage(fw::Stage::BEFORE_RENDER); }
+  CameraController(Camera* camera) : _camera(camera) { setStage(fw::Stage::CAMERA_CONTROLLER); }
 
   void runLoop(fw::ActionContext const& ctx) override {
     auto delta = ctx.interval;

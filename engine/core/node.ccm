@@ -118,30 +118,42 @@ private:
 
 class Node : public Component, public Asset {
 public:
-  Node() { setObserver(); }
+  Node() {
+    _root = this;
+    setObserver();
+  }
   void attachTo(Node* node) {
     if (_parent) {
       detach();
     }
     _parent = node;
     _parent->_children.insert(getPtr());
+    _root = node->_root;
+    setChildrenRoot();
     setObserver();
   }
   void detach() {
     TOY_ASSERT(_parent);
     _parent->_children.erase(getPtr());
     _parent = nullptr;
+    _root = this;
+    setChildrenRoot();
     setObserver();
   }
   auto isRoot() -> bool { return !_parent; }
   auto getTransform() -> ModelTransform& { return _transform; }
   auto getTransToParent() -> glm::mat4 const& { return _transform.get(); }
   auto getTransToWorld() -> glm::mat4 const& { return _to_world; }
+  auto getParent() -> Node* { return _parent; }
+  // just allow to get children, not modify
+  auto getChildren() -> std::unordered_set<ptr<Node>>& { return _children; }
+  auto getRoot() -> Node& { return *_root; }
 
 private:
   ModelTransform                _transform;
   toy::Observable<glm::mat4>    _to_world;
   Node*                         _parent = nullptr;
+  Node*                         _root = nullptr;
   std::unordered_set<ptr<Node>> _children;
   toy::Observer<glm::mat4>      _transform_observer;
   toy::Observer<glm::mat4>      _parent_observer;
@@ -155,6 +167,12 @@ private:
       auto observer = [this](auto) { _to_world = _transform.get().get(); };
       _parent_observer = {};
       _transform_observer = toy::Observer{ _transform.get(), observer, true };
+    }
+  }
+  void setChildrenRoot() {
+    for (auto& child : _children) {
+      child->_root = _root;
+      child->setChildrenRoot();
     }
   }
 

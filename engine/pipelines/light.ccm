@@ -63,8 +63,9 @@ export class LightPipeline : public CustomRenderPass {
 public:
   void beforeRender(DrawUnit& draw_unit, DrawContextBase* draw_ctx) override {
     auto* ctx = dynamic_cast<LightContext*>(draw_ctx);
-    ctx->vertex_data->model = draw_unit.getTransform();
-    ctx->vertex_data->normal_model = mt::getNormalModel(draw_unit.getTransform());
+    auto  model = draw_unit.getTransform();
+    ctx->vertex_data->model = model;
+    ctx->vertex_data->normal_model = mt::getNormalModel(model);
   }
   auto fromDrawUnit(uint32 subpass_n, DrawUnit& draw_unit)
     -> std::optional<uptr<DrawContextBase>> override {

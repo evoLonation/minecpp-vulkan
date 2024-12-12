@@ -15,39 +15,9 @@ import <vulkan_config.h>;
 
 export namespace eg {
 
-struct ShapeMesh {
-  std::vector<glm::vec3> positions;
-  std::vector<glm::vec3> normals;
-  std::vector<uint16>    indices;
-
-  auto transform(glm::mat4 const& trans) -> ShapeMesh {
-    auto ret = *this;
-    auto& [positions, normals, indices] = ret;
-    for (auto& pos : positions) {
-      pos = mt::transformDot(trans, pos);
-    }
-    for (auto& normal : normals) {
-      normal = mt::transformVec(trans, normal);
-    }
-    return ret;
-  }
-  static auto merge(std::initializer_list<ShapeMesh> meshes) -> ShapeMesh {
-    auto ret = ShapeMesh{};
-    auto& [positions, normals, indices] = ret;
-    for (auto& mesh : meshes) {
-      indices.append_range(mesh.indices | views::transform([delta = positions.size()](auto& i) {
-                             return i + delta;
-                           }));
-      positions.append_range(mesh.positions);
-      normals.append_range(mesh.normals);
-    }
-    return ret;
-  }
-};
-
-auto generateCube() -> ShapeMesh {
-  auto ret = ShapeMesh{};
-  auto& [positions, normals, indices] = ret;
+auto generateCube() -> MeshData {
+  auto ret = MeshData{};
+  auto& [positions, normals, _, indices] = ret;
   auto addFace = [&](std::array<glm::vec3, 4> face, glm::vec3 normal) {
     auto base = positions.size();
     indices.push_back(base);
@@ -68,10 +38,10 @@ auto generateCube() -> ShapeMesh {
   return ret;
 }
 
-auto generateCone(float radius = 1.0f, float height = 2.0f) -> ShapeMesh {
+auto generateCone(float radius = 1.0f, float height = 2.0f) -> MeshData {
   auto bottom_split_num = 40;
-  auto ret = ShapeMesh{};
-  auto& [vertices, normals, indices] = ret;
+  auto ret = MeshData{};
+  auto& [vertices, normals, _, indices] = ret;
   vertices.push_back(glm::vec3{ 0, 0, 0 });
   normals.push_back(glm::vec3{ 0, 0, -1 });
   for (auto i : views::iota(0, bottom_split_num)) {
@@ -112,12 +82,12 @@ auto generateCone(float radius = 1.0f, float height = 2.0f) -> ShapeMesh {
 }
 
 auto generateCylinder(float radius = 1.0f, float height = 2.0f, float sector_degree = 360.0f)
-  -> ShapeMesh {
+  -> MeshData {
   TOY_ASSERT(sector_degree <= 360.0f);
   auto is_full_cylinder = sector_degree == 360.0f;
   auto split_num = 40;
-  auto ret = ShapeMesh{};
-  auto& [vertices, normals, indices] = ret;
+  auto ret = MeshData{};
+  auto& [vertices, normals, _, indices] = ret;
   auto generateBottomOrTop = [&](bool bottom) {
     vertices.push_back(glm::vec3{ 0, 0, bottom ? 0 : height });
     auto normal = glm::vec3{ 0, 0, bottom ? -1 : 1 };
@@ -186,14 +156,14 @@ auto generateCylinder(float radius = 1.0f, float height = 2.0f, float sector_deg
   return ret;
 }
 
-auto generateSphere(float radius = 1.0f) -> ShapeMesh {
+auto generateSphere(float radius = 1.0f) -> MeshData {
   // v: 纬度, u: 经度
   // x = r * cos(u) * sin(v)
   // y = r * sin(u) * sin(v)
   // z = r * cos(v)
   auto split_num = 40;
-  auto ret = ShapeMesh{};
-  auto& [vertices, normals, indices] = ret;
+  auto ret = MeshData{};
+  auto& [vertices, normals, _, indices] = ret;
   // 纬度 major
   for (int i = 0; i < split_num; i++) {
     auto u = glm::radians(360.0f * i / split_num);
@@ -219,40 +189,38 @@ auto generateSphere(float radius = 1.0f) -> ShapeMesh {
   return ret;
 }
 
-auto generateArrow() -> ShapeMesh {
-  auto cone = generateCone(0.1, 0.4).transform(mt::translate(glm::vec3{ 0, 0, 1.0 }));
-  auto cylinder = generateCylinder(0.05, 1);
-  return ShapeMesh::merge({ cone, cylinder });
+auto generateArrow(
+  float stick_radius = 0.05,
+  float stick_height = 1,
+  float head_radius = 0.1,
+  float head_height = 0.4
+) -> MeshData {
+  auto cone = generateCone(head_radius, head_height);
+  cone.transform(mt::translate(glm::vec3{ 0, 0, stick_height }));
+  auto cylinder = generateCylinder(stick_radius, stick_height);
+  return MeshData::merge({ cone, cylinder });
 }
 
-auto generateAxis() -> ShapeMesh {
+auto generateCubeArrow(float stick_radius = 0.05, float stick_height = 1, float head_edge = 0.2)
+  -> MeshData {
+  auto cube = generateCube();
+  cube.transform(
+    mt::translate(glm::vec3{ 0, 0, stick_height }) *
+    mt::scale(glm::vec3{ head_edge, head_edge, head_edge }) *
+    mt::translate(glm::vec3{ -0.5, -0.5, 0 })
+  );
+  auto cylinder = generateCylinder(stick_radius, stick_height);
+  return MeshData::merge({ cube, cylinder });
+}
+
+auto generateAxis() -> MeshData {
   using mt::Axis;
   auto arrow_z = generateArrow();
-  auto arrow_x = arrow_z.transform(mt::rotate<Axis::Y>(90));
-  auto arrow_y = arrow_z.transform(mt::rotate<Axis::X>(-90));
-  return ShapeMesh::merge({ arrow_x, arrow_y, arrow_z });
-}
-
-auto createShape(ShapeMesh shape, glm::vec3 color = { 0.7f, 0.2f, 0.5f }, bool up_layer = false)
-  -> uptr<DrawUnit> {
-  auto mesh_data = MeshData{
-    .positions = shape.positions,
-    .normals = shape.normals,
-    .tex_coords = views::repeat(glm::vec2{ 0, 0 }) | views::take(shape.positions.size()) |
-                  ranges::to<std::vector>(),
-    .indices = shape.indices,
-  };
-  auto mesh = std::make_shared<Mesh>(mesh_data);
-  auto color_a = glm::vec4{ color, 1.0f };
-  auto texture = std::make_shared<Texture>(rd::SampledTexture{
-    std::as_bytes(std::span{ &color_a, 1 }),
-    VK_FORMAT_R32G32B32A32_SFLOAT,
-    { 1, 1 },
-    false,
-    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-  });
-  auto object = std::make_unique<DrawUnit>(std::move(mesh), std::move(texture), up_layer);
-  return object;
+  auto arrow_x = arrow_z;
+  arrow_x.transform(mt::rotate<Axis::Y>(90));
+  auto arrow_y = arrow_z;
+  arrow_y.transform(mt::rotate<Axis::X>(-90));
+  return MeshData::merge({ arrow_x, arrow_y, arrow_z });
 }
 
 } // namespace eg

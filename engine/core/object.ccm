@@ -4,6 +4,7 @@ module;
 
 export module engine.object;
 
+import camera;
 import engine.assets;
 import pipeline.id;
 import engine.draw_unit;
@@ -24,7 +25,8 @@ export namespace eg {
 class SceneObject : public Node {
 public:
   SceneObject() = default;
-  SceneObject(ptr<Mesh> mesh, ptr<Texture> texture) {
+  SceneObject(ptr<Mesh> mesh, ptr<Texture> texture) { init(std::move(mesh), std::move(texture)); }
+  void init(ptr<Mesh> mesh, ptr<Texture> texture) {
     auto draw_unit = std::make_unique<DrawUnit>(std::move(mesh), std::move(texture));
     setDrawUnit(std::move(draw_unit));
   }
@@ -55,12 +57,12 @@ public:
     return nullptr;
   }
 
-private:
-  uptr<DrawUnit> _draw_unit;
-
   void runLoop(fw::ActionContext const& ctx) override {
     _draw_unit->getTransform() = getTransToWorld();
   }
+
+private:
+  uptr<DrawUnit> _draw_unit;
 
   static inline std::unordered_map<DrawUnit*, SceneObject*> _draw_unit2object;
 
@@ -84,6 +86,55 @@ public:
     );
   }
   REGISTER_ASSET_PATH("scene_object")
+};
+
+class FixedDistanceComponent : public Component {
+public:
+  FixedDistanceComponent() = default;
+  FixedDistanceComponent(glm::mat4* root_trans, float distance = 4.0f) {
+    init(root_trans, distance);
+  }
+  void init(glm::mat4 const* root_trans, float distance = 4.0f) {
+    _root_trans = root_trans;
+    _distance = distance;
+  }
+  auto getFixedDistanceTransform() {
+    auto& camera = Camera::getInstance();
+    auto  location_object = mt::transformDot(*_root_trans, glm::vec3{ 0, 0, 0 });
+    auto  location_camera = camera.getViewPos();
+    auto  new_location_object =
+      location_camera + _distance * glm::normalize(location_object - location_camera);
+    auto transform = mt::translate(glm::vec3{ new_location_object - location_object });
+    return transform;
+  }
+  void setDistance(float distance) { _distance = distance; }
+  auto getDistance() -> float { return _distance; }
+  void setRootTrans(glm::mat4 const* root_trans) { _root_trans = root_trans; }
+
+private:
+  glm::mat4 const* _root_trans;
+  float            _distance = 0;
+};
+
+class FixedDistanceObject : public SceneObject {
+public:
+  FixedDistanceObject() { _fixed_distance_component.init(&getTransToWorld()); }
+  FixedDistanceObject(ptr<Mesh> mesh, ptr<Texture> texture) : FixedDistanceObject() {
+    init(std::move(mesh), std::move(texture));
+  }
+  using SceneObject::init;
+  void setDistance(float distance) { _fixed_distance_component.setDistance(distance); }
+  auto getDistance() -> float { return _fixed_distance_component.getDistance(); }
+
+  void runLoop(fw::ActionContext const& ctx) override {
+    _fixed_distance_component.setRootTrans(&getRoot().getTransToWorld());
+    getDrawUnit()->getTransform() =
+      _fixed_distance_component.getFixedDistanceTransform() * getTransToWorld();
+    // getDrawUnit()->getTransform() = getTransToWorld();
+  }
+
+private:
+  FixedDistanceComponent _fixed_distance_component;
 };
 
 class ObjectClickObserver : public fw::Action, public PROACTIVE_SINGLETON(ObjectClickObserver) {

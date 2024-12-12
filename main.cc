@@ -64,11 +64,12 @@ int main() {
     // auto object1 = std::make_shared<eg::SceneObject>(std::move(mesh), std::move(texture));
     auto cylinder = std::make_shared<eg::SceneObject>();
     cylinder->setDrawUnit(
-      eg::createShape(eg::generateCylinder(1, 2, 77), glm::vec3{ 0.3, 0.5, 0.1 })
+      std::make_unique<eg::DrawUnit>(eg::generateCylinder(1, 2, 77), glm::vec3{ 0.3, 0.5, 0.1 })
     );
     cylinder->getTransform().location = { 0, 3, 0 };
     auto cube = std::make_shared<eg::SceneObject>();
-    cube->setDrawUnit(eg::createShape(eg::generateCube(), glm::vec3{ 0.3, 0.5, 0.1 }));
+    cube->setDrawUnit(std::make_unique<eg::DrawUnit>(eg::generateCube(), glm::vec3{ 0.3, 0.5, 0.1 })
+    );
 
     // object1->setAssetName("object1");
     // manager.save(object1);

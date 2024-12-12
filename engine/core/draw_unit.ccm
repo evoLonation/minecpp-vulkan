@@ -24,6 +24,9 @@ public:
   DrawUnit(ptr<Mesh> mesh, ptr<Texture> texture, bool up_layer = false) {
     init(std::move(mesh), std::move(texture), up_layer);
   }
+  DrawUnit(MeshData mesh_data, glm::vec3 color = { 0.7f, 0.2f, 0.5f }, bool up_layer = false) {
+    init(mesh_data, color, up_layer);
+  }
   void init(ptr<Mesh> mesh, ptr<Texture> texture, bool up_layer = false) {
     _mesh = std::move(mesh);
     _texture = std::move(texture);
@@ -32,6 +35,20 @@ public:
     for (auto& callback : _on_created) {
       (*callback)(*this);
     }
+  }
+  void init(MeshData mesh_data, glm::vec3 color = { 0.7f, 0.2f, 0.5f }, bool up_layer = false) {
+    mesh_data.tex_coords = views::repeat(glm::vec2{ 0, 0 }) |
+                           views::take(mesh_data.positions.size()) | ranges::to<std::vector>();
+    auto mesh = std::make_shared<Mesh>(mesh_data);
+    auto color_a = glm::vec4{ color, 1.0f };
+    auto texture = std::make_shared<Texture>(rd::SampledTexture{
+      std::as_bytes(std::span{ &color_a, 1 }),
+      VK_FORMAT_R32G32B32A32_SFLOAT,
+      { 1, 1 },
+      false,
+      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+    });
+    init(std::move(mesh), std::move(texture), up_layer);
   }
   ~DrawUnit() {
     for (auto& callback : _before_destroy) {

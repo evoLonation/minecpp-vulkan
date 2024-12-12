@@ -12,6 +12,7 @@ import <glfw_config.h>;
 export namespace fw {
 
 enum Stage {
+  CAMERA_CONTROLLER,
   BEFORE_RENDER,
 
   UNIFORM_UPDATE,
