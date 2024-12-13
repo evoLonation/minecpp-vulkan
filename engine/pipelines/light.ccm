@@ -66,6 +66,7 @@ public:
     auto  model = draw_unit.getTransform();
     ctx->vertex_data->model = model;
     ctx->vertex_data->normal_model = mt::getNormalModel(model);
+    draw_ctx->setActive(draw_unit.isActive());
   }
   auto fromDrawUnit(uint32 subpass_n, DrawUnit& draw_unit)
     -> std::optional<uptr<DrawContextBase>> override {

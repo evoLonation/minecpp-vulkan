@@ -61,6 +61,8 @@ public:
   auto getTexture() -> Texture& { return *_texture; }
   auto getMaterial() -> MaterialInfo& { return _material; }
   auto isUpLayer() -> bool { return _up_layer; }
+  void setActive(bool active) { _active = active; }
+  auto isActive() -> bool { return _active; }
 
   static auto getAll() -> std::unordered_set<DrawUnit*>& { return _draw_units; }
   static void setOnCreated(std::function<void(DrawUnit&)>* callback) {
@@ -82,6 +84,7 @@ private:
   ptr<Texture> _texture;
   MaterialInfo _material;
   bool         _up_layer = false;
+  bool         _active = true;
 
 private:
   static inline std::unordered_set<DrawUnit*>                       _draw_units;

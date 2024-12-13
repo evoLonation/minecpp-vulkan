@@ -148,6 +148,12 @@ public:
   // just allow to get children, not modify
   auto getChildren() -> std::unordered_set<ptr<Node>>& { return _children; }
   auto getRoot() -> Node& { return *_root; }
+  void doRecusively(std::function<void(Node*)> const& dealer) {
+    dealer(this);
+    for (auto& child : _children) {
+      child->doRecusively(dealer);
+    }
+  }
 
 private:
   ModelTransform                _transform;

@@ -57,6 +57,7 @@ public:
     return nullptr;
   }
 
+protected:
   void runLoop(fw::ActionContext const& ctx) override {
     _draw_unit->getTransform() = getTransToWorld();
   }

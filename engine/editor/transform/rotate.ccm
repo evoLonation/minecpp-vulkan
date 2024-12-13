@@ -60,35 +60,74 @@ private:
 
 class RotateController : Component {
 public:
-  RotateController() = default;
-  enum Mode { LOCAL, WORLD };
-  RotateController(ptr<SceneObject> target, Mode mode) {
-    setStage(fw::Stage::BEFORE_RENDER);
-    TOY_ASSERT(target->isRoot());
-    _target = target;
-    _mode = mode;
+  RotateController() {
     _root = std::make_shared<Node>();
     _root->getTransform().mode = ModelTransform::LOCAL;
-    _location_bind = { target->getTransform().location, _root->getTransform().location };
-    if (_mode == LOCAL) {
-      _rotate_bind = { target->getTransform().rotate_euler, _root->getTransform().rotate_euler };
-    }
     for (auto [i, plane] : _planes | toy::enumerate) {
       plane.init(static_cast<mt::Axis>(i));
       plane.getRoot().attachTo(_root.get());
     }
+    setMode(WORLD);
+    resetTarget();
+  }
+  auto refUnitLength() -> float& { return _unit_length; }
+  auto refCycleLength() -> float& { return _cycle_length; }
+  enum Mode { LOCAL, WORLD };
+  auto getMode() -> Mode { return _mode; }
+  void setMode(Mode mode) {
+    if (!_target.expired()) {
+      updateRotateBind(mode, _target.lock());
+    }
+    _mode = mode;
+  }
+  auto getTarget() -> Node* { return _target.expired() ? nullptr : _target.lock().get(); }
+  void resetTarget() {
+    _location_bind = {};
+    _rotate_bind = {};
+    _root->doRecusively([](Node* node) {
+      if (auto* object = dynamic_cast<SceneObject*>(node)) {
+        object->getDrawUnit()->setActive(false);
+      }
+    });
+    _target.reset();
+  }
+  void setTarget(ptr<Node> target) {
+    TOY_ASSERT(target->isRoot());
+    _location_bind = { target->getTransform().location, _root->getTransform().location };
+    updateRotateBind(_mode, target);
+    _root->doRecusively([](Node* node) {
+      if (auto* object = dynamic_cast<SceneObject*>(node)) {
+        object->getDrawUnit()->setActive(true);
+      }
+    });
+    _target = std::move(target);
   }
 
 private:
-  wptr<SceneObject>             _target;
-  Mode                          _mode;
+  void updateRotateBind(Mode mode, ptr<Node> const& target) {
+    if (mode == LOCAL) {
+      _rotate_bind = {
+        target->getTransform().rotate_euler,
+        _root->getTransform().rotate_euler,
+      };
+    } else if (mode == WORLD) {
+      _rotate_bind = {};
+      _root->getTransform().rotate_euler = glm::vec3{ 0, 0, 0 };
+    }
+  }
+
+private:
+  wptr<Node>                    _target;
   ptr<Node>                     _root;
   toy::Bidirectional<glm::vec3> _location_bind;
   toy::Bidirectional<glm::vec3> _rotate_bind;
   std::array<RotatePlane, 3>    _planes;
+  Mode                          _mode = WORLD;
 
   std::optional<mt::Axis> _plane_norm;
   float                   _last_pos;
+  float                   _unit_length = 0.2f;
+  float                   _cycle_length = 3.0f;
 
   void runLoop(fw::ActionContext const& ctx) override {
     auto& input = fw::InputProcessor::getInstance();
@@ -174,25 +213,6 @@ private:
       glm::dot(point_base - line_rotate_base.point, glm::normalize(line_rotate_base.direction));
     return d;
   }
-
-  static constexpr auto _unit_length = 0.2f;
-  static constexpr auto _cycle_length = 3.0f;
-};
-
-class RotateControllerManager : public fw::Action {
-public:
-  RotateControllerManager() : fw::Action(fw::Stage::BEFORE_RENDER) {}
-
-private:
-  void runLoop(fw::ActionContext const& ctx) override {
-    if (auto selected = ObjectClickObserver::getInstance().getClick()) {
-      if (selected->isRoot()) {
-        _controller =
-          std::make_shared<RotateController>(selected->getPtr(), RotateController::LOCAL);
-      }
-    }
-  }
-  ptr<RotateController> _controller;
 };
 
 } // namespace eg

@@ -1,27 +1,24 @@
 module;
 #include <toy.h>
-export module editor.move;
+export module editor.transform.scale;
 
-import engine.draw_unit;
-import engine.node;
+import render;
+import camera;
+import framework;
+import math;
 import engine.base;
+import engine.node;
 import engine.object;
+import engine.draw_unit;
+import tool.shape;
 import std;
 import toy;
-import glm;
-import framework;
-import render;
-import pipeline.light;
-import math;
-import pipeline.uniform;
-import tool.shape;
-import camera;
 
 export namespace eg {
 
-class MovePlane {
+class ScalePlane {
 public:
-  MovePlane() = default;
+  ScalePlane() = default;
   void init(mt::Axis normal_axis) {
     _norm_axis = normal_axis;
     _root = std::make_shared<Node>();
@@ -96,9 +93,9 @@ private:
   constexpr static float _fixed_distance = 10.0f;
 };
 
-class MoveArrow {
+class ScaleArrow {
 public:
-  MoveArrow() = default;
+  ScaleArrow() = default;
   void init(mt::Axis axis) {
     _axis = axis;
     _root = std::make_shared<Node>();
@@ -106,7 +103,7 @@ public:
     auto unit = mt::unitVec(axis);
     _arrow = std::make_shared<FixedDistanceObject>();
     _arrow->setDistance(_fixed_distance);
-    _arrow->setDrawUnit(std::make_unique<DrawUnit>(generateArrow(0.02, 1, 0.04, 0.2), unit, true));
+    _arrow->setDrawUnit(std::make_unique<DrawUnit>(generateCubeArrow(0.02, 1, 0.1), unit, true));
     auto arrow_dir = glm::vec3{ 0, 0, 1 };
     if (auto cross = glm::cross(arrow_dir, unit); !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
       _arrow->getTransform().rotate(cross, 90);
@@ -140,9 +137,9 @@ private:
   constexpr static float _fixed_distance = 10.0f;
 };
 
-class MoveController : public Component {
+class ScaleController : public Component {
 public:
-  MoveController() {
+  ScaleController() {
     _root = std::make_shared<Node>();
     _root->getTransform().mode = ModelTransform::LOCAL;
     _arrows[0].init(mt::Axis::X);
@@ -160,7 +157,8 @@ public:
     setMode(WORLD);
     resetTarget();
   }
-  auto refUnitLength() -> float& { return _unit_length; }
+
+  auto refUnitFactor() -> float& { return _unit_factor; }
   enum Mode { LOCAL, WORLD };
   auto getMode() -> Mode { return _mode; }
   void setMode(Mode mode) {
@@ -210,9 +208,17 @@ private:
   ptr<Node>                     _root;
   toy::Bidirectional<glm::vec3> _location_bind;
   toy::Bidirectional<glm::vec3> _rotate_bind;
-  std::array<MoveArrow, 3>      _arrows;
-  std::array<MovePlane, 3>      _planes;
+  std::array<ScaleArrow, 3>     _arrows;
+  std::array<ScalePlane, 3>     _planes;
   Mode                          _mode = WORLD;
+  float                         _unit_factor = 1.2f;
+
+  std::optional<mt::Axis> _axis;
+  std::optional<mt::Axis> _plane_norm;
+  float                   _start_pos;
+  float                   _last_factor;
+  glm::vec2               _start_plane_pos;
+  glm::vec2               _last_plane_factor;
 
   void runLoop(fw::ActionContext const& ctx) override {
     auto& input = fw::InputProcessor::getInstance();
@@ -236,16 +242,21 @@ private:
       } else if (z_plane.isSelected()) {
         _plane_norm = mt::Axis::Z;
       }
-      if (_axis) {
-        _arrows[(int)*_axis].setDragging(true);
-        auto ret = getAxisPos(*_axis);
-        TOY_ASSERT(ret);
-        _start_pos = *ret;
-      } else if (_plane_norm) {
-        _planes[(int)*_plane_norm].setDragging(true);
-        auto ret = getPlanePos(*_plane_norm);
-        TOY_ASSERT(ret);
-        _start_plane_pos = *ret;
+      if (!_target.expired()) {
+        auto target = _target.lock();
+        if (_axis) {
+          _arrows[(int)*_axis].setDragging(true);
+          auto ret = getAxisPos(*_axis);
+          TOY_ASSERT(ret);
+          _start_pos = *ret;
+          _last_factor = 1.0f;
+        } else if (_plane_norm) {
+          _planes[(int)*_plane_norm].setDragging(true);
+          auto ret = getPlanePos(*_plane_norm);
+          TOY_ASSERT(ret);
+          _start_plane_pos = *ret;
+          _last_plane_factor = glm::vec2{ 1, 1 };
+        }
       }
     } else if (input[fw::Mouse::LEFT]->state == fw::ButtonState::RELEASE) {
       if (_axis) {
@@ -256,38 +267,42 @@ private:
       _plane_norm = {};
       _axis = {};
     } else if (_axis) {
-      auto ret = getAxisPos(*_axis);
-      if (ret) {
-        auto  now_pos = *ret;
-        float delta;
-        if (_unit_length != 0) {
-          delta = _unit_length * int32((now_pos - _start_pos) / _unit_length);
-        } else {
-          delta = now_pos - _start_pos;
-        }
-        _root->getTransform().translate(*_axis, delta);
+      if (auto ret = getAxisPos(*_axis)) {
+        setScaleFactor(_start_pos, *ret, *_axis);
       }
     } else if (_plane_norm) {
-      auto ret = getPlanePos(*_plane_norm);
-      if (ret) {
-        auto  now_pos_1 = ret->x;
-        auto  now_pos_2 = ret->y;
-        auto  start_pos_1 = _start_plane_pos.x;
-        auto  start_pos_2 = _start_plane_pos.y;
-        float delta;
-        if (_unit_length != 0) {
-          delta = _unit_length * int32((now_pos_1 - start_pos_1) / _unit_length);
-        } else {
-          delta = now_pos_1 - _start_pos;
-        }
-        _root->getTransform().translate(mt::Axis(((int)*_plane_norm + 1) % 3), delta);
-        if (_unit_length != 0) {
-          delta = _unit_length * int32((now_pos_2 - start_pos_2) / _unit_length);
-        } else {
-          delta = now_pos_2 - start_pos_2;
-        }
-        _root->getTransform().translate(mt::Axis(((int)*_plane_norm + 2) % 3), delta);
+      if (auto ret = getPlanePos(*_plane_norm)) {
+        auto now_pos_1 = ret->x;
+        auto now_pos_2 = ret->y;
+        auto start_pos_1 = _start_plane_pos.x;
+        auto start_pos_2 = _start_plane_pos.y;
+        setScaleFactor(start_pos_1, now_pos_1, mt::Axis(((int)*_plane_norm + 1) % 3));
+        setScaleFactor(start_pos_2, now_pos_2, mt::Axis(((int)*_plane_norm + 2) % 3));
       }
+    }
+  }
+
+  void setScaleFactor(float start_pos, float now_pos, mt::Axis axis) {
+    float scale_factor;
+    if (_unit_factor != 1) {
+      if (mt::eq(now_pos, 0)) {
+        scale_factor = 0;
+      } else if (now_pos < 0) {
+        scale_factor =
+          -glm::pow(_unit_factor, int32(glm::log(-now_pos / start_pos) / glm::log(_unit_factor)));
+      } else {
+        scale_factor =
+          glm::pow(_unit_factor, int32(glm::log(now_pos / start_pos) / glm::log(_unit_factor)));
+      }
+    } else {
+      scale_factor = now_pos / start_pos;
+    }
+    if (auto target = _target.lock()) {
+      auto origin_mode = target->getTransform().mode;
+      target->getTransform().mode = _mode == WORLD ? ModelTransform::WORLD : ModelTransform::LOCAL;
+      target->getTransform().scale(axis, scale_factor / _last_factor);
+      target->getTransform().mode = origin_mode;
+      _last_factor = scale_factor;
     }
   }
 
@@ -358,12 +373,6 @@ private:
     }
     return std::nullopt;
   }
-
-  std::optional<mt::Axis> _axis;
-  std::optional<mt::Axis> _plane_norm;
-  float                   _start_pos;
-  glm::vec2               _start_plane_pos;
-  float                   _unit_length = 0.3;
 };
 
 } // namespace eg

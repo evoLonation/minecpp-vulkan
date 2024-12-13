@@ -72,12 +72,15 @@ public:
     TOY_CHECK_ASSERT(_stencil_ref.has_value());
     return *_stencil_ref;
   }
+  void setActive(bool active) { _active = active; }
+  auto isActive() -> bool { return _active; }
 
 private:
   std::vector<rd::VertexBuffer*> _vertex_buffers;
   rd::IndexBuffer*               _index_buffer;
   rd::DescriptorSet              _dset;
   std::optional<uint8>           _stencil_ref;
+  bool                           _active = true;
 };
 
 class RenderPass {
@@ -187,7 +190,8 @@ public:
         if (global_dset) {
           drawer.bindDescriptorSet(1, global_dset);
         }
-        for (auto& draw_ctx : draw_contexts) {
+        for (auto* draw_ctx :
+             draw_contexts | views::filter([](auto* x) { return x->isActive(); })) {
           for (auto [binding, vertex_buf] : draw_ctx->getVertexBuffers() | toy::enumerate) {
             drawer.bindVertexBuffer(binding, vertex_buf);
           }

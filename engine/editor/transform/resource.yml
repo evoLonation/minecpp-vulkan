@@ -1,7 +1,13 @@
 module:
-- move.ccm:
-    provide: editor.move
-- transform.ccm:
-    provide: editor.transform
-- rotate.ccm:
-    provide: editor.rotate
+  - move.ccm:
+      provide: editor.move
+  - transform.ccm:
+      provide: editor.transform
+  - rotate.ccm:
+      provide: editor.rotate
+  - move.cc:
+      implement: editor.move
+  - scale.ccm:
+      provide: editor.transform.scale
+  - public.ccm:
+      provide: editor.transform.publics
