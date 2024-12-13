@@ -1,5 +1,6 @@
 dylib:
 - glfw3.dll
 - imgui.dll
+- libassimp-5.dll
 lib:
 - imgui.dll

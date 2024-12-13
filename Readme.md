@@ -85,3 +85,14 @@ target:
 include_dir:
 - include
 ```
+
+## assimp
+
+github: https://github.com/assimp/assimp
+
+编译动态库的版本（默认情况即可）：
+```
+cmake -S . -B build -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -G "Ninja"
+cmake --build .\build\
+```
+然后将动态库、静态库和include目录移至对应的目录下即可。
