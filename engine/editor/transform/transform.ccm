@@ -3,8 +3,8 @@ module;
 export module editor.transform;
 
 import editor.transform.scale;
-import editor.move;
-import editor.rotate;
+import editor.transform.move;
+import editor.transform.rotate;
 import engine.object;
 import engine.base;
 import engine.node;

@@ -1,6 +1,6 @@
 module;
 #include <toy.h>
-export module editor.rotate;
+export module editor.transform.rotate;
 
 import engine.draw_unit;
 import engine.node;

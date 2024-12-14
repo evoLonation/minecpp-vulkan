@@ -1,6 +1,6 @@
 module;
 #include <toy.h>
-export module editor.move;
+export module editor.transform.move;
 
 import engine.draw_unit;
 import engine.node;
