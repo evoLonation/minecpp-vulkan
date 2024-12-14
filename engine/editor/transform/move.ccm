@@ -3,156 +3,19 @@ module;
 export module editor.transform.move;
 
 import editor.transform.publics;
-import engine.draw_unit;
-import engine.node;
-import engine.base;
-import engine.object;
 import std;
 import toy;
-import glm;
 import framework;
-import render;
-import pipeline.light;
 import math;
-import pipeline.uniform;
-import engine.shape;
-import engine.camera;
 
 export namespace eg {
 
-class MovePlane {
+class MoveTool : public ToolBase {
 public:
-  MovePlane() = default;
-  void init(mt::Axis normal_axis) {
-    _norm_axis = normal_axis;
-    _root = std::make_shared<Node>();
-    auto normal = mt::unitVec(normal_axis);
-    _cube = std::make_shared<FixedDistanceObject>();
-    _cube->setDistance(_fixed_distance);
-    _cube->setDrawUnit(std::make_unique<DrawUnit>(generateCube(), glm::vec3{ 0.5, 0.5, 0.5 }, true)
-    );
-    _cube->getController().refScaleFactor() = glm::vec3{ 1, 1, 1 } - normal * (1 - _thickness) -
-                                              (glm::vec3{ 1, 1, 1 } - normal) * (1 - _edge);
-    TOY_DEBUG(
-      glm::vec3{ 1, 1, 1 } - normal * (1 - _thickness) -
-      (glm::vec3{ 1, 1, 1 } - normal) * (1 - _edge)
-    );
-    TOY_DEBUG(_cube->getController().refScaleFactor().get());
-    _cube->getController().refLocation() = normal * (_thickness / 2);
-    _cube->attachTo(_root.get());
-    TOY_DEBUG(_cube->getController().refScaleFactor().get());
-
-    auto unit_2 = mt::unitVec(mt::Axis(((int)normal_axis + 2) % 3));
-    auto unit_1 = mt::unitVec(mt::Axis(((int)normal_axis + 1) % 3));
-    auto createEdge =
-      [this](FixedDistanceObject& edge, glm::vec3 const& unit1, glm::vec3 const& unit2) {
-        edge.setDistance(_fixed_distance);
-        edge.setDrawUnit(
-          std::make_unique<DrawUnit>(generateCylinder(_thickness / 2, _edge), unit1, true)
-        );
-        if (auto cross = glm::cross(glm::vec3{ 0, 0, 1 }, unit1);
-            !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
-          edge.getController().rotate(cross, 90);
-        }
-        edge.getController().translate(unit2 * _edge);
-        edge.attachTo(_root.get());
-      };
-    _edge_1 = std::make_shared<FixedDistanceObject>();
-    createEdge(*_edge_1, unit_1, unit_2);
-    _edge_2 = std::make_shared<FixedDistanceObject>();
-    createEdge(*_edge_2, unit_2, unit_1);
-  }
-  auto isSelected() -> bool {
-    return _cube->isSelected() || _edge_1->isSelected() || _edge_2->isSelected();
-  }
-  auto getRoot() -> Node& { return *_root; }
-  void setDragging(bool dragging) {
-    if (_dragging != dragging) {
-      auto cube_color = glm::vec4{};
-      auto edge1_color = glm::vec4{};
-      auto edge2_color = glm::vec4{};
-      if (dragging) {
-        cube_color = { 1, 1, 0, 1 };
-        edge1_color = { 1, 1, 0, 1 };
-        edge2_color = { 1, 1, 0, 1 };
-      } else {
-        cube_color = { 0.5, 0.5, 0.5, 1 };
-        edge1_color = { mt::unitVec(mt::Axis{ ((int)_norm_axis + 1) % 3 }), 1 };
-        edge2_color = { mt::unitVec(mt::Axis{ ((int)_norm_axis + 2) % 3 }), 1 };
-      }
-      _cube->getDrawUnit()->getTexture().getTexture().writeContent(std::as_bytes(std::span{
-        &cube_color, 1 }));
-      _edge_1->getDrawUnit()->getTexture().getTexture().writeContent(std::as_bytes(std::span{
-        &edge1_color, 1 }));
-      _edge_2->getDrawUnit()->getTexture().getTexture().writeContent(std::as_bytes(std::span{
-        &edge2_color, 1 }));
-    }
-    _dragging = dragging;
-  }
-
-private:
-  mt::Axis                 _norm_axis;
-  ptr<Node>                _root;
-  ptr<FixedDistanceObject> _cube;
-  ptr<FixedDistanceObject> _edge_1;
-  ptr<FixedDistanceObject> _edge_2;
-  bool                     _dragging;
-
-  constexpr static float _thickness = 0.02f;
-  constexpr static float _edge = 0.25f;
-  constexpr static float _fixed_distance = 10.0f;
-};
-
-class MoveArrow {
-public:
-  MoveArrow() = default;
-  void init(mt::Axis axis) {
-    _axis = axis;
-    _root = std::make_shared<Node>();
-    _dragging = false;
-    auto unit = mt::unitVec(axis);
-    _arrow = std::make_shared<FixedDistanceObject>();
-    _arrow->setDistance(_fixed_distance);
-    _arrow->setDrawUnit(std::make_unique<DrawUnit>(generateArrow(0.02, 1, 0.04, 0.2), unit, true));
-    auto arrow_dir = glm::vec3{ 0, 0, 1 };
-    if (auto cross = glm::cross(arrow_dir, unit); !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
-      _arrow->getController().rotate(cross, 90);
-    }
-    _arrow->attachTo(_root.get());
-  }
-  auto isSelected() -> bool { return _arrow->isSelected(); }
-  void setDragging(bool dragging) {
-    if (_dragging != dragging) {
-      auto color = glm::vec4{};
-      if (dragging) {
-        color = { 1, 1, 0, 1 };
-      } else {
-        color = { mt::unitVec(_axis), 1 };
-      }
-      _arrow->getDrawUnit()
-        ->getTexture() //
-        .getTexture()
-        .writeContent(std::as_bytes(std::span{ &color, 1 }));
-    }
-    _dragging = dragging;
-  }
-  auto getRoot() -> Node& { return *_root; }
-
-private:
-  mt::Axis                 _axis;
-  ptr<Node>                _root;
-  ptr<FixedDistanceObject> _arrow;
-  bool                     _dragging;
-
-  constexpr static float _fixed_distance = 10.0f;
-};
-
-class MoveController : public ToolBase {
-public:
-  MoveController() {
-    _arrows[0].init(mt::Axis::X);
-    _arrows[1].init(mt::Axis::Y);
-    _arrows[2].init(mt::Axis::Z);
+  MoveTool() {
+    _arrows[0].init(mt::Axis::X, false);
+    _arrows[1].init(mt::Axis::Y, false);
+    _arrows[2].init(mt::Axis::Z, false);
     _arrows[0].getRoot().attachTo(getRoot().get());
     _arrows[1].getRoot().attachTo(getRoot().get());
     _arrows[2].getRoot().attachTo(getRoot().get());
@@ -168,8 +31,13 @@ public:
   auto refUnitLength() -> float& { return _unit_length; }
 
 private:
-  std::array<MoveArrow, 3> _arrows;
-  std::array<MovePlane, 3> _planes;
+  std::array<MoveScaleArrow, 3> _arrows;
+  std::array<MoveScalePlane, 3> _planes;
+  std::optional<mt::Axis>       _axis;
+  std::optional<mt::Axis>       _plane_norm;
+  float                         _start_pos = 0;
+  glm::vec2                     _start_plane_pos = { 0, 0 };
+  float                         _unit_length = 0.3;
 
   void runLoop(fw::ActionContext const& ctx) override {
     ToolBase::runLoop(ctx);
@@ -196,12 +64,12 @@ private:
       }
       if (_axis) {
         _arrows[(int)*_axis].setDragging(true);
-        auto ret = getAxisPos(*_axis);
+        auto ret = getAxisPos(*_axis, getRoot()->getTransToWorld());
         TOY_ASSERT(ret);
         _start_pos = *ret;
       } else if (_plane_norm) {
         _planes[(int)*_plane_norm].setDragging(true);
-        auto ret = getPlanePos(*_plane_norm);
+        auto ret = getPlanePos(*_plane_norm, getRoot()->getTransToWorld());
         TOY_ASSERT(ret);
         _start_plane_pos = *ret;
       }
@@ -214,7 +82,7 @@ private:
       _plane_norm = {};
       _axis = {};
     } else if (_axis) {
-      auto ret = getAxisPos(*_axis);
+      auto ret = getAxisPos(*_axis, getRoot()->getTransToWorld());
       if (ret) {
         auto  now_pos = *ret;
         float delta;
@@ -223,12 +91,12 @@ private:
         } else {
           delta = now_pos - _start_pos;
         }
-        if (auto target = getTarget()) {
-          TargetController(std::move(target)).translate(*_axis, delta);
+        if (auto target = getTarget().lock()) {
+          TargetController{ std::move(target), getMode() }.translate(*_axis, delta);
         }
       }
     } else if (_plane_norm) {
-      auto ret = getPlanePos(*_plane_norm);
+      auto ret = getPlanePos(*_plane_norm, getRoot()->getTransToWorld());
       if (ret) {
         auto  now_pos_1 = ret->x;
         auto  now_pos_2 = ret->y;
@@ -240,96 +108,24 @@ private:
         } else {
           delta = now_pos_1 - _start_pos;
         }
-        if (auto target = getTarget()) {
-          TargetController(std::move(target))
-            .translate(mt::Axis(((int)*_plane_norm + 1) % 3), delta);
+        if (auto target = getTarget().lock()) {
+          TargetController{ std::move(target), getMode() }.translate(
+            mt::Axis(((int)*_plane_norm + 1) % 3), delta
+          );
         }
         if (_unit_length != 0) {
           delta = _unit_length * int32((now_pos_2 - start_pos_2) / _unit_length);
         } else {
           delta = now_pos_2 - start_pos_2;
         }
-        if (auto target = getTarget()) {
-          TargetController(std::move(target))
-            .translate(mt::Axis(((int)*_plane_norm + 2) % 3), delta);
+        if (auto target = getTarget().lock()) {
+          TargetController{ std::move(target), getMode() }.translate(
+            mt::Axis(((int)*_plane_norm + 2) % 3), delta
+          );
         }
       }
     }
   }
-
-  auto getAxisPos(mt::Axis axis) -> std::optional<float> {
-    auto  cursor = fw::InputProcessor::getInstance().getCursorState();
-    auto& camera = Camera::getInstance();
-    auto  extent = rd::Presentation::getInstance().getSwapchain().getExtent();
-    auto  ndc_x = float(cursor.x) / extent.width * 2 - 1;
-    auto  ndc_y = float(cursor.y) / extent.height * 2 - 1;
-    auto  start = glm::vec3{ ndc_x, ndc_y, 0 };
-    auto  end = glm::vec3{ ndc_x, ndc_y, 1 };
-    auto  trans = mt::inverse(camera.getView()) * camera.getProjIV();
-    // TOY_DEBUG(trans);
-    start = mt::transformDot(trans, start);
-    end = mt::transformDot(trans, end);
-    auto line_cursor = mt::Line{
-      .direction = end - start,
-      .point = start,
-    };
-    auto line_axis = mt::Line{
-      .direction = mt::transformVec(getRoot()->getTransToWorld(), mt::unitVec(*_axis)),
-      .point = mt::transformDot(getRoot()->getTransToWorld(), glm::vec3{ 0, 0, 0 }),
-    };
-    if (mt::eq(glm::cross(line_cursor.direction, line_axis.direction), glm::vec3{ 0, 0, 0 })) {
-      return std::nullopt;
-    }
-    // TOY_DEBUG(_root.getTransToWorld());
-    // TOY_DEBUG(line_cursor.point, line_cursor.direction);
-    // TOY_DEBUG(line_axis.point, line_axis.direction);
-    auto ret = mt::distance(line_cursor, line_axis);
-    // TOY_DEBUG(ret.distance, ret.point2);
-    auto d = glm::dot(ret.point2 - line_axis.point, line_axis.direction);
-    // TOY_DEBUG(d);
-    return d;
-  }
-  auto getPlanePos(mt::Axis axis) -> std::optional<glm::vec2> {
-    auto  cursor = fw::InputProcessor::getInstance().getCursorState();
-    auto& camera = Camera::getInstance();
-    auto  extent = rd::Presentation::getInstance().getSwapchain().getExtent();
-    auto  ndc_x = float(cursor.x) / extent.width * 2 - 1;
-    auto  ndc_y = float(cursor.y) / extent.height * 2 - 1;
-    auto  start = glm::vec3{ ndc_x, ndc_y, 0 };
-    auto  end = glm::vec3{ ndc_x, ndc_y, 1 };
-    auto  trans = mt::inverse(camera.getView()) * camera.getProjIV();
-    start = mt::transformDot(trans, start);
-    end = mt::transformDot(trans, end);
-    auto line_cursor = mt::Line{
-      .direction = end - start,
-      .point = start,
-    };
-    auto plane_point = mt::transformDot(getRoot()->getTransToWorld(), glm::vec3{ 0, 0, 0 });
-    auto plane = mt::Surface{
-      .normal = mt::transformVec(getRoot()->getTransToWorld(), mt::unitVec(axis)),
-    };
-    plane.dot = glm::dot(plane_point, plane.normal);
-    // TOY_DEBUG(plane.normal, plane.dot);
-    auto ret = mt::intersection(line_cursor, plane);
-    if (std::holds_alternative<glm::vec3>(ret)) {
-      auto point = std::get<glm::vec3>(ret) - plane_point;
-      // TOY_DEBUG(point);
-      auto unit_1 =
-        mt::transformVec(getRoot()->getTransToWorld(), mt::unitVec(mt::Axis(((int)axis + 1) % 3)));
-      auto unit_2 =
-        mt::transformVec(getRoot()->getTransToWorld(), mt::unitVec(mt::Axis(((int)axis + 2) % 3)));
-      auto res = glm::vec2{ glm::dot(point, unit_1), glm::dot(point, unit_2) };
-      // TOY_DEBUG(glm::vec3{ res, 0 });
-      return res;
-    }
-    return std::nullopt;
-  }
-
-  std::optional<mt::Axis> _axis;
-  std::optional<mt::Axis> _plane_norm;
-  float                   _start_pos;
-  glm::vec2               _start_plane_pos;
-  float                   _unit_length = 0.3;
 };
 
 } // namespace eg

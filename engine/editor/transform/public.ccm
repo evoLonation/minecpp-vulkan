@@ -3,6 +3,8 @@ module;
 export module editor.transform.publics;
 
 import engine.object;
+import engine.draw_unit;
+import engine.shape;
 import engine.node;
 import engine.base;
 import math;
@@ -33,16 +35,6 @@ auto getCursorLineInWorld() -> LineSegment {
   return LineSegment{ start, end };
 }
 
-class TargetController : public ModelController {
-public:
-  TargetController(ptr<Node> target) : _target(std::move(target)) {
-    setModelTransform(&_target->getTransToParent(), ModelController::CHANGE_CONTROLLER);
-  }
-
-private:
-  ptr<Node> _target;
-};
-
 /**
  * @brief Helper class to bind target transform info to tool transform info.
  *
@@ -54,9 +46,8 @@ public:
   ~ToolBase() { resetTarget(); }
 
   enum Mode {
-    LOCAL,       // bind rotate and location
-    WORLD,       // bind location only and set rotate to 0
-    KEEP_ROTATE, // bind location only but keep rotate value
+    LOCAL, // bind rotate and location
+    WORLD, // bind location only and set rotate to 0
   };
 
   void runLoop(fw::ActionContext const& ctx) override {
@@ -69,11 +60,9 @@ public:
   void setMode(Mode mode) {
     if (auto target = _target.lock(); target && _mode != mode) {
       auto& target_controller = target->getController();
-      if (mode == WORLD || mode == KEEP_ROTATE) {
+      if (mode == WORLD) {
         target_controller.refRotateEuler().unbind(&_root->getController().refRotateEuler());
-        if (mode == WORLD) {
-          target_controller.refRotateEuler() = { 0, 0, 0 };
-        }
+        _root->getController().refRotateEuler() = { 0, 0, 0 };
       } else if (mode == LOCAL) {
         target_controller.refRotateEuler().bind(&_root->getController().refRotateEuler());
       }
@@ -81,6 +70,20 @@ public:
     _mode = mode;
   }
   auto getMode() const -> Mode { return _mode; }
+  /**
+   * @brief if mode is LOCAL, unbind rotate and keep value unchanged util @ref disableKeepRotate
+   * if mode is WORLD, nothing will happen
+   */
+  void enableKeepRotate() {
+    if (auto target = _target.lock(); target && _mode == LOCAL) {
+      target->getController().refRotateEuler().unbind(&_root->getController().refRotateEuler());
+    }
+  }
+  void disableKeepRotate() {
+    if (auto target = _target.lock(); target && _mode == LOCAL) {
+      target->getController().refRotateEuler().bind(&_root->getController().refRotateEuler());
+    }
+  }
 
   void setTarget(ptr<Node> target) {
     resetTarget();
@@ -97,15 +100,15 @@ public:
     if (auto target = _target.lock()) {
       auto& target_controller = target->getController();
       target_controller.refLocation().unbind(&_root->getController().refLocation());
-      target_controller.refLocation() = { 0, 0, 0 };
+      _root->getController().refLocation() = { 0, 0, 0 };
       if (_mode == LOCAL) {
         target_controller.refRotateEuler().unbind(&_root->getController().refRotateEuler());
-        target_controller.refRotateEuler() = { 0, 0, 0 };
+        _root->getController().refRotateEuler() = { 0, 0, 0 };
       }
       _target.reset();
     }
   }
-  auto getTarget() -> ptr<Node> { return _target.lock(); }
+  auto getTarget() -> wptr<Node> { return _target; }
 
 protected:
   auto getRoot() -> ptr<Node> { return _root; }
@@ -123,5 +126,194 @@ private:
     });
   }
 };
+
+class TargetController : public ModelController {
+public:
+  TargetController(ptr<Node> target, ToolBase::Mode mode) : _target(std::move(target)) {
+    setModelTransform(&_target->getTransToParent(), ModelController::CHANGE_CONTROLLER);
+    setMode(mode == ToolBase::WORLD ? ModelController::WORLD : ModelController::LOCAL);
+  }
+
+private:
+  ptr<Node> _target;
+};
+
+class MoveScalePlane {
+public:
+  MoveScalePlane() = default;
+  void init(mt::Axis normal_axis) {
+    _norm_axis = normal_axis;
+    _root = std::make_shared<Node>();
+    auto normal = mt::unitVec(normal_axis);
+    _cube = std::make_shared<FixedDistanceObject>();
+    _cube->setDistance(_fixed_distance);
+    _cube->setDrawUnit(std::make_unique<DrawUnit>(generateCube(), glm::vec3{ 0.5, 0.5, 0.5 }, true)
+    );
+    auto& controller = _cube->getController();
+    controller.refScaleFactor() = glm::vec3{ 1, 1, 1 } - normal * (1 - _thickness) -
+                                  (glm::vec3{ 1, 1, 1 } - normal) * (1 - _edge);
+    controller.refLocation() = -normal * (_thickness / 2);
+    _cube->attachTo(_root.get());
+
+    auto unit_1 = mt::unitVec(mt::Axis(((int)normal_axis + 1) % 3));
+    auto unit_2 = mt::unitVec(mt::Axis(((int)normal_axis + 2) % 3));
+    auto createEdge =
+      [this](FixedDistanceObject& edge, glm::vec3 const& unit1, glm::vec3 const& unit2) {
+        edge.setDistance(_fixed_distance);
+        edge.setDrawUnit(
+          std::make_unique<DrawUnit>(generateCylinder(_thickness / 2, _edge), unit1, true)
+        );
+        auto& controller = edge.getController();
+        controller.setMode(ModelController::WORLD);
+        if (auto cross = glm::cross(glm::vec3{ 0, 0, 1 }, unit1);
+            !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
+          controller.rotate(cross, 90);
+        }
+        controller.translate(unit2 * _edge);
+        edge.attachTo(_root.get());
+      };
+    _edge_1 = std::make_shared<FixedDistanceObject>();
+    createEdge(*_edge_1, unit_1, unit_2);
+    _edge_2 = std::make_shared<FixedDistanceObject>();
+    createEdge(*_edge_2, unit_2, unit_1);
+  }
+  auto isSelected() -> bool {
+    return _cube->isSelected() || _edge_1->isSelected() || _edge_2->isSelected();
+  }
+  auto getRoot() -> Node& { return *_root; }
+  void setDragging(bool dragging) {
+    if (_dragging != dragging) {
+      auto cube_color = glm::vec4{};
+      auto edge1_color = glm::vec4{};
+      auto edge2_color = glm::vec4{};
+      if (dragging) {
+        cube_color = { 1, 1, 0, 1 };
+        edge1_color = { 1, 1, 0, 1 };
+        edge2_color = { 1, 1, 0, 1 };
+      } else {
+        cube_color = { 0.5, 0.5, 0.5, 1 };
+        edge1_color = { mt::unitVec(mt::Axis{ ((int)_norm_axis + 1) % 3 }), 1 };
+        edge2_color = { mt::unitVec(mt::Axis{ ((int)_norm_axis + 2) % 3 }), 1 };
+      }
+      _cube->getDrawUnit()->getTexture().getTexture().writeContent(std::as_bytes(std::span{
+        &cube_color, 1 }));
+      _edge_1->getDrawUnit()->getTexture().getTexture().writeContent(std::as_bytes(std::span{
+        &edge1_color, 1 }));
+      _edge_2->getDrawUnit()->getTexture().getTexture().writeContent(std::as_bytes(std::span{
+        &edge2_color, 1 }));
+    }
+    _dragging = dragging;
+  }
+
+private:
+  mt::Axis                 _norm_axis;
+  ptr<Node>                _root;
+  ptr<FixedDistanceObject> _cube;
+  ptr<FixedDistanceObject> _edge_1;
+  ptr<FixedDistanceObject> _edge_2;
+  bool                     _dragging;
+
+  constexpr static float _thickness = 0.02f;
+  constexpr static float _edge = 0.25f;
+  constexpr static float _fixed_distance = 10.0f;
+};
+
+class MoveScaleArrow {
+public:
+  MoveScaleArrow() = default;
+  void init(mt::Axis axis, bool is_scale) {
+    _axis = axis;
+    _root = std::make_shared<Node>();
+    _dragging = false;
+    auto unit = mt::unitVec(axis);
+    _arrow = std::make_shared<FixedDistanceObject>();
+    _arrow->setDistance(_fixed_distance);
+    if (!is_scale) {
+      _arrow->setDrawUnit(std::make_unique<DrawUnit>(generateArrow(0.02, 1, 0.04, 0.2), unit, true)
+      );
+    } else {
+      _arrow->setDrawUnit(std::make_unique<DrawUnit>(generateCubeArrow(0.02, 1, 0.1), unit, true));
+    }
+    auto arrow_dir = glm::vec3{ 0, 0, 1 };
+    if (auto cross = glm::cross(arrow_dir, unit); !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
+      _arrow->getController().rotate(cross, 90);
+    }
+    _arrow->attachTo(_root.get());
+  }
+  auto isSelected() -> bool { return _arrow->isSelected(); }
+  void setDragging(bool dragging) {
+    if (_dragging != dragging) {
+      auto color = glm::vec4{};
+      if (dragging) {
+        color = { 1, 1, 0, 1 };
+      } else {
+        color = { mt::unitVec(_axis), 1 };
+      }
+      _arrow->getDrawUnit()
+        ->getTexture() //
+        .getTexture()
+        .writeContent(std::as_bytes(std::span{ &color, 1 }));
+    }
+    _dragging = dragging;
+  }
+  auto getRoot() -> Node& { return *_root; }
+
+private:
+  mt::Axis                 _axis;
+  ptr<Node>                _root;
+  ptr<FixedDistanceObject> _arrow;
+  bool                     _dragging;
+
+  constexpr static float _fixed_distance = 10.0f;
+};
+
+auto getAxisPos(mt::Axis axis, glm::mat4 const& trans) -> std::optional<float> {
+  auto [start, end] = getCursorLineInWorld();
+  auto line_cursor = mt::Line{
+    .direction = end - start,
+    .point = start,
+  };
+  auto line_axis = mt::Line{
+    .direction = mt::unitVec(axis),
+    .point = glm::vec3{ 0, 0, 0 },
+  };
+  line_axis.transform(trans);
+  if (mt::eq(glm::cross(line_cursor.direction, line_axis.direction), glm::vec3{ 0, 0, 0 })) {
+    return std::nullopt;
+  }
+  // TOY_DEBUG(_root.getTransToWorld());
+  // TOY_DEBUG(line_cursor.point, line_cursor.direction);
+  // TOY_DEBUG(line_axis.point, line_axis.direction);
+  auto ret = mt::distance(line_cursor, line_axis);
+  // TOY_DEBUG(ret.distance, ret.point2);
+  auto d = glm::dot(ret.point2 - line_axis.point, line_axis.direction);
+  // TOY_DEBUG(d);
+  return d;
+}
+auto getPlanePos(mt::Axis axis, glm::mat4 const& trans) -> std::optional<glm::vec2> {
+  auto [start, end] = getCursorLineInWorld();
+  auto line_cursor = mt::Line{
+    .direction = end - start,
+    .point = start,
+  };
+  auto origin = mt::transformDot(trans, glm::vec3{ 0, 0, 0 });
+  auto plane = mt::Surface{
+    .normal = mt::unitVec(axis),
+    .dot = 0,
+  };
+  plane.transform(trans);
+  // TOY_DEBUG(plane.normal, plane.dot);
+  auto ret = mt::intersection(line_cursor, plane);
+  if (std::holds_alternative<glm::vec3>(ret)) {
+    auto point = std::get<glm::vec3>(ret) - origin;
+    // TOY_DEBUG(point);
+    auto unit_1 = mt::transformVec(trans, mt::unitVec(mt::Axis(((int)axis + 1) % 3)));
+    auto unit_2 = mt::transformVec(trans, mt::unitVec(mt::Axis(((int)axis + 2) % 3)));
+    auto res = glm::vec2{ glm::dot(point, unit_1), glm::dot(point, unit_2) };
+    // TOY_DEBUG(glm::vec3{ res, 0 });
+    return res;
+  }
+  return std::nullopt;
+}
 
 } // namespace eg

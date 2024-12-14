@@ -106,38 +106,26 @@ public:
     }
     _rotate_euler = mt::getEulerAngle(r_new);
   }
+  /**
+   * @brief Always on local mode
+   */
   void scale(glm::vec3 const& factor) {
-    using enum mt::Axis;
-    if (_mode == WORLD) {
-      auto s_r = mt::scale(factor) * mt::rotate(_rotate_euler);
-      auto new_scale_factor = glm::vec3{
-        glm::length(s_r[0]),
-        glm::length(s_r[1]),
-        glm::length(s_r[2]),
-      };
-      _scale_factor *= new_scale_factor;
-      s_r[0] = glm::normalize(s_r[0]);
-      s_r[1] = glm::normalize(s_r[1]);
-      s_r[2] = glm::normalize(s_r[2]);
-      _rotate_euler = mt::getEulerAngle(s_r);
-    } else {
-      _scale_factor[0] *= factor[0];
-      _scale_factor[1] *= factor[1];
-      _scale_factor[2] *= factor[2];
-    }
+    _scale_factor[0] *= factor[0];
+    _scale_factor[1] *= factor[1];
+    _scale_factor[2] *= factor[2];
   }
   void scale(mt::Axis axis, float factor) {
     using enum mt::Axis;
-    if (_mode == WORLD) {
-      auto s_r = mt::scale(axis, factor) * mt::rotate(_rotate_euler);
-      auto new_scale_factor = glm::vec3{
-        glm::sqrt(glm::length(s_r[0])),
-        glm::sqrt(glm::length(s_r[1])),
-        glm::sqrt(glm::length(s_r[2])),
-      };
-      _scale_factor *= new_scale_factor;
-    } else {
-      _scale_factor[static_cast<int>(axis)] *= factor;
+    switch (axis) {
+    case X:
+      _scale_factor[0] *= factor;
+      break;
+    case Y:
+      _scale_factor[1] *= factor;
+      break;
+    case Z:
+      _scale_factor[2] *= factor;
+      break;
     }
   }
   enum Mode { LOCAL, WORLD };

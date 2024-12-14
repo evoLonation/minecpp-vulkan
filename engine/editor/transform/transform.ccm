@@ -2,9 +2,10 @@ module;
 #include <toy.h>
 export module editor.transform;
 
-// import editor.transform.scale;
+import editor.transform.publics;
 import editor.transform.move;
-// import editor.transform.rotate;
+import editor.transform.rotate;
+import editor.transform.scale;
 import engine.object;
 import engine.base;
 import engine.node;
@@ -35,18 +36,9 @@ class TransformControllerPanel : public PROACTIVE_SINGLETON(TransformControllerP
                                  public fw::Action {
 public:
   TransformControllerPanel() : fw::Action(fw::Stage::BEFORE_RENDER) {
-    {
-      auto mode = _tool_mode == 0 ? MoveController::LOCAL : MoveController::WORLD;
-      _move_controller->setMode(mode);
-    }
-    // {
-    //   auto mode = _tool_mode == 0 ? RotateController::LOCAL : RotateController::WORLD;
-    //   _rotate_controller->setMode(mode);
-    // }
-    // {
-    //   auto mode = _tool_mode == 0 ? ScaleController::LOCAL : ScaleController::WORLD;
-    //   _scale_controller->setMode(mode);
-    // }
+    auto mode = _tool_mode == 0 ? ToolBase::LOCAL : ToolBase::WORLD;
+    _move_tool->setMode(mode);
+    _rotate_tool->setMode(mode);
   }
   void draw() override {
     ImGui::SeparatorText("Transform Tools");
@@ -56,60 +48,43 @@ public:
     changed = changed || ImGui::RadioButton("Rotate", &_tool_type, 2);
     changed = changed || ImGui::RadioButton("Scale", &_tool_type, 3);
     if (changed) {
-      _move_controller->resetTarget();
-      // _rotate_controller->resetTarget();
-      // _scale_controller->resetTarget();
-      {
-        auto mode = _tool_mode == 0 ? MoveController::LOCAL : MoveController::WORLD;
-        _move_controller->setMode(mode);
-      }
-      // {
-      //   auto mode = _tool_mode == 0 ? RotateController::LOCAL : RotateController::WORLD;
-      //   _rotate_controller->setMode(mode);
-      // }
-      // {
-      //   auto mode = _tool_mode == 0 ? ScaleController::LOCAL : ScaleController::WORLD;
-      //   _scale_controller->setMode(mode);
-      // }
+      _move_tool->resetTarget();
+      _rotate_tool->resetTarget();
+      _scale_tool->resetTarget();
+      auto mode = _tool_mode == 0 ? ToolBase::LOCAL : ToolBase::WORLD;
+      _move_tool->setMode(mode);
+      _rotate_tool->setMode(mode);
     }
     if (_tool_type != 0) {
       bool changed = false;
       ImGui::Text("Transform Tool Settings:");
-      ImGui::SameLine();
-      changed = changed || ImGui::RadioButton("Local##ToolType", &_tool_mode, 0);
-      ImGui::SameLine();
-      changed = changed || ImGui::RadioButton("World##ToolType", &_tool_mode, 1);
+      if (_tool_type != 3) {
+        ImGui::SameLine();
+        changed = changed || ImGui::RadioButton("Local##ToolType", &_tool_mode, 0);
+        ImGui::SameLine();
+        changed = changed || ImGui::RadioButton("World##ToolType", &_tool_mode, 1);
+      }
       if (changed) {
+        auto mode = _tool_mode == 0 ? ToolBase::LOCAL : ToolBase::WORLD;
         switch (_tool_type) {
-        case 1: {
-          auto mode = _tool_mode == 0 ? MoveController::LOCAL : MoveController::WORLD;
-          _move_controller->setMode(mode);
+        case 1:
+          _move_tool->setMode(mode);
           break;
-        }
-          // case 2: {
-          //   auto mode = _tool_mode == 0 ? RotateController::LOCAL : RotateController::WORLD;
-          //   _rotate_controller->setMode(mode);
-          //   break;
-          // }
-          // case 3: {
-          //   auto mode = _tool_mode == 0 ? ScaleController::LOCAL : ScaleController::WORLD;
-          //   _scale_controller->setMode(mode);
-          //   break;
-          // }
+        case 2:
+          _rotate_tool->setMode(mode);
+          break;
         }
       }
     }
     if (_tool_type == 1) {
-      ImGui::InputFloat("Translate Unit Length", &_move_controller->refUnitLength());
+      ImGui::InputFloat("Translate Unit Length", &_move_tool->refUnitLength());
+    } else if (_tool_type == 2) {
+      ImGui::InputFloat("Rotate Cycle Length", &_rotate_tool->refCycleLength());
+      ImGui::InputFloat("Rotate Unit Length", &_rotate_tool->refUnitLength());
+    } else if (_tool_type == 3) {
+      ImGui::InputFloat("Scale Unit Factor", &_scale_tool->refUnitFactor());
+      _scale_tool->refUnitFactor() = std::clamp(_scale_tool->refUnitFactor(), 1.0f, 100.0f);
     }
-    // else if (_tool_type == 2) {
-    //   ImGui::InputFloat("Rotate Cycle Length", &_rotate_controller->refCycleLength());
-    //   ImGui::InputFloat("Rotate Unit Length", &_rotate_controller->refUnitLength());
-    // } else if (_tool_type == 3) {
-    //   ImGui::InputFloat("Scale Unit Factor", &_scale_controller->refUnitFactor());
-    //   _scale_controller->refUnitFactor() =
-    //     std::clamp(_scale_controller->refUnitFactor(), 1.0f, 100.0f);
-    // }
 
     if (_selected.expired()) {
       ImGui::SeparatorText("No object selected.");
@@ -145,89 +120,25 @@ private:
       if (object->isRoot()) {
         switch (_tool_type) {
         case 1:
-          _move_controller->setTarget(object->getPtr());
+          _move_tool->setTarget(object->getPtr());
           break;
-        // case 2:
-        //   _rotate_controller->setTarget(object->getPtr());
-        //   break;
-        // case 3:
-        //   _scale_controller->setTarget(object->getPtr());
-        //   break;
+        case 2:
+          _rotate_tool->setTarget(object->getPtr());
+          break;
+        case 3:
+          _scale_tool->setTarget(object->getPtr());
+          break;
         }
       }
     }
   }
   wptr<SceneObject> _selected;
 
-  int                  _tool_type = 0;
-  int                  _tool_mode = 0;
-  uptr<MoveController> _move_controller = std::make_unique<MoveController>();
-  // uptr<RotateController> _rotate_controller = std::make_unique<RotateController>();
-  // uptr<ScaleController>  _scale_controller = std::make_unique<ScaleController>();
+  int              _tool_type = 0;
+  int              _tool_mode = 0;
+  uptr<MoveTool>   _move_tool = std::make_unique<MoveTool>();
+  uptr<RotateTool> _rotate_tool = std::make_unique<RotateTool>();
+  uptr<ScaleTool>  _scale_tool = std::make_unique<ScaleTool>();
 };
-
-// class ModelTransformGuiController : public PROACTIVE_SINGLETON(ModelTransformGuiController),
-//                                     public gui::Drawer {
-// public:
-//   ModelTransformGuiController() = default;
-//   void draw() override {
-//     if (!_transform.valid()) {
-//       ImGui::Text("There is no any valid ModelTransform.");
-//       return;
-//     }
-//     _transform->location.change([](auto& location) { gui::slider("location", location); });
-//     _transform->rotate_euler.change([](auto& rotate_euler) {
-//       gui::slider("euler_angle", rotate_euler, glm::vec3{ -180 }, glm::vec3{ 180 });
-//     });
-//     _transform->scale_factor.change([](auto& scale_factor) { gui::slider("scale",
-//     scale_factor);
-//     });
-//   }
-
-//   UNCOPYABLE_MOVEABLE(ModelTransformGuiController);
-
-// private:
-//   friend class MoveTransformSelector;
-//   ptr<ModelTransform> _transform;
-// };
-
-// class MoveTransformSelector : public Component {
-// public:
-//   MoveTransformSelector() = default;
-//   MoveTransformSelector(SceneComponent* component) {
-//     fw::Action::setStage(fw::Stage::BEFORE_RENDER);
-//     _component = { component };
-//   }
-
-// private:
-//   void runLoop(fw::ActionContext const& ctx) override {
-//     if (ObjectClickObserver::getInstance().getClick() == _component) {
-//       ModelTransformGuiController::getInstance()._transform = &_component->getTransform();
-//     }
-//   }
-//   ptr<SceneComponent> _component;
-// };
-
-// class ModelTransformGuiController : public PROACTIVE_SINGLETON(ModelTransformGuiController),
-//                                     public gui::Drawer {
-// public:
-//   ModelTransformGuiController() = default;
-//   void draw() override {
-//     static glm::vec3 test = { 0.0f, 0.0f, 0.0f };
-//     // if (!_transform.valid()) {
-//     //   ImGui::Text("There is no any valid ModelTransform.");
-//     //   return;
-//     // }
-//     input("test", test);
-//     ImGui::Text("Transform Mode:");
-//     ImGui::SameLine();
-//     static int radio = 0;
-//     ImGui::RadioButton("Local", &radio, 0);
-//     ImGui::SameLine();
-//     ImGui::RadioButton("World", &radio, 1);
-//   }
-
-//   UNCOPYABLE_MOVEABLE(ModelTransformGuiController);
-// };
 
 } // namespace eg

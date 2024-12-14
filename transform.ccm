@@ -271,11 +271,22 @@ auto getNormalModel(glm::mat4 model) -> glm::mat3 {
 struct Line {
   glm::vec3 direction;
   glm::vec3 point;
+
+  void transform(glm::mat4 const& trans) {
+    direction = transformVec(trans, direction);
+    point = transformDot(trans, point);
+  }
 };
 // equation: normal * x = dot
 struct Surface {
   glm::vec3 normal;
   float     dot;
+
+  void transform(glm::mat4 const& trans) {
+    auto x = dot / glm::length(normal) * glm::normalize(normal);
+    normal = transformVec(trans, normal);
+    dot = glm::dot(normal, transformDot(trans, x));
+  }
 };
 
 /**

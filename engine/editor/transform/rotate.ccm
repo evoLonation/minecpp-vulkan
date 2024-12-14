@@ -2,17 +2,16 @@ module;
 #include <toy.h>
 export module editor.transform.rotate;
 
-import engine.draw_unit;
-import engine.node;
 import engine.base;
+import engine.node;
+import engine.draw_unit;
+import engine.shape;
 import engine.object;
+import editor.transform.publics;
 import std;
 import toy;
-import math;
-import render;
 import framework;
-import engine.camera;
-import engine.shape;
+import math;
 
 export namespace eg {
 
@@ -28,7 +27,7 @@ public:
     _plane->setDrawUnit(std::make_unique<DrawUnit>(generateCylinder(1, _height, 90), norm, true));
     auto origin_norm = glm::vec3{ 0, 0, 1 };
     if (auto cross = glm::cross(norm, origin_norm); !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
-      _plane->getTransform().rotate(cross, 90);
+      _plane->getController().rotate(cross, 90);
     }
     _plane->attachTo(_root.get());
   }
@@ -58,76 +57,25 @@ private:
   static constexpr float _fixed_distance = 10.0f;
 };
 
-class RotateController : Component {
+class RotateTool : public ToolBase {
 public:
-  RotateController() {
-    _root = std::make_shared<Node>();
-    _root->getTransform().mode = ModelTransform::LOCAL;
+  RotateTool() {
     for (auto [i, plane] : _planes | toy::enumerate) {
       plane.init(static_cast<mt::Axis>(i));
-      plane.getRoot().attachTo(_root.get());
+      plane.getRoot().attachTo(getRoot().get());
     }
     setMode(WORLD);
     resetTarget();
   }
   auto refUnitLength() -> float& { return _unit_length; }
   auto refCycleLength() -> float& { return _cycle_length; }
-  enum Mode { LOCAL, WORLD };
-  auto getMode() -> Mode { return _mode; }
-  void setMode(Mode mode) {
-    if (!_target.expired()) {
-      updateRotateBind(mode, _target.lock());
-    }
-    _mode = mode;
-  }
-  auto getTarget() -> Node* { return _target.expired() ? nullptr : _target.lock().get(); }
-  void resetTarget() {
-    _location_bind = {};
-    _rotate_bind = {};
-    _root->doRecusively([](Node* node) {
-      if (auto* object = dynamic_cast<SceneObject*>(node)) {
-        object->getDrawUnit()->setActive(false);
-      }
-    });
-    _target.reset();
-  }
-  void setTarget(ptr<Node> target) {
-    TOY_ASSERT(target->isRoot());
-    _location_bind = { target->getTransform().location, _root->getTransform().location };
-    updateRotateBind(_mode, target);
-    _root->doRecusively([](Node* node) {
-      if (auto* object = dynamic_cast<SceneObject*>(node)) {
-        object->getDrawUnit()->setActive(true);
-      }
-    });
-    _target = std::move(target);
-  }
 
 private:
-  void updateRotateBind(Mode mode, ptr<Node> const& target) {
-    if (mode == LOCAL) {
-      _rotate_bind = {
-        target->getTransform().rotate_euler,
-        _root->getTransform().rotate_euler,
-      };
-    } else if (mode == WORLD) {
-      _rotate_bind = {};
-      _root->getTransform().rotate_euler = glm::vec3{ 0, 0, 0 };
-    }
-  }
-
-private:
-  wptr<Node>                    _target;
-  ptr<Node>                     _root;
-  toy::Bidirectional<glm::vec3> _location_bind;
-  toy::Bidirectional<glm::vec3> _rotate_bind;
-  std::array<RotatePlane, 3>    _planes;
-  Mode                          _mode = WORLD;
-
-  std::optional<mt::Axis> _plane_norm;
-  float                   _last_pos;
-  float                   _unit_length = 0.2f;
-  float                   _cycle_length = 3.0f;
+  std::array<RotatePlane, 3> _planes;
+  std::optional<mt::Axis>    _plane_norm;
+  float                      _last_pos = 0;
+  float                      _unit_length = 0.2f;
+  float                      _cycle_length = 3.0f;
 
   void runLoop(fw::ActionContext const& ctx) override {
     auto& input = fw::InputProcessor::getInstance();
@@ -135,9 +83,7 @@ private:
       auto iter = ranges::find_if(_planes, [](auto& x) { return x.isSelected(); });
       if (iter != _planes.end()) {
         auto plane_norm = static_cast<mt::Axis>(iter - _planes.begin());
-        if (_mode == LOCAL) {
-          _rotate_bind = {};
-        }
+        enableKeepRotate();
         TOY_DEBUG(int(plane_norm));
         _plane_norm = plane_norm;
         _planes[int(plane_norm)].setDragging(true);
@@ -150,14 +96,7 @@ private:
       if (_plane_norm) {
         _planes[int(*_plane_norm)].setDragging(false);
         _plane_norm = std::nullopt;
-        if (_mode == LOCAL) {
-          if (auto target = _target.lock()) {
-            _rotate_bind = {
-              target->getTransform().rotate_euler,
-              _root->getTransform().rotate_euler,
-            };
-          }
-        }
+        disableKeepRotate();
       }
     } else if (_plane_norm) {
       if (auto ret = getNowDraggingPos(*_plane_norm)) {
@@ -169,12 +108,9 @@ private:
             delta = -delta;
           }
           _last_pos += delta;
-          if (auto target = _target.lock()) {
-            auto origin_mode = target->getTransform().mode;
-            target->getTransform().mode =
-              _mode == WORLD ? ModelTransform::WORLD : ModelTransform::LOCAL;
-            target->getTransform().rotate(*_plane_norm, delta * 360 / _cycle_length);
-            target->getTransform().mode = origin_mode;
+          if (auto target = getTarget().lock()) {
+            auto controller = TargetController{ std::move(target), getMode() };
+            controller.rotate(*_plane_norm, delta * 360 / _cycle_length);
           }
         }
       }
@@ -182,16 +118,7 @@ private:
   }
 
   auto getNowDraggingPos(mt::Axis norm_axis) -> std::optional<float> {
-    auto  cursor = fw::InputProcessor::getInstance().getCursorState();
-    auto& camera = Camera::getInstance();
-    auto  extent = rd::Presentation::getInstance().getSwapchain().getExtent();
-    auto  ndc_x = float(cursor.x) / extent.width * 2 - 1;
-    auto  ndc_y = float(cursor.y) / extent.height * 2 - 1;
-    auto  start = glm::vec3{ ndc_x, ndc_y, 0 };
-    auto  end = glm::vec3{ ndc_x, ndc_y, 1 };
-    auto  trans = mt::inverse(camera.getView()) * camera.getProjIV();
-    start = mt::transformDot(trans, start);
-    end = mt::transformDot(trans, end);
+    auto [start, end] = getCursorLineInWorld();
     auto line_cursor = mt::Line{
       .direction = end - start,
       .point = start,
@@ -200,9 +127,10 @@ private:
     auto unit2 = mt::unitVec(mt::Axis{ ((int)norm_axis + 2) % 3 });
     auto line_rotate_base = mt::Line{
       // 在扇形底部的45度斜线
-      .direction = mt::transformVec(_root->getTransToWorld(), unit2 - unit1),
-      .point = mt::transformDot(_root->getTransToWorld(), glm::vec3{ 0, 0, 0 }),
+      .direction = unit2 - unit1,
+      .point = glm::vec3{ 0, 0, 0 },
     };
+    line_rotate_base.transform(getRoot()->getTransToWorld());
     if (mt::eq(
           glm::cross(line_cursor.direction, line_rotate_base.direction), glm::vec3{ 0, 0, 0 }
         )) {
