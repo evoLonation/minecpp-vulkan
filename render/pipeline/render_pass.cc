@@ -52,7 +52,7 @@ auto RenderPass::record(
   auto [framebuffer, extent] = FramebufferPool::getInstance().getFramebuffer(get(), images);
 
   auto submitter = Submitter{ getFamilyType() };
-  auto waitables_keep_lifetime = std::list<Waitable>{};
+  synchronizer(submitter);
   for (auto [image, info] : views::zip(images, getSyncInfos())) {
     submitter.addNeedSync(
       &image->getTracker(), Scope{ .stage_mask = info.initial_stage }, info.initial_layout

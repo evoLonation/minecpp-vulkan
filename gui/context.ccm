@@ -184,7 +184,7 @@ public:
       std::function<void(VkCommandBuffer, VkExtent2D)>{ [&](VkCommandBuffer cmdbuf, auto) {
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmdbuf);
       } };
-    _render_pass.record({}, std::array{ image }, std::span{ &recorder, 1 });
+    _render_pass.record([](auto&) {}, std::array{ image }, std::span{ &recorder, 1 });
   }
 
   void renderViewports() {

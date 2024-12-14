@@ -1,0 +1,127 @@
+module;
+#include <toy.h>
+export module editor.transform.publics;
+
+import engine.object;
+import engine.node;
+import engine.base;
+import math;
+import framework;
+import engine.camera;
+import render;
+import std;
+import toy;
+
+export namespace eg {
+
+struct LineSegment {
+  glm::vec3 start;
+  glm::vec3 end;
+};
+
+auto getCursorLineInWorld() -> LineSegment {
+  auto  cursor = fw::InputProcessor::getInstance().getCursorState();
+  auto& camera = Camera::getInstance();
+  auto  extent = rd::Presentation::getInstance().getSwapchain().getExtent();
+  auto  ndc_x = float(cursor.x) / extent.width * 2 - 1;
+  auto  ndc_y = float(cursor.y) / extent.height * 2 - 1;
+  auto  start = glm::vec3{ ndc_x, ndc_y, 0 };
+  auto  end = glm::vec3{ ndc_x, ndc_y, 1 };
+  auto  trans = mt::inverse(camera.getView()) * camera.getProjIV();
+  start = mt::transformDot(trans, start);
+  end = mt::transformDot(trans, end);
+  return LineSegment{ start, end };
+}
+
+class TargetController : public ModelController {
+public:
+  TargetController(ptr<Node> target) : _target(std::move(target)) {
+    setModelTransform(&_target->getTransToParent(), ModelController::CHANGE_CONTROLLER);
+  }
+
+private:
+  ptr<Node> _target;
+};
+
+/**
+ * @brief Helper class to bind target transform info to tool transform info.
+ *
+ */
+class ToolBase : public Component {
+public:
+  ToolBase() { _root = std::make_shared<Node>(); }
+  UNCOPYABLE_MOVEABLE(ToolBase);
+  ~ToolBase() { resetTarget(); }
+
+  enum Mode {
+    LOCAL,       // bind rotate and location
+    WORLD,       // bind location only and set rotate to 0
+    KEEP_ROTATE, // bind location only but keep rotate value
+  };
+
+  void runLoop(fw::ActionContext const& ctx) override {
+    if (auto target = _target.lock()) {
+      if (!target->isRoot()) {
+        resetTarget();
+      }
+    }
+  }
+  void setMode(Mode mode) {
+    if (auto target = _target.lock(); target && _mode != mode) {
+      auto& target_controller = target->getController();
+      if (mode == WORLD || mode == KEEP_ROTATE) {
+        target_controller.refRotateEuler().unbind(&_root->getController().refRotateEuler());
+        if (mode == WORLD) {
+          target_controller.refRotateEuler() = { 0, 0, 0 };
+        }
+      } else if (mode == LOCAL) {
+        target_controller.refRotateEuler().bind(&_root->getController().refRotateEuler());
+      }
+    }
+    _mode = mode;
+  }
+  auto getMode() const -> Mode { return _mode; }
+
+  void setTarget(ptr<Node> target) {
+    resetTarget();
+    setActiveRecursively(true);
+    auto& target_controller = target->getController();
+    target_controller.refLocation().bind(&_root->getController().refLocation());
+    if (_mode == LOCAL) {
+      target_controller.refRotateEuler().bind(&_root->getController().refRotateEuler());
+    }
+    _target = std::move(target);
+  }
+  void resetTarget() {
+    setActiveRecursively(false);
+    if (auto target = _target.lock()) {
+      auto& target_controller = target->getController();
+      target_controller.refLocation().unbind(&_root->getController().refLocation());
+      target_controller.refLocation() = { 0, 0, 0 };
+      if (_mode == LOCAL) {
+        target_controller.refRotateEuler().unbind(&_root->getController().refRotateEuler());
+        target_controller.refRotateEuler() = { 0, 0, 0 };
+      }
+      _target.reset();
+    }
+  }
+  auto getTarget() -> ptr<Node> { return _target.lock(); }
+
+protected:
+  auto getRoot() -> ptr<Node> { return _root; }
+
+private:
+  ptr<Node>  _root;
+  Mode       _mode = LOCAL;
+  wptr<Node> _target;
+
+  void setActiveRecursively(bool active) {
+    _root->doRecusively([&](Node* node) {
+      if (auto* object = dynamic_cast<SceneObject*>(node)) {
+        object->getDrawUnit()->setActive(active);
+      }
+    });
+  }
+};
+
+} // namespace eg

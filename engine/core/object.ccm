@@ -119,7 +119,7 @@ private:
 
 class FixedDistanceObject : public SceneObject {
 public:
-  FixedDistanceObject() { _fixed_distance_component.init(&getTransToWorld()); }
+  FixedDistanceObject() { _fixed_distance_component.init(&getTransToWorld().get()); }
   FixedDistanceObject(ptr<Mesh> mesh, ptr<Texture> texture) : FixedDistanceObject() {
     init(std::move(mesh), std::move(texture));
   }
@@ -128,9 +128,9 @@ public:
   auto getDistance() -> float { return _fixed_distance_component.getDistance(); }
 
   void runLoop(fw::ActionContext const& ctx) override {
-    _fixed_distance_component.setRootTrans(&getRoot().getTransToWorld());
+    _fixed_distance_component.setRootTrans(&getRoot().getTransToWorld().get());
     getDrawUnit()->getTransform() =
-      _fixed_distance_component.getFixedDistanceTransform() * getTransToWorld();
+      _fixed_distance_component.getFixedDistanceTransform() * getTransToWorld().get();
     // getDrawUnit()->getTransform() = getTransToWorld();
   }
 

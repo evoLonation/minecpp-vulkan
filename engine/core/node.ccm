@@ -15,26 +15,63 @@ import <imgui_config.h>;
 
 export namespace eg {
 
-class ModelTransform {
+class ModelController {
 public:
-  ModelTransform() {
-    auto changer = [this](auto&& any) {
-      _model = mt::translate(location) * mt::rotate(rotate_euler) * mt::scale(scale_factor);
-    };
-    _model_observers[0] = toy::Observer{ location, changer };
-    _model_observers[1] = toy::Observer{ rotate_euler, changer };
-    _model_observers[2] = toy::Observer{ scale_factor, changer, true };
+  ModelController() {
+    _reactor_trans = { [this](auto&& _) {
+      *_model = mt::translate(_location) * mt::rotate(_rotate_euler) * mt::scale(_scale_factor);
+    } };
+    _reactor_split = { [this](glm::mat4 model) {
+      _location = glm::vec3{ model[3] };
+      model[3] = glm::vec4{ 0, 0, 0, 1 };
+      _scale_factor = glm::vec3{
+        glm::length(model[0]),
+        glm::length(model[1]),
+        glm::length(model[2]),
+      };
+      model[0] = glm::normalize(model[0]);
+      model[1] = glm::normalize(model[1]);
+      model[2] = glm::normalize(model[2]);
+      _rotate_euler = mt::getEulerAngle(model);
+    } };
   }
-  void translate(glm::vec3 const& delta) {
-    if (mode == WORLD) {
-      location += delta;
+  enum SettingMode { CHANGE_MODEL, CHANGE_CONTROLLER };
+  ModelController(Reval<glm::mat4>* model, SettingMode mode) : ModelController{} {
+    setModelTransform(model, mode);
+  }
+  ~ModelController() { reset(); }
+  void reset() {
+    if (_model) {
+      _model->removeReactor(&_reactor_split);
+    }
+    _model = nullptr;
+    _location.removeReactor(&_reactor_trans);
+    _rotate_euler.removeReactor(&_reactor_trans);
+    _scale_factor.removeReactor(&_reactor_trans);
+  }
+  void setModelTransform(Reval<glm::mat4>* model, SettingMode mode) {
+    if (_model) {
+      _model->removeReactor(&_reactor_split);
+      _model = model;
     } else {
-      auto r_2 = mt::rotate(rotate_euler) * mt::translate(delta);
+      _model = model;
+      _model->addReactor(&_reactor_split, mode == CHANGE_CONTROLLER);
+      _location.addReactor(&_reactor_trans);
+      _rotate_euler.addReactor(&_reactor_trans);
+      _scale_factor.addReactor(&_reactor_trans, mode == CHANGE_MODEL);
+    }
+  }
+
+  void translate(glm::vec3 const& delta) {
+    if (_mode == WORLD) {
+      _location += delta;
+    } else {
+      auto r_2 = mt::rotate(_rotate_euler) * mt::translate(delta);
       // r_2 = t_new * r_new
       // t_new = t_2[3][0-3], r_new = t_2[0-2][0-2]
-      location += glm::vec3{ r_2[3] };
+      _location += glm::vec3{ r_2[3] };
       r_2[3] = glm::vec4{ 0, 0, 0, 1 };
-      rotate_euler = mt::getEulerAngle(r_2);
+      _rotate_euler = mt::getEulerAngle(r_2);
     }
   }
   void translate(mt::Axis axis, float delta) {
@@ -53,100 +90,110 @@ public:
   }
   void rotate(mt::Axis axis, float degree) {
     auto r_new = glm::mat4{};
-    if (mode == WORLD) {
-      r_new = mt::rotate(axis, degree) * mt::rotate(rotate_euler);
+    if (_mode == WORLD) {
+      r_new = mt::rotate(axis, degree) * mt::rotate(_rotate_euler);
     } else {
-      r_new = mt::rotate(rotate_euler) * mt::rotate(axis, degree);
+      r_new = mt::rotate(_rotate_euler) * mt::rotate(axis, degree);
     }
-    rotate_euler = mt::getEulerAngle(r_new);
+    _rotate_euler = mt::getEulerAngle(r_new);
   }
   void rotate(glm::vec3 const& axis, float degree) {
     auto r_new = glm::mat4{};
-    if (mode == WORLD) {
-      r_new = mt::rotate(axis, degree) * mt::rotate(rotate_euler);
+    if (_mode == WORLD) {
+      r_new = mt::rotate(axis, degree) * mt::rotate(_rotate_euler);
     } else {
-      r_new = mt::rotate(rotate_euler) * mt::rotate(axis, degree);
+      r_new = mt::rotate(_rotate_euler) * mt::rotate(axis, degree);
     }
-    rotate_euler = mt::getEulerAngle(r_new);
+    _rotate_euler = mt::getEulerAngle(r_new);
   }
   void scale(glm::vec3 const& factor) {
     using enum mt::Axis;
-    if (mode == WORLD) {
-      auto s_r = mt::scale(factor) * mt::rotate(rotate_euler);
+    if (_mode == WORLD) {
+      auto s_r = mt::scale(factor) * mt::rotate(_rotate_euler);
       auto new_scale_factor = glm::vec3{
-        glm::sqrt(glm::length(s_r[0])),
-        glm::sqrt(glm::length(s_r[1])),
-        glm::sqrt(glm::length(s_r[2])),
+        glm::length(s_r[0]),
+        glm::length(s_r[1]),
+        glm::length(s_r[2]),
       };
-      scale_factor *= new_scale_factor;
+      _scale_factor *= new_scale_factor;
       s_r[0] = glm::normalize(s_r[0]);
       s_r[1] = glm::normalize(s_r[1]);
       s_r[2] = glm::normalize(s_r[2]);
-      rotate_euler = mt::getEulerAngle(s_r);
+      _rotate_euler = mt::getEulerAngle(s_r);
     } else {
-      scale_factor[0] *= factor[0];
-      scale_factor[1] *= factor[1];
-      scale_factor[2] *= factor[2];
+      _scale_factor[0] *= factor[0];
+      _scale_factor[1] *= factor[1];
+      _scale_factor[2] *= factor[2];
     }
   }
   void scale(mt::Axis axis, float factor) {
     using enum mt::Axis;
-    if (mode == WORLD) {
-      auto s_r = mt::scale(axis, factor) * mt::rotate(rotate_euler);
+    if (_mode == WORLD) {
+      auto s_r = mt::scale(axis, factor) * mt::rotate(_rotate_euler);
       auto new_scale_factor = glm::vec3{
         glm::sqrt(glm::length(s_r[0])),
         glm::sqrt(glm::length(s_r[1])),
         glm::sqrt(glm::length(s_r[2])),
       };
-      scale_factor *= new_scale_factor;
+      _scale_factor *= new_scale_factor;
     } else {
-      scale_factor[static_cast<int>(axis)] *= factor;
+      _scale_factor[static_cast<int>(axis)] *= factor;
     }
   }
-  auto get() -> toy::Observable<glm::mat4>& { return _model; }
-
-  toy::Observable<glm::vec3> location = { { 0, 0, 0 } };
-  toy::Observable<glm::vec3> rotate_euler = { { 0, 0, 0 } };
-  toy::Observable<glm::vec3> scale_factor = { { 1, 1, 1 } };
   enum Mode { LOCAL, WORLD };
-  Mode mode = WORLD;
+  void setMode(Mode mode) { _mode = mode; }
+  auto getMode() -> Mode { return _mode; }
+  auto refLocation() -> Reval<glm::vec3>& { return _location; }
+  auto refRotateEuler() -> Reval<glm::vec3>& { return _rotate_euler; }
+  auto refScaleFactor() -> Reval<glm::vec3>& { return _scale_factor; }
 
 private:
-  toy::Observable<glm::mat4>              _model;
-  std::array<toy::Observer<glm::vec3>, 3> _model_observers;
+  Reval<glm::mat4>*  _model = nullptr;
+  Reactor<glm::vec3> _reactor_trans;
+  Reactor<glm::mat4> _reactor_split;
+  Reval<glm::vec3>   _location = { { 0, 0, 0 } };
+  Reval<glm::vec3>   _rotate_euler = { { 0, 0, 0 } };
+  Reval<glm::vec3>   _scale_factor = { { 1, 1, 1 } };
+  Mode               _mode = WORLD;
 };
 
 class Node : public Component, public Asset {
 public:
   Node() {
-    _root = this;
-    setObserver();
+    _controller.setModelTransform(&_to_parent, ModelController::CHANGE_MODEL);
+    _reactor_to_world = { [this](auto&&) {
+      if (auto parent = _parent.lock()) {
+        _to_world = parent->_to_world * _to_parent.get();
+      } else {
+        _to_world = _to_parent.get();
+      }
+    } };
+    _to_parent.addReactor(&_reactor_to_world, true);
+    setRootRecursively(this);
+  }
+  ~Node() {
+    // can ensure _parent is nullptr (otherwise this will not destroyed)
+    _to_parent.removeReactor(&_reactor_to_world);
   }
   void attachTo(Node* node) {
-    if (_parent) {
+    if (!_parent.expired()) {
       detach();
     }
-    _parent = node;
-    _parent->_children.insert(getPtr());
-    _root = node->_root;
-    setChildrenRoot();
-    setObserver();
+    setParent(node);
+    setRootRecursively(node->_root);
   }
   void detach() {
-    TOY_ASSERT(_parent);
-    _parent->_children.erase(getPtr());
-    _parent = nullptr;
-    _root = this;
-    setChildrenRoot();
-    setObserver();
+    TOY_ASSERT(!_parent.expired());
+    resetParent();
+    setRootRecursively(this);
   }
-  auto isRoot() -> bool { return !_parent; }
-  auto getTransform() -> ModelTransform& { return _transform; }
-  auto getTransToParent() -> glm::mat4 const& { return _transform.get(); }
-  auto getTransToWorld() -> glm::mat4 const& { return _to_world; }
-  auto getParent() -> Node* { return _parent; }
+  auto getController() -> ModelController& { return _controller; }
+  auto getTransToParent() -> Reval<glm::mat4>& { return _to_parent; }
+  auto getTransToWorld() -> Reval<glm::mat4> const& { return _to_world; }
+  auto getParent() -> Node* { return _parent.lock().get(); }
   // just allow to get children, not modify
   auto getChildren() -> std::unordered_set<ptr<Node>>& { return _children; }
+  auto isRoot() -> bool { return _parent.expired(); }
   auto getRoot() -> Node& { return *_root; }
   void doRecusively(std::function<void(Node*)> const& dealer) {
     dealer(this);
@@ -156,55 +203,46 @@ public:
   }
 
 private:
-  ModelTransform                _transform;
-  toy::Observable<glm::mat4>    _to_world;
-  Node*                         _parent = nullptr;
-  Node*                         _root = nullptr;
+  Reval<glm::mat4>              _to_parent;
+  ModelController               _controller;
+  Reval<glm::mat4>              _to_world;
+  Reactor<glm::mat4>            _reactor_to_world;
+  wptr<Node>                    _parent;
   std::unordered_set<ptr<Node>> _children;
-  toy::Observer<glm::mat4>      _transform_observer;
-  toy::Observer<glm::mat4>      _parent_observer;
+  Node*                         _root = nullptr;
 
-  void setObserver() {
-    if (_parent) {
-      auto observer = [this](auto) { _to_world = _parent->_to_world * _transform.get().get(); };
-      _parent_observer = toy::Observer{ _parent->_to_world, observer };
-      _transform_observer = toy::Observer{ _transform.get(), observer, true };
-    } else {
-      auto observer = [this](auto) { _to_world = _transform.get().get(); };
-      _parent_observer = {};
-      _transform_observer = toy::Observer{ _transform.get(), observer, true };
+  void setParent(Node* parent) {
+    resetParent();
+    _parent = parent->getPtr();
+    parent->_children.insert(getPtr());
+    parent->_to_world.addReactor(&_reactor_to_world);
+  }
+  void resetParent() {
+    if (auto parent = _parent.lock()) {
+      parent->_to_world.removeReactor(&_reactor_to_world);
+      parent->_children.erase(getPtr());
+      _parent.reset();
     }
   }
-  void setChildrenRoot() {
+  void setRootRecursively(Node* root) {
+    _root = root;
     for (auto& child : _children) {
-      child->_root = _root;
-      child->setChildrenRoot();
+      child->setRootRecursively(root);
     }
   }
 
 public:
   auto assetSerialize() -> AssetPackager override {
-    auto transform_data = std::tuple{
-      _transform.location.get(),
-      _transform.rotate_euler.get(),
-      _transform.scale_factor.get(),
-      _transform.mode,
-    };
     auto children_data = std::vector<AssetRef>{};
     for (auto& child : _children) {
       children_data.push_back(AssetRef{ child });
     }
-    return { std::tuple_cat(transform_data, std::tuple{ children_data }), Asset::assetSerialize() };
+    return { std::tuple{ _to_parent.get(), children_data }, Asset::assetSerialize() };
   }
   void assetDeserialize(AssetUnpacker unpacker) override {
     Asset::assetDeserialize(unpacker.extractInherited());
-    auto [location, rotate_euler, scale_factor, mode, children_data] =
-      unpacker
-        .extract<glm::vec3, glm::vec3, glm::vec3, ModelTransform::Mode, std::vector<AssetRef>>();
-    _transform.location = location;
-    _transform.rotate_euler = rotate_euler;
-    _transform.scale_factor = scale_factor;
-    _transform.mode = mode;
+    auto [to_parent, children_data] = unpacker.extract<glm::mat4, std::vector<AssetRef>>();
+    _to_parent = to_parent;
     for (auto& child_data : children_data) {
       auto child = child_data.consume<Node>();
       child->attachTo(this);

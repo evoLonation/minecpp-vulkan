@@ -6,6 +6,8 @@ import framework;
 import std;
 import toy;
 
+export import engine.base.reactive;
+
 export namespace eg {
 
 template <typename T>
@@ -23,6 +25,7 @@ struct Component : public fw::Action, public std::enable_shared_from_this<Compon
     return std::static_pointer_cast<std::remove_reference_t<decltype(self)>>(self.shared_from_this()
     );
   }
+
 private:
   using std::enable_shared_from_this<Component>::shared_from_this;
 };

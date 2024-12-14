@@ -9,245 +9,43 @@ import toy.log;
 export namespace toy {
 
 /**
- * @brief the Observer and Observable's lifetime is NOT need to relative
+ * @brief Inherit Traceable to make the life time of Observer can be *LONGER* than Observable
  */
+
 template <typename T>
-class Observable;
-template <typename T>
-class Observer : public Traceable {
+class Observer {
 public:
-  Observer() = default;
-  Observer(Observable<T>& observable, std::function<void(T const&)> f, bool init = false)
-    : _f(std::move(f)) {
-    if (init) {
-      initApply(observable);
-    }
-    add(observable);
-  }
-  ONLY_MOVEABLE(Observer);
-  ~Observer() = default;
-
-private:
-  friend Observable<T>;
-  std::function<void(T const&)> _f;
-
-  void add(Observable<T>& observable);
-  void initApply(Observable<T>& observable);
+  virtual void observerNotified(T const&) = 0;
 };
 
 template <typename T>
-Observer(Observable<T>& observable, auto, bool) -> Observer<T>;
-template <typename T>
-Observer(Observable<T>& observable, auto) -> Observer<T>;
-
-template <typename T>
-class Observable : public Traceable {
+class Observable {
 public:
   Observable() = default;
-  Observable(T const& v) : value{ v } {}
-  Observable(T&& v) : value{ std::move(v) } {}
-  // Observable(auto&&... args) : value{ FORWARD(args)... } {}
-  ONLY_MOVEABLE(Observable);
-  auto get() -> T const& { return value; }
-  auto operator=(T const& v) -> Observable& {
-    value = v;
-    trigger();
-    return *this;
-  }
-  auto operator=(T&& v) -> Observable& {
-    value = std::move(v);
-    trigger();
-    return *this;
-  }
 
-  // forward operators
-  template <typename S>
-    requires(!std::is_same_v<std::remove_cvref_t<S>, Observable>)
-  auto operator=(S&& v) -> Observable& {
-    value = FORWARD(v);
-    trigger();
-    return *this;
-  }
-  auto operator+(auto&& v) -> decltype(auto) { return value + FORWARD(v); }
-  auto operator-(auto&& v) -> decltype(auto) { return value - FORWARD(v); }
-  auto operator*(auto&& v) -> decltype(auto) { return value * FORWARD(v); }
-  auto operator/(auto&& v) -> decltype(auto) { return value / FORWARD(v); }
-  auto operator%(auto&& v) -> decltype(auto) { return value % FORWARD(v); }
-  auto operator&(auto&& v) -> decltype(auto) { return value & FORWARD(v); }
-  auto operator|(auto&& v) -> decltype(auto) { return value | FORWARD(v); }
-  auto operator^(auto&& v) -> decltype(auto) { return value ^ FORWARD(v); }
-  auto operator<<(auto&& v) -> decltype(auto) { return value << FORWARD(v); }
-  auto operator>>(auto&& v) -> decltype(auto) { return value >> FORWARD(v); }
-  auto operator+=(auto&& v) -> Observable& {
-    value += FORWARD(v);
-    trigger();
-    return *this;
-  }
-  auto operator-=(auto&& v) -> Observable& {
-    value -= FORWARD(v);
-    trigger();
-    return *this;
-  }
-  auto operator*=(auto&& v) -> Observable& {
-    value *= FORWARD(v);
-    trigger();
-    return *this;
-  }
-  auto operator/=(auto&& v) -> Observable& {
-    value /= FORWARD(v);
-    trigger();
-    return *this;
-  }
-  auto operator%=(auto&& v) -> Observable& {
-    value %= FORWARD(v);
-    trigger();
-    return *this;
-  }
-  auto operator&=(auto&& v) -> Observable& {
-    value &= FORWARD(v);
-    trigger();
-    return *this;
-  }
-  auto operator|=(auto&& v) -> Observable& {
-    value |= FORWARD(v);
-    trigger();
-    return *this;
-  }
-  auto operator^=(auto&& v) -> Observable& {
-    value ^= FORWARD(v);
-    trigger();
-    return *this;
-  }
-  auto operator<<=(auto&& v) -> Observable& {
-    value <<= FORWARD(v);
-    trigger();
-    return *this;
-  }
-  auto operator>>=(auto&& v) -> Observable& {
-    value >>= FORWARD(v);
-    trigger();
-    return *this;
-  }
-  auto operator++() -> Observable& {
-    ++value;
-    trigger();
-    return *this;
-  }
-  auto operator--() -> Observable& {
-    --value;
-    trigger();
-    return *this;
-  }
-  auto operator++(int) -> T {
-    T v = value;
-    ++value;
-    trigger();
-    return v;
-  }
-  auto operator--(int) -> T {
-    T v = value;
-    --value;
-    trigger();
-    return v;
-  }
-  // the lifetime of result must shorter than this
-  auto operator[](auto&& i) -> decltype(auto) {
-    using E = std::remove_cvref_t<decltype(value[FORWARD(i)])>;
-    auto observable = Observable<E>{ value[FORWARD(i)] };
-    observable._observer_for_element = Observer(observable, [this, i](auto const& v) {
-      this->value[i] = v;
-      this->trigger();
-    });
-    return observable;
-  }
-  auto operator==(Observable const& e) const -> bool { return value == e.value; }
-  template <typename S>
-    requires(!std::derived_from<std::remove_cvref_t<S>, Observable>)
-  auto operator==(S&& e) const -> bool {
-    return value == FORWARD(e);
-  }
-
-  operator const T&() const { return value; }
-
-  void change(std::function<void(T&)> const& f) {
-    f(value);
-    trigger();
-  }
-
-private:
-  T value;
-
-  friend class Observer<T>;
-  std::vector<toy::TracerFor<Observer<T>>> _observers;
-  template <typename>
-  friend class Observable;
-  Observer<T> _observer_for_element;
-
-  void trigger() {
-    auto [begin, end] = ranges::remove_if(_observers, [](auto& x) { return !x.valid(); });
-    _observers.erase(begin, end);
-    for (auto& observer : _observers) {
-      observer->_f(value);
+  void notify(T const& value) {
+    for (auto* observer : _observers) {
+      observer->observerNotified(value);
     }
   }
+
+  void addObserver(Observer<T>* observer) { _observers.insert(observer); }
+  void removeObserver(Observer<T>* observer) { _observers.erase(observer); }
+
+private:
+  std::unordered_set<Observer<T>*> _observers;
 };
 
 template <typename T>
-void Observer<T>::add(Observable<T>& observable) {
-  observable._observers.emplace_back(this);
-}
-
-template <typename T>
-void Observer<T>::initApply(Observable<T>& observable) {
-  _f(observable);
-}
-
-/**
- * @brief The lifetime can longer than Observable
- */
-template <typename T>
-class Bidirectional : public Traceable {
+class ObserverFunc : public Observer<T> {
 public:
-  Bidirectional() = default;
-  Bidirectional(Observable<T>& a, Observable<T>& b) : _a(&a), _b(&b) {
-    _oa = Observer{
-      a,
-      [self = getTracer()](T const& v) {
-        if (self->_doing)
-          return;
-        self->_doing = true;
-        if (!self->_b.valid()) {
-          self->_oa = {};
-        } else {
-          *self->_b = v;
-        }
-        self->_doing = false;
-      },
-      true,
-    };
-    _ob = Observer{
-      b,
-      [self = getTracer()](T const& v) {
-        if (self->_doing)
-          return;
-        self->_doing = true;
-        if (!self->_a.valid()) {
-          self->_ob = {};
-        } else {
-          *self->_a = v;
-        }
-        self->_doing = false;
-      },
-    };
-  }
-  ONLY_MOVEABLE(Bidirectional);
+  ObserverFunc() = default;
+  ObserverFunc(std::function<void(T const&)> dealer) : _dealer(std::move(dealer)) {}
 
 private:
-  TracerFor<Observable<T>> _a;
-  TracerFor<Observable<T>> _b;
-  Observer<T>              _oa;
-  Observer<T>              _ob;
-  bool                     _doing = false;
+  void observerNotified(T const& value) override { _dealer(value); }
+
+  std::function<void(T const&)> _dealer;
 };
 
 } // namespace toy

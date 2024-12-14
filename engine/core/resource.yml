@@ -19,5 +19,7 @@ module:
     provide: engine.draw_unit
 - asset_registry.ccm:
     provide: engine.assets.registry
+- reactive.ccm:
+    provide: engine.base.reactive
 test:
 - test.cc

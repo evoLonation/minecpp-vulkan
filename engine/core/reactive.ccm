@@ -1,0 +1,215 @@
+module;
+#include <toy.h>
+export module engine.base.reactive;
+
+import std;
+import toy;
+
+export namespace eg {
+
+template <typename T>
+using Reactor = toy::ObserverFunc<T>;
+
+template <typename T>
+class Reval : public toy::Observer<T> {
+public:
+  Reval() = default;
+  Reval(T const& v) : value{ v } {}
+  Reval(T&& v) : value{ std::move(v) } {}
+  UNCOPYABLE_MOVEABLE(Reval);
+  auto get() const -> T const& { return value; }
+
+  void addReactor(toy::Observer<T>* observer, bool immediate = false) {
+    if (immediate) {
+      observer->observerNotified(value);
+    }
+    _observable.addObserver(observer);
+  }
+  void removeReactor(toy::Observer<T>* observer) { _observable.removeObserver(observer); }
+
+  /**
+   * @brief Bing value each other
+   * First will make e.value = this.value
+   */
+  void bind(Reval<T>* e) {
+    this->addReactor(e, true);
+    e->addReactor(this);
+  }
+  void unbind(Reval<T>* e) {
+    e->removeReactor(this);
+    this->removeReactor(e);
+  }
+
+  void change(std::function<void(T&)> const& f) {
+    f(value);
+    trigger();
+  }
+  operator const T&() const { return value; }
+
+private:
+  toy::Observable<T> _observable;
+  T                  value;
+  bool               _trigging = false;
+
+  void observerNotified(T const& value) override { *this = value; }
+  void trigger() {
+    if (_trigging) {
+      return;
+    }
+    _trigging = true;
+    _observable.notify(value);
+    _trigging = false;
+  }
+
+public:
+  /**
+   * @brief operator overloads
+   */
+
+  auto operator=(T const& v) -> Reval& {
+    value = v;
+    trigger();
+    return *this;
+  }
+  auto operator=(T&& v) -> Reval& {
+    value = std::move(v);
+    trigger();
+    return *this;
+  }
+
+  // forward operators
+  template <typename S>
+    requires(!std::is_same_v<std::remove_cvref_t<S>, Reval>)
+  auto operator=(S&& v) -> Reval& {
+    value = FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator+(auto&& v) -> decltype(auto) { return value + FORWARD(v); }
+  auto operator-(auto&& v) -> decltype(auto) { return value - FORWARD(v); }
+  auto operator*(auto&& v) -> decltype(auto) { return value * FORWARD(v); }
+  auto operator/(auto&& v) -> decltype(auto) { return value / FORWARD(v); }
+  auto operator%(auto&& v) -> decltype(auto) { return value % FORWARD(v); }
+  auto operator&(auto&& v) -> decltype(auto) { return value & FORWARD(v); }
+  auto operator|(auto&& v) -> decltype(auto) { return value | FORWARD(v); }
+  auto operator^(auto&& v) -> decltype(auto) { return value ^ FORWARD(v); }
+  auto operator<<(auto&& v) -> decltype(auto) { return value << FORWARD(v); }
+  auto operator>>(auto&& v) -> decltype(auto) { return value >> FORWARD(v); }
+  auto operator+=(auto&& v) -> Reval& {
+    value += FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator-=(auto&& v) -> Reval& {
+    value -= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator*=(auto&& v) -> Reval& {
+    value *= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator/=(auto&& v) -> Reval& {
+    value /= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator%=(auto&& v) -> Reval& {
+    value %= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator&=(auto&& v) -> Reval& {
+    value &= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator|=(auto&& v) -> Reval& {
+    value |= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator^=(auto&& v) -> Reval& {
+    value ^= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator<<=(auto&& v) -> Reval& {
+    value <<= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator>>=(auto&& v) -> Reval& {
+    value >>= FORWARD(v);
+    trigger();
+    return *this;
+  }
+  auto operator++() -> Reval& {
+    ++value;
+    trigger();
+    return *this;
+  }
+  auto operator--() -> Reval& {
+    --value;
+    trigger();
+    return *this;
+  }
+  auto operator++(int) -> T {
+    T v = value;
+    ++value;
+    trigger();
+    return v;
+  }
+  auto operator--(int) -> T {
+    T v = value;
+    --value;
+    trigger();
+    return v;
+  }
+  /**
+   * @brief operator overload for operator[]
+   */
+  template <typename E, typename I>
+  class ElementReval : public Reval<E> {
+  public:
+    using Reval<E>::Reval;
+    using Reval<E>::operator=;
+    ElementReval(Reval* father, I index) {
+      Reval<E>::operator=(father->value[index]);
+      _observer._father = father;
+      _observer._index = std::move(index);
+      Reval<E>::addReactor(&_observer);
+    }
+    ~ElementReval() { Reval<E>::removeReactor(&_observer); }
+    UNCOPYABLE_MOVEABLE(ElementReval);
+
+  private:
+    class Observer : public toy::Observer<E> {
+    public:
+      void observerNotified(E const& e) override {
+        _father->value[_index] = e;
+        _father->trigger();
+      }
+      Reval* _father = nullptr;
+      I      _index;
+    };
+    Observer _observer;
+  };
+
+  /**
+   * @brief Invalid when Reval is destroyed
+   */
+  auto operator[](auto&& i) -> decltype(auto) {
+    using E = std::remove_cvref_t<decltype(value[FORWARD(i)])>;
+    return ElementReval<E, std::remove_cvref_t<decltype(i)>>{ this, FORWARD(i) };
+  }
+  auto operator==(Reval const& e) const -> bool { return value == e.value; }
+  template <typename S>
+    requires(!std::derived_from<std::remove_cvref_t<S>, Reval>)
+  auto operator==(S&& e) const -> bool {
+    return value == FORWARD(e);
+  }
+};
+
+} // namespace eg

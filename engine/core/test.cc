@@ -1,12 +1,12 @@
 import toy;
-import toy.persistent;
 import math;
 import std;
 import glm;
 import engine.assets;
+import engine.base;
+#include <engine.h>
 #include <test.h>
 #include <toy.h>
-#include <engine.h>
 
 using namespace eg;
 
@@ -109,4 +109,43 @@ TEST(AssetManager2) {
     auto asset2 = manager.load(guid2);
     TOY_ASSERT(dynamic_cast<TestAsset2*>(asset2.get()) != nullptr);
   }
+}
+
+TEST(Reval) {
+  auto a = Reval<glm::vec3>{ { 1, 2, 3 } };
+  auto b = glm::vec3{};
+
+  auto o = Reactor<glm::vec3>{
+    [&b](const glm::vec3& value) {
+      toy::debugf("a1 changed: {}", value);
+      b = value;
+    },
+  };
+  a.addReactor(&o);
+  TOY_ASSERT(b != a);
+  a = { 2, 3, 4 };
+  TOY_ASSERT(b == a);
+  a += 1;
+  TOY_ASSERT(a == b);
+  TOY_DEBUG(a++);
+  TOY_ASSERT(b == a);
+  a[1] = 114514;
+  TOY_ASSERT(a[1] == 114514);
+  TOY_ASSERT(b == a);
+  a.removeReactor(&o);
+  a = { 3, 4, 5 };
+  TOY_ASSERT(b != a);
+
+  auto c = Reval<glm::vec3>{ { 1, 2, 3 } };
+  c.bind(&a);
+  TOY_ASSERT(a == glm::vec3(1, 2, 3));
+  c.addReactor(&o);
+  a = { 4, 5, 6 };
+  TOY_ASSERT(c == a);
+  TOY_ASSERT(b == a);
+  c.unbind(&a);
+  a = { 5, 6, 7 };
+  TOY_ASSERT(c != a);
+  TOY_ASSERT(b != a);
+  TOY_ASSERT(b == c);
 }

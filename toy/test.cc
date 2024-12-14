@@ -1,6 +1,5 @@
 // #include <test.h>
 import toy;
-import toy.persistent;
 import math;
 import std;
 import glm;
@@ -46,27 +45,6 @@ TEST(macro) {
     TOY_CHECK("assert error: a == b"s.find(err.what()) != std::string::npos, err.what());
   }
   TOY_DEBUG(a, b);
-}
-
-class B : public RefLoader<B> {
-public:
-  int num;
-  B(RefContainer<B>& container, int num) : RefLoader<B>(&container), num(num) {}
-  B() = default;
-};
-class A : public RefContainer<B> {};
-
-TEST(ref_loader) {
-  auto a = A{};
-  auto b1 = B{ a, 1 };
-  {
-    auto b2 = B{ a, 2 };
-    auto b3 = B{ a, 3 };
-    TOY_DEBUG(a | views::transform([](auto& e) { return e->num; }));
-    a.erase(&b3);
-    TOY_DEBUG(a | views::transform([](auto& e) { return e->num; }));
-  }
-  TOY_DEBUG(a | views::transform([](auto& e) { return e->num; }));
 }
 
 struct CustomComponent : toy::Traceable {
@@ -118,61 +96,6 @@ TEST(traceable) {
     auto cp3 = std::move(cp2);
   }
   TOY_ASSERT(!proxy.valid() && !copy.valid());
-}
-
-TEST(observable) {
-  using namespace toy;
-  auto a = Observable<glm::vec3>{ { 1, 2, 3 } };
-  auto b = glm::vec3{};
-
-  auto o = Observer{
-    a,
-    [&b](const glm::vec3& value) {
-      debugf("a1 changed: {}", value);
-      b = value;
-    },
-  };
-  a = { 2, 3, 4 };
-  a += 1;
-  TOY_DEBUG(a++);
-
-  auto a2 = Observable<glm::vec3>{ { -1, -2, -3 } };
-  auto b2 = glm::vec3{};
-  auto o2 = Observer{
-    a2,
-    [&b2](const glm::vec3& value) {
-      debugf("a2 changed: {}", value);
-      b2 = value;
-    },
-  };
-
-  debug("copy assign");
-  a = a2.get();
-  a2 = { -2, -3, -4 };
-  debug("move assign");
-  // move observers of a2 to a
-  a = std::move(a2);
-  debug("should not trigger observer begin");
-  a2 = { -3, -4, -5 };
-  debug("should not trigger observer end");
-  a[0] = 114514;
-  TOY_ASSERT(b2 == a);
-  auto ref = a[0];
-  ref = 114515;
-  TOY_ASSERT(a[0] == ref, float{ a[0] }, float{ ref });
-
-  // Bidirectional
-  auto a3 = Observable<glm::vec3>{ { -1, -2, -3 } };
-  auto b3 = Observable<glm::vec3>{ { 0, 0, 0 } };
-  auto bi = Bidirectional{ a3, b3 };
-  TOY_ASSERT(a3 == b3 && b3 == glm::vec3(-1, -2, -3));
-  a3 = { 1, 2, 3 };
-  TOY_ASSERT(b3 == a3);
-  b3 = { 4, 5, 6 };
-  TOY_ASSERT(a3 == b3);
-  // after destroy a3, bidirectional is just invalid
-  a3 = Observable<glm::vec3>{};
-  b3 = { 7, 8, 9 };
 }
 
 TEST(TrivialSerializer) {
