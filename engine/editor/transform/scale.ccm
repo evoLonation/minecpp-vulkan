@@ -3,14 +3,14 @@ module;
 export module editor.transform.scale;
 
 import render;
-import camera;
+import engine.camera;
 import framework;
 import math;
 import engine.base;
 import engine.node;
 import engine.object;
 import engine.draw_unit;
-import tool.shape;
+import engine.shape;
 import std;
 import toy;
 

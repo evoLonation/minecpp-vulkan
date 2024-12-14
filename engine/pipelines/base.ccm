@@ -13,7 +13,7 @@ import render;
 import framework;
 
 import pipeline.uniform;
-import camera;
+import engine.camera;
 
 export namespace eg {
 

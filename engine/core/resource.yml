@@ -1,10 +1,10 @@
 module:
 - shape.ccm:
-    provide: tool.shape
+    provide: engine.shape
 - node.ccm:
     provide: engine.node
 - camera.ccm:
-    provide: camera
+    provide: engine.camera
 - mesh.ccm:
     provide: engine.mesh
 - texture.ccm:

@@ -1,6 +1,6 @@
 module;
 #include "toy.h"
-export module camera;
+export module engine.camera;
 
 import std;
 import toy;

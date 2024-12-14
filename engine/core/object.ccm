@@ -4,7 +4,7 @@ module;
 
 export module engine.object;
 
-import camera;
+import engine.camera;
 import engine.assets;
 import pipeline.id;
 import engine.draw_unit;

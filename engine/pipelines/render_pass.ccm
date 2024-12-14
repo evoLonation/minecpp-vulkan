@@ -4,7 +4,7 @@ export module pipeline.render_pass;
 
 import pipeline.render_target;
 import framework;
-import camera;
+import engine.camera;
 import render;
 import std;
 import toy;

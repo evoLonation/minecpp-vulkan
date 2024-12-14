@@ -11,8 +11,8 @@ import toy;
 import math;
 import render;
 import framework;
-import camera;
-import tool.shape;
+import engine.camera;
+import engine.shape;
 
 export namespace eg {
 

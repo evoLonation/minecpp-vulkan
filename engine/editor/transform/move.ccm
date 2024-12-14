@@ -14,8 +14,8 @@ import render;
 import pipeline.light;
 import math;
 import pipeline.uniform;
-import tool.shape;
-import camera;
+import engine.shape;
+import engine.camera;
 
 export namespace eg {
 
