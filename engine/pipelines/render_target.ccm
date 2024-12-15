@@ -12,7 +12,7 @@ export namespace eg {
 
 // todo: one RenderTarget should has one multi sampling type
 // because the MS image will draw by multi RenderPasses, so need be the same one
-class RenderTarget : public rd::FrameImage, public toy::Observer<VkExtent2D> {
+class RenderTarget : public rd::FrameImage, public ReactorInterface<VkExtent2D> {
 public:
   RenderTarget() = default;
   RenderTarget(VkFormat format, Reval<VkExtent2D>* extent_reval) { init(format, extent_reval); }

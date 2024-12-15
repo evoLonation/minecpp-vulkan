@@ -61,11 +61,14 @@ struct LightContext : public CustomDrawContext<layout_model_light> {
 export class LightPipeline : public CustomRenderPass {
 public:
   void beforeRender(DrawUnit& draw_unit, DrawContextBase* draw_ctx) override {
+    draw_ctx->setActive(draw_unit.isActive());
+    if (!draw_unit.isActive()) {
+      return;
+    }
     auto* ctx = dynamic_cast<LightContext*>(draw_ctx);
     auto  model = draw_unit.getTransform();
     ctx->vertex_data->model = model;
     ctx->vertex_data->normal_model = mt::getNormalModel(model);
-    draw_ctx->setActive(draw_unit.isActive());
   }
   auto fromDrawUnit(uint32 subpass_n, DrawUnit& draw_unit)
     -> std::optional<uptr<DrawContextBase>> override {

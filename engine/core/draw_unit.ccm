@@ -18,7 +18,7 @@ struct MaterialInfo {
   float shininess = 16.0f;
 };
 
-class DrawUnit : public Component {
+class DrawUnit {
 public:
   DrawUnit() = default;
   DrawUnit(ptr<Mesh> mesh, ptr<Texture> texture, bool up_layer = false) {
@@ -56,13 +56,17 @@ public:
     }
     _draw_units.erase(this);
   }
-  auto getTransform() -> glm::mat4& { return _transform; }
+  auto getTransform() -> glm::mat4 const& {
+    TOY_ASSERT(isActive());
+    return *_transform;
+  }
   auto getMesh() -> Mesh& { return *_mesh; }
   auto getTexture() -> Texture& { return *_texture; }
   auto getMaterial() -> MaterialInfo& { return _material; }
   auto isUpLayer() -> bool { return _up_layer; }
-  void setActive(bool active) { _active = active; }
-  auto isActive() -> bool { return _active; }
+  void setActive(glm::mat4 const* transform) { _transform = transform; }
+  void resetActive() { _transform = nullptr; }
+  auto isActive() -> bool { return _transform; }
 
   static auto getAll() -> std::unordered_set<DrawUnit*>& { return _draw_units; }
   static void setOnCreated(std::function<void(DrawUnit&)>* callback) {
@@ -79,17 +83,34 @@ public:
   }
 
 private:
-  glm::mat4    _transform;
-  ptr<Mesh>    _mesh;
-  ptr<Texture> _texture;
-  MaterialInfo _material;
-  bool         _up_layer = false;
-  bool         _active = true;
+  glm::mat4 const* _transform = nullptr;
+  ptr<Mesh>        _mesh;
+  ptr<Texture>     _texture;
+  MaterialInfo     _material;
+  bool             _up_layer = false;
 
 private:
   static inline std::unordered_set<DrawUnit*>                       _draw_units;
   static inline std::unordered_set<std::function<void(DrawUnit&)>*> _on_created;
   static inline std::unordered_set<std::function<void(DrawUnit&)>*> _before_destroy;
+};
+
+class DrawUnitObservable : public PROACTIVE_SINGLETON(DrawUnitObservable) {
+public:
+  void addAfterCreated(toy::Observer<DrawUnit&>* observer) { _after_created.addObserver(observer); }
+  void removeAfterCreated(toy::Observer<DrawUnit&>* observer) {
+    _after_created.removeObserver(observer);
+  }
+  void addBeforeDestroy(toy::Observer<DrawUnit&>* observer) {
+    _before_destroy.addObserver(observer);
+  }
+  void removeBeforeDestroy(toy::Observer<DrawUnit&>* observer) {
+    _before_destroy.removeObserver(observer);
+  }
+
+private:
+  toy::Observable<DrawUnit&> _after_created;
+  toy::Observable<DrawUnit&> _before_destroy;
 };
 
 } // namespace eg

@@ -8,10 +8,13 @@ import toy;
 export namespace eg {
 
 template <typename T>
-using Reactor = toy::ObserverFunc<T>;
+using ReactorInterface = toy::Observer<T const&>;
 
 template <typename T>
-class Reval : public toy::Observer<T> {
+using Reactor = toy::ObserverFunc<T const&>;
+
+template <typename T>
+class Reval : public ReactorInterface<T> {
 public:
   Reval() = default;
   Reval(T const& v) : value{ v } {}
@@ -19,23 +22,23 @@ public:
   UNCOPYABLE_MOVEABLE(Reval);
   auto get() const -> T const& { return value; }
 
-  void addReactor(toy::Observer<T>* observer, bool immediate = false) {
+  void addReactor(ReactorInterface<T>* observer, bool immediate = false) const {
     if (immediate) {
       observer->observerNotified(value);
     }
     _observable.addObserver(observer);
   }
-  void removeReactor(toy::Observer<T>* observer) { _observable.removeObserver(observer); }
+  void removeReactor(ReactorInterface<T>* observer) const { _observable.removeObserver(observer); }
 
   /**
    * @brief Bing value each other
    * First will make e.value = this.value
    */
-  void bind(Reval<T>* e) {
+  void bind(Reval* e) {
     this->addReactor(e, true);
     e->addReactor(this);
   }
-  void unbind(Reval<T>* e) {
+  void unbind(Reval* e) {
     e->removeReactor(this);
     this->removeReactor(e);
   }
@@ -47,9 +50,9 @@ public:
   operator const T&() const { return value; }
 
 private:
-  toy::Observable<T> _observable;
-  T                  value;
-  bool               _trigging = false;
+  mutable toy::Observable<T const&> _observable;
+  T                                 value;
+  bool                              _trigging = false;
 
   void observerNotified(T const& value) override { *this = value; }
   void trigger() {
@@ -95,6 +98,9 @@ public:
   auto operator^(auto&& v) -> decltype(auto) { return value ^ FORWARD(v); }
   auto operator<<(auto&& v) -> decltype(auto) { return value << FORWARD(v); }
   auto operator>>(auto&& v) -> decltype(auto) { return value >> FORWARD(v); }
+  auto operator+() -> T { return +value; }
+  auto operator-() -> T { return -value; }
+
   auto operator+=(auto&& v) -> Reval& {
     value += FORWARD(v);
     trigger();
@@ -177,15 +183,15 @@ public:
     using Reval<E>::operator=;
     ElementReval(Reval* father, I index) {
       Reval<E>::operator=(father->value[index]);
-      _observer._father = father;
-      _observer._index = std::move(index);
-      Reval<E>::addReactor(&_observer);
+      _reactor._father = father;
+      _reactor._index = std::move(index);
+      Reval<E>::addReactor(&_reactor);
     }
-    ~ElementReval() { Reval<E>::removeReactor(&_observer); }
+    ~ElementReval() { Reval<E>::removeReactor(&_reactor); }
     UNCOPYABLE_MOVEABLE(ElementReval);
 
   private:
-    class Observer : public toy::Observer<E> {
+    class FatherReactor : public ReactorInterface<E> {
     public:
       void observerNotified(E const& e) override {
         _father->value[_index] = e;
@@ -194,7 +200,7 @@ public:
       Reval* _father = nullptr;
       I      _index;
     };
-    Observer _observer;
+    FatherReactor _reactor;
   };
 
   /**

@@ -12,40 +12,46 @@ export namespace toy {
  * @brief Inherit Traceable to make the life time of Observer can be *LONGER* than Observable
  */
 
-template <typename T>
+template <typename Arg>
 class Observer {
 public:
-  virtual void observerNotified(T const&) = 0;
+  virtual void observerNotified(Arg) = 0;
 };
 
-template <typename T>
+template <typename Arg>
 class Observable {
 public:
   Observable() = default;
 
-  void notify(T const& value) {
+  void notify(Arg value) {
     for (auto* observer : _observers) {
       observer->observerNotified(value);
     }
   }
 
-  void addObserver(Observer<T>* observer) { _observers.insert(observer); }
-  void removeObserver(Observer<T>* observer) { _observers.erase(observer); }
+  void addObserver(Observer<Arg>* observer) { _observers.insert(observer); }
+  void removeObserver(Observer<Arg>* observer) { _observers.erase(observer); }
 
 private:
-  std::unordered_set<Observer<T>*> _observers;
+  std::unordered_set<Observer<Arg>*> _observers;
 };
 
-template <typename T>
-class ObserverFunc : public Observer<T> {
+template <typename Arg>
+class ObserverFunc : public Observer<Arg> {
 public:
   ObserverFunc() = default;
-  ObserverFunc(std::function<void(T const&)> dealer) : _dealer(std::move(dealer)) {}
+  ObserverFunc(std::function<void(Arg)> dealer) : _dealer(std::move(dealer)) {}
 
 private:
-  void observerNotified(T const& value) override { _dealer(value); }
+  void observerNotified(Arg value) override {
+    if constexpr (std::is_reference_v<Arg>) {
+      _dealer(value);
+    } else {
+      _dealer(std::move(value));
+    }
+  }
 
-  std::function<void(T const&)> _dealer;
+  std::function<void(Arg)> _dealer;
 };
 
 } // namespace toy

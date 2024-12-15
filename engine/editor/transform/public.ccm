@@ -29,7 +29,7 @@ auto getCursorLineInWorld() -> LineSegment {
   auto  ndc_y = float(cursor.y) / extent.height * 2 - 1;
   auto  start = glm::vec3{ ndc_x, ndc_y, 0 };
   auto  end = glm::vec3{ ndc_x, ndc_y, 1 };
-  auto  trans = mt::inverse(camera.getView()) * camera.getProjIV();
+  auto  trans = mt::inverse(camera.getView()) * camera.getProjIV().get();
   start = mt::transformDot(trans, start);
   end = mt::transformDot(trans, end);
   return LineSegment{ start, end };
@@ -121,7 +121,7 @@ private:
   void setActiveRecursively(bool active) {
     _root->doRecusively([&](Node* node) {
       if (auto* object = dynamic_cast<SceneObject*>(node)) {
-        object->getDrawUnit()->setActive(active);
+        object->setActive(active);
       }
     });
   }

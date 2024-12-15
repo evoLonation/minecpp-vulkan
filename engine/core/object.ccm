@@ -6,14 +6,12 @@ export module engine.object;
 
 import engine.camera;
 import engine.assets;
-import pipeline.id;
 import engine.draw_unit;
 import engine.base;
+import pipeline.id;
 import framework;
 import math;
 import render;
-import pipeline.uniform;
-import pipeline.light;
 import engine.texture;
 import engine.mesh;
 import engine.node;
@@ -25,11 +23,6 @@ export namespace eg {
 class SceneObject : public Node {
 public:
   SceneObject() = default;
-  SceneObject(ptr<Mesh> mesh, ptr<Texture> texture) { init(std::move(mesh), std::move(texture)); }
-  void init(ptr<Mesh> mesh, ptr<Texture> texture) {
-    auto draw_unit = std::make_unique<DrawUnit>(std::move(mesh), std::move(texture));
-    setDrawUnit(std::move(draw_unit));
-  }
   ~SceneObject() {
     if (_draw_unit.get()) {
       _draw_unit2object.erase(_draw_unit.get());
@@ -40,11 +33,19 @@ public:
       _draw_unit2object.erase(_draw_unit.get());
     }
     _draw_unit = std::move(draw_unit);
+    setActive(true);
     if (_draw_unit.get()) {
       _draw_unit2object[_draw_unit.get()] = this;
     }
   }
   auto getDrawUnit() -> DrawUnit* { return _draw_unit.get(); }
+  void setActive(bool active) {
+    if (active) {
+      _draw_unit->setActive(&getDrawUnitTransform());
+    } else {
+      _draw_unit->resetActive();
+    }
+  }
   auto isSelected() -> bool {
     return _draw_unit.get() && IdPipeline::getInstance().getSelectedDrawUnit() == _draw_unit.get();
   }
@@ -58,11 +59,7 @@ public:
   }
 
 protected:
-  void runLoop(fw::ActionContext const& ctx) override {
-    if (_draw_unit.get()) {
-      _draw_unit->getTransform() = getTransToWorld();
-    }
-  }
+  virtual auto getDrawUnitTransform() -> glm::mat4 const& { return getTransToWorld().get(); }
 
 private:
   uptr<DrawUnit> _draw_unit;
@@ -91,53 +88,53 @@ public:
   REGISTER_ASSET_PATH("scene_object")
 };
 
-class FixedDistanceComponent : public Component {
+class FixedDistanceObject : public SceneObject,
+                            public ReactorInterface<glm::mat4>,
+                            public ReactorInterface<glm::vec3> {
 public:
-  FixedDistanceComponent() = default;
-  FixedDistanceComponent(glm::mat4* root_trans, float distance = 4.0f) {
-    init(root_trans, distance);
+  FixedDistanceObject() {
+    _view_pos = &Camera::getInstance().getViewPos();
+    _view_pos->addReactor(this);
   }
-  void init(glm::mat4 const* root_trans, float distance = 4.0f) {
-    _root_trans = root_trans;
-    _distance = distance;
-  }
-  auto getFixedDistanceTransform() {
-    auto& camera = Camera::getInstance();
-    auto  location_object = mt::transformDot(*_root_trans, glm::vec3{ 0, 0, 0 });
-    auto  location_camera = camera.getViewPos();
-    auto  new_location_object =
-      location_camera + _distance * glm::normalize(location_object - location_camera);
-    auto transform = mt::translate(glm::vec3{ new_location_object - location_object });
-    return transform;
+  FixedDistanceObject(float distance) : FixedDistanceObject() { setDistance(distance); }
+  ~FixedDistanceObject() {
+    if (auto root = getRoot().getPtr()) {
+      root->getTransToWorld().removeReactor(this);
+    }
+    _view_pos->removeReactor(this);
   }
   void setDistance(float distance) { _distance = distance; }
   auto getDistance() -> float { return _distance; }
-  void setRootTrans(glm::mat4 const* root_trans) { _root_trans = root_trans; }
-
-private:
-  glm::mat4 const* _root_trans;
-  float            _distance = 0;
-};
-
-class FixedDistanceObject : public SceneObject {
-public:
-  FixedDistanceObject() { _fixed_distance_component.init(&getTransToWorld().get()); }
-  FixedDistanceObject(ptr<Mesh> mesh, ptr<Texture> texture) : FixedDistanceObject() {
-    init(std::move(mesh), std::move(texture));
+  void observerNotified(glm::mat4 const&) override { computeFixedDistanceTransform(); }
+  void observerNotified(glm::vec3 const&) override { computeFixedDistanceTransform(); }
+  void computeFixedDistanceTransform() {
+    auto  location_object = mt::transformDot(getRoot().getTransToWorld(), glm::vec3{ 0, 0, 0 });
+    auto& location_camera = _view_pos->get();
+    auto  new_location_object =
+      location_camera + _distance * glm::normalize(location_object - location_camera);
+    _fixed_distance_trans =
+      mt::translate(glm::vec3{ new_location_object - location_object }) * getTransToWorld().get();
   }
-  using SceneObject::init;
-  void setDistance(float distance) { _fixed_distance_component.setDistance(distance); }
-  auto getDistance() -> float { return _fixed_distance_component.getDistance(); }
 
   void runLoop(fw::ActionContext const& ctx) override {
-    _fixed_distance_component.setRootTrans(&getRoot().getTransToWorld().get());
-    getDrawUnit()->getTransform() =
-      _fixed_distance_component.getFixedDistanceTransform() * getTransToWorld().get();
-    // getDrawUnit()->getTransform() = getTransToWorld();
+    SceneObject::runLoop(ctx);
+    if (_last_root.lock().get() == &getRoot()) {
+      return;
+    }
+    if (auto root = _last_root.lock()) {
+      root->getTransToWorld().removeReactor(this);
+    }
+    _last_root = getRoot().getPtr();
+    getRoot().getTransToWorld().addReactor(this, true);
   }
 
 private:
-  FixedDistanceComponent _fixed_distance_component;
+  auto getDrawUnitTransform() -> glm::mat4 const& override { return _fixed_distance_trans; }
+
+  glm::mat4               _fixed_distance_trans;
+  wptr<Node>              _last_root;
+  Reval<glm::vec3> const* _view_pos;
+  float                   _distance = 4.0f;
 };
 
 } // namespace eg

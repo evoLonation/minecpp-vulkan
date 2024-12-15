@@ -11,6 +11,11 @@ import toy;
 
 export namespace eg {
 
+struct CameraData {
+  rd::align::mat4 view;
+  rd::align::mat4 proj;
+};
+
 struct PipelineInfo {
   std::vector<uint32>            colors;
   std::optional<rd::DepstOption> depst;
@@ -180,12 +185,15 @@ public:
   }
 
   void draw(std::vector<RenderTarget*> colors, std::vector<RenderTarget*> depsts) {
+    auto camera_data = CameraData{
+      .view = Camera::getInstance().getView().get(),
+      .proj = Camera::getInstance().getProj().get(),
+    };
     for (auto [index, draw_contexts, global_dset] :
          views::zip(views::iota(0u), _draw_contexts, _global_dsets)) {
       _render_pass.setRecorder(index, [&](rd::PipelineDrawer drawer) {
         drawer.bindPushConstant(
-          VK_SHADER_STAGE_VERTEX_BIT,
-          std::as_bytes(std::span{ &Camera::getInstance().getData(), 1 })
+          VK_SHADER_STAGE_VERTEX_BIT, std::as_bytes(std::span{ &camera_data, 1 })
         );
         if (global_dset) {
           drawer.bindDescriptorSet(1, global_dset);

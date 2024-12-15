@@ -6,6 +6,7 @@ module;
 
 export module engine.importer;
 
+import math;
 import render;
 import engine.texture;
 import engine.mesh;
@@ -56,12 +57,13 @@ auto DoTheImportThing(const std::string& pFile) -> ptr<Node> {
 }
 
 auto getMatrix(aiMatrix4x4 const& m) -> glm::mat4 {
-  return glm::mat4{
-    { m.a1, m.a2, m.a3, m.a4 },
-    { m.b1, m.b2, m.b3, m.b4 },
-    { m.c1, m.c2, m.c3, m.c4 },
-    { m.d1, m.d2, m.d3, m.d4 },
-  };
+  // the aiMatrix is row-major matrix
+  return mt::matrix({
+    glm::vec4{ m.a1, m.a2, m.a3, m.a4 },
+    glm::vec4{ m.b1, m.b2, m.b3, m.b4 },
+    glm::vec4{ m.c1, m.c2, m.c3, m.c4 },
+    glm::vec4{ m.d1, m.d2, m.d3, m.d4 },
+  });
 }
 
 auto getMeshData(aiMesh const& mesh) -> MeshData {
@@ -137,6 +139,7 @@ auto getTexture(std::string const& base_path, aiMaterial const* material) -> ptr
 auto getNodeRecursively(std::string const& base_path, aiScene const* scene, aiNode const* node)
   -> ptr<Node> {
   auto transform = getMatrix(node->mTransformation);
+  TOY_DEBUG(transform);
   auto target = std::make_shared<SceneObject>();
   target->getTransToParent() = transform;
   auto mesh_datas = std::vector<MeshData>{};

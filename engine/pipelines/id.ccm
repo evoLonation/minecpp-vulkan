@@ -38,8 +38,11 @@ struct IdContext : public CustomDrawContext<layout_id> {
 export class IdPipeline : public CustomRenderPass, public PROACTIVE_SINGLETON(IdPipeline) {
 public:
   void beforeRender(DrawUnit& draw_unit, DrawContextBase* draw_ctx) override {
-    dynamic_cast<IdContext*>(draw_ctx)->transform = draw_unit.getTransform();
     draw_ctx->setActive(draw_unit.isActive());
+    if (!draw_unit.isActive()) {
+      return;
+    }
+    dynamic_cast<IdContext*>(draw_ctx)->transform = draw_unit.getTransform();
   }
   auto fromDrawUnit(uint32 subpass_n, DrawUnit& draw_unit)
     -> std::optional<uptr<DrawContextBase>> override {
