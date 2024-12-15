@@ -5,8 +5,6 @@ include_dir:
 module:
 - glfw.ccm:
     provide: glfw
-- model.ccm:
-    provide: model
 - transform.ccm:
     provide: math
 source:

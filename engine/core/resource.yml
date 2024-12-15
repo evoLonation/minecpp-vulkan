@@ -21,5 +21,7 @@ module:
     provide: engine.assets.registry
 - reactive.ccm:
     provide: engine.base.reactive
+- importer.ccm:
+    provide: engine.importer
 test:
 - test.cc

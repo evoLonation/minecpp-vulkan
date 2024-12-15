@@ -28,7 +28,7 @@ struct MeshData {
       normal = mt::getNormalModel(trans) * normal;
     }
   }
-  static auto merge(std::initializer_list<MeshData> meshes) -> MeshData {
+  static auto merge(std::span<MeshData const> meshes) -> MeshData {
     auto ret = MeshData{};
     for (auto& mesh : meshes | views::drop(1)) {
       TOY_ASSERT(meshes.begin()->positions.empty() == mesh.positions.empty());

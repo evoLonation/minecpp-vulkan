@@ -1,0 +1,169 @@
+module;
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h> // Post processing flags
+#include <assimp/scene.h>       // Output data structure
+#include <toy.h>
+
+export module engine.importer;
+
+import render;
+import engine.texture;
+import engine.mesh;
+import engine.base;
+import engine.node;
+import engine.draw_unit;
+import engine.object;
+import <tinyobj_loader_c.h>;
+import std;
+import toy;
+import render.vertex;
+import glm;
+
+export namespace eg {
+
+auto getNodeByAiScene(std::string const& base_path, aiScene const* scene) -> ptr<Node>;
+
+auto DoTheImportThing(const std::string& pFile) -> ptr<Node> {
+  auto  importer = Assimp::Importer{};
+  auto* scene = importer.ReadFile(
+    pFile, aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_SortByPType
+  );
+  if (scene == nullptr) {
+    toy::debug(importer.GetErrorString());
+    return {};
+  }
+  TOY_DEBUG(scene->mNumAnimations);
+  TOY_DEBUG(scene->mNumCameras);
+  TOY_DEBUG(scene->mNumLights);
+  TOY_DEBUG(scene->mNumMaterials);
+  for (auto i = 0u; i < scene->mNumMaterials; ++i) {
+    auto* material = scene->mMaterials[i];
+    // material->mProperties[0]->mType;
+    TOY_DEBUG(material->GetTextureCount(aiTextureType_DIFFUSE));
+    TOY_DEBUG(material->GetTextureCount(aiTextureType_SPECULAR));
+    TOY_DEBUG(material->GetTextureCount(aiTextureType_NORMALS));
+  }
+  TOY_DEBUG(scene->mNumMeshes);
+  for (auto i = 0u; i < scene->mNumMeshes; ++i) {
+    auto* mesh = scene->mMeshes[i];
+    TOY_DEBUG(mesh->mNumVertices);
+    TOY_DEBUG(mesh->mNumFaces);
+    TOY_DEBUG(mesh->mMaterialIndex);
+  }
+  TOY_DEBUG(scene->mNumTextures);
+  TOY_DEBUG(scene->mNumSkeletons);
+  return getNodeByAiScene(fs::path{ pFile }.parent_path().string() + "/", scene);
+}
+
+auto getMatrix(aiMatrix4x4 const& m) -> glm::mat4 {
+  return glm::mat4{
+    { m.a1, m.a2, m.a3, m.a4 },
+    { m.b1, m.b2, m.b3, m.b4 },
+    { m.c1, m.c2, m.c3, m.c4 },
+    { m.d1, m.d2, m.d3, m.d4 },
+  };
+}
+
+auto getMeshData(aiMesh const& mesh) -> MeshData {
+  auto positions = std::vector<glm::vec3>{};
+  for (auto i = 0u; i < mesh.mNumVertices; ++i) {
+    auto& v = mesh.mVertices[i];
+    positions.push_back({ v.x, v.y, v.z });
+  }
+  auto normals = std::vector<glm::vec3>{};
+  for (auto i = 0u; i < mesh.mNumVertices; ++i) {
+    auto& v = mesh.mNormals[i];
+    normals.push_back({ v.x, v.y, v.z });
+  }
+  auto tex_coords = std::vector<glm::vec2>{};
+  for (auto i = 0u; i < mesh.mNumVertices; ++i) {
+    // todo
+    auto& v = mesh.mTextureCoords[0][i];
+    tex_coords.push_back({ v.x, v.y });
+  }
+  auto indices = std::vector<uint16>{};
+  for (auto i = 0u; i < mesh.mNumFaces; ++i) {
+    auto& face = mesh.mFaces[i];
+    TOY_ASSERT(face.mNumIndices == 3);
+    for (auto j = 0u; j < face.mNumIndices; ++j) {
+      indices.push_back(face.mIndices[j]);
+    }
+  }
+  auto data = MeshData{
+    .positions = std::move(positions),
+    .normals = std::move(normals),
+    .tex_coords = std::move(tex_coords),
+    .indices = std::move(indices),
+  };
+  TOY_DEBUG(data.positions.size());
+  return data;
+}
+
+std::unordered_map<std::string, ptr<Texture>> texture_cache;
+
+auto getTexture(std::string const& base_path, aiMaterial const* material) -> ptr<Texture> {
+  auto diffuse_count = material->GetTextureCount(aiTextureType_DIFFUSE);
+  TOY_DEBUG(diffuse_count);
+  auto specular_count = material->GetTextureCount(aiTextureType_SPECULAR);
+  TOY_DEBUG(specular_count);
+  auto normal_count = material->GetTextureCount(aiTextureType_NORMALS);
+  TOY_DEBUG(normal_count);
+  auto get_texture = [&](aiTextureType type) -> ptr<Texture> {
+    auto filename = aiString{};
+    material->GetTexture(type, 0, &filename);
+    TOY_DEBUG(filename.C_Str());
+    auto path = std::string{ base_path + filename.C_Str() };
+    if (auto it = texture_cache.find(path); it != texture_cache.end()) {
+      return it->second;
+    }
+    auto texture = std::make_shared<Texture>(
+      rd::SampledTexture::fromFile(path, true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT)
+    );
+    texture_cache[path] = texture;
+    return texture;
+  };
+  if (diffuse_count != 0) {
+    return get_texture(aiTextureType_DIFFUSE);
+  } else if (specular_count != 0) {
+    return get_texture(aiTextureType_SPECULAR);
+  } else if (normal_count != 0) {
+    return get_texture(aiTextureType_NORMALS);
+  } else {
+    TOY_ASSERT(false);
+    std::unreachable();
+  }
+}
+
+auto getNodeRecursively(std::string const& base_path, aiScene const* scene, aiNode const* node)
+  -> ptr<Node> {
+  auto transform = getMatrix(node->mTransformation);
+  auto target = std::make_shared<SceneObject>();
+  target->getTransToParent() = transform;
+  auto mesh_datas = std::vector<MeshData>{};
+  TOY_DEBUG(node->mNumMeshes);
+  if (node->mNumMeshes != 0) {
+    for (auto i = 0u; i < node->mNumMeshes; ++i) {
+      auto* mesh = scene->mMeshes[node->mMeshes[i]];
+      mesh_datas.push_back(getMeshData(*mesh));
+    }
+    auto  mesh_data = MeshData::merge(mesh_datas);
+    auto  mesh = std::make_shared<Mesh>(MeshData::merge(mesh_datas));
+    auto* material = scene->mMaterials[scene->mMeshes[node->mMeshes[0]]->mMaterialIndex];
+    auto  texture = getTexture(base_path, material);
+    auto  draw_unit = std::make_unique<DrawUnit>(mesh, texture);
+    target->setDrawUnit(std::move(draw_unit));
+  }
+  TOY_DEBUG(node->mNumChildren);
+  for (auto i = 0u; i < node->mNumChildren; ++i) {
+    auto child = getNodeRecursively(base_path, scene, node->mChildren[i]);
+    child->attachTo(target.get());
+  }
+  return target;
+}
+
+auto getNodeByAiScene(std::string const& base_path, aiScene const* scene) -> ptr<Node> {
+  auto* origin = scene->mRootNode;
+  return getNodeRecursively(base_path, scene, origin);
+}
+
+} // namespace eg

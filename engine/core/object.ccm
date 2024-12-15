@@ -59,7 +59,9 @@ public:
 
 protected:
   void runLoop(fw::ActionContext const& ctx) override {
-    _draw_unit->getTransform() = getTransToWorld();
+    if (_draw_unit.get()) {
+      _draw_unit->getTransform() = getTransToWorld();
+    }
   }
 
 private:
@@ -136,34 +138,6 @@ public:
 
 private:
   FixedDistanceComponent _fixed_distance_component;
-};
-
-class ObjectClickObserver : public fw::Action, public PROACTIVE_SINGLETON(ObjectClickObserver) {
-public:
-  ObjectClickObserver() : fw::Action(fw::Stage::BEFORE_RENDER) {}
-  auto getClick() -> SceneObject* { return _clicked.expired() ? nullptr : _clicked.lock().get(); }
-
-private:
-  void runLoop(fw::ActionContext const& ctx) override {
-    auto& input = fw::InputProcessor::getInstance();
-    if (!_clicked.expired()) {
-      _clicked = {};
-    }
-    if (auto state = input.getState(fw::Mouse::LEFT)) {
-      if (state->state == fw::ButtonState::DOWN) {
-        if (auto selected = SceneObject::getSelected()) {
-          _down = selected->getPtr();
-        }
-      } else if (!_down.expired() && state->state == fw::ButtonState::RELEASE) {
-        if (_down.lock().get() == SceneObject::getSelected()) {
-          _clicked = _down;
-        }
-        _down = {};
-      }
-    }
-  }
-  wptr<SceneObject> _down;
-  wptr<SceneObject> _clicked;
 };
 
 } // namespace eg

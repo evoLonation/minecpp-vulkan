@@ -12,7 +12,6 @@ import toy;
 import glm;
 
 import render;
-import model;
 import framework;
 
 import pipeline.base;
