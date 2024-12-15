@@ -1,5 +1,5 @@
 module;
-#include "enum.h"
+#include <enum.h>
 export module toy.enums;
 
 import std;
@@ -119,39 +119,3 @@ struct EnumSet {
 };
 
 } // namespace toy
-
-export namespace test_Enum {
-
-TOY_ENUM(Giao, YUANSHEN, QIDONG, YIGEIWOLI);
-
-void test() {
-  static_assert(Giao::count == 3);
-
-  Giao       a = Giao::YIGEIWOLI;
-  Giao::Enum b = a;
-  int        c = a;
-  a = b;
-  a = c;
-  a = Giao::YUANSHEN;
-  toy::throwf(std::string("YUANSHEN") == a.str(), "error test enum");
-  auto format = std::format("{}", a);
-}
-
-} // namespace test_Enum
-
-export namespace test_EnumSet {
-
-using namespace toy;
-
-enum class A { A, B, C, MAX_ENUM_VALUE };
-
-void test() {
-  static_assert(ranges::input_range<EnumSet<A>>);
-  auto set = EnumSet<A>{};
-  for (A a : set) {
-    toy::throwf(a != A::B && a != A::MAX_ENUM_VALUE, "enumset test wrong");
-  }
-  set = EnumSet<A>{ A::A, A::C };
-}
-
-} // namespace test_EnumSet

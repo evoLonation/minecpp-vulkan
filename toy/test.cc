@@ -3,6 +3,7 @@ import toy;
 import math;
 import std;
 import glm;
+#include <enum.h>
 #include <test.h>
 #include <toy.h>
 
@@ -201,4 +202,90 @@ TEST(CustomSerializer) {
   pickle = Pickle{ "test.pkl" };
   auto test2 = pickle.pop<Test, TestSerializer>();
   TOY_ASSERT(test.a == test2.a && test.b == test2.b && test.c == test2.c, test.d.aa == test2.d.aa);
+}
+
+TEST(json) {
+  using namespace json;
+  auto j0 = Json{};
+  TOY_ASSERT(j0.is<Object>());
+  TOY_ASSERT(j0.type() == Type::OBJECT);
+  auto j1 = Json{ null };
+  TOY_ASSERT(j1.is<Null>());
+  TOY_ASSERT(j1.type() == Type::NULL);
+  auto j2 = Json{ 1 };
+  auto j4 = Json{ true };
+  TOY_ASSERT(j4.is<Bool>());
+  TOY_ASSERT(j4.type() == Type::BOOL);
+  auto j5 = Json{ 1.0f };
+  TOY_ASSERT(j5.is<Number>());
+  TOY_ASSERT(j5.type() == Type::NUMBER);
+  auto j6 = Json{ 1.0 };
+  TOY_ASSERT(j6.is<Number>());
+  TOY_ASSERT(j6.type() == Type::NUMBER);
+  auto j7 = Json{ std::string{ "123" } };
+  TOY_ASSERT(j7.is<String>());
+  TOY_ASSERT(j7.type() == Type::STRING);
+  auto j8 = Json{ "123" };
+  TOY_ASSERT(j8.is<String>());
+  TOY_ASSERT(j8.type() == Type::STRING);
+  auto j9 = Json{ { std::string("Xiaoming"), std::string("Genshin") } };
+  TOY_ASSERT(j9.is<Object>());
+  TOY_ASSERT(j9.type() == Type::OBJECT);
+  auto j10 = Json::array({ { { "Xiaoming", j9 } }, std::string("Genshin") });
+  TOY_ASSERT(j10.is<List>());
+  TOY_ASSERT(j10.type() == Type::LIST);
+  j0["123"] = 456;
+  TOY_ASSERT(j0["123"].to<Number>() == 456);
+  TOY_ASSERT(j0["123"] == 456);
+  auto  json = Json::parse(std::ifstream("test.json", std::ios_base::in));
+  auto& object = json.to<Object>();
+  TOY_ASSERT(object.at("a").toInteger() == 1, "error test json");
+  TOY_ASSERT(object.at("b").to<List>()[0].toInteger() == 1, "error test json");
+  toy::debug(json.to<Object>() | views::keys);
+  toy::debug(json.dump());
+  toy::debug(json);
+}
+
+Generator foo() {
+  int i = 0;
+  while (co_yield i) {
+    toy::debugf("ready yield {}", i++);
+  }
+}
+
+TEST(Generator) {
+  toy::debug("call foo()");
+  auto generator = foo();
+  toy::debug(generator.next());
+  toy::debug(generator.next());
+  toy::debug(generator.next());
+  toy::debug(generator.next());
+  toy::debug(generator.next());
+  toy::debug("call foo() done");
+}
+
+TOY_ENUM(Giao, YUANSHEN, QIDONG, YIGEIWOLI);
+
+TEST(Enum) {
+  static_assert(Giao::count == 3);
+
+  Giao       a = Giao::YIGEIWOLI;
+  Giao::Enum b = a;
+  int        c = a;
+  a = b;
+  a = c;
+  a = Giao::YUANSHEN;
+  toy::throwf(std::string("YUANSHEN") == a.str(), "error test enum");
+  auto format = std::format("{}", a);
+}
+
+enum class Giao2 { A, B, C, MAX_ENUM_VALUE };
+
+TEST(EnumSet) {
+  static_assert(ranges::input_range<EnumSet<Giao2>>);
+  auto set = EnumSet<Giao2>{};
+  for (Giao2 a : set) {
+    toy::throwf(a != Giao2::B && a != Giao2::MAX_ENUM_VALUE, "enumset test wrong");
+  }
+  set = EnumSet<Giao2>{ Giao2::A, Giao2::C };
 }
