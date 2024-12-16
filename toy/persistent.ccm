@@ -84,18 +84,28 @@ struct DefaultSerializerS<T> {
 
 template <typename T, typename ES = DefaultSerializer<typename T::value_type>>
 struct SequenceSerializer {
+  static constexpr bool is_trivial =
+    std::is_trivially_copyable_v<typename T::value_type> && ranges::contiguous_range<T>;
   static void serialize(Pickle& pickle, T const& t) {
-    for (auto const& e : t) {
-      pickle.push(e, ES{});
+    if constexpr (is_trivial) {
+      pickle.pushBytes(std::as_bytes(std::span{ ranges::data(t), ranges::size(t) }));
+    } else {
+      for (auto const& e : t) {
+        pickle.push(e, ES{});
+      }
     }
-    pickle.push(static_cast<std::size_t>(t.size()));
+    pickle.push(static_cast<std::size_t>(ranges::size(t)));
   }
   static auto deserialize(Pickle& pickle) -> T {
     auto size = pickle.pop<std::size_t>();
     auto t = T{};
     t.resize(size);
-    for (auto& e : t | views::reverse) {
-      e = pickle.pop<typename T::value_type, ES>();
+    if constexpr (is_trivial) {
+      pickle.popBytes(std::as_writable_bytes(std::span{ ranges::data(t), ranges::size(t) }));
+    } else {
+      for (auto& e : t | views::reverse) {
+        e = pickle.pop<typename T::value_type, ES>();
+      }
     }
     return t;
   }
