@@ -68,22 +68,31 @@ private:
 
 public:
   auto assetSerialize() -> AssetPackager override {
-    // todo: how to deal with invalid _draw_unit
-    return {
-      std::tuple{
-        AssetRef{ _draw_unit->getMesh().getPtr() },
-        AssetRef{ _draw_unit->getTexture().getPtr() },
-        _draw_unit->isUpLayer(),
-      },
-      Node::assetSerialize(),
-    };
+    if (!_draw_unit) {
+      return { 0, {}, Node::assetSerialize() };
+    } else {
+      return {
+        1,
+        std::tuple{
+          AssetRef{ _draw_unit->getMesh().getPtr() },
+          AssetRef{ _draw_unit->getTexture().getPtr() },
+          _draw_unit->isUpLayer(),
+        },
+        Node::assetSerialize(),
+      };
+    }
   }
   void assetDeserialize(AssetUnpacker unpacker) override {
     Node::assetDeserialize(unpacker.extractInherited());
-    auto [mesh_ref, texture_ref, up_layer] = unpacker.extract<AssetRef, AssetRef, bool>();
-    setDrawUnit(
-      std::make_unique<DrawUnit>(mesh_ref.consume<Mesh>(), texture_ref.consume<Texture>(), up_layer)
-    );
+    auto id = unpacker.getId();
+    if (id == 0) {
+      unpacker.extract<>();
+    } else {
+      auto [mesh_ref, texture_ref, up_layer] = unpacker.extract<AssetRef, AssetRef, bool>();
+      setDrawUnit(std::make_unique<DrawUnit>(
+        mesh_ref.consume<Mesh>(), texture_ref.consume<Texture>(), up_layer
+      ));
+    }
   }
   REGISTER_ASSET_PATH("scene_object")
 };

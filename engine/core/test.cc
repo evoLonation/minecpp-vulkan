@@ -29,15 +29,29 @@ public:
 
 struct TestAsset2 : public Asset {
 public:
+  bool                        _type;
   int                         _data;
   std::shared_ptr<TestAsset1> _ref;
 
   auto assetSerialize() -> AssetPackager override {
-    return { std::tuple{ _data, AssetRef{ _ref } }, Asset::assetSerialize() };
+    if (_type) {
+      return { 0, std::tuple{ _data, AssetRef{ _ref } }, Asset::assetSerialize() };
+    } else {
+      return { 1, std::tuple{ AssetRef{ _ref }, _data }, Asset::assetSerialize() };
+    }
   }
   void assetDeserialize(AssetUnpacker unpacker) override {
     Asset::assetDeserialize(unpacker.extractInherited());
-    auto [data, ref] = unpacker.extract<int, AssetRef>();
+    auto     id = unpacker.getId();
+    int      data;
+    AssetRef ref;
+    if (id == 0) {
+      _type = true;
+      std::tie(data, ref) = unpacker.extract<int, AssetRef>();
+    } else if (id == 1) {
+      _type = false;
+      std::tie(ref, data) = unpacker.extract<AssetRef, int>();
+    }
     _data = data;
     _ref = ref.consume<TestAsset1>();
   }
@@ -84,6 +98,7 @@ TEST(AssetManager2) {
     auto asset2 = std::make_shared<TestAsset2>();
     asset2->_data = 123;
     asset2->_ref = asset1;
+    asset2->_type = true;
     asset2->setAssetName("my_asset2");
     manager.save(asset2);
     guid2 = asset2->getAssetGuid();

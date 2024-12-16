@@ -241,13 +241,4 @@ struct CustomSerializer {
   }
 };
 
-class Persistent {
-public:
-  static auto generateGuid() -> std::string;
-  template <typename T, typename Serializer>
-  static void serialize(T t, std::string_view guid);
-  template <typename T, typename Serializer>
-  static T deserialize(std::string_view guid);
-};
-
 } // namespace toy

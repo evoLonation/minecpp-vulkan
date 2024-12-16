@@ -80,25 +80,35 @@ private:
 
 class AssetPackager {
 private:
-  friend class Asset;
   template <typename... Args>
-  AssetPackager(std::tuple<Args...> package) {
-    auto lambda = [package = std::move(package)](toy::Pickle& pickle) { pickle.push(package); };
+  AssetPackager(uint32 id, std::tuple<Args...> package, std::optional<AssetPackager> inherited) {
+    auto lambda =
+      [id, package = std::move(package), inherited = std::move(inherited)](toy::Pickle& pickle) {
+        pickle.push(package);
+        pickle.push(std::string{ typeid(package).name() });
+        pickle.push(id);
+        if (inherited) {
+          inherited->pushToPickle(pickle);
+        }
+      };
     _push_func = std::make_unique<MoveOnlyFunctionImpl<decltype(lambda)>>(std::move(lambda));
   }
+
+  friend class Asset;
+  template <typename... Args>
+  AssetPackager(std::tuple<Args...> package)
+    : AssetPackager{ 0, std::move(package), std::nullopt } {}
+
+  friend class AssetManager;
+  void pushToPickle(toy::Pickle& pickle) const { (*_push_func)(pickle); }
 
 public:
   template <typename... Args>
-  AssetPackager(std::tuple<Args...> package, AssetPackager inherited) {
-    auto lambda = [package = std::move(package),
-                   inherited = std::move(inherited)](toy::Pickle& pickle) {
-      pickle.push(package);
-      inherited.pushToPickle(pickle);
-    };
-    _push_func = std::make_unique<MoveOnlyFunctionImpl<decltype(lambda)>>(std::move(lambda));
-  }
-
-  void pushToPickle(toy::Pickle& pickle) const { (*_push_func)(pickle); }
+  AssetPackager(std::tuple<Args...> package, AssetPackager inherited)
+    : AssetPackager{ 0, std::move(package), std::move(inherited) } {}
+  template <typename... Args>
+  AssetPackager(uint32 id, std::tuple<Args...> package, AssetPackager inherited)
+    : AssetPackager{ id, std::move(package), std::optional{ std::move(inherited) } } {}
 
   ONLY_MOVEABLE(AssetPackager);
 
@@ -113,9 +123,23 @@ private:
 class AssetUnpacker {
 public:
   AssetUnpacker(toy::Pickle* pickle) : _pickle{ pickle } {}
+  auto getId() -> uint32 {
+    if (_id) {
+      return *_id;
+    }
+    _id = _pickle->pop<uint32>();
+    return *_id;
+  }
   template <typename... Args>
   auto extract() -> std::tuple<Args...> {
-    toy::throwf(_extracted_inherited, "Must first extractInherited");
+    toy::throwf(_extracted_inherited, "Must call extractInherited() first");
+    if (!_id) {
+      TOY_ASSERT(_pickle->pop<uint32>() == 0);
+    }
+    auto type_name = _pickle->pop<std::string>();
+    TOY_ASSERT(
+      type_name == typeid(std::tuple<Args...>).name(), type_name, typeid(std::tuple<Args...>).name()
+    );
     return _pickle->pop<std::tuple<Args...>>();
   }
   auto extractInherited() -> AssetUnpacker {
@@ -126,8 +150,9 @@ public:
   ONLY_MOVEABLE(AssetUnpacker);
 
 private:
-  toy::Pickle* _pickle;
-  bool         _extracted_inherited = false;
+  toy::Pickle*          _pickle;
+  bool                  _extracted_inherited = false;
+  std::optional<uint32> _id;
 };
 
 /**
@@ -211,6 +236,11 @@ public:
 
   void save(std::shared_ptr<Asset> t) {
     auto guid = t->getAssetGuid();
+    bool is_outest_call = _saving_already_saved.empty();
+    if (_saving_already_saved.contains(guid)) {
+      return;
+    }
+    _saving_already_saved.insert(guid);
     auto name = t->getAssetName();
     auto asset_dir = t->getAssetPath();
     _asset_path_map[guid] = asset_dir;
@@ -232,12 +262,20 @@ public:
       fs::create_directories(parent_dir);
     }
     pickle.dump(path);
+    if (is_outest_call) {
+      _saving_already_saved.clear();
+    }
+  }
+
+  void save(std::shared_ptr<Asset> t, std::string name) {
+    t->setAssetName(std::move(name));
+    save(t);
   }
 
   auto load(Guid const& guid) -> std::shared_ptr<Asset> {
-    auto asset = getDefaultAssetByPath(_asset_path_map.at(guid));
-    auto asset_dir = asset->getAssetPath();
-    auto assets = _assets[asset_dir];
+    auto  asset = getDefaultAssetByPath(_asset_path_map.at(guid));
+    auto  asset_dir = asset->getAssetPath();
+    auto& assets = _assets[asset_dir];
     if (auto it = assets.find(guid); it != assets.end() && !it->second.expired()) {
       return it->second.lock();
     }
@@ -359,6 +397,9 @@ private:
   std::unordered_map<Guid, fs::path, GuidHasher>                      _asset_path_map;
   std::unordered_map<fs::path, std::unordered_map<std::string, Guid>> _named_asset_map;
   std::unordered_map<fs::path, std::unordered_map<Guid, std::weak_ptr<Asset>, GuidHasher>> _assets;
+  // since the existance of AssetRef, a save() call maybe recusively call save(), so need avoid
+  // saving one asset multiple times in one save() call
+  std::unordered_set<Guid, GuidHasher> _saving_already_saved;
 
   std::unordered_map<fs::path, std::function<std::shared_ptr<Asset>()>> _default_asset_map;
 

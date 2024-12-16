@@ -160,7 +160,9 @@ public:
     _root = this;
   }
   ~Node() {
-    for (auto& child : _children) {
+    // can not directly use _children, because it will be modified in detach
+    auto children = _children;
+    for (auto& child : children) {
       child->detach();
     }
     // can ensure _parent is nullptr (otherwise this will not destroyed)
