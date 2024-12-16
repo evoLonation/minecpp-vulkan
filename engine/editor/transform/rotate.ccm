@@ -20,16 +20,16 @@ public:
   RotatePlane() = default;
   void init(mt::Axis norm_axis) {
     _norm_axis = norm_axis;
-    _root = std::make_shared<Node>();
-    _plane = std::make_shared<FixedDistanceObject>();
-    _plane->setDistance(_fixed_distance);
+    _root = std::make_shared<FixedDistanceNode>();
+    _root->setDistance(_fixed_distance);
+    _plane = std::make_shared<SceneObject>();
     auto norm = mt::unitVec(norm_axis);
     _plane->setDrawUnit(std::make_unique<DrawUnit>(generateCylinder(1, _height, 90), norm, true));
     auto origin_norm = glm::vec3{ 0, 0, 1 };
     if (auto cross = glm::cross(norm, origin_norm); !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
       _plane->getController().rotate(cross, 90);
     }
-    _plane->attachTo(_root.get());
+    _plane->attachTo(&_root->getFixedDistanceNode());
   }
   auto getRoot() -> Node& { return *_root; }
   auto isSelected() -> bool { return _plane->isSelected(); }
@@ -48,10 +48,10 @@ public:
   }
 
 private:
-  mt::Axis                 _norm_axis;
-  ptr<Node>                _root;
-  ptr<FixedDistanceObject> _plane;
-  bool                     _dragging = false;
+  mt::Axis               _norm_axis;
+  ptr<FixedDistanceNode> _root;
+  ptr<SceneObject>       _plane;
+  bool                   _dragging = false;
 
   static constexpr float _height = 0.02f;
   static constexpr float _fixed_distance = 10.0f;

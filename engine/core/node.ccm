@@ -150,38 +150,44 @@ public:
   Node() {
     _controller.setModelTransform(&_to_parent, ModelController::CHANGE_MODEL);
     _reactor_to_world = { [this](auto&&) {
-      if (auto parent = _parent.lock()) {
-        _to_world = parent->_to_world * _to_parent.get();
+      if (_parent) {
+        _to_world = _parent->_to_world * _to_parent.get();
       } else {
         _to_world = _to_parent.get();
       }
     } };
     _to_parent.addReactor(&_reactor_to_world, true);
-    setRootRecursively(this);
+    _root = this;
   }
   ~Node() {
+    for (auto& child : _children) {
+      child->detach();
+    }
     // can ensure _parent is nullptr (otherwise this will not destroyed)
     _to_parent.removeReactor(&_reactor_to_world);
   }
   void attachTo(Node* node) {
-    if (!_parent.expired()) {
+    if (_parent) {
       detach();
     }
     setParent(node);
-    setRootRecursively(node->_root);
+    doRecusively([node](Node* child) { child->_root = node->_root; });
   }
   void detach() {
-    TOY_ASSERT(!_parent.expired());
+    TOY_ASSERT(_parent);
     resetParent();
-    setRootRecursively(this);
+    doRecusively([this](Node* child) { child->_root = this; });
   }
   auto getController() -> ModelController& { return _controller; }
   auto getTransToParent() -> Reval<glm::mat4>& { return _to_parent; }
   auto getTransToWorld() -> Reval<glm::mat4> const& { return _to_world; }
-  auto getParent() -> Node* { return _parent.lock().get(); }
+  auto getParent() -> Node& {
+    TOY_ASSERT(_parent);
+    return *_parent;
+  }
   // just allow to get children, not modify
   auto getChildren() -> std::unordered_set<ptr<Node>>& { return _children; }
-  auto isRoot() -> bool { return _parent.expired(); }
+  auto isRoot() -> bool { return !_parent; }
   auto getRoot() -> Node& { return *_root; }
   void doRecusively(std::function<void(Node*)> const& dealer) {
     dealer(this);
@@ -195,27 +201,21 @@ private:
   ModelController               _controller;
   Reval<glm::mat4>              _to_world;
   Reactor<glm::mat4>            _reactor_to_world;
-  wptr<Node>                    _parent;
+  Node*                         _parent = nullptr;
   std::unordered_set<ptr<Node>> _children;
   Node*                         _root = nullptr;
 
   void setParent(Node* parent) {
     resetParent();
-    _parent = parent->getPtr();
+    _parent = parent;
     parent->_children.insert(getPtr());
     parent->_to_world.addReactor(&_reactor_to_world);
   }
   void resetParent() {
-    if (auto parent = _parent.lock()) {
-      parent->_to_world.removeReactor(&_reactor_to_world);
-      parent->_children.erase(getPtr());
-      _parent.reset();
-    }
-  }
-  void setRootRecursively(Node* root) {
-    _root = root;
-    for (auto& child : _children) {
-      child->setRootRecursively(root);
+    if (_parent) {
+      _parent->_to_world.removeReactor(&_reactor_to_world);
+      _parent->_children.erase(getPtr());
+      _parent = nullptr;
     }
   }
 

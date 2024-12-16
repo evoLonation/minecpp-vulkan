@@ -143,38 +143,36 @@ public:
   MoveScalePlane() = default;
   void init(mt::Axis normal_axis) {
     _norm_axis = normal_axis;
-    _root = std::make_shared<Node>();
+    _root = std::make_shared<FixedDistanceNode>();
+    _root->setDistance(_fixed_distance);
     auto normal = mt::unitVec(normal_axis);
-    _cube = std::make_shared<FixedDistanceObject>();
-    _cube->setDistance(_fixed_distance);
+    _cube = std::make_shared<SceneObject>();
     _cube->setDrawUnit(std::make_unique<DrawUnit>(generateCube(), glm::vec3{ 0.5, 0.5, 0.5 }, true)
     );
     auto& controller = _cube->getController();
     controller.refScaleFactor() = glm::vec3{ 1, 1, 1 } - normal * (1 - _thickness) -
                                   (glm::vec3{ 1, 1, 1 } - normal) * (1 - _edge);
     controller.refLocation() = -normal * (_thickness / 2);
-    _cube->attachTo(_root.get());
+    _cube->attachTo(&_root->getFixedDistanceNode());
 
     auto unit_1 = mt::unitVec(mt::Axis(((int)normal_axis + 1) % 3));
     auto unit_2 = mt::unitVec(mt::Axis(((int)normal_axis + 2) % 3));
-    auto createEdge =
-      [this](FixedDistanceObject& edge, glm::vec3 const& unit1, glm::vec3 const& unit2) {
-        edge.setDistance(_fixed_distance);
-        edge.setDrawUnit(
-          std::make_unique<DrawUnit>(generateCylinder(_thickness / 2, _edge), unit1, true)
-        );
-        auto& controller = edge.getController();
-        controller.setMode(ModelController::WORLD);
-        if (auto cross = glm::cross(glm::vec3{ 0, 0, 1 }, unit1);
-            !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
-          controller.rotate(cross, 90);
-        }
-        controller.translate(unit2 * _edge);
-        edge.attachTo(_root.get());
-      };
-    _edge_1 = std::make_shared<FixedDistanceObject>();
+    auto createEdge = [this](SceneObject& edge, glm::vec3 const& unit1, glm::vec3 const& unit2) {
+      edge.setDrawUnit(
+        std::make_unique<DrawUnit>(generateCylinder(_thickness / 2, _edge), unit1, true)
+      );
+      auto& controller = edge.getController();
+      controller.setMode(ModelController::WORLD);
+      if (auto cross = glm::cross(glm::vec3{ 0, 0, 1 }, unit1);
+          !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
+        controller.rotate(cross, 90);
+      }
+      controller.translate(unit2 * _edge);
+      edge.attachTo(&_root->getFixedDistanceNode());
+    };
+    _edge_1 = std::make_shared<SceneObject>();
     createEdge(*_edge_1, unit_1, unit_2);
-    _edge_2 = std::make_shared<FixedDistanceObject>();
+    _edge_2 = std::make_shared<SceneObject>();
     createEdge(*_edge_2, unit_2, unit_1);
   }
   auto isSelected() -> bool {
@@ -206,12 +204,12 @@ public:
   }
 
 private:
-  mt::Axis                 _norm_axis;
-  ptr<Node>                _root;
-  ptr<FixedDistanceObject> _cube;
-  ptr<FixedDistanceObject> _edge_1;
-  ptr<FixedDistanceObject> _edge_2;
-  bool                     _dragging;
+  mt::Axis               _norm_axis;
+  ptr<FixedDistanceNode> _root;
+  ptr<SceneObject>       _cube;
+  ptr<SceneObject>       _edge_1;
+  ptr<SceneObject>       _edge_2;
+  bool                   _dragging;
 
   constexpr static float _thickness = 0.02f;
   constexpr static float _edge = 0.25f;
@@ -223,11 +221,11 @@ public:
   MoveScaleArrow() = default;
   void init(mt::Axis axis, bool is_scale) {
     _axis = axis;
-    _root = std::make_shared<Node>();
+    _root = std::make_shared<FixedDistanceNode>();
+    _root->setDistance(_fixed_distance);
     _dragging = false;
     auto unit = mt::unitVec(axis);
-    _arrow = std::make_shared<FixedDistanceObject>();
-    _arrow->setDistance(_fixed_distance);
+    _arrow = std::make_shared<SceneObject>();
     if (!is_scale) {
       _arrow->setDrawUnit(std::make_unique<DrawUnit>(generateArrow(0.02, 1, 0.04, 0.2), unit, true)
       );
@@ -238,7 +236,7 @@ public:
     if (auto cross = glm::cross(arrow_dir, unit); !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
       _arrow->getController().rotate(cross, 90);
     }
-    _arrow->attachTo(_root.get());
+    _arrow->attachTo(&_root->getFixedDistanceNode());
   }
   auto isSelected() -> bool { return _arrow->isSelected(); }
   void setDragging(bool dragging) {
@@ -259,10 +257,10 @@ public:
   auto getRoot() -> Node& { return *_root; }
 
 private:
-  mt::Axis                 _axis;
-  ptr<Node>                _root;
-  ptr<FixedDistanceObject> _arrow;
-  bool                     _dragging;
+  mt::Axis               _axis;
+  ptr<FixedDistanceNode> _root;
+  ptr<SceneObject>       _arrow;
+  bool                   _dragging;
 
   constexpr static float _fixed_distance = 10.0f;
 };

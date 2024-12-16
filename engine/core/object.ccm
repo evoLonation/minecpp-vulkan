@@ -88,50 +88,40 @@ public:
   REGISTER_ASSET_PATH("scene_object")
 };
 
-class FixedDistanceObject : public SceneObject,
-                            public ReactorInterface<glm::mat4>,
-                            public ReactorInterface<glm::vec3> {
+class FixedDistanceNode : public Node,
+                          public ReactorInterface<glm::mat4>,
+                          public ReactorInterface<glm::vec3> {
 public:
-  FixedDistanceObject() {
+  FixedDistanceNode() {
+    _fixed_distance_node = std::make_shared<Node>();
+    _fixed_distance_node->attachTo(this);
     _view_pos = &Camera::getInstance().getViewPos();
     _view_pos->addReactor(this);
+    getTransToWorld().addReactor(this, true);
   }
-  FixedDistanceObject(float distance) : FixedDistanceObject() { setDistance(distance); }
-  ~FixedDistanceObject() {
-    if (auto root = getRoot().getPtr()) {
-      root->getTransToWorld().removeReactor(this);
-    }
+  FixedDistanceNode(float distance) : FixedDistanceNode() { setDistance(distance); }
+  ~FixedDistanceNode() {
+    getTransToWorld().removeReactor(this);
     _view_pos->removeReactor(this);
   }
   void setDistance(float distance) { _distance = distance; }
   auto getDistance() -> float { return _distance; }
+  auto getFixedDistanceNode() -> Node& { return *_fixed_distance_node; }
+
+private:
   void observerNotified(glm::mat4 const&) override { computeFixedDistanceTransform(); }
   void observerNotified(glm::vec3 const&) override { computeFixedDistanceTransform(); }
   void computeFixedDistanceTransform() {
-    auto  location_object = mt::transformDot(getRoot().getTransToWorld(), glm::vec3{ 0, 0, 0 });
+    auto  location_object = mt::transformDot(getTransToWorld(), glm::vec3{ 0, 0, 0 });
     auto& location_camera = _view_pos->get();
     auto  new_location_object =
       location_camera + _distance * glm::normalize(location_object - location_camera);
-    _fixed_distance_trans =
-      mt::translate(glm::vec3{ new_location_object - location_object }) * getTransToWorld().get();
-  }
-
-  void runLoop(fw::ActionContext const& ctx) override {
-    SceneObject::runLoop(ctx);
-    if (_last_root.lock().get() == &getRoot()) {
-      return;
-    }
-    if (auto root = _last_root.lock()) {
-      root->getTransToWorld().removeReactor(this);
-    }
-    _last_root = getRoot().getPtr();
-    getRoot().getTransToWorld().addReactor(this, true);
+    _fixed_distance_node->getTransToParent() =
+      mt::translate(glm::vec3{ new_location_object - location_object });
   }
 
 private:
-  auto getDrawUnitTransform() -> glm::mat4 const& override { return _fixed_distance_trans; }
-
-  glm::mat4               _fixed_distance_trans;
+  ptr<Node>               _fixed_distance_node;
   wptr<Node>              _last_root;
   Reval<glm::vec3> const* _view_pos;
   float                   _distance = 4.0f;
