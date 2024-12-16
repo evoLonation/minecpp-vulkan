@@ -2,6 +2,8 @@ module;
 #include <toy.h>
 export module pipeline.render_pass;
 
+import engine.draw_unit;
+import engine.base;
 import pipeline.render_target;
 import framework;
 import engine.camera;
@@ -46,46 +48,20 @@ struct RenderPassInfo {
 
 class DrawContext {
 public:
-  DrawContext() = default;
-  DrawContext(
-    std::vector<rd::VertexBuffer*> vertex_buffers,
-    rd::IndexBuffer*               index_buffer,
-    rd::DescriptorSet              dset,
-    std::optional<uint8>           stencil_ref = {}
-  ) {
-    init(std::move(vertex_buffers), index_buffer, std::move(dset), stencil_ref);
-  }
+  DrawContext(DrawUnit* draw_unit) { _draw_unit = draw_unit; }
+  UNCOPYABLE_MOVEABLE(DrawContext);
+  virtual void recordDraw(rd::PipelineDrawer& drawer) = 0;
   /**
-   * @param index_buffer nullable
+   * @brief called on each frame in render stage before @ref recordDraw
    */
-  void init(
-    std::vector<rd::VertexBuffer*> vertex_buffers,
-    rd::IndexBuffer*               index_buffer,
-    rd::DescriptorSet              dset,
-    std::optional<uint8>           stencil_ref = {}
-  ) {
-    _vertex_buffers = std::move(vertex_buffers);
-    _index_buffer = index_buffer;
-    _dset = std::move(dset);
-    _stencil_ref = stencil_ref;
-  }
-  ONLY_MOVEABLE(DrawContext);
-  auto getVertexBuffers() -> std::span<rd::VertexBuffer*> { return _vertex_buffers; }
-  auto getIndexBuffer() -> rd::IndexBuffer* { return _index_buffer; }
-  auto getDescriptorSet() -> rd::DescriptorSet& { return _dset; }
-  auto getStencilRef() -> uint8 {
-    TOY_CHECK_ASSERT(_stencil_ref.has_value());
-    return *_stencil_ref;
-  }
-  void setActive(bool active) { _active = active; }
-  auto isActive() -> bool { return _active; }
+  virtual auto checkNeedDestroy() -> bool = 0;
+  virtual ~DrawContext() = default;
+
+protected:
+  auto getDrawUnit() -> DrawUnit& { return *_draw_unit; }
 
 private:
-  std::vector<rd::VertexBuffer*> _vertex_buffers;
-  rd::IndexBuffer*               _index_buffer;
-  rd::DescriptorSet              _dset;
-  std::optional<uint8>           _stencil_ref;
-  bool                           _active = true;
+  DrawUnit* _draw_unit = nullptr;
 };
 
 class RenderPass {
@@ -158,21 +134,21 @@ public:
           info.multi_sampling ? info.colors.size() * 2 : info.colors.size();
       }
       subpass_infos.push_back(subpass_info);
-      auto dyn_ref =
-        pipeline.depst ? pipeline.depst->stencil ? pipeline.depst->stencil->dyn_ref : false : false;
-      _enable_dyrefs.push_back(dyn_ref);
     }
     _render_pass = rd::RenderPassPipeline{ attachment_infos, subpass_infos };
     _multi_sampling = info.multi_sampling;
     _color_n = info.colors.size();
     _draw_contexts.resize(info.pipelines.size());
+    _unbound_units.resize(info.pipelines.size());
     _global_dsets.resize(info.pipelines.size());
+    _after_created._render_pass = this;
+    _before_destroy._render_pass = this;
+    DrawUnitObservable::getInstance().addAfterCreated(&_after_created);
+    DrawUnitObservable::getInstance().addBeforeDestroy(&_before_destroy);
   }
-  void addDrawContext(uint32 index, DrawContext* draw_context) {
-    _draw_contexts.at(index).insert(draw_context);
-  }
-  void removeDrawContext(uint32 index, DrawContext* draw_context) {
-    _draw_contexts.at(index).erase(draw_context);
+  ~RenderPass() {
+    DrawUnitObservable::getInstance().removeAfterCreated(&_after_created);
+    DrawUnitObservable::getInstance().removeBeforeDestroy(&_before_destroy);
   }
   void setColorClearValue(uint32 index, rd::ColorClearValue clear_value) {
     _render_pass.setColorClear(_multi_sampling ? index * 2 : index, clear_value);
@@ -185,6 +161,7 @@ public:
   }
 
   void draw(std::vector<RenderTarget*> colors, std::vector<RenderTarget*> depsts) {
+    updateDrawContexts();
     auto camera_data = CameraData{
       .view = Camera::getInstance().getView().get(),
       .proj = Camera::getInstance().getProj().get(),
@@ -198,20 +175,8 @@ public:
         if (global_dset) {
           drawer.bindDescriptorSet(1, global_dset);
         }
-        for (auto* draw_ctx :
-             draw_contexts | views::filter([](auto* x) { return x->isActive(); })) {
-          for (auto [binding, vertex_buf] : draw_ctx->getVertexBuffers() | toy::enumerate) {
-            drawer.bindVertexBuffer(binding, vertex_buf);
-          }
-          auto* index_buf = draw_ctx->getIndexBuffer();
-          if (index_buf) {
-            drawer.bindIndexBuffer(index_buf);
-          }
-          drawer.bindDescriptorSet(0, &draw_ctx->getDescriptorSet());
-          if (_enable_dyrefs[index]) {
-            drawer.setStencilReference(draw_ctx->getStencilRef());
-          }
-          drawer.draw();
+        for (auto& draw_ctx : draw_contexts | views::values) {
+          draw_ctx->recordDraw(drawer);
         }
       });
     }
@@ -239,12 +204,66 @@ public:
   UNCOPYABLE_MOVEABLE(RenderPass);
 
 private:
-  rd::RenderPassPipeline                        _render_pass;
-  std::optional<VkSampleCountFlagBits>          _multi_sampling;
-  uint32                                        _color_n;
-  std::vector<bool>                             _enable_dyrefs;
-  std::vector<rd::DescriptorSet*>               _global_dsets;
-  std::vector<std::unordered_set<DrawContext*>> _draw_contexts;
+  struct DrawUnitCreatedObserver : public toy::Observer<DrawUnit&> {
+    void observerNotified(DrawUnit& draw_unit) override {
+      for (auto& unbound_units : _render_pass->_unbound_units) {
+        unbound_units.insert(&draw_unit);
+      }
+    }
+    RenderPass* _render_pass;
+  };
+  struct DrawUnitDestroyObserver : public toy::Observer<DrawUnit&> {
+    void observerNotified(DrawUnit& draw_unit) override {
+      for (auto [draw_contexts, unbound_units] :
+           views::zip(_render_pass->_draw_contexts, _render_pass->_unbound_units)) {
+        draw_contexts.erase(&draw_unit);
+        unbound_units.erase(&draw_unit);
+      }
+    }
+    RenderPass* _render_pass;
+  };
+  void updateDrawContexts() {
+    tryCreateContexts();
+    tryDestroyContexts();
+  }
+
+  void tryCreateContexts() {
+    for (auto [i, draw_contexts, unbound_units] :
+         views::zip(views::iota(0u), _draw_contexts, _unbound_units)) {
+      for (auto iter = unbound_units.begin(); iter != unbound_units.end();) {
+        if (auto draw_context = fromDrawUnit(i, **iter)) {
+          draw_contexts.emplace(*iter, std::move(draw_context));
+          iter = unbound_units.erase(iter);
+        } else {
+          ++iter;
+        }
+      }
+    }
+  }
+  void tryDestroyContexts() {
+    for (auto [draw_contexts, unbound_units] : views::zip(_draw_contexts, _unbound_units)) {
+      for (auto iter = draw_contexts.begin(); iter != draw_contexts.end();) {
+        if (iter->second->checkNeedDestroy()) {
+          iter = draw_contexts.erase(iter);
+          unbound_units.insert(iter->first);
+        } else {
+          ++iter;
+        }
+      }
+    }
+  }
+
+  virtual auto fromDrawUnit(uint32 subpass_i, DrawUnit& draw_unit) -> uptr<DrawContext> = 0;
+
+private:
+  rd::RenderPassPipeline                                        _render_pass;
+  std::optional<VkSampleCountFlagBits>                          _multi_sampling;
+  uint32                                                        _color_n;
+  std::vector<rd::DescriptorSet*>                               _global_dsets;
+  std::vector<std::unordered_map<DrawUnit*, uptr<DrawContext>>> _draw_contexts;
+  std::vector<std::unordered_set<DrawUnit*>>                    _unbound_units;
+  DrawUnitCreatedObserver                                       _after_created;
+  DrawUnitDestroyObserver                                       _before_destroy;
 };
 
 } // namespace eg

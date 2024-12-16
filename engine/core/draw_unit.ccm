@@ -31,10 +31,7 @@ public:
     _mesh = std::move(mesh);
     _texture = std::move(texture);
     _up_layer = up_layer;
-    _draw_units.insert(this);
-    for (auto& callback : _on_created) {
-      (*callback)(*this);
-    }
+    afterCreated();
   }
   void init(MeshData mesh_data, glm::vec3 color = { 0.7f, 0.2f, 0.5f }, bool up_layer = false) {
     mesh_data.tex_coords = views::repeat(glm::vec2{ 0, 0 }) |
@@ -50,12 +47,7 @@ public:
     });
     init(std::move(mesh), std::move(texture), up_layer);
   }
-  ~DrawUnit() {
-    for (auto& callback : _before_destroy) {
-      (*callback)(*this);
-    }
-    _draw_units.erase(this);
-  }
+  ~DrawUnit() { beforeDestroy(); }
   auto getTransform() -> glm::mat4 const& {
     TOY_ASSERT(isActive());
     return *_transform;
@@ -68,20 +60,6 @@ public:
   void resetActive() { _transform = nullptr; }
   auto isActive() -> bool { return _transform; }
 
-  static auto getAll() -> std::unordered_set<DrawUnit*>& { return _draw_units; }
-  static void setOnCreated(std::function<void(DrawUnit&)>* callback) {
-    _on_created.insert(callback);
-  }
-  static void removeOnCreated(std::function<void(DrawUnit&)>* callback) {
-    _on_created.erase(callback);
-  }
-  static void setBeforeDestroy(std::function<void(DrawUnit&)>* callback) {
-    _before_destroy.insert(callback);
-  }
-  static void removeBeforeDestroy(std::function<void(DrawUnit&)>* callback) {
-    _before_destroy.erase(callback);
-  }
-
 private:
   glm::mat4 const* _transform = nullptr;
   ptr<Mesh>        _mesh;
@@ -90,9 +68,8 @@ private:
   bool             _up_layer = false;
 
 private:
-  static inline std::unordered_set<DrawUnit*>                       _draw_units;
-  static inline std::unordered_set<std::function<void(DrawUnit&)>*> _on_created;
-  static inline std::unordered_set<std::function<void(DrawUnit&)>*> _before_destroy;
+  void afterCreated();
+  void beforeDestroy();
 };
 
 class DrawUnitObservable : public PROACTIVE_SINGLETON(DrawUnitObservable) {
@@ -109,8 +86,13 @@ public:
   }
 
 private:
+  friend DrawUnit;
   toy::Observable<DrawUnit&> _after_created;
   toy::Observable<DrawUnit&> _before_destroy;
 };
+
+void DrawUnit::afterCreated() { DrawUnitObservable::getInstance()._after_created.notify(*this); }
+
+void DrawUnit::beforeDestroy() { DrawUnitObservable::getInstance()._before_destroy.notify(*this); }
 
 } // namespace eg

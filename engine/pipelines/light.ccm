@@ -54,38 +54,31 @@ constexpr auto layout_global_light = rd::meta::DescriptorLayout{
 };
 
 struct LightContext : public CustomDrawContext<layout_model_light> {
+  using CustomDrawContext::CustomDrawContext;
+  auto checkNeedDestroy() -> bool override { return false; }
+  void beforeRecord() override {
+    auto model = getDrawUnit().getTransform();
+    vertex_data->model = model;
+    vertex_data->normal_model = mt::getNormalModel(model);
+  }
   UniformBuffer<LightModelVertexData>   vertex_data;
   UniformBuffer<LightModelFragmentData> frag_data;
 };
 
-export class LightPipeline : public CustomRenderPass {
+export class LightPipeline : public RenderPass {
 public:
-  void beforeRender(DrawUnit& draw_unit, DrawContextBase* draw_ctx) override {
-    draw_ctx->setActive(draw_unit.isActive());
-    if (!draw_unit.isActive()) {
-      return;
-    }
-    auto* ctx = dynamic_cast<LightContext*>(draw_ctx);
-    auto  model = draw_unit.getTransform();
-    ctx->vertex_data->model = model;
-    ctx->vertex_data->normal_model = mt::getNormalModel(model);
-  }
-  auto fromDrawUnit(uint32 subpass_n, DrawUnit& draw_unit)
-    -> std::optional<uptr<DrawContextBase>> override {
+  auto fromDrawUnit(uint32 subpass_i, DrawUnit& draw_unit) -> uptr<DrawContext> override {
     if (_uplayer == draw_unit.isUpLayer()) {
-      auto ret = std::make_unique<LightContext>();
-      ret->init(
-        draw_unit,
-        {
-          &ret->vertex_data,
-          &ret->frag_data,
-          &draw_unit.getTexture().getTexture(),
-          &draw_unit.getTexture().getTexture(),
-        }
-      );
+      auto ret = std::make_unique<LightContext>(&draw_unit);
+      ret->setDescriptorSet({
+        &ret->vertex_data,
+        &ret->frag_data,
+        &draw_unit.getTexture().getTexture(),
+        &draw_unit.getTexture().getTexture(),
+      });
       return ret;
     }
-    return std::nullopt;
+    return nullptr;
   }
 
   LightPipeline() = default;
@@ -109,7 +102,7 @@ public:
       .multi_sampling = VK_SAMPLE_COUNT_8_BIT,
       .pipelines = std::move(pipeline_infos),
     };
-    CustomRenderPass::init({ info });
+    RenderPass::init({ info });
     if (clear_op == CLEAR_DEPST) {
       setDepstClearValue(0, 1.0f);
     } else if (clear_op == CLEAR_ALL) {
@@ -124,7 +117,7 @@ public:
 
   void draw(RenderTarget* color, RenderTarget* depth) {
     _uniform_light->view_pos = Camera::getInstance().getViewPos();
-    CustomRenderPass::draw({ color }, { depth });
+    RenderPass::draw({ color }, { depth });
   }
 
 private:

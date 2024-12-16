@@ -17,82 +17,41 @@ import engine.camera;
 
 export namespace eg {
 
-struct DrawContextBase : public DrawContext {
+class DrawContextBase : public DrawContext {
+public:
   using DrawContext::DrawContext;
-  virtual ~DrawContextBase() = default;
+  void setDescriptorSet(rd::DescriptorSet dset) { _dset = std::move(dset); }
+  void recordDraw(rd::PipelineDrawer& drawer) override {
+    TOY_ASSERT(_dset);
+    auto& draw_unit = getDrawUnit();
+    if (draw_unit.isActive()) {
+      beforeRecord();
+      auto& mesh = draw_unit.getMesh();
+      drawer.bindVertexBuffer(0, &mesh.getVertexBuffer());
+      auto& index_buf = mesh.getIndexBuffer();
+      drawer.bindIndexBuffer(&index_buf);
+      drawer.bindDescriptorSet(0, &_dset);
+      drawer.draw();
+    }
+  }
+  virtual void beforeRecord() = 0;
+
+private:
+  rd::DescriptorSet _dset;
 };
 
 template <auto dset_layout>
 class CustomDrawContext : public DrawContextBase {
 public:
-  CustomDrawContext() = default;
-  void init(
-    DrawUnit&                            draw_unit,
-    rd::meta::DescriptorSet<dset_layout> dset,
-    std::optional<uint8>                 stencil_ref = {}
-  ) {
-    DrawContext::init(
-      { &draw_unit.getMesh().getVertexBuffer() },
-      &draw_unit.getMesh().getIndexBuffer(),
-      std::move(dset),
-      stencil_ref
-    );
+  using DrawContextBase::DrawContextBase;
+  void setDescriptorSet(rd::meta::DescriptorSet<dset_layout> dset) {
+    DrawContextBase::setDescriptorSet(std::move(dset));
   }
-  UNCOPYABLE_MOVEABLE(CustomDrawContext);
 };
 
 template <auto dset_layout>
 auto getLayoutHandle() -> VkDescriptorSetLayout {
   return rd::meta::DescriptorPools::getInstance().getPool<dset_layout>();
 }
-
-class CustomRenderPass : public RenderPass {
-public:
-  CustomRenderPass() = default;
-  void init(RenderPassInfo info) {
-    RenderPass::init(info);
-    _draw_contexts.resize(info.pipelines.size());
-    _on_created = [this, subpass_n = info.pipelines.size()](DrawUnit& draw_unit) {
-      for (int i = 0; i < subpass_n; ++i) {
-        if (auto draw_context = fromDrawUnit(i, draw_unit)) {
-          auto iter = _draw_contexts[i].emplace(&draw_unit, std::move(draw_context.value()));
-          addDrawContext(i, iter.first->second.get());
-        }
-      }
-    };
-    _before_destroy = [this](DrawUnit& draw_unit) {
-      for (auto [i, draw_contexts] : _draw_contexts | toy::enumerate) {
-        if (auto iter = draw_contexts.find(&draw_unit); iter != draw_contexts.end()) {
-          removeDrawContext(i, iter->second.get());
-          draw_contexts.erase(iter->first);
-        }
-      }
-    };
-    DrawUnit::setOnCreated(&_on_created);
-    DrawUnit::setBeforeDestroy(&_before_destroy);
-  }
-  ~CustomRenderPass() {
-    DrawUnit::removeOnCreated(&_on_created);
-    DrawUnit::removeBeforeDestroy(&_before_destroy);
-  }
-
-  void draw(std::vector<RenderTarget*> colors, std::vector<RenderTarget*> depsts) {
-    for (auto& draw_contexts : _draw_contexts) {
-      for (auto& [draw_unit, draw_context] : draw_contexts) {
-        beforeRender(*draw_unit, draw_context.get());
-      }
-    }
-    RenderPass::draw(std::move(colors), std::move(depsts));
-  }
-
-  virtual auto fromDrawUnit(uint32 subpass_n, DrawUnit& draw_unit)
-    -> std::optional<uptr<DrawContextBase>> = 0;
-  virtual void beforeRender(DrawUnit& draw_unit, DrawContextBase* draw_ctx) = 0;
-
-private:
-  std::function<void(DrawUnit&)>                                    _on_created;
-  std::function<void(DrawUnit&)>                                    _before_destroy;
-  std::vector<std::unordered_map<DrawUnit*, uptr<DrawContextBase>>> _draw_contexts;
-};
 
 } // namespace eg

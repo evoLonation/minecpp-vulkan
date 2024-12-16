@@ -31,30 +31,33 @@ constexpr auto layout_id = rd::meta::DescriptorLayout{
 };
 
 struct IdContext : public CustomDrawContext<layout_id> {
+  using CustomDrawContext::CustomDrawContext;
+  auto checkNeedDestroy() -> bool override { return false; }
+  void beforeRecord() override { transform = getDrawUnit().getTransform(); }
   UniformBuffer<rd::align::mat4> transform;
   UniformBuffer<uint32>          id;
+
+  static inline std::unordered_map<uint32, DrawUnit*> id2draw_unit;
+  static inline std::unordered_map<DrawUnit*, uint32> draw_unit2id;
+
+  ~IdContext() {
+    id2draw_unit.erase(id.get());
+    draw_unit2id.erase(&getDrawUnit());
+  }
 };
 
-export class IdPipeline : public CustomRenderPass, public PROACTIVE_SINGLETON(IdPipeline) {
+export class IdPipeline : public RenderPass, public PROACTIVE_SINGLETON(IdPipeline) {
 public:
-  void beforeRender(DrawUnit& draw_unit, DrawContextBase* draw_ctx) override {
-    draw_ctx->setActive(draw_unit.isActive());
-    if (!draw_unit.isActive()) {
-      return;
-    }
-    dynamic_cast<IdContext*>(draw_ctx)->transform = draw_unit.getTransform();
-  }
-  auto fromDrawUnit(uint32 subpass_n, DrawUnit& draw_unit)
-    -> std::optional<uptr<DrawContextBase>> override {
-    if ((subpass_n == 1) == draw_unit.isUpLayer()) {
-      auto ret = std::make_unique<IdContext>();
+  auto fromDrawUnit(uint32 subpass_i, DrawUnit& draw_unit) -> uptr<DrawContext> override {
+    if ((subpass_i == 1) == draw_unit.isUpLayer()) {
+      auto ret = std::make_unique<IdContext>(&draw_unit);
       ret->id = _last_allocated_id++;
-      ret->init(draw_unit, { &ret->transform, &ret->id });
-      _draw_unit2id[&draw_unit] = ret->id;
-      _id2draw_unit[ret->id] = &draw_unit;
+      ret->setDescriptorSet({ &ret->transform, &ret->id });
+      IdContext::draw_unit2id[&draw_unit] = ret->id;
+      IdContext::id2draw_unit[ret->id] = &draw_unit;
       return ret;
     }
-    return std::nullopt;
+    return nullptr;
   }
 
   IdPipeline() {
@@ -87,19 +90,10 @@ public:
     setDepstClearValue(0, 1.0f);
     setDepstClearValue(1, 1.0f);
     _reader = { VK_FORMAT_R32_UINT, { 1, 1 } };
-
-    _before_destroy = [this](DrawUnit& draw_unit) {
-      if (_draw_unit2id.contains(&draw_unit)) {
-        auto id = _draw_unit2id[&draw_unit];
-        _id2draw_unit.erase(id);
-        _draw_unit2id.erase(&draw_unit);
-      }
-    };
   }
-  ~IdPipeline() { DrawUnit::removeBeforeDestroy(&_before_destroy); }
 
   auto getSelectedDrawUnit() -> DrawUnit* {
-    if (auto it = _id2draw_unit.find(_current_id); it != _id2draw_unit.end()) {
+    if (auto it = IdContext::id2draw_unit.find(_current_id); it != IdContext::id2draw_unit.end()) {
       return it->second;
     } else {
       return nullptr;
@@ -117,16 +111,14 @@ public:
     } else {
       _current_id = 0;
     }
-    CustomRenderPass::draw({ id_output }, { depth, depth_uplayer });
+    RenderPass::draw({ id_output }, { depth, depth_uplayer });
   }
 
 private:
-  rd::ImageLocalReader                  _reader;
-  uint32                                _current_id = 0;
-  uint32                                _last_allocated_id = 1;
-  std::function<void(DrawUnit&)>        _before_destroy;
-  std::unordered_map<uint32, DrawUnit*> _id2draw_unit;
-  std::unordered_map<DrawUnit*, uint32> _draw_unit2id;
+  rd::ImageLocalReader           _reader;
+  uint32                         _current_id = 0;
+  uint32                         _last_allocated_id = 1;
+  std::function<void(DrawUnit&)> _before_destroy;
 };
 
 } // namespace eg

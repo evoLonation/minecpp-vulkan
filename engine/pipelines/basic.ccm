@@ -37,36 +37,35 @@ constexpr auto layout_model_color = rd::meta::DescriptorLayout{
 };
 
 struct TextureContext : public CustomDrawContext<layout_model_texture> {
+  using CustomDrawContext<layout_model_texture>::CustomDrawContext;
+  auto checkNeedDestroy() -> bool override { return false; }
+  void beforeRecord() override { transform = getDrawUnit().getTransform(); }
   UniformBuffer<rd::align::mat4> transform;
 };
 
 struct ColorContext : public CustomDrawContext<layout_model_color> {
+  using CustomDrawContext<layout_model_color>::CustomDrawContext;
+  auto checkNeedDestroy() -> bool override { return false; }
+  void beforeRecord() override { transform = getDrawUnit().getTransform(); }
+
   UniformBuffer<rd::align::mat4> transform;
   UniformBuffer<rd::align::vec3> color;
 };
 
-export class BasicPipeline : public CustomRenderPass {
+export class BasicPipeline : public RenderPass {
 public:
-  void beforeRender(DrawUnit& draw_unit, DrawContextBase* draw_ctx) override {
-    if (auto* ctx = dynamic_cast<TextureContext*>(draw_ctx)) {
-      ctx->transform = draw_unit.getTransform();
-    } else if (auto* ctx = dynamic_cast<ColorContext*>(draw_ctx)) {
-      ctx->transform = draw_unit.getTransform();
-    }
-  }
-  auto fromDrawUnit(uint32 subpass_n, DrawUnit& draw_unit)
-    -> std::optional<uptr<DrawContextBase>> override {
-    if (subpass_n == 0) {
-      auto ret = std::make_unique<TextureContext>();
-      ret->init(draw_unit, { &ret->transform, &draw_unit.getTexture().getTexture() });
+  auto fromDrawUnit(uint32 subpass_i, DrawUnit& draw_unit) -> uptr<DrawContext> override {
+    if (subpass_i == 0) {
+      auto ret = std::make_unique<TextureContext>(&draw_unit);
+      ret->setDescriptorSet({ &ret->transform, &draw_unit.getTexture().getTexture() });
       return ret;
-    } else if (subpass_n == 1 || subpass_n == 2) {
-      auto ret = std::make_unique<ColorContext>();
-      ret->init(draw_unit, { &ret->transform, &ret->color });
+    } else if (subpass_i == 1 || subpass_i == 2) {
+      auto ret = std::make_unique<ColorContext>(&draw_unit);
+      ret->setDescriptorSet({ &ret->transform, &ret->color });
       ret->color = glm::vec3{ 0.5f, 0.5f, 0.5f }; // default color
       return ret;
     }
-    return std::nullopt;
+    return nullptr;
   }
 
   BasicPipeline() {
@@ -113,9 +112,7 @@ public:
     setDepstClearValue(0, 1.0f);
   }
 
-  void draw(RenderTarget* color, RenderTarget* depth) {
-    CustomRenderPass::draw({ color }, { depth });
-  }
+  void draw(RenderTarget* color, RenderTarget* depth) { RenderPass::draw({ color }, { depth }); }
 };
 
 } // namespace eg

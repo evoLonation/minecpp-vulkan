@@ -15,7 +15,7 @@ import gui.context;
 import framework;
 // import pipeline.basic;
 import pipeline.loop;
-// import engine.draw_unit;
+import engine.draw_unit;
 // import editor.transform.move;
 // import pipeline.uniform;
 // import engine.assets;
@@ -34,8 +34,10 @@ int main() {
     auto  ctx = ctx::Context{ "hello vulkan", 1920, 1080 };
     auto  dset_pools = rd::meta::DescriptorPools{};
     auto& input = fw::InputProcessor::getInstance();
+    auto  draw_unit_observable = eg::DrawUnitObservable{};
     auto  render_pass = eg::RenderPassLoop{};
-    auto  click_observer = eg::ObjectClickObserver{};
+
+    auto click_observer = eg::ObjectClickObserver{};
     // auto  manager = eg::AssetManager{ eg::default_asset_map };
 
     auto camera = eg::Camera{};
