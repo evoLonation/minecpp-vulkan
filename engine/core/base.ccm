@@ -6,7 +6,7 @@ import framework;
 import std;
 import toy;
 
-export import engine.base.reactive3;
+export import engine.base.reactive;
 
 export namespace eg {
 
