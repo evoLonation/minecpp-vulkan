@@ -33,7 +33,7 @@ constexpr auto layout_id = rd::meta::DescriptorLayout{
 struct IdContext : public CustomDrawContext<layout_id> {
   using CustomDrawContext::CustomDrawContext;
   auto checkNeedDestroy() -> bool override { return false; }
-  void beforeRecord() override { transform = getDrawUnit().getTransform(); }
+  void beforeRecord() override { transform = getDrawUnit().getTransform().get(); }
   UniformBuffer<rd::align::mat4> transform;
   UniformBuffer<uint32>          id;
 

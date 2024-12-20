@@ -12,24 +12,26 @@ export namespace eg {
 
 // todo: one RenderTarget should has one multi sampling type
 // because the MS image will draw by multi RenderPasses, so need be the same one
-class RenderTarget : public rd::FrameImage, public ReactorInterface<VkExtent2D> {
+class RenderTarget : public rd::FrameImage, public toy::Observer<VkExtent2D> {
 public:
   RenderTarget() = default;
-  RenderTarget(VkFormat format, Reval<VkExtent2D>* extent_reval) { init(format, extent_reval); }
-  void init(VkFormat format, Reval<VkExtent2D>* extent_reval) {
+  RenderTarget(VkFormat format, toy::Observable<VkExtent2D>* extent_reval, VkExtent2D extent) {
+    init(format, extent_reval, extent);
+  }
+  void init(VkFormat format, toy::Observable<VkExtent2D>* extent_reval, VkExtent2D extent) {
     _format = format;
     _extent_reval = extent_reval;
-    _extent_reval->addReactor(this);
+    _extent_reval->addObserver(this);
     rd::FrameImage::operator=({
       format,
-      extent_reval->get().width,
-      extent_reval->get().height,
+      extent.width,
+      extent.height,
       VK_SAMPLE_COUNT_1_BIT,
       VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
     });
   }
   UNCOPYABLE_MOVEABLE(RenderTarget);
-  ~RenderTarget() { _extent_reval->removeReactor(this); }
+  ~RenderTarget() { _extent_reval->removeObserver(this); }
 
   auto getMSTarget(VkSampleCountFlagBits sample_count) -> rd::FrameImage& {
     if (auto iter = _ms_targets.find(sample_count); iter == _ms_targets.end()) {
@@ -67,13 +69,13 @@ public:
     _need_resize_targets.clear();
   }
 
-  void observerNotified(VkExtent2D const& extent) override {
+  void observerNotified(VkExtent2D extent) override {
     _need_resize_targets.push_back({ this, extent });
   }
 
 private:
   VkFormat                                                  _format;
-  Reval<VkExtent2D>*                                        _extent_reval = nullptr;
+  toy::Observable<VkExtent2D>*                              _extent_reval = nullptr;
   std::unordered_map<VkSampleCountFlagBits, rd::FrameImage> _ms_targets;
 
   static std::vector<std::pair<RenderTarget*, VkExtent2D>> _need_resize_targets;

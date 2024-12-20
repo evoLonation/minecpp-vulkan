@@ -40,6 +40,9 @@ private:
   float                         _unit_length = 0.3;
 
   void runLoop(fw::ActionContext const& ctx) override {
+    if (!getTarget()) {
+      return;
+    }
     ToolBase::runLoop(ctx);
     auto& input = fw::InputProcessor::getInstance();
     if (input.getState(fw::Mouse::LEFT)->state == fw::ButtonState::DOWN) {
@@ -91,9 +94,7 @@ private:
         } else {
           delta = now_pos - _start_pos;
         }
-        if (auto target = getTarget().lock()) {
-          TargetController{ std::move(target), getMode() }.translate(*_axis, delta);
-        }
+        getTargetController().translate(*_axis, delta);
       }
     } else if (_plane_norm) {
       auto ret = getPlanePos(*_plane_norm, getRoot()->getTransToWorld());
@@ -108,21 +109,13 @@ private:
         } else {
           delta = now_pos_1 - _start_pos;
         }
-        if (auto target = getTarget().lock()) {
-          TargetController{ std::move(target), getMode() }.translate(
-            mt::Axis(((int)*_plane_norm + 1) % 3), delta
-          );
-        }
+        getTargetController().translate(mt::Axis(((int)*_plane_norm + 1) % 3), delta);
         if (_unit_length != 0) {
           delta = _unit_length * int32((now_pos_2 - start_pos_2) / _unit_length);
         } else {
           delta = now_pos_2 - start_pos_2;
         }
-        if (auto target = getTarget().lock()) {
-          TargetController{ std::move(target), getMode() }.translate(
-            mt::Axis(((int)*_plane_norm + 2) % 3), delta
-          );
-        }
+        getTargetController().translate(mt::Axis(((int)*_plane_norm + 2) % 3), delta);
       }
     }
   }

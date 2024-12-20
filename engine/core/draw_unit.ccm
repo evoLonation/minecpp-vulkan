@@ -48,7 +48,7 @@ public:
     init(std::move(mesh), std::move(texture), up_layer);
   }
   ~DrawUnit() { beforeDestroy(); }
-  auto getTransform() -> glm::mat4 const& {
+  auto getTransform() -> Reval<glm::mat4> const& {
     TOY_ASSERT(isActive());
     return *_transform;
   }
@@ -56,16 +56,16 @@ public:
   auto getTexture() -> Texture& { return *_texture; }
   auto getMaterial() -> MaterialInfo& { return _material; }
   auto isUpLayer() -> bool { return _up_layer; }
-  void setActive(glm::mat4 const* transform) { _transform = transform; }
+  void setActive(Reval<glm::mat4> const* transform) { _transform = transform; }
   void resetActive() { _transform = nullptr; }
   auto isActive() -> bool { return _transform; }
 
 private:
-  glm::mat4 const* _transform = nullptr;
-  ptr<Mesh>        _mesh;
-  ptr<Texture>     _texture;
-  MaterialInfo     _material;
-  bool             _up_layer = false;
+  Reval<glm::mat4> const* _transform = nullptr;
+  ptr<Mesh>               _mesh;
+  ptr<Texture>            _texture;
+  MaterialInfo            _material;
+  bool                    _up_layer = false;
 
 private:
   void afterCreated();

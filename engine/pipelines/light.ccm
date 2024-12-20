@@ -57,7 +57,7 @@ struct LightContext : public CustomDrawContext<layout_model_light> {
   using CustomDrawContext::CustomDrawContext;
   auto checkNeedDestroy() -> bool override { return false; }
   void beforeRecord() override {
-    auto model = getDrawUnit().getTransform();
+    auto model = getDrawUnit().getTransform().get();
     vertex_data->model = model;
     vertex_data->normal_model = mt::getNormalModel(model);
   }

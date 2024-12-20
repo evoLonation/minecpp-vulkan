@@ -18,13 +18,43 @@ export namespace eg {
 class ModelController {
 public:
   ModelController() {
-    _reactor_trans = { [this](auto&& _) {
-      *_model = mt::translate(_location) * mt::rotate(_rotate_euler) * mt::scale(_scale_factor);
-    } };
-    _reactor_split = { [this](glm::mat4 model) {
-      _location = glm::vec3{ model[3] };
+    _location.setName(std::format("Location {}", (void*)this));
+    _rotate_euler.setName(std::format("Rotate Euler {}", (void*)this));
+    _scale_factor.setName(std::format("Scale Factor {}", (void*)this));
+  }
+  void setName(std::string name) {
+    _location.setName(std::format("Location {}", name));
+    _rotate_euler.setName(std::format("Rotate Euler {}", name));
+    _scale_factor.setName(std::format("Scale Factor {}", name));
+  }
+  enum SettingMode { CHANGE_MODEL, CHANGE_CONTROLLER };
+  ModelController(Reval<glm::mat4>* model, SettingMode mode) : ModelController{} {
+    setModelTransform(model, mode);
+  }
+  ~ModelController() = default;
+  void setModelTransformInvalid() { _model = nullptr; }
+  void resetModelTransform() {
+    if (_model) {
+      _unbinder_model.unbind();
+      _unbinder_vec.unbind();
+    }
+    _model = nullptr;
+  }
+  void setModelTransform(Reval<glm::mat4>* model, SettingMode mode) {
+    if (_model) {
+      _unbinder_model.unbind();
+      _unbinder_vec.unbind();
+    }
+    _model = model;
+    auto computer_model = [](auto& location, auto& rotate_euler, auto& scale_factor) {
+      auto model = mt::translate(location) * mt::rotate(rotate_euler) * mt::scale(scale_factor);
+      // TOY_DEBUG(location, rotate_euler, scale_factor, model);
+      return model;
+    };
+    auto computer_vec = [](glm::mat4 model) {
+      auto location = glm::vec3{ model[3] };
       model[3] = glm::vec4{ 0, 0, 0, 1 };
-      _scale_factor = glm::vec3{
+      auto scale_factor = glm::vec3{
         glm::length(model[0]),
         glm::length(model[1]),
         glm::length(model[2]),
@@ -32,33 +62,17 @@ public:
       model[0] = glm::normalize(model[0]);
       model[1] = glm::normalize(model[1]);
       model[2] = glm::normalize(model[2]);
-      _rotate_euler = mt::getEulerAngle(model);
-    } };
-  }
-  enum SettingMode { CHANGE_MODEL, CHANGE_CONTROLLER };
-  ModelController(Reval<glm::mat4>* model, SettingMode mode) : ModelController{} {
-    setModelTransform(model, mode);
-  }
-  ~ModelController() { reset(); }
-  void reset() {
-    if (_model) {
-      _model->removeReactor(&_reactor_split);
-    }
-    _model = nullptr;
-    _location.removeReactor(&_reactor_trans);
-    _rotate_euler.removeReactor(&_reactor_trans);
-    _scale_factor.removeReactor(&_reactor_trans);
-  }
-  void setModelTransform(Reval<glm::mat4>* model, SettingMode mode) {
-    if (_model) {
-      _model->removeReactor(&_reactor_split);
-      _model = model;
-    } else {
-      _model = model;
-      _model->addReactor(&_reactor_split, mode == CHANGE_CONTROLLER);
-      _location.addReactor(&_reactor_trans);
-      _rotate_euler.addReactor(&_reactor_trans);
-      _scale_factor.addReactor(&_reactor_trans, mode == CHANGE_MODEL);
+      auto rotate_euler = mt::getEulerAngle(model);
+      return std::tuple{ location, rotate_euler, scale_factor };
+    };
+    if (mode == CHANGE_CONTROLLER) {
+      _unbinder_model = _model->bind(computer_model, &_location, &_rotate_euler, &_scale_factor);
+      _unbinder_vec =
+        MultiBinder{ &_location, &_rotate_euler, &_scale_factor }.bindNow(computer_vec, _model);
+    } else if (mode == CHANGE_MODEL) {
+      _unbinder_model = _model->bindNow(computer_model, &_location, &_rotate_euler, &_scale_factor);
+      _unbinder_vec =
+        MultiBinder{ &_location, &_rotate_euler, &_scale_factor }.bind(computer_vec, _model);
     }
   }
 
@@ -110,21 +124,19 @@ public:
    * @brief Always on local mode
    */
   void scale(glm::vec3 const& factor) {
-    _scale_factor[0] *= factor[0];
-    _scale_factor[1] *= factor[1];
-    _scale_factor[2] *= factor[2];
+    _scale_factor.set([&](glm::vec3& x) { x *= factor; });
   }
   void scale(mt::Axis axis, float factor) {
     using enum mt::Axis;
     switch (axis) {
     case X:
-      _scale_factor[0] *= factor;
+      _scale_factor.set([&](glm::vec3& x) { x[0] *= factor; });
       break;
     case Y:
-      _scale_factor[1] *= factor;
+      _scale_factor.set([&](glm::vec3& x) { x[1] *= factor; });
       break;
     case Z:
-      _scale_factor[2] *= factor;
+      _scale_factor.set([&](glm::vec3& x) { x[2] *= factor; });
       break;
     }
   }
@@ -136,28 +148,31 @@ public:
   auto refScaleFactor() -> Reval<glm::vec3>& { return _scale_factor; }
 
 private:
-  Reval<glm::mat4>*  _model = nullptr;
-  Reactor<glm::vec3> _reactor_trans;
-  Reactor<glm::mat4> _reactor_split;
-  Reval<glm::vec3>   _location = { { 0, 0, 0 } };
-  Reval<glm::vec3>   _rotate_euler = { { 0, 0, 0 } };
-  Reval<glm::vec3>   _scale_factor = { { 1, 1, 1 } };
-  Mode               _mode = WORLD;
+  Reval<glm::mat4>* _model = nullptr;
+  Reval<glm::vec3>  _location = { { 0, 0, 0 } };
+  Reval<glm::vec3>  _rotate_euler = { { 0, 0, 0 } };
+  Reval<glm::vec3>  _scale_factor = { { 1, 1, 1 } };
+  Unbinder          _unbinder_model;
+  Unbinder          _unbinder_vec;
+  Mode              _mode = WORLD;
+
+  Reval<std::tuple<glm::vec3, glm::vec3, glm::vec3>> _middle_reval;
 };
 
 class Node : public Component, public Asset {
 public:
   Node() {
+    _to_world.setName(std::format("To World {}", (void*)this));
+    _to_parent.setName(std::format("To Parent {}", (void*)this));
     _controller.setModelTransform(&_to_parent, ModelController::CHANGE_MODEL);
-    _reactor_to_world = { [this](auto&&) {
-      if (_parent) {
-        _to_world = _parent->_to_world * _to_parent.get();
-      } else {
-        _to_world = _to_parent.get();
-      }
-    } };
-    _to_parent.addReactor(&_reactor_to_world, true);
+    _unbinder =
+      _to_world.bindNow([](glm::mat4 const& to_parent) { return to_parent; }, &_to_parent);
     _root = this;
+  }
+  void setName(std::string name) {
+    _to_world.setName(std::format("To World {}", name));
+    _to_parent.setName(std::format("To Parent {}", name));
+    getController().setName(name);
   }
   ~Node() {
     // can not directly use _children, because it will be modified in detach
@@ -166,7 +181,6 @@ public:
       child->detach();
     }
     // can ensure _parent is nullptr (otherwise this will not destroyed)
-    _to_parent.removeReactor(&_reactor_to_world);
   }
   void attachTo(Node* node) {
     if (_parent) {
@@ -202,20 +216,27 @@ private:
   Reval<glm::mat4>              _to_parent;
   ModelController               _controller;
   Reval<glm::mat4>              _to_world;
-  Reactor<glm::mat4>            _reactor_to_world;
   Node*                         _parent = nullptr;
   std::unordered_set<ptr<Node>> _children;
   Node*                         _root = nullptr;
+  Unbinder                      _unbinder;
 
   void setParent(Node* parent) {
-    resetParent();
+    // resetParent();
+    _unbinder.unbind();
     _parent = parent;
     parent->_children.insert(getPtr());
-    parent->_to_world.addReactor(&_reactor_to_world);
+    _unbinder = _to_world.bindNow(
+      [](glm::mat4 const& parent, glm::mat4 const& to_parent) { return parent * to_parent; },
+      &_parent->_to_world,
+      &_to_parent
+    );
   }
   void resetParent() {
+    _unbinder.unbind();
+    _unbinder =
+      _to_world.bindNow([](glm::mat4 const& to_parent) { return to_parent; }, &_to_parent);
     if (_parent) {
-      _parent->_to_world.removeReactor(&_reactor_to_world);
       _parent->_children.erase(getPtr());
       _parent = nullptr;
     }

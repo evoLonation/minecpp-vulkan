@@ -19,6 +19,7 @@ module;
 #define _LIBCPP_HAS_FILESYSTEM 1
 #define _LIBCPP_HAS_LOCALIZATION 1
 #define _LIBCPP_HAS_RANDOM_DEVICE 1
+#define _LIBCPP_HAS_THREADS 1
 
 // The headers of Table 24: C++ library headers [tab:headers.cpp]
 // and the headers of Table 25: C++ headers for C library facilities [tab:headers.cpp.c]

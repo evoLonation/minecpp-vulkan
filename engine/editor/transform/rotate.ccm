@@ -78,6 +78,10 @@ private:
   float                      _cycle_length = 3.0f;
 
   void runLoop(fw::ActionContext const& ctx) override {
+    if (!getTarget()) {
+      return;
+    }
+    ToolBase::runLoop(ctx);
     auto& input = fw::InputProcessor::getInstance();
     if (input[fw::Mouse::LEFT]->state == fw::ButtonState::DOWN) {
       auto iter = ranges::find_if(_planes, [](auto& x) { return x.isSelected(); });
@@ -101,17 +105,13 @@ private:
     } else if (_plane_norm) {
       if (auto ret = getNowDraggingPos(*_plane_norm)) {
         auto now_pos = *ret;
-        // TOY_DEBUG(now_pos);
         if (glm::abs(now_pos - _last_pos) >= _unit_length) {
           auto delta = _unit_length;
           if (now_pos < _last_pos) {
             delta = -delta;
           }
           _last_pos += delta;
-          if (auto target = getTarget().lock()) {
-            auto controller = TargetController{ std::move(target), getMode() };
-            controller.rotate(*_plane_norm, delta * 360 / _cycle_length);
-          }
+          getTargetController().rotate(*_plane_norm, delta * 360 / _cycle_length);
         }
       }
     }

@@ -39,14 +39,14 @@ constexpr auto layout_model_color = rd::meta::DescriptorLayout{
 struct TextureContext : public CustomDrawContext<layout_model_texture> {
   using CustomDrawContext<layout_model_texture>::CustomDrawContext;
   auto checkNeedDestroy() -> bool override { return false; }
-  void beforeRecord() override { transform = getDrawUnit().getTransform(); }
+  void beforeRecord() override { transform = getDrawUnit().getTransform().get(); }
   UniformBuffer<rd::align::mat4> transform;
 };
 
 struct ColorContext : public CustomDrawContext<layout_model_color> {
   using CustomDrawContext<layout_model_color>::CustomDrawContext;
   auto checkNeedDestroy() -> bool override { return false; }
-  void beforeRecord() override { transform = getDrawUnit().getTransform(); }
+  void beforeRecord() override { transform = getDrawUnit().getTransform().get(); }
 
   UniformBuffer<rd::align::mat4> transform;
   UniformBuffer<rd::align::vec3> color;

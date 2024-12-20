@@ -24,7 +24,7 @@ import engine.object;
 // import engine.mesh;
 // import engine.texture;
 // import render;
-// import engine.shape;
+import engine.shape;
 import engine.camera;
 // import drag;
 import editor.transform;
@@ -47,6 +47,14 @@ int main() {
     // auto node = eg::DoTheImportThing("model/backpack/backpack.obj");
     // manager.save(node, "backpack");
     auto node = manager.load<eg::SceneObject>("backpack");
+    // auto object = std::make_shared<eg::SceneObject>();
+    // object->setDrawUnit(
+    //   std::make_unique<eg::DrawUnit>(eg::generateCube(), glm::vec3{ 0.5, 0.5, 0.5 })
+    // );
+    // object.getController().refLocation() = glm::vec3{ 0, 0, 0 };
+    // object.getController().refRotateEuler() = glm::vec3{ 0, 0, 0 };
+    // object.getController().refScaleFactor() = glm::vec3{ 1, 1, 1 };
+    // fw::Loop::getInstance().setMaxFPS(5);
 
     fw::Loop::getInstance().run();
 

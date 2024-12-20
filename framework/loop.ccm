@@ -77,12 +77,16 @@ class Loop : public PROACTIVE_SINGLETON(Loop) {
 public:
   Loop() = default;
 
+  void setMaxFPS(uint32 max_fps) { _max_fps = max_fps; }
+  void resetMaxFPS() { _max_fps.reset(); }
+
   void run() {
     using timer = std::chrono::high_resolution_clock;
     auto& presentation = rd::Presentation::getInstance();
     auto  count = 0;
     auto  last_time = timer::now();
     auto  last_report_time = timer::now();
+    // by second
     float interval;
     bool  recreated;
     while (!glfwWindowShouldClose(glfw::Window::getInstance())) {
@@ -107,6 +111,14 @@ public:
           recreated = false;
         }
       }
+      // 限制帧率
+      if (_max_fps.has_value()) {
+        auto target_frame_duration = std::chrono::duration<float>(1.0f / _max_fps.value());
+        auto time_spent = timer::now() - last_time;
+        if (time_spent < target_frame_duration) {
+          std::this_thread::sleep_for(target_frame_duration - time_spent);
+        }
+      }
       count++;
       if (chrono::duration_cast<chrono::seconds>(timer::now() - last_report_time).count() >= 2) {
         toy::debugf("fps: {}", count / 2.0f);
@@ -119,6 +131,7 @@ public:
 private:
   friend Action;
   std::map<Stage, std::unordered_set<Action*>> _actions;
+  std::optional<uint32>                        _max_fps;
 };
 
 void Action::add() {

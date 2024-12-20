@@ -35,88 +35,106 @@ auto getCursorLineInWorld() -> LineSegment {
   return LineSegment{ start, end };
 }
 
+enum class BindMode {
+  LOCAL, // bind rotate and location
+  WORLD, // bind location only and set rotate to 0
+};
+
+class TargetController : public ModelController {
+public:
+  TargetController() { setMode(LOCAL); }
+  void resetTarget() {
+    resetModelTransform();
+    _target.reset();
+  }
+  void setTarget(ptr<Node> target) {
+    _target = std::move(target);
+    setModelTransform(&_target->getTransToParent(), ModelController::CHANGE_CONTROLLER);
+  }
+  auto getTarget() -> Node* { return _target.get(); }
+
+private:
+  // extend the node's lifetime
+  ptr<Node> _target;
+};
+
 /**
  * @brief Helper class to bind target transform info to tool transform info.
  *
  */
 class ToolBase : public Component {
 public:
-  ToolBase() { _root = std::make_shared<Node>(); }
+  using enum BindMode;
+  ToolBase() {
+    _root = std::make_shared<Node>();
+    _root->getController().refLocation().bindPair(&_target_controller.refLocation());
+  }
   UNCOPYABLE_MOVEABLE(ToolBase);
-  ~ToolBase() { resetTarget(); }
-
-  enum Mode {
-    LOCAL, // bind rotate and location
-    WORLD, // bind location only and set rotate to 0
-  };
+  ~ToolBase() = default;
 
   void runLoop(fw::ActionContext const& ctx) override {
-    if (auto target = _target.lock()) {
+    if (auto target = getTarget()) {
       if (!target->isRoot()) {
         resetTarget();
       }
     }
   }
-  void setMode(Mode mode) {
-    if (auto target = _target.lock(); target && _mode != mode) {
-      auto& target_controller = target->getController();
+  void setMode(BindMode mode) {
+    if (_mode != mode) {
       if (mode == WORLD) {
-        target_controller.refRotateEuler().unbind(&_root->getController().refRotateEuler());
+        _rotate_unbinder.unbind();
         _root->getController().refRotateEuler() = { 0, 0, 0 };
       } else if (mode == LOCAL) {
-        target_controller.refRotateEuler().bind(&_root->getController().refRotateEuler());
+        _rotate_unbinder =
+          _root->getController().refRotateEuler().bindPair(&_target_controller.refRotateEuler());
       }
     }
+    // _target_controller.setMode(mode);
     _mode = mode;
   }
-  auto getMode() const -> Mode { return _mode; }
+  auto getMode() const -> BindMode { return _mode; }
   /**
    * @brief if mode is LOCAL, unbind rotate and keep value unchanged util @ref disableKeepRotate
    * if mode is WORLD, nothing will happen
    */
   void enableKeepRotate() {
-    if (auto target = _target.lock(); target && _mode == LOCAL) {
-      target->getController().refRotateEuler().unbind(&_root->getController().refRotateEuler());
+    if (_mode == LOCAL) {
+      _rotate_unbinder.unbind();
     }
   }
   void disableKeepRotate() {
-    if (auto target = _target.lock(); target && _mode == LOCAL) {
-      target->getController().refRotateEuler().bind(&_root->getController().refRotateEuler());
+    if (_mode == LOCAL) {
+      _rotate_unbinder =
+        _root->getController().refRotateEuler().bindPair(&_target_controller.refRotateEuler());
     }
   }
 
+  /**
+   * @brief will extends the target's lifetime
+   */
   void setTarget(ptr<Node> target) {
-    resetTarget();
-    setActiveRecursively(true);
-    auto& target_controller = target->getController();
-    target_controller.refLocation().bind(&_root->getController().refLocation());
-    if (_mode == LOCAL) {
-      target_controller.refRotateEuler().bind(&_root->getController().refRotateEuler());
+    // todo remove
+    if (target == getRoot()) {
+      return;
     }
-    _target = std::move(target);
+    setActiveRecursively(true);
+    _target_controller.setTarget(target);
   }
   void resetTarget() {
     setActiveRecursively(false);
-    if (auto target = _target.lock()) {
-      auto& target_controller = target->getController();
-      target_controller.refLocation().unbind(&_root->getController().refLocation());
-      _root->getController().refLocation() = { 0, 0, 0 };
-      if (_mode == LOCAL) {
-        target_controller.refRotateEuler().unbind(&_root->getController().refRotateEuler());
-        _root->getController().refRotateEuler() = { 0, 0, 0 };
-      }
-      _target.reset();
-    }
+    _target_controller.resetTarget();
   }
-  auto getTarget() -> wptr<Node> { return _target; }
+  auto getTarget() -> Node* { return _target_controller.getTarget(); }
+  auto getTargetController() -> ModelController& { return _target_controller; }
 
 protected:
   auto getRoot() -> ptr<Node> { return _root; }
 
 private:
-  ptr<Node>  _root;
-  Mode       _mode = LOCAL;
-  wptr<Node> _target;
+  ptr<Node>        _root;
+  BindMode         _mode = WORLD;
+  PairUnbinder     _rotate_unbinder;
+  TargetController _target_controller;
 
   void setActiveRecursively(bool active) {
     _root->doRecusively([&](Node* node) {
@@ -125,17 +143,6 @@ private:
       }
     });
   }
-};
-
-class TargetController : public ModelController {
-public:
-  TargetController(ptr<Node> target, ToolBase::Mode mode) : _target(std::move(target)) {
-    setModelTransform(&_target->getTransToParent(), ModelController::CHANGE_CONTROLLER);
-    setMode(mode == ToolBase::WORLD ? ModelController::WORLD : ModelController::LOCAL);
-  }
-
-private:
-  ptr<Node> _target;
 };
 
 class MoveScalePlane {

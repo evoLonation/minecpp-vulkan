@@ -41,7 +41,7 @@ public:
   auto getDrawUnit() -> DrawUnit* { return _draw_unit.get(); }
   void setActive(bool active) {
     if (active) {
-      _draw_unit->setActive(&getDrawUnitTransform());
+      _draw_unit->setActive(&getTransToWorld());
     } else {
       _draw_unit->resetActive();
     }
@@ -57,9 +57,6 @@ public:
     }
     return nullptr;
   }
-
-protected:
-  virtual auto getDrawUnitTransform() -> glm::mat4 const& { return getTransToWorld().get(); }
 
 private:
   uptr<DrawUnit> _draw_unit;
@@ -97,37 +94,31 @@ public:
   REGISTER_ASSET_PATH("scene_object")
 };
 
-class FixedDistanceNode : public Node,
-                          public ReactorInterface<glm::mat4>,
-                          public ReactorInterface<glm::vec3> {
+class FixedDistanceNode : public Node {
 public:
   FixedDistanceNode() {
     _fixed_distance_node = std::make_shared<Node>();
     _fixed_distance_node->attachTo(this);
     _view_pos = &Camera::getInstance().getViewPos();
-    _view_pos->addReactor(this);
-    getTransToWorld().addReactor(this, true);
+    // todo: make _distance reactive too
+    _fixed_distance_node->getTransToParent().bindNow(
+      [this](glm::mat4 const& to_world, glm::vec3 const& location_camera) {
+        {
+          auto location_object = mt::transformDot(to_world, glm::vec3{ 0, 0, 0 });
+          auto new_location_object =
+            location_camera + _distance * glm::normalize(location_object - location_camera);
+          return mt::translate(glm::vec3{ new_location_object - location_object });
+        }
+      },
+      &getTransToWorld(),
+      _view_pos
+    );
   }
   FixedDistanceNode(float distance) : FixedDistanceNode() { setDistance(distance); }
-  ~FixedDistanceNode() {
-    getTransToWorld().removeReactor(this);
-    _view_pos->removeReactor(this);
-  }
+  ~FixedDistanceNode() = default;
   void setDistance(float distance) { _distance = distance; }
   auto getDistance() -> float { return _distance; }
   auto getFixedDistanceNode() -> Node& { return *_fixed_distance_node; }
-
-private:
-  void observerNotified(glm::mat4 const&) override { computeFixedDistanceTransform(); }
-  void observerNotified(glm::vec3 const&) override { computeFixedDistanceTransform(); }
-  void computeFixedDistanceTransform() {
-    auto  location_object = mt::transformDot(getTransToWorld(), glm::vec3{ 0, 0, 0 });
-    auto& location_camera = _view_pos->get();
-    auto  new_location_object =
-      location_camera + _distance * glm::normalize(location_object - location_camera);
-    _fixed_distance_node->getTransToParent() =
-      mt::translate(glm::vec3{ new_location_object - location_object });
-  }
 
 private:
   ptr<Node>               _fixed_distance_node;

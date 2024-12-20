@@ -23,5 +23,9 @@ module:
     provide: engine.base.reactive
 - importer.ccm:
     provide: engine.importer
+- reactive2.ccm:
+    provide: engine.base.reactive2
+- reactive3.ccm:
+    provide: engine.base.reactive3
 test:
 - test.cc

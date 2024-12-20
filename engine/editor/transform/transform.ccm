@@ -120,13 +120,13 @@ public:
       ImGui::SeparatorText("Selected object transform info:");
       auto  selected = _selected.lock();
       auto& transform = selected->getController();
-      transform.refLocation().change([](glm::vec3& location) {
+      transform.refLocation().set([](glm::vec3& location) {
         ImGui::InputFloat3("Location", &location[0]);
       });
-      transform.refRotateEuler().change([](glm::vec3& rotate_euler) {
+      transform.refRotateEuler().set([](glm::vec3& rotate_euler) {
         ImGui::InputFloat3("Rotate Euler", &rotate_euler[0]);
       });
-      transform.refScaleFactor().change([](glm::vec3& scale_factor) {
+      transform.refScaleFactor().set([](glm::vec3& scale_factor) {
         ImGui::InputFloat3("Scale Factor", &scale_factor[0]);
       });
       ImGui::Text("Transform Mode:");
