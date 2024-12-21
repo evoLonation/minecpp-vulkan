@@ -77,13 +77,18 @@ private:
         auto ret = getAxisPos(*_axis, getRoot().getTransToWorld());
         TOY_ASSERT(ret);
         _start_pos = *ret;
-        _last_factor = 1.0f;
+        // todo: operator[]
+        _last_factor = getTargetController().refScaleFactor().get()[(int)*_axis];
       } else if (_plane_norm) {
         _planes[(int)*_plane_norm].setDragging(true);
         auto ret = getPlanePos(*_plane_norm, getRoot().getTransToWorld());
         TOY_ASSERT(ret);
         _start_plane_pos = *ret;
-        _last_plane_factor = glm::vec2{ 1, 1 };
+        // todo: operator[]
+        _last_plane_factor = glm::vec2{
+          getTargetController().refScaleFactor().get()[((int)*_plane_norm + 1) % 3],
+          getTargetController().refScaleFactor().get()[((int)*_plane_norm + 2) % 3],
+        };
       }
     } else if (input[fw::Mouse::LEFT]->state == fw::ButtonState::RELEASE) {
       if (_axis) {
@@ -115,7 +120,7 @@ private:
 
   void setScaleFactor(float start_pos, float now_pos, mt::Axis axis, float& last_factor) {
     float scale_factor;
-    if (_unit_factor != 1) {
+    if (!mt::eq(_unit_factor, 1)) {
       if (mt::eq(now_pos, 0)) {
         scale_factor = 0;
       } else if (now_pos < 0) {
@@ -128,8 +133,12 @@ private:
     } else {
       scale_factor = now_pos / start_pos;
     }
-    getTargetController().scale(axis, scale_factor / last_factor);
-    last_factor = scale_factor;
+    if (glm::abs(last_factor * scale_factor) > 0.01) {
+      // todo: operator[]
+      getTargetController().refScaleFactor().set([&](glm::vec3& f) {
+        f[(int)axis] = last_factor * scale_factor;
+      });
+    }
   }
 };
 
