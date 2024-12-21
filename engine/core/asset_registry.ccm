@@ -1,12 +1,12 @@
 module;
 #include <toy.h>
-export module engine.assets.registry;
+export module engine.asset.registry;
 
 import engine.mesh;
 import engine.texture;
 import engine.node;
 import engine.object;
-import engine.assets;
+import engine.asset;
 import std;
 import toy;
 

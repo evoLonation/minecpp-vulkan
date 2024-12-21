@@ -17,3 +17,5 @@ module:
     implement: render.queue_requestor
 - submitter.ccm:
     provide: render.submitter
+- submitter.cc:
+    implement: render.submitter

@@ -5,7 +5,7 @@ module;
 export module engine.object;
 
 import engine.camera;
-import engine.assets;
+import engine.asset;
 import engine.draw_unit;
 import engine.base;
 import pipeline.id;
@@ -23,40 +23,13 @@ export namespace eg {
 class SceneObject : public Node {
 public:
   SceneObject() = default;
-  ~SceneObject() {
-    if (_draw_unit.get()) {
-      _draw_unit2object.erase(_draw_unit.get());
-    }
-  }
-  void setDrawUnit(uptr<DrawUnit> draw_unit) {
-    if (_draw_unit.get()) {
-      _draw_unit2object.erase(_draw_unit.get());
-    }
-    _draw_unit = std::move(draw_unit);
-    setActive(true);
-    if (_draw_unit.get()) {
-      _draw_unit2object[_draw_unit.get()] = this;
-    }
-  }
+  ~SceneObject();
+  void setDrawUnit(uptr<DrawUnit> draw_unit);
   auto getDrawUnit() -> DrawUnit* { return _draw_unit.get(); }
-  void setActive(bool active) {
-    if (active) {
-      _draw_unit->setActive(&getTransToWorld());
-    } else {
-      _draw_unit->resetActive();
-    }
-  }
-  auto isSelected() -> bool {
-    return _draw_unit.get() && IdPipeline::getInstance().getSelectedDrawUnit() == _draw_unit.get();
-  }
+  void setActive(bool active);
+  auto isSelected() -> bool;
 
-  static auto getSelected() -> SceneObject* {
-    if (auto iter = _draw_unit2object.find(IdPipeline::getInstance().getSelectedDrawUnit());
-        iter != _draw_unit2object.end()) {
-      return iter->second;
-    }
-    return nullptr;
-  }
+  static auto getSelected() -> SceneObject*;
 
 private:
   uptr<DrawUnit> _draw_unit;
@@ -64,33 +37,8 @@ private:
   static inline std::unordered_map<DrawUnit*, SceneObject*> _draw_unit2object;
 
 public:
-  auto assetSerialize() -> AssetPackager override {
-    if (!_draw_unit) {
-      return { 0, {}, Node::assetSerialize() };
-    } else {
-      return {
-        1,
-        std::tuple{
-          AssetRef{ _draw_unit->getMesh().getPtr() },
-          AssetRef{ _draw_unit->getTexture().getPtr() },
-          _draw_unit->isUpLayer(),
-        },
-        Node::assetSerialize(),
-      };
-    }
-  }
-  void assetDeserialize(AssetUnpacker unpacker) override {
-    Node::assetDeserialize(unpacker.extractInherited());
-    auto id = unpacker.getId();
-    if (id == 0) {
-      unpacker.extract<>();
-    } else {
-      auto [mesh_ref, texture_ref, up_layer] = unpacker.extract<AssetRef, AssetRef, bool>();
-      setDrawUnit(std::make_unique<DrawUnit>(
-        mesh_ref.consume<Mesh>(), texture_ref.consume<Texture>(), up_layer
-      ));
-    }
-  }
+  auto assetSerialize() -> AssetPackager override;
+  void assetDeserialize(AssetUnpacker unpacker) override;
   REGISTER_ASSET_PATH("scene_object")
 };
 /**
@@ -100,25 +48,7 @@ public:
  */
 class FixedDistanceNode : public Node {
 public:
-  FixedDistanceNode() {
-    _fixed_distance_node = std::make_shared<Node>();
-    _view_pos = &Camera::getInstance().getViewPos();
-    // todo: make _distance reactive too
-    _fixed_distance_node->attachTo(this);
-    _fixed_distance_node->getTransToParent().bindNow(
-      [this](glm::mat4 const& to_world, glm::vec3 const& location_camera) {
-        {
-          auto location_object = mt::transformDot(to_world, glm::vec3{ 0, 0, 0 });
-          auto new_location_object =
-            location_camera + _distance * glm::normalize(location_object - location_camera);
-          return mt::inverse(to_world) *
-                 mt::translate(glm::vec3{ new_location_object - location_object }) * to_world;
-        }
-      },
-      &getTransToWorld(),
-      _view_pos
-    );
-  }
+  FixedDistanceNode();
   FixedDistanceNode(float distance) : FixedDistanceNode() { setDistance(distance); }
   ~FixedDistanceNode() = default;
   void setDistance(float distance) { _distance = distance; }

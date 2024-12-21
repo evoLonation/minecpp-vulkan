@@ -5,7 +5,7 @@ module;
 export module engine.texture;
 
 import engine.base;
-import engine.assets;
+import engine.asset;
 import render;
 import std;
 import toy;

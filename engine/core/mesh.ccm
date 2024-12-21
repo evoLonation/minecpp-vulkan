@@ -7,7 +7,7 @@ export module engine.mesh;
 import engine.base;
 import render;
 import toy.persistent;
-import engine.assets;
+import engine.asset;
 import math;
 import std;
 import toy;

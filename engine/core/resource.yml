@@ -10,7 +10,7 @@ module:
 - texture.ccm:
     provide: engine.texture
 - assets.ccm:
-    provide: engine.assets
+    provide: engine.asset
 - object.ccm:
     provide: engine.object
 - base.ccm:
@@ -18,10 +18,20 @@ module:
 - draw_unit.ccm:
     provide: engine.draw_unit
 - asset_registry.ccm:
-    provide: engine.assets.registry
+    provide: engine.asset.registry
 - importer.ccm:
     provide: engine.importer
 - reactive.ccm:
     provide: engine.base.reactive
+- assets.cc:
+    implement: engine.asset
+- camera.cc:
+    implement: engine.camera
+- node.cc:
+    implement: engine.node
+- object.cc:
+    implement: engine.object
+- reactive.cc:
+    implement: engine.base.reactive
 test:
 - test.cc
