@@ -16,15 +16,15 @@ public:
     _arrows[0].init(mt::Axis::X, false);
     _arrows[1].init(mt::Axis::Y, false);
     _arrows[2].init(mt::Axis::Z, false);
-    _arrows[0].getRoot().attachTo(getRoot().get());
-    _arrows[1].getRoot().attachTo(getRoot().get());
-    _arrows[2].getRoot().attachTo(getRoot().get());
+    _arrows[0].getRoot().attachTo(&getFixedDistanceNode());
+    _arrows[1].getRoot().attachTo(&getFixedDistanceNode());
+    _arrows[2].getRoot().attachTo(&getFixedDistanceNode());
     _planes[0].init(mt::Axis::X);
     _planes[1].init(mt::Axis::Y);
     _planes[2].init(mt::Axis::Z);
-    _planes[0].getRoot().attachTo(getRoot().get());
-    _planes[1].getRoot().attachTo(getRoot().get());
-    _planes[2].getRoot().attachTo(getRoot().get());
+    _planes[0].getRoot().attachTo(&getFixedDistanceNode());
+    _planes[1].getRoot().attachTo(&getFixedDistanceNode());
+    _planes[2].getRoot().attachTo(&getFixedDistanceNode());
     setMode(WORLD);
     resetTarget();
   }
@@ -67,12 +67,12 @@ private:
       }
       if (_axis) {
         _arrows[(int)*_axis].setDragging(true);
-        auto ret = getAxisPos(*_axis, getRoot()->getTransToWorld());
+        auto ret = getAxisPos(*_axis, getRoot().getTransToWorld());
         TOY_ASSERT(ret);
         _start_pos = *ret;
       } else if (_plane_norm) {
         _planes[(int)*_plane_norm].setDragging(true);
-        auto ret = getPlanePos(*_plane_norm, getRoot()->getTransToWorld());
+        auto ret = getPlanePos(*_plane_norm, getRoot().getTransToWorld());
         TOY_ASSERT(ret);
         _start_plane_pos = *ret;
       }
@@ -85,7 +85,7 @@ private:
       _plane_norm = {};
       _axis = {};
     } else if (_axis) {
-      auto ret = getAxisPos(*_axis, getRoot()->getTransToWorld());
+      auto ret = getAxisPos(*_axis, getRoot().getTransToWorld());
       if (ret) {
         auto  now_pos = *ret;
         float delta;
@@ -97,7 +97,7 @@ private:
         getTargetController().translate(*_axis, delta);
       }
     } else if (_plane_norm) {
-      auto ret = getPlanePos(*_plane_norm, getRoot()->getTransToWorld());
+      auto ret = getPlanePos(*_plane_norm, getRoot().getTransToWorld());
       if (ret) {
         auto  now_pos_1 = ret->x;
         auto  now_pos_2 = ret->y;

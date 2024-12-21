@@ -93,21 +93,26 @@ public:
   }
   REGISTER_ASSET_PATH("scene_object")
 };
-
+/**
+ * @brief
+ * Object self is normal node, and _fixed_distance_node is a child node that is always at a fixed
+ * distance for self
+ */
 class FixedDistanceNode : public Node {
 public:
   FixedDistanceNode() {
     _fixed_distance_node = std::make_shared<Node>();
-    _fixed_distance_node->attachTo(this);
     _view_pos = &Camera::getInstance().getViewPos();
     // todo: make _distance reactive too
+    _fixed_distance_node->attachTo(this);
     _fixed_distance_node->getTransToParent().bindNow(
       [this](glm::mat4 const& to_world, glm::vec3 const& location_camera) {
         {
           auto location_object = mt::transformDot(to_world, glm::vec3{ 0, 0, 0 });
           auto new_location_object =
             location_camera + _distance * glm::normalize(location_object - location_camera);
-          return mt::translate(glm::vec3{ new_location_object - location_object });
+          return mt::inverse(to_world) *
+                 mt::translate(glm::vec3{ new_location_object - location_object }) * to_world;
         }
       },
       &getTransToWorld(),
@@ -122,7 +127,6 @@ public:
 
 private:
   ptr<Node>               _fixed_distance_node;
-  wptr<Node>              _last_root;
   Reval<glm::vec3> const* _view_pos;
   float                   _distance = 4.0f;
 };

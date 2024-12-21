@@ -187,12 +187,12 @@ public:
       detach();
     }
     setParent(node);
-    doRecusively([node](Node* child) { child->_root = node->_root; });
+    doRecursively([node](Node* child) { child->_root = node->_root; });
   }
   void detach() {
     TOY_ASSERT(_parent);
     resetParent();
-    doRecusively([this](Node* child) { child->_root = this; });
+    doRecursively([this](Node* child) { child->_root = this; });
   }
   auto getController() -> ModelController& { return _controller; }
   auto getTransToParent() -> Reval<glm::mat4>& { return _to_parent; }
@@ -205,10 +205,10 @@ public:
   auto getChildren() -> std::unordered_set<ptr<Node>>& { return _children; }
   auto isRoot() -> bool { return !_parent; }
   auto getRoot() -> Node& { return *_root; }
-  void doRecusively(std::function<void(Node*)> const& dealer) {
+  void doRecursively(std::function<void(Node*)> const& dealer) {
     dealer(this);
     for (auto& child : _children) {
-      child->doRecusively(dealer);
+      child->doRecursively(dealer);
     }
   }
 

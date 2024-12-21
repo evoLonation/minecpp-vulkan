@@ -72,6 +72,7 @@ public:
   void setName(std::string name) { _name = std::move(name); }
 
   void update() {
+    // todo: better algorithm to Topological Sorting
     if (_track) {
       toy::debugf("start update \"{}\"", _name);
     }

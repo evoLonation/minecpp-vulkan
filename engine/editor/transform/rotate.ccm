@@ -62,7 +62,7 @@ public:
   RotateTool() {
     for (auto [i, plane] : _planes | toy::enumerate) {
       plane.init(static_cast<mt::Axis>(i));
-      plane.getRoot().attachTo(getRoot().get());
+      plane.getRoot().attachTo(&getFixedDistanceNode());
     }
     setMode(WORLD);
     resetTarget();
@@ -88,13 +88,13 @@ private:
       if (iter != _planes.end()) {
         auto plane_norm = static_cast<mt::Axis>(iter - _planes.begin());
         enableKeepRotate();
-        TOY_DEBUG(int(plane_norm));
+        // TOY_DEBUG(int(plane_norm));
         _plane_norm = plane_norm;
         _planes[int(plane_norm)].setDragging(true);
         auto ret = getNowDraggingPos(plane_norm);
         TOY_ASSERT(ret);
         _last_pos = *ret;
-        TOY_DEBUG(_last_pos);
+        // TOY_DEBUG(_last_pos);
       }
     } else if (input[fw::Mouse::LEFT]->state == fw::ButtonState::RELEASE) {
       if (_plane_norm) {
@@ -130,7 +130,7 @@ private:
       .direction = unit2 - unit1,
       .point = glm::vec3{ 0, 0, 0 },
     };
-    line_rotate_base.transform(getRoot()->getTransToWorld());
+    line_rotate_base.transform(getRoot().getTransToWorld());
     if (mt::eq(
           glm::cross(line_cursor.direction, line_rotate_base.direction), glm::vec3{ 0, 0, 0 }
         )) {
