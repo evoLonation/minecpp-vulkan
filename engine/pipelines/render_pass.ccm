@@ -2,8 +2,8 @@ module;
 #include <toy.h>
 export module pipeline.render_pass;
 
-import engine.draw_unit;
 import engine.base;
+import engine.object;
 import pipeline.render_target;
 import framework;
 import engine.camera;

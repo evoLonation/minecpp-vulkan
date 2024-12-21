@@ -12,7 +12,6 @@ import engine.texture;
 import engine.mesh;
 import engine.base;
 import engine.node;
-import engine.draw_unit;
 import engine.object;
 import <tinyobj_loader_c.h>;
 import std;

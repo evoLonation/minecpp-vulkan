@@ -2,8 +2,8 @@ module;
 #include <toy.h>
 export module editor.transform.publics;
 
+import pipeline.id;
 import engine.object;
-import engine.draw_unit;
 import engine.shape;
 import engine.node;
 import engine.base;
@@ -33,6 +33,46 @@ auto getCursorLineInWorld() -> LineSegment {
   start = mt::transformDot(trans, start);
   end = mt::transformDot(trans, end);
   return LineSegment{ start, end };
+}
+
+/**
+ * @brief
+ * Object self is normal node, and _fixed_distance_node is a child node that is always at a fixed
+ * distance for self
+ */
+class FixedDistanceNode : public Node {
+public:
+  FixedDistanceNode();
+  FixedDistanceNode(float distance) : FixedDistanceNode() { setDistance(distance); }
+  ~FixedDistanceNode() = default;
+  void setDistance(float distance) { _distance = distance; }
+  auto getDistance() -> float { return _distance; }
+  auto getFixedDistanceNode() -> Node& { return *_fixed_distance_node; }
+
+private:
+  ptr<Node>               _fixed_distance_node;
+  Reval<glm::vec3> const* _view_pos;
+  float                   _distance = 4.0f;
+};
+
+FixedDistanceNode::FixedDistanceNode() {
+  _fixed_distance_node = std::make_shared<Node>();
+  _view_pos = &Camera::getInstance().getViewPos();
+  // todo: make _distance reactive too
+  _fixed_distance_node->attachTo(this);
+  _fixed_distance_node->getTransToParent().bindNow(
+    [this](glm::mat4 const& to_world, glm::vec3 const& location_camera) {
+      {
+        auto location_object = mt::transformDot(to_world, glm::vec3{ 0, 0, 0 });
+        auto new_location_object =
+          location_camera + _distance * glm::normalize(location_object - location_camera);
+        return mt::inverse(to_world) *
+               mt::translate(glm::vec3{ new_location_object - location_object }) * to_world;
+      }
+    },
+    &getTransToWorld(),
+    _view_pos
+  );
 }
 
 enum class BindMode {
@@ -122,9 +162,9 @@ public:
    */
   void setTarget(ptr<Node> target) {
     // todo remove
-    if (target.get() == &getRoot()) {
-      return;
-    }
+    // if (target.get() == &getRoot()) {
+    //   return;
+    // }
     setActiveRecursively(true);
     _target_controller.setTarget(target);
   }
@@ -134,10 +174,10 @@ public:
   }
   auto getTarget() -> Node* { return _target_controller.getTarget(); }
   auto getTargetController() -> ModelController& { return _target_controller; }
+  auto getRoot() -> Node& { return *_root; }
 
 protected:
   auto getFixedDistanceNode() -> Node& { return _root->getFixedDistanceNode(); }
-  auto getRoot() -> Node& { return *_root; }
 
 private:
   ptr<FixedDistanceNode> _root;
@@ -192,7 +232,9 @@ public:
     createEdge(*_edge_2, unit_2, unit_1);
   }
   auto isSelected() -> bool {
-    return _cube->isSelected() || _edge_1->isSelected() || _edge_2->isSelected();
+    auto* selected = IdPipeline::getInstance().getSelectedDrawUnit();
+    return _cube->getDrawUnit() == selected || _edge_1->getDrawUnit() == selected ||
+           _edge_2->getDrawUnit() == selected;
   }
   auto getRoot() -> Node& { return *_root; }
   void setDragging(bool dragging) {
@@ -252,7 +294,10 @@ public:
     }
     _arrow->attachTo(_root.get());
   }
-  auto isSelected() -> bool { return _arrow->isSelected(); }
+  auto isSelected() -> bool {
+    auto* selected = IdPipeline::getInstance().getSelectedDrawUnit();
+    return _arrow->getDrawUnit() == selected;
+  }
   void setDragging(bool dragging) {
     if (_dragging != dragging) {
       auto color = glm::vec4{};

@@ -15,8 +15,6 @@ module:
     provide: engine.object
 - base.ccm:
     provide: engine.base
-- draw_unit.ccm:
-    provide: engine.draw_unit
 - asset_registry.ccm:
     provide: engine.asset.registry
 - importer.ccm:

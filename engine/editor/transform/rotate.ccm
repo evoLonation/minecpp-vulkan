@@ -2,9 +2,9 @@ module;
 #include <toy.h>
 export module editor.transform.rotate;
 
+import pipeline.id;
 import engine.base;
 import engine.node;
-import engine.draw_unit;
 import engine.shape;
 import engine.object;
 import editor.transform.publics;
@@ -32,7 +32,10 @@ public:
     _plane->attachTo(&_root->getFixedDistanceNode());
   }
   auto getRoot() -> Node& { return *_root; }
-  auto isSelected() -> bool { return _plane->isSelected(); }
+  auto isSelected() -> bool {
+    auto* selected = IdPipeline::getInstance().getSelectedDrawUnit();
+    return _plane->getDrawUnit() == selected;
+  }
   void setDragging(bool dragging) {
     if (_dragging != dragging) {
       auto color = glm::vec4{};

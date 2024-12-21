@@ -2,6 +2,7 @@ module;
 #include <toy.h>
 export module editor.transform;
 
+import pipeline.id;
 import editor.transform.publics;
 import editor.transform.move;
 import editor.transform.rotate;
@@ -19,10 +20,11 @@ import toy;
 
 export namespace eg {
 
-class ObjectClickObserver : public fw::Action, public PROACTIVE_SINGLETON(ObjectClickObserver) {
+class ObjectClickObserver : public fw::Action {
 public:
   ObjectClickObserver() : fw::Action(fw::Stage::BEFORE_RENDER) {}
-  auto getClick() -> SceneObject* { return _clicked.expired() ? nullptr : _clicked.lock().get(); }
+  void exclude(wptr<Node> object) { _exclusions.push_back(object); }
+  auto getClick() -> Node* { return _clicked.expired() ? nullptr : _clicked.lock().get(); }
 
 private:
   void runLoop(fw::ActionContext const& ctx) override {
@@ -31,20 +33,31 @@ private:
       _clicked = {};
     }
     if (auto state = input.getState(fw::Mouse::LEFT)) {
+      Node* selected = nullptr;
+      if (auto* draw_unit = IdPipeline::getInstance().getSelectedDrawUnit()) {
+        selected = &draw_unit->getSceneObject()->getRoot();
+        if (auto iter = ranges::find_if(
+              _exclusions, [selected](auto& object) { return object.lock().get() == selected; }
+            );
+            iter != _exclusions.end()) {
+          selected = nullptr;
+        }
+      }
       if (state->state == fw::ButtonState::DOWN) {
-        if (auto selected = SceneObject::getSelected()) {
+        if (selected) {
           _down = selected->getPtr();
         }
       } else if (!_down.expired() && state->state == fw::ButtonState::RELEASE) {
-        if (_down.lock().get() == SceneObject::getSelected()) {
+        if (_down.lock().get() == selected) {
           _clicked = _down;
         }
         _down = {};
       }
     }
   }
-  wptr<SceneObject> _down;
-  wptr<SceneObject> _clicked;
+  wptr<Node>              _down;
+  wptr<Node>              _clicked;
+  std::vector<wptr<Node>> _exclusions;
 };
 
 void input(std::string const& label, glm::vec3& value) {
@@ -67,6 +80,9 @@ public:
     auto mode = _tool_mode == 0 ? ToolBase::LOCAL : ToolBase::WORLD;
     _move_tool->setMode(mode);
     _rotate_tool->setMode(mode);
+    _click_observer.exclude(_move_tool->getRoot().getPtr());
+    _click_observer.exclude(_rotate_tool->getRoot().getPtr());
+    _click_observer.exclude(_scale_tool->getRoot().getPtr());
   }
   void draw() override {
     ImGui::SeparatorText("Transform Tools");
@@ -143,28 +159,29 @@ public:
 
 private:
   void runLoop(fw::ActionContext const& ctx) override {
-    if (auto object = ObjectClickObserver::getInstance().getClick()) {
-      auto& root = object->getRoot();
-      _selected = root.getPtr();
+    if (auto root = _click_observer.getClick()) {
+      _selected = root->getPtr();
       switch (_tool_type) {
       case 1:
-        _move_tool->setTarget(root.getPtr());
+        _move_tool->setTarget(root->getPtr());
         break;
       case 2:
-        _rotate_tool->setTarget(root.getPtr());
+        _rotate_tool->setTarget(root->getPtr());
         break;
       case 3:
-        _scale_tool->setTarget(root.getPtr());
+        _scale_tool->setTarget(root->getPtr());
         break;
       }
     }
   }
-  wptr<Node>       _selected;
-  int              _tool_type = 0;
-  int              _tool_mode = 0;
-  uptr<MoveTool>   _move_tool = std::make_unique<MoveTool>();
-  uptr<RotateTool> _rotate_tool = std::make_unique<RotateTool>();
-  uptr<ScaleTool>  _scale_tool = std::make_unique<ScaleTool>();
+
+  wptr<Node>          _selected;
+  int                 _tool_type = 0;
+  int                 _tool_mode = 0;
+  uptr<MoveTool>      _move_tool = std::make_unique<MoveTool>();
+  uptr<RotateTool>    _rotate_tool = std::make_unique<RotateTool>();
+  uptr<ScaleTool>     _scale_tool = std::make_unique<ScaleTool>();
+  ObjectClickObserver _click_observer;
 };
 
 } // namespace eg

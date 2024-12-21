@@ -4,7 +4,6 @@ export module pipeline.id;
 
 import pipeline.render_target;
 import engine.base;
-import engine.draw_unit;
 import engine.texture;
 import engine.mesh;
 import std;
@@ -16,6 +15,7 @@ import framework;
 
 import math;
 import pipeline.base;
+import engine.object;
 import pipeline.uniform;
 import engine.camera;
 

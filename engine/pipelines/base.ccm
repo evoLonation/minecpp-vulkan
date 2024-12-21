@@ -5,7 +5,6 @@ export module pipeline.base;
 export import pipeline.render_pass;
 import pipeline.render_target;
 import engine.base;
-import engine.draw_unit;
 import std;
 import toy;
 import glm;

@@ -6,9 +6,7 @@ export module engine.object;
 
 import engine.camera;
 import engine.asset;
-import engine.draw_unit;
 import engine.base;
-import pipeline.id;
 import framework;
 import math;
 import render;
@@ -20,45 +18,115 @@ import toy;
 
 export namespace eg {
 
+class SceneObject;
+
+struct MaterialInfo {
+  float shininess = 16.0f;
+};
+
+class DrawUnit {
+public:
+  DrawUnit() = default;
+  DrawUnit(ptr<Mesh> mesh, ptr<Texture> texture, bool up_layer = false) {
+    init(std::move(mesh), std::move(texture), up_layer);
+  }
+  DrawUnit(MeshData mesh_data, glm::vec3 color = { 0.7f, 0.2f, 0.5f }, bool up_layer = false) {
+    init(mesh_data, color, up_layer);
+  }
+  void init(ptr<Mesh> mesh, ptr<Texture> texture, bool up_layer = false) {
+    _mesh = std::move(mesh);
+    _texture = std::move(texture);
+    _up_layer = up_layer;
+    afterCreated();
+  }
+  void init(MeshData mesh_data, glm::vec3 color = { 0.7f, 0.2f, 0.5f }, bool up_layer = false) {
+    mesh_data.tex_coords = views::repeat(glm::vec2{ 0, 0 }) |
+                           views::take(mesh_data.positions.size()) | ranges::to<std::vector>();
+    auto mesh = std::make_shared<Mesh>(mesh_data);
+    auto color_a = glm::vec4{ color, 1.0f };
+    auto texture = std::make_shared<Texture>(rd::SampledTexture{
+      std::as_bytes(std::span{ &color_a, 1 }),
+      VK_FORMAT_R32G32B32A32_SFLOAT,
+      { 1, 1 },
+      false,
+      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+    });
+    init(std::move(mesh), std::move(texture), up_layer);
+  }
+  ~DrawUnit() { beforeDestroy(); }
+  auto getTransform() -> Reval<glm::mat4> const& {
+    TOY_ASSERT(isActive());
+    return *_transform;
+  }
+  auto getSceneObject() -> SceneObject* {
+    TOY_ASSERT(isActive());
+    return _scene_object;
+  }
+  auto getMesh() -> Mesh& { return *_mesh; }
+  auto getTexture() -> Texture& { return *_texture; }
+  auto getMaterial() -> MaterialInfo& { return _material; }
+  auto isUpLayer() -> bool { return _up_layer; }
+  void setActive(SceneObject* scene_object, Reval<glm::mat4> const* transform) {
+    _scene_object = scene_object;
+    _transform = transform;
+  }
+  void resetActive() {
+    _scene_object = nullptr;
+    _transform = nullptr;
+  }
+  auto isActive() -> bool { return _scene_object; }
+
+private:
+  SceneObject*            _scene_object = nullptr;
+  Reval<glm::mat4> const* _transform = nullptr;
+  ptr<Mesh>               _mesh;
+  ptr<Texture>            _texture;
+  MaterialInfo            _material;
+  bool                    _up_layer = false;
+
+private:
+  void afterCreated();
+  void beforeDestroy();
+};
+
+class DrawUnitObservable : public PROACTIVE_SINGLETON(DrawUnitObservable) {
+public:
+  void addAfterCreated(toy::Observer<DrawUnit&>* observer) { _after_created.addObserver(observer); }
+  void removeAfterCreated(toy::Observer<DrawUnit&>* observer) {
+    _after_created.removeObserver(observer);
+  }
+  void addBeforeDestroy(toy::Observer<DrawUnit&>* observer) {
+    _before_destroy.addObserver(observer);
+  }
+  void removeBeforeDestroy(toy::Observer<DrawUnit&>* observer) {
+    _before_destroy.removeObserver(observer);
+  }
+
+private:
+  friend DrawUnit;
+  toy::Observable<DrawUnit&> _after_created;
+  toy::Observable<DrawUnit&> _before_destroy;
+};
+
+void DrawUnit::afterCreated() { DrawUnitObservable::getInstance()._after_created.notify(*this); }
+
+void DrawUnit::beforeDestroy() { DrawUnitObservable::getInstance()._before_destroy.notify(*this); }
+
 class SceneObject : public Node {
 public:
   SceneObject() = default;
-  ~SceneObject();
+  ~SceneObject() = default;
   void setDrawUnit(uptr<DrawUnit> draw_unit);
   auto getDrawUnit() -> DrawUnit* { return _draw_unit.get(); }
   void setActive(bool active);
-  auto isSelected() -> bool;
-
-  static auto getSelected() -> SceneObject*;
 
 private:
   uptr<DrawUnit> _draw_unit;
-
-  static inline std::unordered_map<DrawUnit*, SceneObject*> _draw_unit2object;
 
 public:
   auto assetSerialize() -> AssetPackager override;
   void assetDeserialize(AssetUnpacker unpacker) override;
   REGISTER_ASSET_PATH("scene_object")
-};
-/**
- * @brief
- * Object self is normal node, and _fixed_distance_node is a child node that is always at a fixed
- * distance for self
- */
-class FixedDistanceNode : public Node {
-public:
-  FixedDistanceNode();
-  FixedDistanceNode(float distance) : FixedDistanceNode() { setDistance(distance); }
-  ~FixedDistanceNode() = default;
-  void setDistance(float distance) { _distance = distance; }
-  auto getDistance() -> float { return _distance; }
-  auto getFixedDistanceNode() -> Node& { return *_fixed_distance_node; }
-
-private:
-  ptr<Node>               _fixed_distance_node;
-  Reval<glm::vec3> const* _view_pos;
-  float                   _distance = 4.0f;
 };
 
 } // namespace eg

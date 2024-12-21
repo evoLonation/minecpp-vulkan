@@ -4,8 +4,8 @@ export module pipeline.light;
 
 import pipeline.render_target;
 import engine.base;
-import engine.draw_unit;
 import engine.texture;
+import engine.object;
 import engine.mesh;
 import std;
 import toy;
