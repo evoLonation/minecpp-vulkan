@@ -464,4 +464,52 @@ TEST(Reval) {
     a.set(20);
     TOY_ASSERT(b.get() == 20);
   }
+
+  {
+    auto common = [&](int choose) {
+      // a -> [b, c]
+      // c -> b
+      // b -> [b1, b2]
+      auto a = Reval<int>{ 1 };
+      auto b = Reval<int>{ 2 };
+      auto b1 = Reval<int>{ 3 };
+      auto b2 = Reval<int>{ 4 };
+      auto c = Reval<int>{ 3 };
+      a.setName("a");
+      b.setName("b");
+      b1.setName("b1");
+      b2.setName("b2");
+      c.setName("c");
+      a.setTrack(track);
+      b.setTrack(track);
+      b1.setTrack(track);
+      b2.setTrack(track);
+      c.setTrack(track);
+      a.bind([](int b, int c) { return b + c; }, &b, &c);
+      c.bind([](int b) { return b + 1; }, &b);
+      b.bind([](int b1, int b2) { return b1 - b2; }, &b1, &b2);
+
+      if (choose == 0) {
+        b1.set(20);
+        b2.set(10);
+        TOY_ASSERT(a.get() == 21);
+      } else if (choose == 1) {
+        b.bind([](int c) { return c + 1; }, &c);
+
+        b.set(20);
+        TOY_ASSERT(a.get() == 41);
+        c.set(30);
+        TOY_ASSERT(a.get() == 61);
+        b1.set(50);
+        b2.set(40);
+        TOY_ASSERT(a.get() == 21);
+      }
+    };
+    toy::debug("test if compute is correctly ordered");
+    // wrong order: push a, push b, push c
+    // correct order: push a, push c, push b
+    common(0);
+    // add bidirectional bind b <-> c
+    common(1);
+  }
 }
