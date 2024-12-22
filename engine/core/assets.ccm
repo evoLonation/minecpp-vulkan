@@ -39,7 +39,7 @@ struct GuidSerializer : toy::CustomSerializer<
 
 template <typename T>
 concept Assetable = std::derived_from<T, class Asset> && std::is_default_constructible_v<T> &&
-                    std::same_as<decltype(T::asset_path), fs::path>;
+                    std::same_as<decltype(T::asset_id), fs::path>;
 
 // std::function is not move only, so we need to wrap it to accept move only lambda
 class MoveOnlyFunctionBase {
@@ -82,6 +82,7 @@ private:
     : AssetPackager{ 0, std::move(package), std::nullopt } {}
 
   friend class AssetManager;
+  friend struct AssetMemberSerializer;
   void pushToPickle(toy::Pickle& pickle) const { (*_push_func)(pickle); }
 
 public:
@@ -144,6 +145,7 @@ private:
 class Asset {
 public:
   Asset() = default;
+  virtual ~Asset() = default;
   // lazy load
   auto getAssetGuid() const -> Guid const& {
     if (!_guid.valid()) {
@@ -188,10 +190,39 @@ private:
   std::shared_ptr<Asset> _asset;
 };
 
+struct AssetRefSerializer {
+  static void serialize(toy::Pickle& pickle, AssetRef const& t);
+  static auto deserialize(toy::Pickle& pickle) -> AssetRef;
+};
+
+class AssetMember {
+public:
+  AssetMember() = default;
+  template <std::derived_from<Asset> T>
+  AssetMember(std::unique_ptr<T> const& asset) : _to_serialize{ asset.get() } {}
+  AssetMember(std::unique_ptr<Asset> const& asset) : _to_serialize{ asset.get() } {}
+  auto consume() -> std::unique_ptr<Asset> { return std::move(_from_deserialize); }
+  template <typename T>
+  auto consume() -> std::unique_ptr<T> {
+    return std::unique_ptr<T>{ static_cast<T*>(_from_deserialize.release()) };
+  }
+
+private:
+  friend struct AssetMemberSerializer;
+  Asset*                 _to_serialize = nullptr;
+  std::unique_ptr<Asset> _from_deserialize;
+};
+
+struct AssetMemberSerializer {
+  static void serialize(toy::Pickle& pickle, AssetMember const& t);
+  static auto deserialize(toy::Pickle& pickle) -> AssetMember;
+};
+
 class AssetManager : public PROACTIVE_SINGLETON(AssetManager) {
 public:
   AssetManager(
-    std::unordered_map<fs::path, std::function<std::shared_ptr<Asset>()>> default_asset_map
+    std::unordered_map<fs::path, std::function<std::shared_ptr<Asset>()>> default_asset_map,
+    std::unordered_map<fs::path, std::function<std::unique_ptr<Asset>()>> default_asset_member_map
   );
   ONLY_MOVEABLE(AssetManager);
   ~AssetManager();
@@ -210,14 +241,14 @@ public:
   auto load(std::string const& name, fs::path const& asset_dir) -> std::shared_ptr<Asset>;
   template <Assetable T>
   auto load(std::string const& name) -> std::shared_ptr<T> {
-    auto path = T::asset_path;
+    auto path = T::asset_id;
     return std::static_pointer_cast<T>(load(name, path));
   }
 
   auto getAssetNames(fs::path const& asset_dir) -> std::vector<std::string>;
   template <Assetable T>
   auto getAssetNames() -> std::vector<std::string> {
-    return getAssetNames(T::asset_path);
+    return getAssetNames(T::asset_id);
   }
 
   /**
@@ -226,16 +257,18 @@ public:
   void clearAssets(fs::path const& asset_dir);
   template <Assetable T>
   void clearAssets() {
-    auto path = T::asset_path;
+    auto path = T::asset_id;
     clearAssets(path);
   }
+
+  auto getDefaultAssetByPath(fs::path const& path) -> std::shared_ptr<Asset>;
+  auto getDefaultAssetMemberByPath(fs::path const& path) -> std::unique_ptr<Asset>;
 
 private:
   void loadNamedAssets(fs::path const& asset_dir);
   void saveNamedAssets(fs::path const& asset_dir);
   void loadAssetPaths();
   void saveAssetPaths();
-  auto getDefaultAssetByPath(fs::path const& path) -> std::shared_ptr<Asset>;
 
   std::unordered_map<Guid, fs::path, GuidHasher>                      _asset_path_map;
   std::unordered_map<fs::path, std::unordered_map<std::string, Guid>> _named_asset_map;
@@ -245,15 +278,11 @@ private:
   std::unordered_set<Guid, GuidHasher> _saving_already_saved;
 
   std::unordered_map<fs::path, std::function<std::shared_ptr<Asset>()>> _default_asset_map;
+  std::unordered_map<fs::path, std::function<std::unique_ptr<Asset>()>> _default_asset_member_map;
 
   static inline fs::path _root_dir = "assets";
   static inline fs::path _asset_path_file = "asset_path.json";
   static inline fs::path _named_assets_file = "named_assets.json";
-};
-
-struct AssetRefSerializer {
-  static void serialize(toy::Pickle& pickle, AssetRef const& t);
-  static auto deserialize(toy::Pickle& pickle) -> AssetRef;
 };
 
 } // namespace eg
@@ -261,4 +290,9 @@ struct AssetRefSerializer {
 template <>
 struct toy::DefaultSerializerS<eg::AssetRef> {
   using type = eg::AssetRefSerializer;
+};
+
+template <>
+struct toy::DefaultSerializerS<eg::AssetMember> {
+  using type = eg::AssetMemberSerializer;
 };

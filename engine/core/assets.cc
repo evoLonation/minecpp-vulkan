@@ -36,9 +36,11 @@ void Asset::assetDeserialize(AssetUnpacker unpacker) {
 }
 
 AssetManager::AssetManager(
-  std::unordered_map<fs::path, std::function<std::shared_ptr<Asset>()>> default_asset_map
+  std::unordered_map<fs::path, std::function<std::shared_ptr<Asset>()>> default_asset_map,
+  std::unordered_map<fs::path, std::function<std::unique_ptr<Asset>()>> default_asset_member_map
 ) {
   _default_asset_map = std::move(default_asset_map);
+  _default_asset_member_map = std::move(default_asset_member_map);
   if (!fs::exists(_root_dir)) {
     fs::create_directories(_root_dir);
   }
@@ -199,6 +201,13 @@ auto AssetManager::getDefaultAssetByPath(fs::path const& path) -> std::shared_pt
   return _default_asset_map[path]();
 }
 
+auto AssetManager::getDefaultAssetMemberByPath(fs::path const& path) -> std::unique_ptr<Asset> {
+  toy::throwf(
+    _default_asset_member_map.contains(path), "No default asset member for path {}", path.string()
+  );
+  return _default_asset_member_map[path]();
+}
+
 void AssetRefSerializer::serialize(toy::Pickle& pickle, AssetRef const& t) {
   auto& manager = AssetManager::getInstance();
   manager.save(t._asset);
@@ -209,6 +218,20 @@ auto AssetRefSerializer::deserialize(toy::Pickle& pickle) -> AssetRef {
   auto& manager = AssetManager::getInstance();
   auto  guid = pickle.pop<Guid, GuidSerializer>();
   return AssetRef{ manager.load(guid) };
+}
+
+void AssetMemberSerializer::serialize(toy::Pickle& pickle, AssetMember const& t) {
+  t._to_serialize->assetSerialize().pushToPickle(pickle);
+  pickle.push(t._to_serialize->getAssetPath().string());
+}
+
+auto AssetMemberSerializer::deserialize(toy::Pickle& pickle) -> AssetMember {
+  auto& manager = AssetManager::getInstance();
+  auto  asset = manager.getDefaultAssetMemberByPath(pickle.pop<std::string>());
+  asset->assetDeserialize(AssetUnpacker{ &pickle });
+  auto member = AssetMember{};
+  member._from_deserialize = std::move(asset);
+  return member;
 }
 
 } // namespace eg

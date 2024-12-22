@@ -10,9 +10,15 @@ import engine.asset;
 import std;
 import toy;
 
-#define REGISTER_ASSET(cls) { cls::asset_path, []() { return std::make_shared<cls>(); } }
+#define REGISTER_ASSET(cls) { cls::asset_id, []() { return std::make_shared<cls>(); } }
+#define REGISTER_ASSET_MEMBER(cls) { cls::asset_id, []() { return std::make_unique<cls>(); } }
 
 namespace eg {
+
+/**
+ * @brief NOTE: Every final class must registered here
+ * if D -> B, B is registered but D is not, loading to D will bug
+ */
 
 export std::unordered_map<fs::path, std::function<std::shared_ptr<Asset>()>> default_asset_map = {
   REGISTER_ASSET(Mesh),
@@ -21,4 +27,9 @@ export std::unordered_map<fs::path, std::function<std::shared_ptr<Asset>()>> def
   REGISTER_ASSET(SceneObject),
 };
 
-}
+export std::unordered_map<fs::path, std::function<std::unique_ptr<Asset>()>>
+  default_asset_member_map = {
+    REGISTER_ASSET_MEMBER(LightUnit),
+  };
+
+} // namespace eg
