@@ -46,28 +46,22 @@ struct RenderPassInfo {
   std::vector<PipelineInfo>            pipelines;
 };
 
-class DrawContext {
+class DrawContextBase {
 public:
-  DrawContext(DrawUnit* draw_unit) { _draw_unit = draw_unit; }
-  UNCOPYABLE_MOVEABLE(DrawContext);
+  DrawContextBase() = default;
+  UNCOPYABLE_MOVEABLE(DrawContextBase);
   virtual void recordDraw(rd::PipelineDrawer& drawer) = 0;
   /**
    * @brief called on each frame in render stage before @ref recordDraw
    */
   virtual auto checkNeedDestroy() -> bool = 0;
-  virtual ~DrawContext() = default;
-
-protected:
-  auto getDrawUnit() -> DrawUnit& { return *_draw_unit; }
-
-private:
-  DrawUnit* _draw_unit = nullptr;
+  virtual ~DrawContextBase() = default;
 };
 
-class RenderPass {
+class RenderPassBase {
 public:
-  RenderPass() = default;
-  RenderPass(RenderPassInfo const& info) { init(info); }
+  RenderPassBase() = default;
+  RenderPassBase(RenderPassInfo const& info) { init(info); }
   void init(RenderPassInfo const& info) {
     auto attachment_infos = std::vector<rd::AttachmentInfo>{};
     {
@@ -138,17 +132,9 @@ public:
     _render_pass = rd::RenderPassPipeline{ attachment_infos, subpass_infos };
     _multi_sampling = info.multi_sampling;
     _color_n = info.colors.size();
+    _global_dsets.resize(info.pipelines.size());
     _draw_contexts.resize(info.pipelines.size());
     _unbound_units.resize(info.pipelines.size());
-    _global_dsets.resize(info.pipelines.size());
-    _after_created._render_pass = this;
-    _before_destroy._render_pass = this;
-    DrawUnitObservable::getInstance().addAfterCreated(&_after_created);
-    DrawUnitObservable::getInstance().addBeforeDestroy(&_before_destroy);
-  }
-  ~RenderPass() {
-    DrawUnitObservable::getInstance().removeAfterCreated(&_after_created);
-    DrawUnitObservable::getInstance().removeBeforeDestroy(&_before_destroy);
   }
   void setColorClearValue(uint32 index, rd::ColorClearValue clear_value) {
     _render_pass.setColorClear(_multi_sampling ? index * 2 : index, clear_value);
@@ -158,6 +144,17 @@ public:
   }
   void setGlobalDescriptorSet(uint32 index, rd::DescriptorSet* dset) {
     _global_dsets.at(index) = dset;
+  }
+  void addDrawUnit(DrawUnitBase* draw_unit) {
+    for (auto& unbound_units : _unbound_units) {
+      unbound_units.insert(draw_unit);
+    }
+  }
+  void removeDrawUnit(DrawUnitBase* draw_unit) {
+    for (auto [draw_contexts, unbound_units] : views::zip(_draw_contexts, _unbound_units)) {
+      draw_contexts.erase(draw_unit);
+      unbound_units.erase(draw_unit);
+    }
   }
 
   void draw(std::vector<RenderTarget*> colors, std::vector<RenderTarget*> depsts) {
@@ -201,27 +198,6 @@ public:
     _render_pass.recordDraw(attachments);
   }
 
-  UNCOPYABLE_MOVEABLE(RenderPass);
-
-private:
-  struct DrawUnitCreatedObserver : public toy::Observer<DrawUnit&> {
-    void observerNotified(DrawUnit& draw_unit) override {
-      for (auto& unbound_units : _render_pass->_unbound_units) {
-        unbound_units.insert(&draw_unit);
-      }
-    }
-    RenderPass* _render_pass;
-  };
-  struct DrawUnitDestroyObserver : public toy::Observer<DrawUnit&> {
-    void observerNotified(DrawUnit& draw_unit) override {
-      for (auto [draw_contexts, unbound_units] :
-           views::zip(_render_pass->_draw_contexts, _render_pass->_unbound_units)) {
-        draw_contexts.erase(&draw_unit);
-        unbound_units.erase(&draw_unit);
-      }
-    }
-    RenderPass* _render_pass;
-  };
   void updateDrawContexts() {
     tryCreateContexts();
     tryDestroyContexts();
@@ -231,7 +207,7 @@ private:
     for (auto [i, draw_contexts, unbound_units] :
          views::zip(views::iota(0u), _draw_contexts, _unbound_units)) {
       for (auto iter = unbound_units.begin(); iter != unbound_units.end();) {
-        if (auto draw_context = fromDrawUnit(i, **iter)) {
+        if (auto draw_context = fromDrawUnitBase(i, **iter)) {
           draw_contexts.emplace(*iter, std::move(draw_context));
           iter = unbound_units.erase(iter);
         } else {
@@ -253,17 +229,17 @@ private:
     }
   }
 
-  virtual auto fromDrawUnit(uint32 subpass_i, DrawUnit& draw_unit) -> uptr<DrawContext> = 0;
+public:
+  virtual auto fromDrawUnitBase(uint32 subpass_i, DrawUnitBase& draw_unit)
+    -> uptr<DrawContextBase> = 0;
 
 private:
-  rd::RenderPassPipeline                                        _render_pass;
-  std::optional<VkSampleCountFlagBits>                          _multi_sampling;
-  uint32                                                        _color_n;
-  std::vector<rd::DescriptorSet*>                               _global_dsets;
-  std::vector<std::unordered_map<DrawUnit*, uptr<DrawContext>>> _draw_contexts;
-  std::vector<std::unordered_set<DrawUnit*>>                    _unbound_units;
-  DrawUnitCreatedObserver                                       _after_created;
-  DrawUnitDestroyObserver                                       _before_destroy;
+  rd::RenderPassPipeline                                                _render_pass;
+  std::optional<VkSampleCountFlagBits>                                  _multi_sampling;
+  uint32                                                                _color_n;
+  std::vector<rd::DescriptorSet*>                                       _global_dsets;
+  std::vector<std::unordered_map<DrawUnitBase*, uptr<DrawContextBase>>> _draw_contexts;
+  std::vector<std::unordered_set<DrawUnitBase*>>                        _unbound_units;
 };
 
 } // namespace eg

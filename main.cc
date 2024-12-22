@@ -33,11 +33,9 @@ int main() {
     auto  ctx = ctx::Context{ "hello vulkan", 1920, 1080 };
     auto  dset_pools = rd::meta::DescriptorPools{};
     auto& input = fw::InputProcessor::getInstance();
-    auto  draw_unit_observable = eg::DrawUnitObservable{};
     auto  render_pass = eg::RenderPassLoop{};
 
-    auto click_observer = eg::ObjectClickObserver{};
-    auto manager = eg::AssetManager{ eg::default_asset_map };
+    auto manager = eg::AssetManager{ eg::default_asset_map, eg::default_asset_member_map };
 
     auto camera = eg::Camera{};
     auto controller = eg::CameraController{ &camera };
@@ -46,10 +44,10 @@ int main() {
     // auto node = eg::DoTheImportThing("model/backpack/backpack.obj");
     // manager.save(node, "backpack");
     auto node = manager.load<eg::SceneObject>("backpack");
-    // auto object = std::make_shared<eg::SceneObject>();
-    // object->setDrawUnit(
-    //   std::make_unique<eg::DrawUnit>(eg::generateCube(), glm::vec3{ 0.5, 0.5, 0.5 })
-    // );
+    auto object = std::make_shared<eg::SceneObject>();
+    object->setDrawUnit(
+      std::make_unique<eg::LightUnit>(eg::generateCube(), glm::vec3{ 0.5, 0.5, 0.5 })
+    );
     // object.getController().refLocation() = glm::vec3{ 0, 0, 0 };
     // object.getController().refRotateEuler() = glm::vec3{ 0, 0, 0 };
     // object.getController().refScaleFactor() = glm::vec3{ 1, 1, 1 };

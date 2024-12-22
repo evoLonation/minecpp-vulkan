@@ -53,8 +53,8 @@ constexpr auto layout_global_light = rd::meta::DescriptorLayout{
   rd::meta::UniformBinding{ rd::meta::type<LightData>(), rd::meta::Stage::FRAGMENT },
 };
 
-struct LightContext : public CustomDrawContext<layout_model_light> {
-  using CustomDrawContext::CustomDrawContext;
+struct LightContext : public CustomLightContext<layout_model_light> {
+  using CustomLightContext::CustomLightContext;
   auto checkNeedDestroy() -> bool override { return false; }
   void beforeRecord() override {
     auto model = getDrawUnit().getTransform().get();
@@ -65,9 +65,9 @@ struct LightContext : public CustomDrawContext<layout_model_light> {
   UniformBuffer<LightModelFragmentData> frag_data;
 };
 
-export class LightPipeline : public RenderPass {
+export class LightPipeline : public RenderPass<LightPipeline, LightUnit> {
 public:
-  auto fromDrawUnit(uint32 subpass_i, DrawUnit& draw_unit) -> uptr<DrawContext> override {
+  auto fromDrawUnit(uint32 subpass_i, LightUnit& draw_unit) -> uptr<DrawContextBase> {
     if (_uplayer == draw_unit.isUpLayer()) {
       auto ret = std::make_unique<LightContext>(&draw_unit);
       ret->setDescriptorSet({

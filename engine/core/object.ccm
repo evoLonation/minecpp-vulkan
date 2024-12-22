@@ -20,113 +20,105 @@ export namespace eg {
 
 class SceneObject;
 
-struct MaterialInfo {
-  float shininess = 16.0f;
-};
-
-class DrawUnit {
+class DrawUnitBase : public Asset {
 public:
-  DrawUnit() = default;
-  DrawUnit(ptr<Mesh> mesh, ptr<Texture> texture, bool up_layer = false) {
-    init(std::move(mesh), std::move(texture), up_layer);
-  }
-  DrawUnit(MeshData mesh_data, glm::vec3 color = { 0.7f, 0.2f, 0.5f }, bool up_layer = false) {
-    init(mesh_data, color, up_layer);
-  }
-  void init(ptr<Mesh> mesh, ptr<Texture> texture, bool up_layer = false) {
-    _mesh = std::move(mesh);
-    _texture = std::move(texture);
-    _up_layer = up_layer;
-    afterCreated();
-  }
-  void init(MeshData mesh_data, glm::vec3 color = { 0.7f, 0.2f, 0.5f }, bool up_layer = false) {
-    mesh_data.tex_coords = views::repeat(glm::vec2{ 0, 0 }) |
-                           views::take(mesh_data.positions.size()) | ranges::to<std::vector>();
-    auto mesh = std::make_shared<Mesh>(mesh_data);
-    auto color_a = glm::vec4{ color, 1.0f };
-    auto texture = std::make_shared<Texture>(rd::SampledTexture{
-      std::as_bytes(std::span{ &color_a, 1 }),
-      VK_FORMAT_R32G32B32A32_SFLOAT,
-      { 1, 1 },
-      false,
-      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-    });
-    init(std::move(mesh), std::move(texture), up_layer);
-  }
-  ~DrawUnit() { beforeDestroy(); }
-  auto getTransform() -> Reval<glm::mat4> const& {
-    TOY_ASSERT(isActive());
-    return *_transform;
-  }
-  auto getSceneObject() -> SceneObject* {
-    TOY_ASSERT(isActive());
-    return _scene_object;
-  }
-  auto getMesh() -> Mesh& { return *_mesh; }
-  auto getTexture() -> Texture& { return *_texture; }
-  auto getMaterial() -> MaterialInfo& { return _material; }
-  auto isUpLayer() -> bool { return _up_layer; }
-  void setActive(SceneObject* scene_object, Reval<glm::mat4> const* transform) {
-    _scene_object = scene_object;
-    _transform = transform;
-  }
-  void resetActive() {
-    _scene_object = nullptr;
-    _transform = nullptr;
-  }
+  DrawUnitBase() = default;
+  auto getTransform() -> Reval<glm::mat4> const&;
+  auto getSceneObject() -> SceneObject*;
   auto isActive() -> bool { return _scene_object; }
+
+protected:
+  friend SceneObject;
+  virtual void setActive(SceneObject* scene_object, Reval<glm::mat4> const* transform);
+  virtual void resetActive();
 
 private:
   SceneObject*            _scene_object = nullptr;
   Reval<glm::mat4> const* _transform = nullptr;
-  ptr<Mesh>               _mesh;
-  ptr<Texture>            _texture;
-  MaterialInfo            _material;
-  bool                    _up_layer = false;
-
-private:
-  void afterCreated();
-  void beforeDestroy();
 };
 
-class DrawUnitObservable : public PROACTIVE_SINGLETON(DrawUnitObservable) {
+template <std::derived_from<DrawUnitBase> T>
+class DrawUnitObservable {
 public:
-  void addAfterCreated(toy::Observer<DrawUnit&>* observer) { _after_created.addObserver(observer); }
-  void removeAfterCreated(toy::Observer<DrawUnit&>* observer) {
-    _after_created.removeObserver(observer);
+  static void addActivateObserver(toy::Observer<T&>* observer) { _activated.addObserver(observer); }
+  static void addDeactivateObserver(toy::Observer<T&>* observer) {
+    _deactivated.addObserver(observer);
   }
-  void addBeforeDestroy(toy::Observer<DrawUnit&>* observer) {
-    _before_destroy.addObserver(observer);
+  static void removeActivateObserver(toy::Observer<T&>* observer) {
+    _activated.removeObserver(observer);
   }
-  void removeBeforeDestroy(toy::Observer<DrawUnit&>* observer) {
-    _before_destroy.removeObserver(observer);
+  static void removeDeactivateObserver(toy::Observer<T&>* observer) {
+    _deactivated.removeObserver(observer);
   }
 
 private:
-  friend DrawUnit;
-  toy::Observable<DrawUnit&> _after_created;
-  toy::Observable<DrawUnit&> _before_destroy;
+  template <typename>
+  friend class DrawUnit;
+  static inline toy::Observable<T&> _activated;
+  static inline toy::Observable<T&> _deactivated;
 };
 
-void DrawUnit::afterCreated() { DrawUnitObservable::getInstance()._after_created.notify(*this); }
+template <typename Derived>
+class DrawUnit : public DrawUnitBase {
+public:
+  void setActive(SceneObject* scene_object, Reval<glm::mat4> const* transform) override {
+    DrawUnitBase::setActive(scene_object, transform);
+    DrawUnitObservable<Derived>::_activated.notify(*static_cast<Derived*>(this));
+  }
+  void resetActive() override {
+    DrawUnitBase::resetActive();
+    DrawUnitObservable<Derived>::_deactivated.notify(*static_cast<Derived*>(this));
+  }
+};
 
-void DrawUnit::beforeDestroy() { DrawUnitObservable::getInstance()._before_destroy.notify(*this); }
+struct MaterialInfo {
+  float shininess = 16.0f;
+};
+
+class LightUnit : public DrawUnit<LightUnit> {
+public:
+  LightUnit() = default;
+  LightUnit(ptr<Mesh> mesh, ptr<Texture> texture, bool up_layer = false);
+  LightUnit(MeshData mesh_data, glm::vec3 color = { 0.7f, 0.2f, 0.5f }, bool up_layer = false);
+  void init(ptr<Mesh> mesh, ptr<Texture> texture, bool up_layer = false);
+  void init(MeshData mesh_data, glm::vec3 color = { 0.7f, 0.2f, 0.5f }, bool up_layer = false);
+  auto getMesh() -> Mesh& { return *_mesh; }
+  auto getTexture() -> Texture& { return *_texture; }
+  auto getMaterial() -> MaterialInfo& { return _material; }
+  auto isUpLayer() -> bool { return _up_layer; }
+
+private:
+  ptr<Mesh>    _mesh;
+  ptr<Texture> _texture;
+  MaterialInfo _material;
+  bool         _up_layer = false;
+
+public:
+  auto assetSerialize() -> AssetPackager override;
+  void assetDeserialize(AssetUnpacker unpacker) override;
+
+  REGISTER_ASSET_ID("light_unit")
+};
 
 class SceneObject : public Node {
 public:
   SceneObject() = default;
   ~SceneObject() = default;
-  void setDrawUnit(uptr<DrawUnit> draw_unit);
-  auto getDrawUnit() -> DrawUnit* { return _draw_unit.get(); }
+  void setDrawUnit(uptr<DrawUnitBase> draw_unit);
+  auto getDrawUnit() -> DrawUnitBase* { return _draw_unit.get(); }
+  template <std::derived_from<DrawUnitBase> T>
+  auto getDrawUnit() -> T* {
+    return dynamic_cast<T*>(_draw_unit.get());
+  }
   void setActive(bool active);
 
 private:
-  uptr<DrawUnit> _draw_unit;
+  uptr<DrawUnitBase> _draw_unit;
 
 public:
   auto assetSerialize() -> AssetPackager override;
   void assetDeserialize(AssetUnpacker unpacker) override;
-  REGISTER_ASSET_PATH("scene_object")
+  REGISTER_ASSET_ID("scene_object")
 };
 
 } // namespace eg

@@ -30,15 +30,15 @@ constexpr auto layout_id = rd::meta::DescriptorLayout{
   rd::meta::UniformBinding{ rd::meta::type<uint32>(), rd::meta::Stage::FRAGMENT },
 };
 
-struct IdContext : public CustomDrawContext<layout_id> {
-  using CustomDrawContext::CustomDrawContext;
+struct IdContext : public CustomLightContext<layout_id> {
+  using CustomLightContext::CustomLightContext;
   auto checkNeedDestroy() -> bool override { return false; }
   void beforeRecord() override { transform = getDrawUnit().getTransform().get(); }
   UniformBuffer<rd::align::mat4> transform;
   UniformBuffer<uint32>          id;
 
-  static inline std::unordered_map<uint32, DrawUnit*> id2draw_unit;
-  static inline std::unordered_map<DrawUnit*, uint32> draw_unit2id;
+  static inline std::unordered_map<uint32, DrawUnitBase*> id2draw_unit;
+  static inline std::unordered_map<DrawUnitBase*, uint32> draw_unit2id;
 
   ~IdContext() {
     id2draw_unit.erase(id.get());
@@ -46,9 +46,10 @@ struct IdContext : public CustomDrawContext<layout_id> {
   }
 };
 
-export class IdPipeline : public RenderPass, public PROACTIVE_SINGLETON(IdPipeline) {
+export class IdPipeline : public RenderPass<IdPipeline, LightUnit>,
+                          public PROACTIVE_SINGLETON(IdPipeline) {
 public:
-  auto fromDrawUnit(uint32 subpass_i, DrawUnit& draw_unit) -> uptr<DrawContext> override {
+  auto fromDrawUnit(uint32 subpass_i, LightUnit& draw_unit) -> uptr<DrawContextBase> {
     if ((subpass_i == 1) == draw_unit.isUpLayer()) {
       auto ret = std::make_unique<IdContext>(&draw_unit);
       ret->id = _last_allocated_id++;
@@ -92,7 +93,7 @@ public:
     _reader = { VK_FORMAT_R32_UINT, { 1, 1 } };
   }
 
-  auto getSelectedDrawUnit() -> DrawUnit* {
+  auto getSelectedDrawUnit() -> DrawUnitBase* {
     if (auto it = IdContext::id2draw_unit.find(_current_id); it != IdContext::id2draw_unit.end()) {
       return it->second;
     } else {
@@ -115,10 +116,9 @@ public:
   }
 
 private:
-  rd::ImageLocalReader           _reader;
-  uint32                         _current_id = 0;
-  uint32                         _last_allocated_id = 1;
-  std::function<void(DrawUnit&)> _before_destroy;
+  rd::ImageLocalReader _reader;
+  uint32               _current_id = 0;
+  uint32               _last_allocated_id = 1;
 };
 
 } // namespace eg

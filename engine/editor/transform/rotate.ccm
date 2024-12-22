@@ -24,7 +24,7 @@ public:
     _root->setDistance(_fixed_distance);
     _plane = std::make_shared<SceneObject>();
     auto norm = mt::unitVec(norm_axis);
-    _plane->setDrawUnit(std::make_unique<DrawUnit>(generateCylinder(1, _height, 90), norm, true));
+    _plane->setDrawUnit(std::make_unique<LightUnit>(generateCylinder(1, _height, 90), norm, true));
     auto origin_norm = glm::vec3{ 0, 0, 1 };
     if (auto cross = glm::cross(norm, origin_norm); !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
       _plane->getController().rotate(cross, 90);
@@ -44,8 +44,9 @@ public:
       } else {
         color = glm::vec4{ mt::unitVec(_norm_axis), 1 };
       }
-      _plane->getDrawUnit()->getTexture().getTexture().writeContent(std::as_bytes(std::span{ &color,
-                                                                                             1 }));
+      _plane->getDrawUnit<LightUnit>()->getTexture().getTexture().writeContent(
+        std::as_bytes(std::span{ &color, 1 })
+      );
     }
     _dragging = dragging;
   }

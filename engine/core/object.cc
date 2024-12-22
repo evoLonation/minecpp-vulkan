@@ -4,12 +4,87 @@ module engine.object;
 
 namespace eg {
 
-void SceneObject::setDrawUnit(uptr<DrawUnit> draw_unit) {
+auto DrawUnitBase::getTransform() -> Reval<glm::mat4> const& {
+  TOY_ASSERT(isActive());
+  return *_transform;
+}
+
+auto DrawUnitBase::getSceneObject() -> SceneObject* {
+  TOY_ASSERT(isActive());
+  return _scene_object;
+}
+
+void DrawUnitBase::setActive(SceneObject* scene_object, Reval<glm::mat4> const* transform) {
+  _scene_object = scene_object;
+  _transform = transform;
+}
+
+void DrawUnitBase::resetActive() {
+  _scene_object = nullptr;
+  _transform = nullptr;
+}
+
+LightUnit::LightUnit(ptr<Mesh> mesh, ptr<Texture> texture, bool up_layer) {
+  init(std::move(mesh), std::move(texture), up_layer);
+}
+
+LightUnit::LightUnit(MeshData mesh_data, glm::vec3 color, bool up_layer) {
+  init(mesh_data, color, up_layer);
+}
+
+void LightUnit::init(ptr<Mesh> mesh, ptr<Texture> texture, bool up_layer) {
+  _mesh = std::move(mesh);
+  _texture = std::move(texture);
+  _up_layer = up_layer;
+}
+
+void LightUnit::init(MeshData mesh_data, glm::vec3 color, bool up_layer) {
+  mesh_data.tex_coords = views::repeat(glm::vec2{ 0, 0 }) |
+                         views::take(mesh_data.positions.size()) | ranges::to<std::vector>();
+  auto mesh = std::make_shared<Mesh>(mesh_data);
+  auto color_a = glm::vec4{ color, 1.0f };
+  auto texture = std::make_shared<Texture>(rd::SampledTexture{
+    std::as_bytes(std::span{ &color_a, 1 }),
+    VK_FORMAT_R32G32B32A32_SFLOAT,
+    { 1, 1 },
+    false,
+    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+  });
+  init(std::move(mesh), std::move(texture), up_layer);
+}
+
+auto LightUnit::assetSerialize() -> AssetPackager {
+  toy::debug("LightUnit::assetSerialize");
+  return {
+    std::tuple{
+      AssetRef{ getMesh().getPtr() },
+      AssetRef{ getTexture().getPtr() },
+      isUpLayer(),
+    },
+    DrawUnit::assetSerialize(),
+  };
+}
+
+void LightUnit::assetDeserialize(AssetUnpacker unpacker) {
+  DrawUnit::assetDeserialize(unpacker.extractInherited());
+  auto [mesh, texture, up_layer] = unpacker.extract<AssetRef, AssetRef, bool>();
+  init(mesh.consume<Mesh>(), texture.consume<Texture>(), up_layer);
+}
+
+void SceneObject::setDrawUnit(uptr<DrawUnitBase> draw_unit) {
+  if (_draw_unit) {
+    setActive(false);
+  }
   _draw_unit = std::move(draw_unit);
+  TOY_ASSERT(!_draw_unit->isActive());
   setActive(true);
 }
 
 void SceneObject::setActive(bool active) {
+  TOY_ASSERT(_draw_unit);
+  if (active == _draw_unit->isActive()) {
+    return;
+  }
   if (active) {
     _draw_unit->setActive(this, &getTransToWorld());
   } else {
@@ -23,11 +98,7 @@ auto SceneObject::assetSerialize() -> AssetPackager {
   } else {
     return {
       1,
-      std::tuple{
-        AssetRef{ _draw_unit->getMesh().getPtr() },
-        AssetRef{ _draw_unit->getTexture().getPtr() },
-        _draw_unit->isUpLayer(),
-      },
+      std::tuple{ AssetMember{ _draw_unit } },
       Node::assetSerialize(),
     };
   }
@@ -36,13 +107,12 @@ auto SceneObject::assetSerialize() -> AssetPackager {
 void SceneObject::assetDeserialize(AssetUnpacker unpacker) {
   Node::assetDeserialize(unpacker.extractInherited());
   auto id = unpacker.getId();
+  TOY_DEBUG(id);
   if (id == 0) {
     unpacker.extract<>();
   } else {
-    auto [mesh_ref, texture_ref, up_layer] = unpacker.extract<AssetRef, AssetRef, bool>();
-    setDrawUnit(
-      std::make_unique<DrawUnit>(mesh_ref.consume<Mesh>(), texture_ref.consume<Texture>(), up_layer)
-    );
+    auto [draw_unit] = unpacker.extract<AssetMember>();
+    setDrawUnit(draw_unit.consume<DrawUnitBase>());
   }
 }
 

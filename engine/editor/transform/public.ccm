@@ -203,7 +203,7 @@ public:
     _root = std::make_shared<Node>();
     auto normal = mt::unitVec(normal_axis);
     _cube = std::make_shared<SceneObject>();
-    _cube->setDrawUnit(std::make_unique<DrawUnit>(generateCube(), glm::vec3{ 0.5, 0.5, 0.5 }, true)
+    _cube->setDrawUnit(std::make_unique<LightUnit>(generateCube(), glm::vec3{ 0.5, 0.5, 0.5 }, true)
     );
     auto& controller = _cube->getController();
     controller.refScaleFactor() = glm::vec3{ 1, 1, 1 } - normal * (1 - _thickness) -
@@ -215,7 +215,7 @@ public:
     auto unit_2 = mt::unitVec(mt::Axis(((int)normal_axis + 2) % 3));
     auto createEdge = [this](SceneObject& edge, glm::vec3 const& unit1, glm::vec3 const& unit2) {
       edge.setDrawUnit(
-        std::make_unique<DrawUnit>(generateCylinder(_thickness / 2, _edge), unit1, true)
+        std::make_unique<LightUnit>(generateCylinder(_thickness / 2, _edge), unit1, true)
       );
       auto& controller = edge.getController();
       controller.setMode(ModelController::WORLD);
@@ -251,12 +251,15 @@ public:
         edge1_color = { mt::unitVec(mt::Axis{ ((int)_norm_axis + 1) % 3 }), 1 };
         edge2_color = { mt::unitVec(mt::Axis{ ((int)_norm_axis + 2) % 3 }), 1 };
       }
-      _cube->getDrawUnit()->getTexture().getTexture().writeContent(std::as_bytes(std::span{
-        &cube_color, 1 }));
-      _edge_1->getDrawUnit()->getTexture().getTexture().writeContent(std::as_bytes(std::span{
-        &edge1_color, 1 }));
-      _edge_2->getDrawUnit()->getTexture().getTexture().writeContent(std::as_bytes(std::span{
-        &edge2_color, 1 }));
+      _cube->getDrawUnit<LightUnit>()->getTexture().getTexture().writeContent(
+        std::as_bytes(std::span{ &cube_color, 1 })
+      );
+      _edge_1->getDrawUnit<LightUnit>()->getTexture().getTexture().writeContent(
+        std::as_bytes(std::span{ &edge1_color, 1 })
+      );
+      _edge_2->getDrawUnit<LightUnit>()->getTexture().getTexture().writeContent(
+        std::as_bytes(std::span{ &edge2_color, 1 })
+      );
     }
     _dragging = dragging;
   }
@@ -283,10 +286,10 @@ public:
     auto unit = mt::unitVec(axis);
     _arrow = std::make_shared<SceneObject>();
     if (!is_scale) {
-      _arrow->setDrawUnit(std::make_unique<DrawUnit>(generateArrow(0.02, 1, 0.04, 0.2), unit, true)
+      _arrow->setDrawUnit(std::make_unique<LightUnit>(generateArrow(0.02, 1, 0.04, 0.2), unit, true)
       );
     } else {
-      _arrow->setDrawUnit(std::make_unique<DrawUnit>(generateCubeArrow(0.02, 1, 0.1), unit, true));
+      _arrow->setDrawUnit(std::make_unique<LightUnit>(generateCubeArrow(0.02, 1, 0.1), unit, true));
     }
     auto arrow_dir = glm::vec3{ 0, 0, 1 };
     if (auto cross = glm::cross(arrow_dir, unit); !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
@@ -306,7 +309,7 @@ public:
       } else {
         color = { mt::unitVec(_axis), 1 };
       }
-      _arrow->getDrawUnit()
+      _arrow->getDrawUnit<LightUnit>()
         ->getTexture() //
         .getTexture()
         .writeContent(std::as_bytes(std::span{ &color, 1 }));

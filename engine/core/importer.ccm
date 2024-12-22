@@ -100,7 +100,7 @@ auto getMeshData(aiMesh const& mesh) -> MeshData {
   return data;
 }
 
-std::unordered_map<std::string, ptr<Texture>> texture_cache;
+std::unordered_map<std::string, wptr<Texture>> texture_cache;
 
 auto getTexture(std::string const& base_path, aiMaterial const* material) -> ptr<Texture> {
   auto diffuse_count = material->GetTextureCount(aiTextureType_DIFFUSE);
@@ -114,8 +114,8 @@ auto getTexture(std::string const& base_path, aiMaterial const* material) -> ptr
     material->GetTexture(type, 0, &filename);
     TOY_DEBUG(filename.C_Str());
     auto path = std::string{ base_path + filename.C_Str() };
-    if (auto it = texture_cache.find(path); it != texture_cache.end()) {
-      return it->second;
+    if (auto it = texture_cache.find(path); it != texture_cache.end() && !it->second.expired()) {
+      return it->second.lock();
     }
     auto texture = std::make_shared<Texture>(
       rd::SampledTexture::fromFile(path, true, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT)
@@ -152,7 +152,7 @@ auto getNodeRecursively(std::string const& base_path, aiScene const* scene, aiNo
     auto  mesh = std::make_shared<Mesh>(MeshData::merge(mesh_datas));
     auto* material = scene->mMaterials[scene->mMeshes[node->mMeshes[0]]->mMaterialIndex];
     auto  texture = getTexture(base_path, material);
-    auto  draw_unit = std::make_unique<DrawUnit>(mesh, texture);
+    auto  draw_unit = std::make_unique<LightUnit>(mesh, texture);
     target->setDrawUnit(std::move(draw_unit));
   }
   TOY_DEBUG(node->mNumChildren);

@@ -36,15 +36,15 @@ constexpr auto layout_model_color = rd::meta::DescriptorLayout{
   rd::meta::UniformBinding{ rd::meta::type<rd::align::vec3>(), rd::meta::Stage::FRAGMENT },
 };
 
-struct TextureContext : public CustomDrawContext<layout_model_texture> {
-  using CustomDrawContext<layout_model_texture>::CustomDrawContext;
+struct TextureContext : public CustomLightContext<layout_model_texture> {
+  using CustomLightContext<layout_model_texture>::CustomLightContext;
   auto checkNeedDestroy() -> bool override { return false; }
   void beforeRecord() override { transform = getDrawUnit().getTransform().get(); }
   UniformBuffer<rd::align::mat4> transform;
 };
 
-struct ColorContext : public CustomDrawContext<layout_model_color> {
-  using CustomDrawContext<layout_model_color>::CustomDrawContext;
+struct ColorContext : public CustomLightContext<layout_model_color> {
+  using CustomLightContext<layout_model_color>::CustomLightContext;
   auto checkNeedDestroy() -> bool override { return false; }
   void beforeRecord() override { transform = getDrawUnit().getTransform().get(); }
 
@@ -52,9 +52,9 @@ struct ColorContext : public CustomDrawContext<layout_model_color> {
   UniformBuffer<rd::align::vec3> color;
 };
 
-export class BasicPipeline : public RenderPass {
+export class BasicPipeline : public RenderPass<BasicPipeline, LightUnit> {
 public:
-  auto fromDrawUnit(uint32 subpass_i, DrawUnit& draw_unit) -> uptr<DrawContext> override {
+  auto fromDrawUnit(uint32 subpass_i, LightUnit& draw_unit) -> uptr<DrawContextBase> {
     if (subpass_i == 0) {
       auto ret = std::make_unique<TextureContext>(&draw_unit);
       ret->setDescriptorSet({ &ret->transform, &draw_unit.getTexture().getTexture() });
