@@ -49,7 +49,7 @@ public:
       );
     _texture = rd::SampledTexture{ std::span{ data }, format, extent, mipmap, use_stage };
   }
-  REGISTER_ASSET_PATH("texture")
+  REGISTER_ASSET_ID("texture")
 };
 
 // todo: serializer

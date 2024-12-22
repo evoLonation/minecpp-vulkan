@@ -25,45 +25,75 @@ public:
     Asset::assetDeserialize(unpacker.extractInherited());
     std::tie(positions, indices) = unpacker.extract<std::vector<glm::vec3>, std::vector<uint16>>();
   }
-  REGISTER_ASSET_PATH("test1")
+  REGISTER_ASSET_ID("test1")
+};
+
+struct TestAssetMember1 : public Asset {
+public:
+  int data = 0;
+
+  auto assetSerialize() -> AssetPackager override {
+    return { std::tuple{ data }, Asset::assetSerialize() };
+  }
+  void assetDeserialize(AssetUnpacker unpacker) override {
+    Asset::assetDeserialize(unpacker.extractInherited());
+    std::tie(data) = unpacker.extract<int>();
+  }
+  REGISTER_ASSET_ID("test_member1")
 };
 
 struct TestAsset2 : public Asset {
 public:
-  bool                        _type;
-  int                         _data;
-  std::shared_ptr<TestAsset1> _ref;
+  bool                              _type;
+  int                               _data;
+  std::shared_ptr<TestAsset1>       _ref;
+  std::unique_ptr<TestAssetMember1> _member;
 
   auto assetSerialize() -> AssetPackager override {
     if (_type) {
-      return { 0, std::tuple{ _data, AssetRef{ _ref } }, Asset::assetSerialize() };
+      return {
+        0,
+        std::tuple{ _data, AssetRef{ _ref }, AssetMember{ _member } },
+        Asset::assetSerialize(),
+      };
     } else {
-      return { 1, std::tuple{ AssetRef{ _ref }, _data }, Asset::assetSerialize() };
+      return {
+        1,
+        std::tuple{ AssetRef{ _ref }, _data, AssetMember{ _member } },
+        Asset::assetSerialize(),
+      };
     }
   }
   void assetDeserialize(AssetUnpacker unpacker) override {
     Asset::assetDeserialize(unpacker.extractInherited());
-    auto     id = unpacker.getId();
-    int      data;
-    AssetRef ref;
+    auto        id = unpacker.getId();
+    int         data;
+    AssetRef    ref;
+    AssetMember member;
     if (id == 0) {
       _type = true;
-      std::tie(data, ref) = unpacker.extract<int, AssetRef>();
+      std::tie(data, ref, member) = unpacker.extract<int, AssetRef, AssetMember>();
     } else if (id == 1) {
       _type = false;
-      std::tie(ref, data) = unpacker.extract<AssetRef, int>();
+      std::tie(ref, data, member) = unpacker.extract<AssetRef, int, AssetMember>();
     }
     _data = data;
     _ref = ref.consume<TestAsset1>();
+    _member = member.consume<TestAssetMember1>();
   }
-  REGISTER_ASSET_PATH("test2")
+  REGISTER_ASSET_ID("test2")
 };
 
 auto getManager() -> AssetManager {
-  auto manager = AssetManager{ {
-    { TestAsset1::asset_path, []() { return std::make_shared<TestAsset1>(); } },
-    { TestAsset2::asset_path, []() { return std::make_shared<TestAsset2>(); } },
-  } };
+  auto manager = AssetManager{
+    {
+      { TestAsset1::asset_id, []() { return std::make_shared<TestAsset1>(); } },
+      { TestAsset2::asset_id, []() { return std::make_shared<TestAsset2>(); } },
+    },
+    {
+      { TestAssetMember1::asset_id, []() { return std::make_unique<TestAssetMember1>(); } },
+    },
+  };
   manager.clearAssets<TestAsset1>();
   manager.clearAssets<TestAsset2>();
   return manager;
@@ -99,7 +129,9 @@ TEST(AssetManager2) {
     auto asset2 = std::make_shared<TestAsset2>();
     asset2->_data = 123;
     asset2->_ref = asset1;
-    asset2->_type = true;
+    asset2->_member = std::make_unique<TestAssetMember1>();
+    asset2->_member->data = 456;
+    asset2->_type = false;
     asset2->setAssetName("my_asset2");
     manager.save(asset2);
     guid2 = asset2->getAssetGuid();
@@ -116,7 +148,7 @@ TEST(AssetManager2) {
     TOY_ASSERT(asset2->getAssetGuid() == guid2, asset2->getAssetGuid().get(), guid2.get());
     TOY_ASSERT(
       asset2->_data == origin_2._data && asset2->_ref->positions == origin_1.positions &&
-      asset2->_ref->indices == origin_1.indices
+      asset2->_ref->indices == origin_1.indices && asset2->_member->data == 456
     );
     auto names = manager.getAssetNames<TestAsset2>();
     TOY_ASSERT(names.size() == 1 && names[0] == "my_asset2");

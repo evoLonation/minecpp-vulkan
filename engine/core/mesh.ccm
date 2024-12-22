@@ -107,7 +107,7 @@ public:
     };
     init(data);
   }
-  REGISTER_ASSET_PATH("mesh")
+  REGISTER_ASSET_ID("mesh")
 };
 
 } // namespace eg
