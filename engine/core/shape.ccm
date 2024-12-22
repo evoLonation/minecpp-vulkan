@@ -1,225 +1,31 @@
 module;
-#include <toy.h>
 export module engine.shape;
 
-import engine.base;
-import engine.texture;
 import engine.mesh;
 import std;
 import toy;
-import glm;
-import render;
-import math;
-import <vulkan_config.h>;
 
 export namespace eg {
 
-auto generateCube() -> MeshData {
-  auto ret = MeshData{};
-  auto& [positions, normals, _, indices] = ret;
-  auto addFace = [&](std::array<glm::vec3, 4> face, glm::vec3 normal) {
-    auto base = positions.size();
-    indices.push_back(base);
-    indices.push_back(base + 1);
-    indices.push_back(base + 2);
-    indices.push_back(base + 2);
-    indices.push_back(base + 3);
-    indices.push_back(base);
-    positions.append_range(face);
-    normals.append_range(views::repeat(normal) | views::take(4));
-  };
-  addFace({ glm::vec3{ 0, 0, 0 }, { 0, 0, 1 }, { 0, 1, 1 }, { 0, 1, 0 } }, { -1, 0, 0 });
-  addFace({ glm::vec3{ 0, 0, 0 }, { 1, 0, 0 }, { 1, 0, 1 }, { 0, 0, 1 } }, { 0, -1, 0 });
-  addFace({ glm::vec3{ 0, 0, 0 }, { 0, 1, 0 }, { 1, 1, 0 }, { 1, 0, 0 } }, { 0, 0, -1 });
-  addFace({ glm::vec3{ 1, 0, 0 }, { 1, 1, 0 }, { 1, 1, 1 }, { 1, 0, 1 } }, { 1, 0, 0 });
-  addFace({ glm::vec3{ 0, 1, 0 }, { 0, 1, 1 }, { 1, 1, 1 }, { 1, 1, 0 } }, { 0, 1, 0 });
-  addFace({ glm::vec3{ 0, 0, 1 }, { 1, 0, 1 }, { 1, 1, 1 }, { 0, 1, 1 } }, { 0, 0, 1 });
-  return ret;
-}
+auto generateCube() -> MeshData;
 
-auto generateCone(float radius = 1.0f, float height = 2.0f) -> MeshData {
-  auto bottom_split_num = 40;
-  auto ret = MeshData{};
-  auto& [vertices, normals, _, indices] = ret;
-  vertices.push_back(glm::vec3{ 0, 0, 0 });
-  normals.push_back(glm::vec3{ 0, 0, -1 });
-  for (auto i : views::iota(0, bottom_split_num)) {
-    auto x = radius * glm::cos(glm::radians(360.0f * i / bottom_split_num));
-    auto y = radius * glm::sin(glm::radians(360.0f * i / bottom_split_num));
-    vertices.push_back(glm::vec3{ x, y, 0 });
-    normals.push_back(glm::vec3{ 0, 0, -1 });
-    indices.push_back(0);
-    indices.push_back((i + 1) % bottom_split_num + 1);
-    indices.push_back(i + 1);
-  }
-  auto normal_z = radius / height;
-  auto offset = vertices.size();
-  for (auto i : views::iota(0, bottom_split_num)) {
-    auto rotate = glm::radians(360.0f * i / bottom_split_num);
-    vertices.push_back(glm::vec3{
-      radius * glm::cos(rotate),
-      radius * glm::sin(rotate),
-      0,
-    });
-    normals.push_back(glm::normalize(glm::vec3{
-      glm::cos(rotate),
-      glm::sin(rotate),
-      normal_z,
-    }));
-    vertices.push_back(glm::vec3{ 0, 0, height });
-    rotate += glm::radians(360.0f / bottom_split_num / 2);
-    normals.push_back(glm::normalize(glm::vec3{
-      glm::cos(rotate),
-      glm::sin(rotate),
-      normal_z,
-    }));
-    indices.push_back(offset + i * 2 + 1);
-    indices.push_back(offset + i * 2);
-    indices.push_back(offset + (i + 1) * 2 % (bottom_split_num * 2));
-  }
-  return ret;
-}
+auto generateCone(float radius = 1.0f, float height = 2.0f) -> MeshData;
 
 auto generateCylinder(float radius = 1.0f, float height = 2.0f, float sector_degree = 360.0f)
-  -> MeshData {
-  TOY_ASSERT(sector_degree <= 360.0f);
-  auto is_full_cylinder = sector_degree == 360.0f;
-  auto split_num = 40;
-  auto ret = MeshData{};
-  auto& [vertices, normals, _, indices] = ret;
-  auto generateBottomOrTop = [&](bool bottom) {
-    vertices.push_back(glm::vec3{ 0, 0, bottom ? 0 : height });
-    auto normal = glm::vec3{ 0, 0, bottom ? -1 : 1 };
-    normals.push_back(normal);
-    auto offset = vertices.size();
-    for (auto i : views::iota(0, is_full_cylinder ? split_num : split_num + 1)) {
-      auto x = radius * glm::cos(glm::radians(sector_degree * i / split_num));
-      auto y = radius * glm::sin(glm::radians(sector_degree * i / split_num));
-      vertices.push_back(glm::vec3{ x, y, bottom ? 0 : height });
-      normals.push_back(normal);
-      if (!is_full_cylinder && i == split_num) {
-        break;
-      }
-      indices.push_back(offset - 1);
-      indices.push_back(offset + (i + 1) % (is_full_cylinder ? split_num : split_num + 1));
-      indices.push_back(offset + i);
-      if (!bottom) {
-        std::swap(indices.back(), *(indices.end() - 2));
-      }
-    }
-  };
-  generateBottomOrTop(true);
-  generateBottomOrTop(false);
-  auto offset = vertices.size();
-  for (auto i : views::iota(0, is_full_cylinder ? split_num : split_num + 1)) {
-    auto x = radius * glm::cos(glm::radians(sector_degree * i / split_num));
-    auto y = radius * glm::sin(glm::radians(sector_degree * i / split_num));
-    vertices.push_back(glm::vec3{ x, y, 0 });
-    normals.push_back(glm::normalize(glm::vec3{ x, y, 0 }));
-    vertices.push_back(glm::vec3{ x, y, height });
-    normals.push_back(glm::normalize(glm::vec3{ x, y, 0 }));
-    if (!is_full_cylinder && i == split_num) {
-      break;
-    }
-    indices.push_back(offset + i * 2 + 1);
-    indices.push_back(offset + i * 2);
-    indices.push_back(offset + (i + 1) * 2 % ((is_full_cylinder ? split_num : split_num + 1) * 2));
-    indices.push_back(offset + (i + 1) * 2 % ((is_full_cylinder ? split_num : split_num + 1) * 2));
-    indices.push_back(
-      offset + (i + 1) * 2 % ((is_full_cylinder ? split_num : split_num + 1) * 2) + 1
-    );
-    indices.push_back(offset + i * 2 + 1);
-  }
-  auto generateSection = [&](float degree, bool start) {
-    auto x = radius * glm::cos(glm::radians(degree));
-    auto y = radius * glm::sin(glm::radians(degree));
-    auto offset = vertices.size();
-    vertices.push_back(glm::vec3{ x, y, height });
-    vertices.push_back(glm::vec3{ x, y, 0 });
-    vertices.push_back(glm::vec3{ 0, 0, 0 });
-    vertices.push_back(glm::vec3{ 0, 0, height });
-    auto normal =
-      glm::normalize(glm::cross(glm::vec3{ x, y, 0 }, glm::vec3{ 0, 0, start ? height : -height }));
-    normals.append_range(views::repeat(normal) | views::take(4));
-    indices.push_back(offset);
-    indices.push_back(offset + (start ? 2 : 1));
-    indices.push_back(offset + (start ? 1 : 2));
-    indices.push_back(offset + (start ? 3 : 2));
-    indices.push_back(offset + (start ? 2 : 3));
-    indices.push_back(offset);
-  };
-  if (!is_full_cylinder) {
-    generateSection(0, true);
-    generateSection(sector_degree, false);
-  }
-  return ret;
-}
+  -> MeshData;
 
-auto generateSphere(float radius = 1.0f) -> MeshData {
-  // v: 纬度, u: 经度
-  // x = r * cos(u) * sin(v)
-  // y = r * sin(u) * sin(v)
-  // z = r * cos(v)
-  auto split_num = 40;
-  auto ret = MeshData{};
-  auto& [vertices, normals, _, indices] = ret;
-  // 纬度 major
-  for (int i = 0; i < split_num; i++) {
-    auto u = glm::radians(360.0f * i / split_num);
-    for (int j = 0; j <= split_num; j++) {
-      auto v = glm::radians(180.0f * j / split_num);
-      auto x = radius * glm::cos(u) * glm::sin(v);
-      auto y = radius * glm::sin(u) * glm::sin(v);
-      auto z = radius * glm::cos(v);
-      vertices.push_back(glm::vec3{ x, y, z });
-      normals.push_back(glm::normalize(glm::vec3{ x, y, z }));
-    }
-  }
-  for (int i = 0; i < split_num; i++) {
-    for (int j = 0; j < split_num; j++) {
-      indices.push_back(i * split_num + j);
-      indices.push_back(i * split_num + j + 1);
-      indices.push_back((i + 1) % split_num * split_num + j + 1);
-      indices.push_back((i + 1) % split_num * split_num + j + 1);
-      indices.push_back((i + 1) % split_num * split_num + j);
-      indices.push_back(i * split_num + j);
-    }
-  }
-  return ret;
-}
+auto generateSphere(float radius = 1.0f) -> MeshData;
 
 auto generateArrow(
   float stick_radius = 0.05,
   float stick_height = 1,
   float head_radius = 0.1,
   float head_height = 0.4
-) -> MeshData {
-  auto cone = generateCone(head_radius, head_height);
-  cone.transform(mt::translate(glm::vec3{ 0, 0, stick_height }));
-  auto cylinder = generateCylinder(stick_radius, stick_height);
-  return MeshData::merge(std::vector{ std::move(cone), std::move(cylinder) });
-}
+) -> MeshData;
 
 auto generateCubeArrow(float stick_radius = 0.05, float stick_height = 1, float head_edge = 0.2)
-  -> MeshData {
-  auto cube = generateCube();
-  cube.transform(
-    mt::translate(glm::vec3{ 0, 0, stick_height }) *
-    mt::scale(glm::vec3{ head_edge, head_edge, head_edge }) *
-    mt::translate(glm::vec3{ -0.5, -0.5, 0 })
-  );
-  auto cylinder = generateCylinder(stick_radius, stick_height);
-  return MeshData::merge(std::vector{ std::move(cube), std::move(cylinder) });
-}
+  -> MeshData;
 
-auto generateAxis() -> MeshData {
-  using mt::Axis;
-  auto arrow_z = generateArrow();
-  auto arrow_x = arrow_z;
-  arrow_x.transform(mt::rotate<Axis::Y>(90));
-  auto arrow_y = arrow_z;
-  arrow_y.transform(mt::rotate<Axis::X>(-90));
-  return MeshData::merge(std::vector{ std::move(arrow_x), std::move(arrow_y), std::move(arrow_z) });
-}
+auto generateAxis() -> MeshData;
 
 } // namespace eg
