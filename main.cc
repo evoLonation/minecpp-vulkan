@@ -27,6 +27,7 @@ import engine.shape;
 import engine.camera;
 // import drag;
 import editor.transform;
+import engine.editor.scene;
 
 int main() {
   try {
@@ -40,14 +41,15 @@ int main() {
     auto camera = eg::Camera{};
     auto controller = eg::CameraController{ &camera };
     auto panel = eg::TransformControllerPanel{};
+    auto scene_panel = eg::ScenePanel{};
 
     // auto node = eg::DoTheImportThing("model/backpack/backpack.obj");
     // manager.save(node, "backpack");
-    auto node = manager.load<eg::SceneObject>("backpack");
-    auto object = std::make_shared<eg::SceneObject>();
-    object->setDrawUnit(
-      std::make_unique<eg::LightUnit>(eg::generateCube(), glm::vec3{ 0.5, 0.5, 0.5 })
-    );
+    // auto node = manager.load<eg::SceneObject>("backpack");
+    // auto object = std::make_shared<eg::SceneObject>();
+    // object->setDrawUnit(
+    //   std::make_unique<eg::LightUnit>(eg::generateCube(), glm::vec3{ 0.5, 0.5, 0.5 })
+    // );
     // object.getController().refLocation() = glm::vec3{ 0, 0, 0 };
     // object.getController().refRotateEuler() = glm::vec3{ 0, 0, 0 };
     // object.getController().refScaleFactor() = glm::vec3{ 1, 1, 1 };

@@ -1,0 +1,86 @@
+module;
+#include <toy.h>
+export module engine.editor.scene;
+
+import engine.mesh;
+import engine.shape;
+import engine.asset;
+import engine.base;
+import <imgui_config.h>;
+import framework;
+import gui.context;
+import gui.tool;
+import engine.object;
+import engine.node;
+import std;
+import toy;
+
+export namespace eg {
+
+class ScenePanel : public PROACTIVE_SINGLETON(ScenePanel), public gui::Drawer, public fw::Action {
+public:
+  ScenePanel() : fw::Action(fw::Stage::BEFORE_RENDER) {}
+  void draw() override {
+    ImGui::SeparatorText("Nodes Tree");
+    std::function<void(Node&, std::string const&)> drawNode{};
+    drawNode = [&](Node& node, std::string const& default_name) {
+      auto name = node.getAssetName().empty() ? default_name.c_str() : node.getAssetName().c_str();
+      if (ImGui::TreeNode(name)) {
+        for (auto [i, child] : node.getChildren() | toy::enumerate) {
+          drawNode(*child, std::format("Node {}", i));
+        }
+        ImGui::TreePop();
+      }
+    };
+    for (auto [i, node] : _nodes | toy::enumerate) {
+      drawNode(*node, std::format("Node {}", i));
+    }
+    if (ImGui::Button("Create a Empty Node")) {
+      _nodes.push_back(std::make_shared<Node>());
+    }
+    ImGui::PushItemWidth(200);
+    ImGui::InputText("##Asset Name", _asset_name.data(), _asset_name.size());
+    ImGui::SameLine();
+    if (ImGui::Button("Load Node By Asset Name")) {
+      _nodes.push_back(AssetManager::getInstance().load<SceneObject>(_asset_name.data()));
+    }
+    if (ImGui::Button("Create Node By Shape")) {
+      auto mesh_data = MeshData{};
+      switch (_shape_type) {
+      case 0:
+        mesh_data = generateCube();
+        break;
+      case 1:
+        mesh_data = generateSphere();
+        break;
+      case 2:
+        mesh_data = generateCylinder();
+        break;
+      case 3:
+        mesh_data = generateCone();
+        break;
+      }
+      auto node = std::make_shared<SceneObject>();
+      auto draw_unit = std::make_unique<LightUnit>();
+      draw_unit->init(std::move(mesh_data));
+      node->setDrawUnit(std::move(draw_unit));
+      _nodes.push_back(std::move(node));
+    }
+    ImGui::RadioButton("Cube", &_shape_type, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Sphere", &_shape_type, 1);
+    ImGui::SameLine();
+    ImGui::RadioButton("Cylinder", &_shape_type, 2);
+    ImGui::SameLine();
+    ImGui::RadioButton("Cone", &_shape_type, 3);
+  }
+  void runLoop(fw::ActionContext const& ctx) override {}
+
+private:
+  std::vector<ptr<Node>> _nodes;
+  Node*                  _current_node = nullptr;
+  std::array<char, 30>   _asset_name = {};
+  int                    _shape_type;
+};
+
+} // namespace eg
