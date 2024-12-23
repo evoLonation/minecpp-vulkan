@@ -8,6 +8,8 @@ import toy;
 
 namespace rd::rs {
 
+constexpr bool enable_debug = false;
+
 template <typename T>
 concept isConstPointer = std::is_pointer_v<T> && std::is_const_v<std::remove_pointer_t<T>>;
 
@@ -44,7 +46,9 @@ public:
     auto msg = std::format("create resource {}", refl::resource<VkHandle>());
     checkVkResult(result, msg);
     _handle.reset(handle);
-    toy::debug(msg);
+    if constexpr (enable_debug) {
+      toy::debug(msg);
+    }
   }
   SingletonResource(const SingletonResource&) noexcept = delete;
   SingletonResource(SingletonResource&&) noexcept = default;
@@ -57,7 +61,9 @@ public:
 private:
   static inline auto deleter = [](VkHandle handle) {
     Destroyer(handle, nullptr);
-    toy::debugf("destroy resource {}", refl::resource<VkHandle>());
+    if constexpr (enable_debug) {
+      toy::debugf("destroy resource {}", refl::resource<VkHandle>());
+    }
   };
 
   std::unique_ptr<std::remove_pointer_t<VkHandle>, decltype(deleter)> _handle;
@@ -99,7 +105,9 @@ public:
     auto     msg = std::format("create resource {}", refl::resource<VkHandle>());
     checkVkResult(result, msg);
     _handle.reset(handle);
-    toy::debug(msg);
+    if constexpr (enable_debug) {
+      toy::debug(msg);
+    }
   }
   ContextualResource(const ContextualResource&) noexcept = delete;
   ContextualResource(ContextualResource&&) noexcept = default;
@@ -112,7 +120,9 @@ public:
 private:
   static inline auto deleter = [](VkHandle handle) {
     Destroyer(ContextResource::getInstance().get(), handle, nullptr);
-    toy::debugf("destroy resource {}", refl::resource<VkHandle>());
+    if constexpr (enable_debug) {
+      toy::debugf("destroy resource {}", refl::resource<VkHandle>());
+    }
   };
 
   std::unique_ptr<std::remove_pointer_t<VkHandle>, decltype(deleter)> _handle;
@@ -183,7 +193,9 @@ public:
     auto msg =
       std::format("create {} resources of {}", _handles.size(), refl::resource<VkHandle>());
     checkVkResult(result, msg);
-    toy::debug(msg);
+    if constexpr (enable_debug) {
+      toy::debug(msg);
+    }
     _pool = allocate_info.*pPoolMember;
   }
   ~AllocatedResources() { destroy(); }
@@ -279,11 +291,15 @@ public:
     void destroy() {
       if (_handle) {
         if constexpr (!canDestroy) {
-          toy::debugf("simply discard resource {}", refl::resource<VkHandle>());
+          if constexpr (enable_debug) {
+            toy::debugf("simply discard resource {}", refl::resource<VkHandle>());
+          }
           return;
         }
         Destroyer(ContextResource::getInstance().get(), _pool, 1, &_handle);
-        toy::debugf("destroy resource {}", refl::resource<VkHandle>());
+        if constexpr (enable_debug) {
+          toy::debugf("destroy resource {}", refl::resource<VkHandle>());
+        }
       }
     }
 
@@ -310,7 +326,7 @@ public:
 
   template <typename RangeT>
     requires ranges::forward_range<RangeT> &&
-               std::same_as<ranges::range_reference_t<RangeT>, SingleResource&>
+             std::same_as<ranges::range_reference_t<RangeT>, SingleResource&>
   static auto join(RangeT range) -> AllocatedResources {
     auto resources = AllocatedResources{};
     toy::checkf(
@@ -351,14 +367,20 @@ private:
 private:
   void destroy() {
     if constexpr (!canDestroy) {
-      toy::debugf("simply discard {} resources of {}", _handles.size(), refl::resource<VkHandle>());
+      if constexpr (enable_debug) {
+        toy::debugf(
+          "simply discard {} resources of {}", _handles.size(), refl::resource<VkHandle>()
+        );
+      }
       return;
     }
     if (_handles.empty()) {
       return;
     }
     Destroyer(ContextResource::getInstance().get(), _pool, _handles.size(), _handles.data());
-    toy::debugf("destroy {} resources of {}", _handles.size(), refl::resource<VkHandle>());
+    if constexpr (enable_debug) {
+      toy::debugf("destroy {} resources of {}", _handles.size(), refl::resource<VkHandle>());
+    }
   }
 };
 
@@ -420,7 +442,9 @@ public:
 private:
   static inline auto deleter = [](VkPipeline handle) {
     vkDestroyPipeline(Device::getInstance().get(), handle, nullptr);
-    toy::debugf("destroy resource {}", refl::resource<VkPipeline>());
+    if constexpr (enable_debug) {
+      toy::debugf("destroy resource {}", refl::resource<VkPipeline>());
+    }
   };
 
 private:
@@ -466,7 +490,9 @@ public:
     auto msg =
       std::format("create {} resources of {}", pipelines.size(), refl::resource<VkPipeline>());
     checkVkResult(result, msg);
-    toy::debug(msg);
+    if constexpr (enable_debug) {
+      toy::debug(msg);
+    }
     return pipelines | views::transform([](auto handle) { return Pipeline{ handle }; }) |
            ranges::to<std::vector>();
   }
