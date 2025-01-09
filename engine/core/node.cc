@@ -166,17 +166,17 @@ void Node::attachTo(Node* node) {
     detach();
   }
   setParent(node);
-  doRecursively([node](Node* child) { child->_root = node->_root; });
+  doRecursively([node](Node& child) { child._root = node->_root; });
 }
 
 void Node::detach() {
   TOY_ASSERT(_parent);
   resetParent();
-  doRecursively([this](Node* child) { child->_root = this; });
+  doRecursively([this](Node& child) { child._root = this; });
 }
 
-void Node::doRecursively(std::function<void(Node*)> const& dealer) {
-  dealer(this);
+void Node::doRecursively(std::function<void(Node&)> const& dealer) {
+  dealer(*this);
   for (auto& child : _children) {
     child->doRecursively(dealer);
   }

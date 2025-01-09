@@ -187,8 +187,8 @@ private:
   constexpr static float _fixed_distance = 10.0f;
 
   void setActiveRecursively(bool active) {
-    getRoot().doRecursively([&](Node* node) {
-      if (auto* object = dynamic_cast<SceneObject*>(node)) {
+    getRoot().doRecursively([&](Node& node) {
+      if (auto* object = dynamic_cast<SceneObject*>(&node)) {
         object->setActive(active);
       }
     });

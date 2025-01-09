@@ -81,8 +81,8 @@ void SceneObject::setDrawUnit(uptr<DrawUnitBase> draw_unit) {
 }
 
 void SceneObject::setActive(bool active) {
-  TOY_ASSERT(_draw_unit);
-  if (active == _draw_unit->isActive()) {
+  // TOY_ASSERT(_draw_unit || !active);
+  if (!_draw_unit || active == _draw_unit->isActive()) {
     return;
   }
   if (active) {
@@ -91,6 +91,8 @@ void SceneObject::setActive(bool active) {
     _draw_unit->resetActive();
   }
 }
+
+auto SceneObject::isActive() -> bool { return _draw_unit && _draw_unit->isActive(); }
 
 auto SceneObject::assetSerialize() -> AssetPackager {
   if (!_draw_unit) {

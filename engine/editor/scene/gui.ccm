@@ -21,66 +21,121 @@ class ScenePanel : public PROACTIVE_SINGLETON(ScenePanel), public gui::Drawer, p
 public:
   ScenePanel() : fw::Action(fw::Stage::BEFORE_RENDER) {}
   void draw() override {
-    ImGui::SeparatorText("Nodes Tree");
-    std::function<void(Node&, std::string const&)> drawNode{};
-    drawNode = [&](Node& node, std::string const& default_name) {
-      auto name = node.getAssetName().empty() ? default_name.c_str() : node.getAssetName().c_str();
-      if (ImGui::TreeNode(name)) {
-        for (auto [i, child] : node.getChildren() | toy::enumerate) {
-          drawNode(*child, std::format("Node {}", i));
+    ImGui::SeparatorText("Node List");
+    if (_selected_node_index >= _nodes.size()) {
+      _selected_node_index = -1;
+    }
+    if (_selected_node_index >= 0) {
+      auto& node = *_nodes[_selected_node_index];
+      auto  name = node.getAssetName().empty() ? std::format("Node {}", _selected_node_index)
+                                               : node.getAssetName();
+      if (ImGui::Button(std::format("Set \"{}\" as Current Node", name).c_str())) {
+        if (_current_node) {
+          _current_node->doRecursively([](Node& node) {
+            if (auto scene_object = dynamic_cast<SceneObject*>(&node)) {
+              scene_object->setActive(false);
+            }
+          });
         }
-        ImGui::TreePop();
+        _current_node = &node;
+        _current_node_name = name;
+        _current_node->doRecursively([](Node& node) {
+          if (auto scene_object = dynamic_cast<SceneObject*>(&node)) {
+            scene_object->setActive(true);
+          }
+        });
       }
-    };
+    } else {
+      ImGui::NewLine();
+    }
     for (auto [i, node] : _nodes | toy::enumerate) {
-      drawNode(*node, std::format("Node {}", i));
-    }
-    if (ImGui::Button("Create a Empty Node")) {
-      _nodes.push_back(std::make_shared<Node>());
-    }
-    ImGui::PushItemWidth(200);
-    ImGui::InputText("##Asset Name", _asset_name.data(), _asset_name.size());
-    ImGui::SameLine();
-    if (ImGui::Button("Load Node By Asset Name")) {
-      _nodes.push_back(AssetManager::getInstance().load<SceneObject>(_asset_name.data()));
-    }
-    if (ImGui::Button("Create Node By Shape")) {
-      auto mesh_data = MeshData{};
-      switch (_shape_type) {
-      case 0:
-        mesh_data = generateCube();
-        break;
-      case 1:
-        mesh_data = generateSphere();
-        break;
-      case 2:
-        mesh_data = generateCylinder();
-        break;
-      case 3:
-        mesh_data = generateCone();
-        break;
+      auto name = node->getAssetName().empty() ? std::format("Node {}", i) : node->getAssetName();
+      if (ImGui::Selectable(std::format("{}##NodeList", name).c_str(), _selected_node_index == i)) {
+        _selected_node_index = i;
       }
-      auto node = std::make_shared<SceneObject>();
-      auto draw_unit = std::make_unique<LightUnit>();
-      draw_unit->init(std::move(mesh_data));
-      node->setDrawUnit(std::move(draw_unit));
-      _nodes.push_back(std::move(node));
     }
-    ImGui::RadioButton("Cube", &_shape_type, 0);
-    ImGui::SameLine();
-    ImGui::RadioButton("Sphere", &_shape_type, 1);
-    ImGui::SameLine();
-    ImGui::RadioButton("Cylinder", &_shape_type, 2);
-    ImGui::SameLine();
-    ImGui::RadioButton("Cone", &_shape_type, 3);
+    {
+      // node create
+      ptr<Node> node;
+      if (ImGui::Button("Create a Empty Node")) {
+        node = std::make_shared<SceneObject>();
+      }
+      ImGui::PushItemWidth(200);
+      ImGui::InputText("##Asset Name", _asset_name.data(), _asset_name.size());
+      ImGui::SameLine();
+      if (ImGui::Button("Load Node By Asset Name")) {
+        node = AssetManager::getInstance().load<SceneObject>(_asset_name.data());
+      }
+      if (ImGui::Button("Create Node By Shape")) {
+        auto mesh_data = MeshData{};
+        if (_shape_type >= 0) {
+          switch (_shape_type) {
+          case 0:
+            mesh_data = generateCube();
+            break;
+          case 1:
+            mesh_data = generateSphere();
+            break;
+          case 2:
+            mesh_data = generateCylinder();
+            break;
+          case 3:
+            mesh_data = generateCone();
+            break;
+          }
+          auto object = std::make_shared<SceneObject>();
+          auto draw_unit = std::make_unique<LightUnit>();
+          draw_unit->init(std::move(mesh_data));
+          object->setDrawUnit(std::move(draw_unit));
+          node = std::move(object);
+        }
+      }
+      ImGui::RadioButton("Cube", &_shape_type, 0);
+      ImGui::SameLine();
+      ImGui::RadioButton("Sphere", &_shape_type, 1);
+      ImGui::SameLine();
+      ImGui::RadioButton("Cylinder", &_shape_type, 2);
+      ImGui::SameLine();
+      ImGui::RadioButton("Cone", &_shape_type, 3);
+
+      if (node) {
+        node->doRecursively([](Node& node) {
+          if (auto scene_object = dynamic_cast<SceneObject*>(&node)) {
+            scene_object->setActive(false);
+          }
+        });
+        _nodes.push_back(std::move(node));
+      }
+    }
+
+    if (_current_node) {
+      ImGui::SeparatorText("Current Node Info");
+      std::function<void(Node&, std::string const&, std::string const&)> drawNode{};
+      drawNode = [&](Node& node, std::string const& default_name, std::string const& father_id) {
+        auto name =
+          node.getAssetName().empty() ? default_name.c_str() : node.getAssetName().c_str();
+        if (ImGui::TreeNode(name)) {
+          for (auto [i, child] : node.getChildren() | toy::enumerate) {
+            auto id = std::format("{}-{}", father_id, i);
+            drawNode(*child, std::format("Node {}##{}", i, id), id);
+          }
+          ImGui::TreePop();
+          return true;
+        }
+        return false;
+      };
+      drawNode(*_current_node, _current_node_name, "Node Tree");
+    }
   }
   void runLoop(fw::ActionContext const& ctx) override {}
 
 private:
   std::vector<ptr<Node>> _nodes;
+  int                    _selected_node_index = -1;
   Node*                  _current_node = nullptr;
+  std::string            _current_node_name;
   std::array<char, 30>   _asset_name = {};
-  int                    _shape_type;
+  int                    _shape_type = -1;
 };
 
 } // namespace eg

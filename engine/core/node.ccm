@@ -69,7 +69,7 @@ public:
   auto getChildren() -> std::unordered_set<ptr<Node>>& { return _children; }
   auto isRoot() -> bool { return !_parent; }
   auto getRoot() -> Node& { return *_root; }
-  void doRecursively(std::function<void(Node*)> const& dealer);
+  void doRecursively(std::function<void(Node&)> const& dealer);
 
 private:
   Reval<glm::mat4>              _to_parent;
