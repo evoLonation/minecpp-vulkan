@@ -1,6 +1,5 @@
 .cache
 build
-gen
 compile_commands.json
 **/__pycache__
 .VSCodeCounter
