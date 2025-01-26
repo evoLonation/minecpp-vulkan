@@ -235,6 +235,10 @@ private:
     auto map = std::map<std::string, Json>{};
     while (true) {
       auto c = skipSpace();
+      if (c == '}') {
+        _iter++;
+        break;
+      }
       auto key = parseString();
       if (map.contains(key)) {
         toy::throwf("key repeat: {}", key);
@@ -248,10 +252,6 @@ private:
       c = skipSpace();
       if (c == ',') {
         _iter++;
-        continue;
-      } else if (c == '}') {
-        _iter++;
-        break;
       }
     }
     return map;
