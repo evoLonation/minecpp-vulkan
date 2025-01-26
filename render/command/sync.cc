@@ -8,14 +8,14 @@ import render.tool;
 
 namespace rd {
 
-auto device_checkers::sync(DeviceCapabilityBuilder& builder) -> bool {
+auto device_checkers::sync(DeviceCapabilityBuilder& builder) -> std::expected<void, std::string> {
   if (!builder.enableFeature(&VkPhysicalDeviceVulkan13Features::synchronization2)) {
-    return false;
+    return std::unexpected{ "synchronization2 not supported" };
   }
   if (!builder.enableFeature(&VkPhysicalDeviceVulkan12Features::timelineSemaphore)) {
-    return false;
+    return std::unexpected{ "timelineSemaphore not supported" };
   }
-  return true;
+  return {};
 }
 
 TimelineSemaphore::TimelineSemaphore(uint64 initial_value) {

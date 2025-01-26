@@ -22,19 +22,20 @@ auto depst_formats = std::array{
   VK_FORMAT_D16_UNORM,         VK_FORMAT_D32_SFLOAT,
 };
 
-auto device_checkers::attachment(DeviceCapabilityBuilder& builder) -> bool {
+auto device_checkers::attachment(DeviceCapabilityBuilder& builder)
+  -> std::expected<void, std::string> {
   auto& pdevice = builder.getPdevice();
   if (!pdevice.checkFormatSupport(
         FormatTarget::OPTIMAL_TILING, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT, color_formats
       )) {
-    return false;
+    return std::unexpected{ "color formats is not support for attachment" };
   }
   if (!pdevice.checkFormatSupport(
         FormatTarget::OPTIMAL_TILING, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT, depst_formats
       )) {
-    return false;
+    return std::unexpected{ "depst formats is not support for attachment" };
   }
-  return true;
+  return {};
 }
 
 void checkSubpassAttachmentMatch(

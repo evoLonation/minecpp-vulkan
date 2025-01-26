@@ -9,16 +9,19 @@ auto operator==(const VertexInfo& a, const VertexInfo& b) -> bool {
          a.attribute_descriptions.end() == b.attribute_descriptions.end();
 }
 
-auto device_checkers::vertex(DeviceCapabilityBuilder& builder) -> bool {
+auto device_checkers::vertex(DeviceCapabilityBuilder& builder) -> std::expected<void, std::string> {
   auto formats =
     FormatTypeInfos::applyFunc([]<typename... Info> { return std::array{ Info::format... }; });
   toy::debugf("the vertex formats: {::}", formats);
   if (!builder.enableFeature(&VkPhysicalDeviceFeatures::shaderFloat64)) {
-    return false;
+    return std::unexpected{ "shaderFloat64 not supported" };
   }
-  return builder.getPdevice().checkFormatSupport(
-    FormatTarget::BUFFER, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT, formats
-  );
+  if (!builder.getPdevice().checkFormatSupport(
+        FormatTarget::BUFFER, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT, formats
+      )) {
+    return std::unexpected{ "formats is not support for vertex" };
+  }
+  return {};
 }
 
 } // namespace rd

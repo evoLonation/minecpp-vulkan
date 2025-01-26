@@ -44,7 +44,8 @@ private:
   static VkColorSpaceKHR   _color_space;
 
 public:
-  static auto checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& request) -> bool;
+  static auto checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& request)
+    -> std::expected<void, std::string>;
 
 private:
   VkExtent2D                 _swapchain_extent;

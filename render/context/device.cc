@@ -16,19 +16,24 @@ auto Device::create(std::span<DeviceCapabilityChecker> checkers) -> Device {
   auto supported_devices =
     std::vector<std::pair<PhysicalDevice, std::vector<DeviceCapabilityBuilder>>>{};
   for (auto& device : devices) {
+    toy::debugf("start check physical device {}", device.getProperties().deviceName);
     auto requests = std::vector<DeviceCapabilityBuilder>{};
-    auto is_support = [&]() {
-      for (auto& checker : checkers) {
-        auto request = DeviceCapabilityBuilder{ device };
-        auto res = checker(request);
-        if (res) {
-          requests.push_back(request);
-        } else {
-          return false;
-        }
+    auto is_support = true;
+    for (auto& checker : checkers) {
+      auto request = DeviceCapabilityBuilder{ device };
+      auto res = checker(request);
+      if (res) {
+        requests.push_back(request);
+      } else {
+        is_support = false;
+        toy::debugf(
+          "physical device {} not support, reason: {}",
+          device.getProperties().deviceName,
+          res.error()
+        );
+        break;
       }
-      return true;
-    }();
+    }
     if (is_support) {
       supported_devices.emplace_back(device, requests);
     }

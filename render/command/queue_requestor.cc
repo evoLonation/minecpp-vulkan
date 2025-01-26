@@ -47,7 +47,8 @@ auto hungarian(std::span<const std::vector<int>> graph, int right_count)
   }
 }
 
-auto QueueRequestor::checkPdevice(DeviceCapabilityBuilder& request) -> bool {
+auto QueueRequestor::checkPdevice(DeviceCapabilityBuilder& request)
+  -> std::expected<void, std::string> {
   auto& pdevice = request.getPdevice();
 
   auto family_count = pdevice.getAllQueueFamilyProperties().size();
@@ -79,9 +80,9 @@ auto QueueRequestor::checkPdevice(DeviceCapabilityBuilder& request) -> bool {
       _family_infos[pdevice.get()].emplace_back(_requirements[index].family, family_queue_count);
       request.family_queue_counts.push_back(family_queue_count);
     }
-    return true;
+    return {};
   } else {
-    return false;
+    return std::unexpected("queue request failed");
   }
 }
 } // namespace rd

@@ -16,7 +16,7 @@ import toy;
 export namespace rd {
 
 namespace device_checkers {
-auto vertex(DeviceCapabilityBuilder&) -> bool;
+auto vertex(DeviceCapabilityBuilder&) -> std::expected<void, std::string>;
 }
 
 struct VertexInfo {

@@ -57,7 +57,7 @@ private:
   static inline auto    _max_anisotropy = float{};
 
 public:
-  static auto checkPdevice(DeviceCapabilityBuilder& request) -> bool;
+  static auto checkPdevice(DeviceCapabilityBuilder& request) -> std::expected<void, std::string>;
 };
 
 } // namespace rd

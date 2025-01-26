@@ -100,12 +100,13 @@ Swapchain::Swapchain(
     ranges::to<std::vector>();
 }
 
-auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& request) -> bool {
+auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& request)
+  -> std::expected<void, std::string> {
   if (!request.enableExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
-    return false;
+    return std::unexpected{ "swapchain extension not supported" };
   }
   if (!request.enableExtension("VK_EXT_swapchain_maintenance1")) {
-    return false;
+    return std::unexpected{ "swapchain maintenance1 extension not supported" };
   }
   auto& pdevice = request.getPdevice();
   auto  formats = getVkResources(vkGetPhysicalDeviceSurfaceFormatsKHR, pdevice.get(), surface);
@@ -115,23 +116,21 @@ auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& requ
   if (!toy::findIf(formats, [&](auto format) {
         return format.format == _format && format.colorSpace == _color_space;
       })) {
-    toy::debugf("no suitable format");
-    return false;
+    return std::unexpected{ "no suitable format" };
   }
   if (!pdevice.checkFormatSupport(
         FormatTarget::OPTIMAL_TILING,
         VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
         { &_format, &_format + 1 }
       )) {
-    return false;
+    return std::unexpected{ "format not support color attachment" };
   }
 
   auto present_modes =
     getVkResources(vkGetPhysicalDeviceSurfacePresentModesKHR, pdevice.get(), surface);
   if (!ranges::contains(present_modes, _present_mode)) {
-    toy::debugf("no suitable present mode");
-    return false;
+    return std::unexpected{ "no suitable present mode" };
   }
-  return true;
+  return {};
 }
 } // namespace rd

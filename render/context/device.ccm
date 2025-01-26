@@ -72,21 +72,21 @@ struct DeviceCapabilityBuilder {
     }
     return false;
   }
-  auto enableFeature(VkBool32 VkPhysicalDeviceFeatures::*member) -> bool {
+  auto enableFeature(VkBool32 VkPhysicalDeviceFeatures::* member) -> bool {
     if (_device->getFeatures().*member) {
       features.push_back(member);
       return true;
     }
     return false;
   }
-  auto enableFeature(VkBool32 VkPhysicalDeviceVulkan13Features::*member) -> bool {
+  auto enableFeature(VkBool32 VkPhysicalDeviceVulkan13Features::* member) -> bool {
     if (_device->getVk13Features().*member) {
       vk13features.push_back(member);
       return true;
     }
     return false;
   }
-  auto enableFeature(VkBool32 VkPhysicalDeviceVulkan12Features::*member) -> bool {
+  auto enableFeature(VkBool32 VkPhysicalDeviceVulkan12Features::* member) -> bool {
     if (_device->getVk12Features().*member) {
       vk12features.push_back(member);
       return true;
@@ -99,7 +99,8 @@ private:
   PhysicalDevice const* _device;
 };
 
-using DeviceCapabilityChecker = std::function<bool(DeviceCapabilityBuilder& request)>;
+using DeviceCapabilityChecker =
+  std::function<std::expected<void, std::string>(DeviceCapabilityBuilder& request)>;
 class Device : public rs::Device, public PROACTIVE_SINGLETON(Device) {
 private:
   Device(rs::Device device, PhysicalDevice pdevice, VkPhysicalDeviceFeatures features)

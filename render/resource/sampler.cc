@@ -125,16 +125,20 @@ auto SampledTexture::getDescriptorContext() -> Context {
   };
 }
 
-auto SampledTexture::checkPdevice(DeviceCapabilityBuilder& request) -> bool {
+auto SampledTexture::checkPdevice(DeviceCapabilityBuilder& request)
+  -> std::expected<void, std::string> {
   if (!request.enableFeature(&VkPhysicalDeviceFeatures::samplerAnisotropy)) {
-    return false;
+    return std::unexpected{ "sampler anisotropy not supported" };
   }
-  return request.getPdevice().checkFormatSupport(
-    FormatTarget::OPTIMAL_TILING,
-    VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
-      VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT,
-    _formats
-  );
+  if (!request.getPdevice().checkFormatSupport(
+        FormatTarget::OPTIMAL_TILING,
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+          VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT,
+        _formats
+      )) {
+    return std::unexpected{ "formats is not support for sampled texture" };
+  }
+  return {};
 }
 
 }; // namespace rd
