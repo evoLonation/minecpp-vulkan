@@ -61,6 +61,7 @@ void AssetManager::save(std::shared_ptr<Asset> t) {
     return;
   }
   _saving_already_saved.insert(guid);
+
   auto name = t->getAssetName();
   auto asset_dir = t->getAssetPath();
   _asset_path_map[guid] = asset_dir;
@@ -69,7 +70,10 @@ void AssetManager::save(std::shared_ptr<Asset> t) {
     if (!_named_asset_map.contains(asset_dir)) {
       loadNamedAssets(asset_dir);
     }
-    toy::throwf(!_named_asset_map[asset_dir].contains(name), "Asset name {} already exists", name);
+    if (auto asset = _named_asset_map[asset_dir].find(name);
+        asset != _named_asset_map[asset_dir].end()) {
+      toy::throwf(asset->second == guid, "Asset name {} already exists", name);
+    }
     _named_asset_map[asset_dir][name] = guid;
   }
   auto pickle = toy::Pickle{};
@@ -80,6 +84,7 @@ void AssetManager::save(std::shared_ptr<Asset> t) {
     fs::create_directories(parent_dir);
   }
   pickle.dump(path);
+
   if (is_outest_call) {
     _saving_already_saved.clear();
   }

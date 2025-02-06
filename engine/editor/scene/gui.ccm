@@ -12,6 +12,7 @@ import gui.context;
 import gui.tool;
 import engine.object;
 import engine.node;
+import engine.importer;
 import std;
 import toy;
 
@@ -19,17 +20,53 @@ export namespace eg {
 
 class ScenePanel : public PROACTIVE_SINGLETON(ScenePanel), public gui::Drawer, public fw::Action {
 public:
-  ScenePanel() : fw::Action(fw::Stage::BEFORE_RENDER) {}
+  ScenePanel() : fw::Action(fw::Stage::BEFORE_RENDER) {
+    _unloaded_nodes.insert_range(AssetManager::getInstance().getAssetNames<Node>());
+  }
   void draw() override {
-    ImGui::SeparatorText("Node List");
-    if (_selected_node_index >= _nodes.size()) {
-      _selected_node_index = -1;
+    auto& asset_manager = AssetManager::getInstance();
+
+    ImGui::SeparatorText("UnLoaded Node List");
+    {
+      for (auto& name : _unloaded_nodes) {
+        if (ImGui::Selectable(
+              std::format("{}##UnloadedNodeList", name).c_str(), _selected_unloaded_name == name
+            )) {
+          _selected_unloaded_name = name;
+        }
+      }
+      if (!_unloaded_nodes.contains(_selected_unloaded_name)) {
+        _selected_unloaded_name = {};
+      }
+      if (ImGui::Button("Load Node")) {
+        if (!_selected_unloaded_name.empty()) {
+          auto node = asset_manager.load<Node>(_selected_unloaded_name);
+          node->doRecursively([](Node& node) {
+            if (auto scene_object = dynamic_cast<SceneObject*>(&node)) {
+              scene_object->setActive(false);
+            }
+          });
+          _unloaded_nodes.erase(_selected_unloaded_name);
+          _loaded_nodes[_selected_unloaded_name] = node;
+          _selected_unloaded_name = {};
+        }
+      }
     }
-    if (_selected_node_index >= 0) {
-      auto& node = *_nodes[_selected_node_index];
-      auto  name = node.getAssetName().empty() ? std::format("Node {}", _selected_node_index)
-                                               : node.getAssetName();
-      if (ImGui::Button(std::format("Set \"{}\" as Current Node", name).c_str())) {
+
+    ImGui::SeparatorText("Loaded Node List");
+    {
+
+      for (auto& name : _loaded_nodes | views::keys) {
+        if (ImGui::Selectable(
+              std::format("{}##loadedNodeList", name).c_str(), _selected_loaded_name == name
+            )) {
+          _selected_loaded_name = name;
+        }
+      }
+      if (!_loaded_nodes.contains(_selected_loaded_name)) {
+        _selected_loaded_name = {};
+      }
+      if (ImGui::Button("Set as Current Node")) {
         if (_current_node) {
           _current_node->doRecursively([](Node& node) {
             if (auto scene_object = dynamic_cast<SceneObject*>(&node)) {
@@ -37,39 +74,60 @@ public:
             }
           });
         }
-        _current_node = &node;
-        _current_node_name = name;
+        _current_node = _loaded_nodes[_selected_loaded_name].get();
+        _current_node_name = _selected_loaded_name;
         _current_node->doRecursively([](Node& node) {
           if (auto scene_object = dynamic_cast<SceneObject*>(&node)) {
             scene_object->setActive(true);
           }
         });
       }
-    } else {
-      ImGui::NewLine();
-    }
-    for (auto [i, node] : _nodes | toy::enumerate) {
-      auto name = node->getAssetName().empty() ? std::format("Node {}", i) : node->getAssetName();
-      if (ImGui::Selectable(std::format("{}##NodeList", name).c_str(), _selected_node_index == i)) {
-        _selected_node_index = i;
+      if (ImGui::Button("Attach to Current Node")) {
+        if (!_selected_loaded_name.empty() && _current_node) {
+          auto node = _loaded_nodes[_selected_loaded_name].get();
+          node->attachTo(_current_node);
+          node->doRecursively([](Node& node) {
+            if (auto scene_object = dynamic_cast<SceneObject*>(&node)) {
+              scene_object->setActive(true);
+            }
+          });
+        }
+      }
+      if (ImGui::Button("Save Node")) {
+        asset_manager.save(_loaded_nodes[_selected_loaded_name]);
       }
     }
+
+    ImGui::SeparatorText("Node Create");
     {
       // node create
       ptr<Node> node;
-      if (ImGui::Button("Create a Empty Node")) {
-        node = std::make_shared<SceneObject>();
+      // ImGui::PushItemWidth(200);
+      static auto node_name = std::array<char, 30>{};
+      ImGui::InputText("Node Name", node_name.data(), node_name.size());
+      // ImGui::SameLine();
+      if (ImGui::Button("Create Empty Node")) {
+        node = std::make_shared<Node>();
       }
-      ImGui::PushItemWidth(200);
-      ImGui::InputText("##Asset Name", _asset_name.data(), _asset_name.size());
+      // ImGui::PushItemWidth(200);
+      // ImGui::InputText("##Asset Name", _asset_name.data(), _asset_name.size());
+      // ImGui::SameLine();
+      // if (ImGui::Button("Load Node By Asset Name")) {
+      //   node = AssetManager::getInstance().load<SceneObject>(_asset_name.data());
+      // }
+      ImGui::Separator();
+      static int shape_type = -1;
+      ImGui::RadioButton("Cube", &shape_type, 0);
       ImGui::SameLine();
-      if (ImGui::Button("Load Node By Asset Name")) {
-        node = AssetManager::getInstance().load<SceneObject>(_asset_name.data());
-      }
+      ImGui::RadioButton("Sphere", &shape_type, 1);
+      ImGui::SameLine();
+      ImGui::RadioButton("Cylinder", &shape_type, 2);
+      ImGui::SameLine();
+      ImGui::RadioButton("Cone", &shape_type, 3);
       if (ImGui::Button("Create Node By Shape")) {
         auto mesh_data = MeshData{};
-        if (_shape_type >= 0) {
-          switch (_shape_type) {
+        if (shape_type >= 0) {
+          switch (shape_type) {
           case 0:
             mesh_data = generateCube();
             break;
@@ -87,55 +145,65 @@ public:
           auto draw_unit = std::make_unique<LightUnit>();
           draw_unit->init(std::move(mesh_data));
           object->setDrawUnit(std::move(draw_unit));
-          node = std::move(object);
+          node = std::make_shared<Node>();
+          object->attachTo(node.get());
         }
       }
-      ImGui::RadioButton("Cube", &_shape_type, 0);
-      ImGui::SameLine();
-      ImGui::RadioButton("Sphere", &_shape_type, 1);
-      ImGui::SameLine();
-      ImGui::RadioButton("Cylinder", &_shape_type, 2);
-      ImGui::SameLine();
-      ImGui::RadioButton("Cone", &_shape_type, 3);
+
+      ImGui::Separator();
+      static auto model_path = std::array<char, 100>{};
+      ImGui::InputText("Model Path", model_path.data(), model_path.size());
+      if (ImGui::Button("Create Node By Model File")) {
+        node = std::make_shared<Node>();
+        eg::DoTheImportThing(model_path.data())->attachTo(node.get());
+      }
 
       if (node) {
+        node->setName(node_name.data());
+        node->setAssetName(node_name.data());
         node->doRecursively([](Node& node) {
           if (auto scene_object = dynamic_cast<SceneObject*>(&node)) {
             scene_object->setActive(false);
           }
         });
-        _nodes.push_back(std::move(node));
+        _loaded_nodes[node_name.data()] = std::move(node);
       }
     }
 
-    if (_current_node) {
-      ImGui::SeparatorText("Current Node Info");
-      std::function<void(Node&, std::string const&, std::string const&)> drawNode{};
-      drawNode = [&](Node& node, std::string const& default_name, std::string const& father_id) {
-        auto name =
-          node.getAssetName().empty() ? default_name.c_str() : node.getAssetName().c_str();
-        if (ImGui::TreeNode(name)) {
-          for (auto [i, child] : node.getChildren() | toy::enumerate) {
-            auto id = std::format("{}-{}", father_id, i);
-            drawNode(*child, std::format("Node {}##{}", i, id), id);
+    ImGui::SeparatorText("Current Node Info");
+    {
+      if (!_current_node) {
+        ImGui::Text("No Current Node");
+      } else {
+        std::function<void(Node&, std::string const&, std::string const&)> drawNode{};
+        drawNode = [&](Node& node, std::string const& default_name, std::string const& father_id) {
+          auto name =
+            node.getAssetName().empty() ? default_name.c_str() : node.getAssetName().c_str();
+          if (ImGui::TreeNode(name)) {
+            for (auto [i, child] : node.getChildren() | toy::enumerate) {
+              auto id = std::format("{}-{}", father_id, i);
+              drawNode(*child, std::format("Node {}##{}", i, id), id);
+            }
+            ImGui::TreePop();
+            return true;
           }
-          ImGui::TreePop();
-          return true;
-        }
-        return false;
-      };
-      drawNode(*_current_node, _current_node_name, "Node Tree");
+          return false;
+        };
+        drawNode(*_current_node, _current_node_name, "Node Tree");
+      }
     }
   }
   void runLoop(fw::ActionContext const& ctx) override {}
 
 private:
-  std::vector<ptr<Node>> _nodes;
-  int                    _selected_node_index = -1;
-  Node*                  _current_node = nullptr;
-  std::string            _current_node_name;
-  std::array<char, 30>   _asset_name = {};
-  int                    _shape_type = -1;
+  std::unordered_set<std::string>            _unloaded_nodes;
+  std::unordered_map<std::string, ptr<Node>> _loaded_nodes;
+  std::string                                _selected_unloaded_name;
+  std::string                                _selected_loaded_name;
+  int                                        _loaded_node_index = -1;
+  Node*                                      _current_node{};
+  std::string                                _current_node_name;
+  std::array<char, 30>                       _asset_name = {};
 };
 
 } // namespace eg
