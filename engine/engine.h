@@ -1,8 +1,10 @@
 #ifndef ENGINE_H
 #define ENGINE_H
 
-#define REGISTER_ASSET_ID(pathname)                                                                \
-  static inline fs::path asset_id = pathname;                                                      \
-  auto getAssetPath() -> fs::path override { return asset_id; }
+#define REGISTER_ASSET(cls)                                                                        \
+  static inline bool __asset_default_getter_register = []() {                                      \
+    AssetManager::registerDefaultAsset<cls>();                                                     \
+    return true;                                                                                   \
+  }()
 
 #endif // ENGINE_H

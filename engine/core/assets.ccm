@@ -37,10 +37,6 @@ struct GuidSerializer : toy::CustomSerializer<
                           [](std::string a) { return Guid{ std::move(a) }; },
                           toy::MemberSerializerInfo{ &Guid::_guid }> {};
 
-template <typename T>
-concept Assetable = std::derived_from<T, class Asset> && std::is_default_constructible_v<T> &&
-                    std::same_as<decltype(T::asset_id), fs::path>;
-
 // std::function is not move only, so we need to wrap it to accept move only lambda
 class MoveOnlyFunctionBase {
 public:
@@ -160,7 +156,6 @@ public:
 
   virtual auto assetSerialize() -> AssetPackager;
   virtual void assetDeserialize(AssetUnpacker unpacker);
-  virtual auto getAssetPath() -> fs::path = 0;
 
 private:
   friend class AssetManager;
@@ -195,6 +190,10 @@ struct AssetRefSerializer {
   static auto deserialize(toy::Pickle& pickle) -> AssetRef;
 };
 
+/**
+ * @brief member of a Asset which is unique_ptr
+ *
+ */
 class AssetMember {
 public:
   AssetMember() = default;
@@ -218,71 +217,89 @@ struct AssetMemberSerializer {
   static auto deserialize(toy::Pickle& pickle) -> AssetMember;
 };
 
-class AssetManager : public PROACTIVE_SINGLETON(AssetManager) {
+class AssetManager {
 public:
-  AssetManager(
-    std::unordered_map<fs::path, std::function<std::shared_ptr<Asset>()>> default_asset_map,
-    std::unordered_map<fs::path, std::function<std::unique_ptr<Asset>()>> default_asset_member_map
-  );
+  AssetManager(fs::path const& asset_dir = "assets/default") : _asset_dir(asset_dir) {}
   ONLY_MOVEABLE(AssetManager);
-  ~AssetManager();
+  ~AssetManager() = default;
 
   void save(std::shared_ptr<Asset> t);
 
   void save(std::shared_ptr<Asset> t, std::string name);
 
   auto load(Guid const& guid) -> std::shared_ptr<Asset>;
-
-  template <Assetable T>
+  template <std::derived_from<Asset> T>
   auto load(Guid const& guid) -> std::shared_ptr<T> {
     return std::static_pointer_cast<T>(load(guid));
   }
 
-  auto load(std::string const& name, fs::path const& asset_dir) -> std::shared_ptr<Asset>;
-  template <Assetable T>
+  auto load(std::string const& name) -> std::shared_ptr<Asset>;
+  template <std::derived_from<Asset> T>
   auto load(std::string const& name) -> std::shared_ptr<T> {
-    auto path = T::asset_id;
-    return std::static_pointer_cast<T>(load(name, path));
-  }
-
-  auto getAssetNames(fs::path const& asset_dir) -> std::vector<std::string>;
-  template <Assetable T>
-  auto getAssetNames() -> std::vector<std::string> {
-    return getAssetNames(T::asset_id);
+    return std::static_pointer_cast<T>(load(name));
   }
 
   /**
-   * @brief clear all asset files of T, if has asset already in memory, reset its asset info
+   * @brief just remove from file system (if not exists, do nothing)
    */
-  void clearAssets(fs::path const& asset_dir);
-  template <Assetable T>
-  void clearAssets() {
-    auto path = T::asset_id;
-    clearAssets(path);
-  }
-
-  auto getDefaultAssetByPath(fs::path const& path) -> std::shared_ptr<Asset>;
-  auto getDefaultAssetMemberByPath(fs::path const& path) -> std::unique_ptr<Asset>;
+  void remove(Asset* t);
+  void remove(std::shared_ptr<Asset> t) { remove(t.get()); }
+  void remove(std::unique_ptr<Asset> t) { remove(t.get()); }
 
 private:
-  void loadNamedAssets(fs::path const& asset_dir);
-  void saveNamedAssets(fs::path const& asset_dir);
-  void loadAssetPaths();
-  void saveAssetPaths();
+  fs::path _asset_dir;
 
-  std::unordered_map<Guid, fs::path, GuidHasher>                      _asset_path_map;
-  std::unordered_map<fs::path, std::unordered_map<std::string, Guid>> _named_asset_map;
-  std::unordered_map<fs::path, std::unordered_map<Guid, std::weak_ptr<Asset>, GuidHasher>> _assets;
+  struct PathNameHasher {
+    size_t operator()(const std::pair<fs::path, std::string>& x) const {
+      return std::hash<fs::path>{}(x.first) ^ (std::hash<std::string>{}(x.second) << 1);
+    }
+  };
+  static inline std::unordered_map<std::pair<fs::path, std::string>, Guid, PathNameHasher>
+    _named_asset_map;
+  // use by load(), avoid loading the same asset from file multiple times
+  static inline std::unordered_map<Guid, std::weak_ptr<Asset>, GuidHasher> _assets;
   // since the existance of AssetRef, a save() call maybe recusively call save(), so need avoid
   // saving one asset multiple times in one save() call
   std::unordered_set<Guid, GuidHasher> _saving_already_saved;
 
-  std::unordered_map<fs::path, std::function<std::shared_ptr<Asset>()>> _default_asset_map;
-  std::unordered_map<fs::path, std::function<std::unique_ptr<Asset>()>> _default_asset_member_map;
+  friend AssetRefSerializer;
+  static inline AssetManager* _current_working_manager = nullptr;
 
-  static inline fs::path _root_dir = "assets";
-  static inline fs::path _asset_path_file = "asset_path.json";
-  static inline fs::path _named_assets_file = "named_assets.json";
+  /**
+   * @brief below static functions is used to register default assets
+   */
+  struct DefaultAssetGetter {
+    std::function<std::shared_ptr<Asset>()> shared_getter;
+    std::function<std::unique_ptr<Asset>()> unique_getter;
+  };
+
+public:
+  template <typename T>
+  static void registerDefaultAsset() {
+    static_assert(std::is_default_constructible_v<T>);
+    registerOrGet(std::pair{
+      std::string{ typeid(T).name() },
+      DefaultAssetGetter{
+        []() { return std::make_shared<T>(); },
+        []() { return std::make_unique<T>(); },
+      },
+    });
+  }
+
+private:
+  /**
+   * @brief use static function variable to avoid static initialization order fiasco
+   */
+  static auto registerOrGet(std::optional<std::pair<std::string, DefaultAssetGetter>> kv)
+    -> std::unordered_map<std::string, DefaultAssetGetter>& {
+    static auto default_asset_map = std::unordered_map<std::string, DefaultAssetGetter>{};
+    if (kv) {
+      default_asset_map[kv->first] = kv->second;
+    }
+    return default_asset_map;
+  }
+  friend AssetMemberSerializer;
+  static inline auto& _default_asset_map = registerOrGet({});
 };
 
 } // namespace eg

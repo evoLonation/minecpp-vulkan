@@ -86,7 +86,9 @@ private:
 public:
   auto assetSerialize() -> AssetPackager override;
   void assetDeserialize(AssetUnpacker unpacker) override;
-  REGISTER_ASSET_ID("node")
+
+private:
+  REGISTER_ASSET(Node);
 };
 
 } // namespace eg

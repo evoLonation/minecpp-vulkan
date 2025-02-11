@@ -25,7 +25,13 @@ public:
     Asset::assetDeserialize(unpacker.extractInherited());
     std::tie(positions, indices) = unpacker.extract<std::vector<glm::vec3>, std::vector<uint16>>();
   }
-  REGISTER_ASSET_ID("test1")
+
+  friend auto operator==(TestAsset1 const& lhs, TestAsset1 const& rhs) -> bool {
+    return lhs.positions == rhs.positions && lhs.indices == rhs.indices;
+  }
+
+private:
+  REGISTER_ASSET(TestAsset1);
 };
 
 struct TestAssetMember1 : public Asset {
@@ -39,7 +45,13 @@ public:
     Asset::assetDeserialize(unpacker.extractInherited());
     std::tie(data) = unpacker.extract<int>();
   }
-  REGISTER_ASSET_ID("test_member1")
+
+  friend auto operator==(TestAssetMember1 const& lhs, TestAssetMember1 const& rhs) -> bool {
+    return lhs.data == rhs.data;
+  }
+
+private:
+  REGISTER_ASSET(TestAssetMember1);
 };
 
 struct TestAsset2 : public Asset {
@@ -81,82 +93,95 @@ public:
     _ref = ref.consume<TestAsset1>();
     _member = member.consume<TestAssetMember1>();
   }
-  REGISTER_ASSET_ID("test2")
+
+  friend auto operator==(TestAsset2 const& lhs, TestAsset2 const& rhs) -> bool {
+    return lhs._type == rhs._type && lhs._data == rhs._data && *lhs._ref == *rhs._ref &&
+           *lhs._member == *rhs._member;
+  }
+
+private:
+  REGISTER_ASSET(TestAsset2);
 };
 
-auto getManager() -> AssetManager {
-  auto manager = AssetManager{
-    {
-      { TestAsset1::asset_id, []() { return std::make_shared<TestAsset1>(); } },
-      { TestAsset2::asset_id, []() { return std::make_shared<TestAsset2>(); } },
-    },
-    {
-      { TestAssetMember1::asset_id, []() { return std::make_unique<TestAssetMember1>(); } },
-    },
-  };
-  manager.clearAssets<TestAsset1>();
-  manager.clearAssets<TestAsset2>();
-  return manager;
-}
+auto getManager() -> AssetManager { return AssetManager{ "assets/test" }; }
 
 TEST(AssetManager1) {
   auto manager = getManager();
 
-  auto guid = Guid{};
-  auto asset1 = std::make_shared<TestAsset1>();
-  asset1->positions = { { 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 } };
-  asset1->indices = { 0, 1, 2, 1, 2, 3, 2, 3, 4 };
-  asset1->setAssetName("my_asset1");
-  manager.save(asset1);
-  guid = asset1->getAssetGuid();
-  manager.load<TestAsset1>("my_asset1");
-  auto asset1_1 = manager.load<TestAsset1>("my_asset1");
-  TOY_ASSERT(
-    asset1_1->positions == asset1->positions && asset1_1->indices == asset1->indices &&
-    asset1_1->getAssetName() == "my_asset1" && asset1_1->getAssetGuid() == guid
-  );
+  auto assetConstructor = []() -> std::shared_ptr<TestAsset1> {
+    auto asset = std::make_shared<TestAsset1>();
+    asset->positions = { { 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 } };
+    asset->indices = { 0, 1, 2, 1, 2, 3, 2, 3, 4 };
+    return asset;
+  };
+
+  {
+    auto guid = Guid{};
+    {
+      auto asset = assetConstructor();
+      guid = asset->getAssetGuid();
+      manager.save(asset);
+    }
+    auto asset = manager.load<TestAsset1>(guid);
+    TOY_ASSERT(*asset == *assetConstructor());
+    TOY_ASSERT(asset->getAssetGuid() == guid);
+    manager.remove(asset.get());
+  }
+
+  {
+    {
+      auto asset = assetConstructor();
+      asset->setAssetName("my_asset1");
+      manager.save(asset);
+    }
+    auto asset = manager.load<TestAsset1>("my_asset1");
+    TOY_ASSERT(*asset == *assetConstructor());
+    TOY_ASSERT(asset->getAssetName() == "my_asset1");
+    manager.remove(asset.get());
+  }
+
+  {
+    auto asset = assetConstructor();
+    asset->setAssetName("my_asset1");
+    manager.save(asset);
+    auto asset1 = manager.load<TestAsset1>("my_asset1");
+    TOY_ASSERT(asset1.get() == asset.get());
+    manager.remove(asset.get());
+  }
 }
 
 TEST(AssetManager2) {
   auto manager = getManager();
 
-  auto guid2 = Guid{};
-  {
-    auto asset1 = std::make_shared<TestAsset1>();
-    asset1->positions = { { 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 } };
-    asset1->indices = { 0, 1, 2, 1, 2, 3, 2, 3, 4 };
+  auto assetConstructor = [](bool type) -> std::shared_ptr<TestAsset2> {
+    auto asset = std::make_shared<TestAsset2>();
+    asset->_data = 123;
+    asset->_ref = std::make_shared<TestAsset1>();
+    asset->_ref->positions = { { 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 } };
+    asset->_ref->indices = { 0, 1, 2, 1, 2, 3, 2, 3, 4 };
+    asset->_member = std::make_unique<TestAssetMember1>();
+    asset->_member->data = 456;
+    asset->_type = type;
+    return asset;
+  };
 
-    auto asset2 = std::make_shared<TestAsset2>();
-    asset2->_data = 123;
-    asset2->_ref = asset1;
-    asset2->_member = std::make_unique<TestAssetMember1>();
-    asset2->_member->data = 456;
-    asset2->_type = false;
-    asset2->setAssetName("my_asset2");
-    manager.save(asset2);
-    guid2 = asset2->getAssetGuid();
-    asset2 = manager.load<TestAsset2>("my_asset2");
-    TOY_ASSERT(asset2->getAssetGuid() == guid2);
-  }
-  {
-    auto origin_2 = TestAsset2{};
-    origin_2._data = 123;
-    auto origin_1 = TestAsset1{};
-    origin_1.positions = { { 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 } };
-    origin_1.indices = { 0, 1, 2, 1, 2, 3, 2, 3, 4 };
-    auto asset2 = manager.load<TestAsset2>("my_asset2");
-    TOY_ASSERT(asset2->getAssetGuid() == guid2, asset2->getAssetGuid().get(), guid2.get());
-    TOY_ASSERT(
-      asset2->_data == origin_2._data && asset2->_ref->positions == origin_1.positions &&
-      asset2->_ref->indices == origin_1.indices && asset2->_member->data == 456
-    );
-    auto names = manager.getAssetNames<TestAsset2>();
-    TOY_ASSERT(names.size() == 1 && names[0] == "my_asset2");
-  }
-  {
-    auto asset2 = manager.load(guid2);
-    TOY_ASSERT(dynamic_cast<TestAsset2*>(asset2.get()) != nullptr);
-  }
+  auto test = [&](bool type) {
+    auto guid = Guid{};
+    {
+      auto asset = assetConstructor(type);
+      guid = asset->getAssetGuid();
+      manager.save(asset);
+    }
+    auto asset = manager.load<TestAsset2>(guid);
+    TOY_ASSERT(*asset == *assetConstructor(type));
+    TOY_ASSERT(asset->getAssetGuid() == guid);
+    manager.remove(asset.get());
+    manager.remove(asset->_ref.get());
+    manager.remove(asset->_member.get());
+  };
+
+  test(true);
+  test(false);
 }
 
 // TEST(Reval) {

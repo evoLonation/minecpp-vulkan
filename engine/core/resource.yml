@@ -15,8 +15,6 @@ module:
     provide: engine.object
 - base.ccm:
     provide: engine.base
-- asset_registry.ccm:
-    provide: engine.asset.registry
 - importer.ccm:
     provide: engine.importer
 - reactive.ccm:

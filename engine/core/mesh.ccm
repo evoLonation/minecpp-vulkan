@@ -107,7 +107,9 @@ public:
     };
     init(data);
   }
-  REGISTER_ASSET_ID("mesh")
+
+private:
+  REGISTER_ASSET(Mesh);
 };
 
 } // namespace eg

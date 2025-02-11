@@ -97,7 +97,8 @@ public:
   auto assetSerialize() -> AssetPackager override;
   void assetDeserialize(AssetUnpacker unpacker) override;
 
-  REGISTER_ASSET_ID("light_unit")
+private:
+  REGISTER_ASSET(LightUnit);
 };
 
 class SceneObject : public Node {
@@ -119,7 +120,9 @@ private:
 public:
   auto assetSerialize() -> AssetPackager override;
   void assetDeserialize(AssetUnpacker unpacker) override;
-  REGISTER_ASSET_ID("scene_object")
+
+private:
+  REGISTER_ASSET(SceneObject);
 };
 
 } // namespace eg
