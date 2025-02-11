@@ -165,6 +165,20 @@ TEST(StlSerializer) {
   pickle = Pickle{ "test.pkl" };
   auto test14 = pickle.pop<std::tuple<int, std::string, double>>();
   TOY_ASSERT(test13 == test14);
+
+  auto test15 = std::set<int>{ 10, 11, 12 };
+  pickle.push(test15);
+  pickle.dump("test.pkl");
+  pickle = Pickle{ "test.pkl" };
+  auto test16 = pickle.pop<std::set<int>>();
+  TOY_ASSERT(test15 == test16);
+
+  auto test17 = std::unordered_set<int>{ 13, 14, 15 };
+  pickle.push(test17);
+  pickle.dump("test.pkl");
+  pickle = Pickle{ "test.pkl" };
+  auto test18 = pickle.pop<std::unordered_set<int>>();
+  TOY_ASSERT(test17 == test18);
 }
 
 struct MoveOnly {

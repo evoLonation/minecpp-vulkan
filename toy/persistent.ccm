@@ -37,16 +37,16 @@ public:
   }
 
   template <typename T, typename SerializerT = DefaultSerializer<T>>
-  void push(T const& t, SerializerT serializer = DefaultSerializer<T>{}) {
-    SerializerT::serialize(*this, t);
+  void push(T const& t, SerializerT serializer = SerializerT{}) {
+    serializer.serialize(*this, t);
   }
   void pushBytes(std::span<std::byte const> data) {
     _data.append_range(data);
     _pos += data.size();
   }
   template <typename T, typename SerializerT = DefaultSerializer<T>>
-  auto pop() -> T {
-    return SerializerT::deserialize(*this);
+  auto pop(SerializerT serializer = SerializerT{}) -> T {
+    return serializer.deserialize(*this);
   }
   void popBytes(std::span<std::byte> data) {
     auto size = data.size();
@@ -125,6 +125,34 @@ struct DefaultSerializerS<std::deque<T>> {
 template <>
 struct DefaultSerializerS<std::string> {
   using type = SequenceSerializer<std::string>;
+};
+
+template <typename T, typename ES = DefaultSerializer<typename T::value_type>>
+struct SetSerializer {
+  static void serialize(Pickle& pickle, T const& t) {
+    for (auto const& e : t) {
+      pickle.push(e, ES{});
+    }
+    pickle.push(static_cast<std::size_t>(t.size()));
+  }
+  static auto deserialize(Pickle& pickle) -> T {
+    auto size = pickle.pop<std::size_t>();
+    auto t = T{};
+    for (auto i = 0; i < size; ++i) {
+      auto e = pickle.pop<typename T::value_type, ES>();
+      t.insert(std::move(e));
+    }
+    return t;
+  }
+};
+
+template <typename T>
+struct DefaultSerializerS<std::set<T>> {
+  using type = SetSerializer<std::set<T>>;
+};
+template <typename T>
+struct DefaultSerializerS<std::unordered_set<T>> {
+  using type = SetSerializer<std::unordered_set<T>>;
 };
 
 template <
