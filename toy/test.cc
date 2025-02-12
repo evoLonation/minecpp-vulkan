@@ -99,86 +99,36 @@ TEST(traceable) {
   TOY_ASSERT(!proxy.valid() && !copy.valid());
 }
 
-TEST(TrivialSerializer) {
-  struct Test {
-    int    a;
-    char   c[13];
-    double b;
-  };
-  auto pickle = Pickle{};
-  auto test = Test{ 1, { 'c' }, 2.0 };
-  pickle.push(test);
-  pickle.dump("test.pkl");
-
-  pickle = Pickle{ "test.pkl" };
-  auto test2 = pickle.pop<Test>();
-  TOY_ASSERT(test.a == test2.a && test.b == test2.b && test.c[0] == test2.c[0]);
+template <typename T>
+void testSerializer(T t, std::source_location location = std::source_location::current()) {
+  auto buf = std::vector<std::byte>{};
+  auto stream = VectorStream{ &buf };
+  stream.write(t);
+  auto t2 = stream.read<T>();
+  toy::throwf(location, t == t2, "t !== t2");
 }
 
-TEST(StlSerializer) {
-  auto pickle = Pickle{};
-  auto test = std::vector<int>{ 1, 2, 3 };
-  pickle.push(test);
-  pickle.dump("test.pkl");
+struct TrivialTest {
+  int         a;
+  char        c[13];
+  double      b;
+  friend auto operator==(TrivialTest const& lhs, TrivialTest const& rhs) -> bool {
+    return lhs.a == rhs.a && lhs.b == rhs.b && std::memcmp(lhs.c, rhs.c, sizeof(lhs.c)) == 0;
+  }
+};
 
-  pickle = Pickle{ "test.pkl" };
-  auto test2 = pickle.pop<std::vector<int>>();
-  TOY_ASSERT(test == test2);
+TEST(TrivialSerializer) { testSerializer(TrivialTest{ 1, { 'c' }, 2.0 }); }
 
-  auto test3 = std::list<int>{ 4, 5, 6, 7 };
-  pickle.push(test3);
-  pickle.dump("test.pkl");
-  pickle = Pickle{ "test.pkl" };
-  auto test4 = pickle.pop<std::list<int>>();
-  TOY_ASSERT(test3 == test4);
-
-  auto test5 = std::deque<double>{ 8, 9, 10, 11, 12 };
-  pickle.push(test5);
-  pickle.dump("test.pkl");
-  pickle = Pickle{ "test.pkl" };
-  auto test6 = pickle.pop<std::deque<double>>();
-  TOY_ASSERT(test5 == test6);
-
-  auto test7 = std::map<int, std::string>{ { 1, "1" }, { 2, "2" }, { 3, "3" } };
-  pickle.push(test7);
-  pickle.dump("test.pkl");
-  pickle = Pickle{ "test.pkl" };
-  auto test8 = pickle.pop<std::map<int, std::string>>();
-  TOY_ASSERT(test7 == test8);
-  auto test9 = std::unordered_map<int, std::string>{ { 4, "4" }, { 5, "5" }, { 6, "6" } };
-  pickle.push(test9);
-  pickle.dump("test.pkl");
-  pickle = Pickle{ "test.pkl" };
-  auto test10 = pickle.pop<std::unordered_map<int, std::string>>();
-  TOY_ASSERT(test9 == test10);
-
-  auto test11 = std::pair<int, std::string>{ 7, "7" };
-  pickle.push(test11);
-  pickle.dump("test.pkl");
-  pickle = Pickle{ "test.pkl" };
-  auto test12 = pickle.pop<std::pair<int, std::string>>();
-  TOY_ASSERT(test11 == test12);
-
-  auto test13 = std::tuple{ 8, std::string{ "8" }, 9.0 };
-  pickle.push(test13);
-  pickle.dump("test.pkl");
-  pickle = Pickle{ "test.pkl" };
-  auto test14 = pickle.pop<std::tuple<int, std::string, double>>();
-  TOY_ASSERT(test13 == test14);
-
-  auto test15 = std::set<int>{ 10, 11, 12 };
-  pickle.push(test15);
-  pickle.dump("test.pkl");
-  pickle = Pickle{ "test.pkl" };
-  auto test16 = pickle.pop<std::set<int>>();
-  TOY_ASSERT(test15 == test16);
-
-  auto test17 = std::unordered_set<int>{ 13, 14, 15 };
-  pickle.push(test17);
-  pickle.dump("test.pkl");
-  pickle = Pickle{ "test.pkl" };
-  auto test18 = pickle.pop<std::unordered_set<int>>();
-  TOY_ASSERT(test17 == test18);
+TEST(StlSerializer2) {
+  testSerializer(std::vector<int>{ 1, 2, 3 });
+  testSerializer(std::list<int>{ 4, 5, 6, 7 });
+  testSerializer(std::deque<double>{ 8, 9, 10, 11, 12 });
+  testSerializer(std::map<int, std::string>{ { 1, "1" }, { 2, "2" }, { 3, "3" } });
+  testSerializer(std::unordered_map<int, std::string>{ { 4, "4" }, { 5, "5" }, { 6, "6" } });
+  testSerializer(std::unordered_set<int>{ 1, 2, 3, 4 });
+  testSerializer(std::set<int>{ 1, 2, 3, 4 });
+  testSerializer(std::pair<int, std::string>{ 1, "1" });
+  testSerializer(std::tuple{ 8, std::string{ "giao" }, 9.0 });
 }
 
 struct MoveOnly {
@@ -196,11 +146,18 @@ struct Test {
   std::string        b;
   std::vector<float> c;
   MoveOnly           d;
+
+  friend auto operator==(Test const& lhs, Test const& rhs) -> bool {
+    TOY_ASSERT(lhs.a == rhs.a, lhs.a, rhs.a);
+    TOY_ASSERT(lhs.d.aa == rhs.d.aa, lhs.d.aa, rhs.d.aa);
+    return lhs.a == rhs.a && lhs.b == rhs.b && lhs.c == rhs.c && lhs.d.aa == rhs.d.aa;
+  }
 };
 
 struct TestSerializer : CustomSerializer<
                           Test,
                           [](int a, std::string b, std::vector<float> c, MoveOnly d) {
+                            TOY_DEBUG(d.aa);
                             return Test{ a, b, std::move(c), std::move(d) };
                           },
                           MemberSerializerInfo{ &Test::a },
@@ -209,13 +166,12 @@ struct TestSerializer : CustomSerializer<
                           MemberSerializerInfo{ &Test::d }> {};
 
 TEST(CustomSerializer) {
-  auto pickle = Pickle{};
-  auto test = Test{ 1, "2", { 3.0, 4.0, 5.0 }, 1 };
-  pickle.push(test, TestSerializer{});
-  pickle.dump("test.pkl");
-  pickle = Pickle{ "test.pkl" };
-  auto test2 = pickle.pop<Test, TestSerializer>();
-  TOY_ASSERT(test.a == test2.a && test.b == test2.b && test.c == test2.c, test.d.aa == test2.d.aa);
+  auto buf = std::vector<std::byte>{};
+  auto stream = VectorStream{ &buf };
+  auto t = Test{ 1, "2", { 3.0, 4.0, 5.0 }, 6 };
+  stream.write(t, TestSerializer{});
+  auto t2 = stream.read<Test>(TestSerializer{});
+  TOY_ASSERT(t == t2);
 }
 
 TEST(json) {
