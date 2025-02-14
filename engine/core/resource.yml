@@ -31,5 +31,7 @@ module:
     implement: engine.base.reactive
 - shape.cc:
     implement: engine.shape
+- package.ccm:
+    provide: engine.package
 test:
 - test.cc

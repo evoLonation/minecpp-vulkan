@@ -1,0 +1,413 @@
+module;
+#include <toy.h>
+export module engine.package;
+
+import toy.persistent;
+import std;
+import toy;
+
+export namespace eg {
+
+class FileStream : public toy::OutputStream, public toy::InputStream {
+public:
+  FileStream() = default;
+  FileStream(std::fstream* fs) : _fs(fs) {}
+  void readBytes(std::span<std::byte> b) override {
+    _fs->read(reinterpret_cast<char*>(b.data()), b.size());
+    TOY_ASSERT(_fs->gcount() == b.size());
+  }
+  void writeBytes(std::span<std::byte const> b) override {
+    _fs->write(reinterpret_cast<char const*>(b.data()), b.size());
+  }
+
+private:
+  std::fstream* _fs;
+};
+
+/**
+ * @brief
+ * call setCurrentPage() to start a read or write, user can separately write or read (ptr is
+ * individual) any function call excepted write and read will make ptr undefined after write, user
+ * can call recycle() to release unused pages
+ */
+class LinkedFile : public toy::OutputStream, public toy::InputStream {
+public:
+  using PageNumber = uint32;
+  using MagicNumber = uint32;
+
+  UNCOPYABLE_MOVEABLE(LinkedFile);
+  LinkedFile(fs::path const& path) {
+    _stream = FileStream(&_file);
+    _file.open(path, std::ios::in | std::ios::out | std::ios::binary | std::ios::ate);
+    auto file_size = _file.tellg();
+    _file.seekg(0);
+    _file.seekp(0);
+    if (file_size != 0) {
+      TOY_ASSERT(readMagicNumber() == _magic_number && file_size % _page_size == 0);
+    } else {
+      writeNextPage(0, 0);
+      writeMagicNumber(_magic_number);
+      writeAllocatedPages({});
+    }
+  }
+
+  void readBytes(std::span<std::byte> b) override {
+    auto iter = b.begin();
+    while (iter != b.end()) {
+      auto read_size = std::min(size_t(b.end() - iter), getPageRemainReadSize());
+      _file.read(reinterpret_cast<char*>(iter.base()), read_size);
+      iter += read_size;
+      if (getPageRemainReadSize() == _page_size) {
+        auto next_page = readNextPage(getNowReadPage() - 1);
+        TOY_ASSERT(next_page != 0);
+        seekPageRead(next_page);
+      }
+    }
+  }
+  void writeBytes(std::span<std::byte const> b) override {
+    auto iter = b.begin();
+    while (iter != b.end()) {
+      auto write_size = std::min(size_t(b.end() - iter), getPageRemainWriteSize());
+      _file.write(reinterpret_cast<char const*>(iter.base()), write_size);
+      iter += write_size;
+      if (getPageRemainWriteSize() == _page_size) {
+        auto recover = snapshotRead();
+        auto next_page = readNextPage(getNowWritePage() - 1);
+        if (next_page == 0) {
+          next_page = allocatePage();
+          writeNextPage(getNowWritePage() - 1, next_page);
+        }
+        seekPageWrite(next_page);
+      }
+    }
+  }
+
+  /**
+   * @brief call after all write done to recycle unused pages
+   */
+  void recycle() {
+    PageNumber first_page = getNowWritePage() + 1;
+    if (getCurrentPageWriteSize() == 0) {
+      first_page--;
+    }
+    auto last_page = toLastPage(first_page);
+    writeNextPage(last_page, readFreePage());
+    writeFreePage(first_page);
+  }
+
+  void setCurrent(PageNumber id) {
+    seekPageRead(id);
+    seekPageWrite(id);
+  }
+  auto allocate() -> PageNumber {
+    auto new_page = allocatePage();
+    auto allocated_pages = readAllocatedPages();
+    allocated_pages.push_back(new_page);
+    writeAllocatedPages(allocated_pages);
+    return new_page;
+  }
+  void free(PageNumber id) {
+    auto allocated_pages = readAllocatedPages();
+    auto iter = std::find(allocated_pages.begin(), allocated_pages.end(), id);
+    TOY_ASSERT(iter != allocated_pages.end());
+    allocated_pages.erase(iter);
+    writeAllocatedPages(allocated_pages);
+    auto first_page = id;
+    auto last_page = toLastPage(first_page);
+    writeNextPage(last_page, readFreePage());
+    writeFreePage(first_page);
+  }
+  auto getAll() -> std::vector<PageNumber> { return readAllocatedPages(); }
+
+private:
+  auto toLastPage(PageNumber page) -> PageNumber {
+    while (auto next_page = readNextPage(page)) {
+      page = next_page;
+    }
+    return page;
+  }
+
+  /**
+   * @brief allocate a new page and set next_page to 0
+   */
+  auto allocatePage() -> PageNumber {
+    auto recover = snapshot();
+    auto free_page = readFreePage();
+    if (free_page == 0) {
+      // allocate a new page
+      auto new_page = appendPage();
+      writeNextPage(new_page, 0);
+      return new_page;
+    } else {
+      auto new_free_page = readNextPage(free_page);
+      writeFreePage(new_free_page);
+      writeNextPage(free_page, 0);
+      return free_page;
+    }
+  }
+
+  auto appendPage() -> PageNumber {
+    _file.seekp(_page_size - 1, std::ios::end);
+    // append file length
+    _file.put(0);
+    TOY_ASSERT(_file.tellp() % _page_size == 0);
+    return _file.tellp() / _page_size - 1;
+  }
+
+  auto readMagicNumber() -> MagicNumber {
+    _file.seekg(sizeof(PageNumber));
+    return _stream.read<MagicNumber>();
+  }
+  void writeMagicNumber(MagicNumber magic_number) {
+    _file.seekp(sizeof(PageNumber));
+    _stream.write<MagicNumber>(magic_number);
+  }
+  auto readFreePage() -> PageNumber {
+    // next page + magic number
+    _file.seekg(sizeof(PageNumber) + sizeof(MagicNumber));
+    return _stream.read<PageNumber>();
+  }
+  void writeFreePage(PageNumber free_page) {
+    // next page + magic number
+    _file.seekp(sizeof(PageNumber) + sizeof(MagicNumber));
+    _stream.write<PageNumber>(free_page);
+  }
+  void writeAllocatedPages(std::vector<PageNumber> allocated_pages) {
+    // next page + magic number + free page
+    _file.seekp(sizeof(PageNumber) + sizeof(MagicNumber) + sizeof(PageNumber));
+    _stream.write<std::vector<PageNumber>>(allocated_pages);
+  }
+  auto readAllocatedPages() -> std::vector<PageNumber> {
+    // next page + magic number + free page
+    _file.seekg(sizeof(PageNumber) + sizeof(MagicNumber) + sizeof(PageNumber));
+    return _stream.read<std::vector<PageNumber>>();
+  }
+
+  void seekPageRead(PageNumber page) { _file.seekg(page * _page_size + sizeof(PageNumber)); }
+  void seekPageWrite(PageNumber page) { _file.seekp(page * _page_size + sizeof(PageNumber)); }
+  auto readNextPage(PageNumber page) -> PageNumber {
+    _file.seekg(page * _page_size);
+    return _stream.read<PageNumber>();
+  }
+  void writeNextPage(PageNumber page, PageNumber next_page) {
+    _file.seekp(page * _page_size);
+    _stream.write<PageNumber>(next_page);
+  }
+
+  auto getCurrentPageReadSize() -> size_t {
+    return _file.tellg() % _page_size - sizeof(PageNumber);
+  }
+  auto getCurrentPageWriteSize() -> size_t {
+    return _file.tellp() % _page_size - sizeof(PageNumber);
+  }
+  auto getPageRemainReadSize() -> size_t { return _page_size - _file.tellg() % _page_size; }
+  auto getPageRemainWriteSize() -> size_t { return _page_size - _file.tellp() % _page_size; }
+  auto getNowReadPage() -> PageNumber { return _file.tellg() / _page_size; }
+  auto getNowWritePage() -> PageNumber { return _file.tellp() / _page_size; }
+
+  struct ReadPtrRecover {
+    toy::PtrManager<std::fstream*> _fs;
+    size_t                         _last_read_offset;
+    ReadPtrRecover(std::fstream* fs) : _fs(fs), _last_read_offset(size_t(fs->tellg())) {}
+    ONLY_MOVEABLE(ReadPtrRecover);
+    ~ReadPtrRecover() {
+      if (_fs) {
+        _fs->seekg(_last_read_offset);
+      }
+    }
+  };
+  struct WritePtrRecover {
+    std::fstream* _fs;
+    size_t        _last_write_offset;
+    WritePtrRecover(std::fstream* fs) : _fs(fs), _last_write_offset(size_t(fs->tellp())) {}
+    ONLY_MOVEABLE(WritePtrRecover);
+    ~WritePtrRecover() {
+      if (_fs) {
+        _fs->seekp(_last_write_offset);
+      }
+    }
+  };
+  auto snapshotRead() -> ReadPtrRecover { return &_file; }
+  auto snapshotWrite() -> WritePtrRecover { return &_file; }
+  auto snapshot() -> std::pair<ReadPtrRecover, WritePtrRecover> {
+    return { snapshotRead(), snapshotWrite() };
+  }
+
+private:
+  FileStream   _stream;
+  std::fstream _file;
+
+  static constexpr MagicNumber _magic_number = 0x20774396;
+  static constexpr uint32      _page_size = 1 << 10; // 1024
+};
+
+class Package;
+class AssetPackager;
+class AssetUnpacker;
+
+class Guid {
+public:
+  Guid() = default;
+  Guid(std::string const& guid) : _guid(guid) {}
+  auto get() const -> std::string const& { return _guid; }
+  auto valid() const -> bool { return !_guid.empty(); }
+  void clear() { _guid.clear(); }
+
+  static auto generate() -> Guid { return Guid{ generateHex(16) }; }
+  friend auto operator==(Guid const& lhs, Guid const& rhs) -> bool {
+    return lhs._guid == rhs._guid;
+  }
+
+private:
+  friend class GuidSerializer;
+  static auto randomChar() -> unsigned char;
+  static auto generateHex(const unsigned int len) -> std::string;
+  std::string _guid;
+};
+
+struct GuidHasher {
+  size_t operator()(const Guid& x) const { return std::hash<std::string>{}(x.get()); }
+};
+
+struct GuidSerializer : toy::CustomSerializer<
+                          Guid,
+                          [](std::string a) { return Guid{ std::move(a) }; },
+                          toy::MemberSerializerInfo{ &Guid::_guid }> {};
+
+/**
+ * @brief 每个需要持久化Asset都首先需要设置属于的Package
+ *
+ */
+class Asset {
+public:
+  Asset();
+  UNCOPYABLE_MOVEABLE(Asset);
+
+  void setOwnedPackage(Package& package);
+  auto getOwnedPackage() -> Package*;
+  void saveAsset();
+  auto getAssetName() -> std::string const&;
+  void setAssetName(std::string name);
+  auto getAssetGuid() -> Guid;
+  auto isUnspecifiedAsset() -> bool { return _guid.valid(); }
+
+protected:
+  virtual auto assetSerialize() -> AssetPackager;
+  virtual void assetDeserialize(AssetUnpacker unpacker);
+
+private:
+  friend Package;
+  std::shared_ptr<Package> _package;
+  Guid                     _guid;
+};
+
+/**
+ * @brief 由Package的所有者以及其包含的所有Asset持有共享所有权
+ * 其持有Asset的弱引用，需要用户维护Asset的生命周期
+ */
+class Package : public std::enable_shared_from_this<Package> {
+public:
+  auto create(fs::path const& path) -> std::shared_ptr<Package>;
+
+private:
+  /**
+   * @brief 如果path不存在，创建一个新的Package，否则加载一个已经包含Assets的Package
+   */
+  Package(fs::path const& path) : _file(path) {
+    if (!_file.getAll().empty()) {
+      _file.setCurrent(1);
+      _guid2page = _file.read<GuidPageMap, GuidPageMapSerializer>();
+    } else {
+      auto id = _file.allocate();
+      TOY_ASSERT(id == 1);
+      _file.setCurrent(1);
+      _file.write<GuidPageMap, GuidPageMapSerializer>({});
+    }
+  }
+
+public:
+  UNCOPYABLE_MOVEABLE(Package);
+  ~Package();
+
+  /**
+   * @brief 存储所有Asset的更改、新增和删除的Asset到文件中
+   * **NOTE**: 为保持一致性，如果新增的Asset之前已经属于某个Package，
+   * 对应Package也会将删除该Asset的改动应用到文件中
+   *
+   */
+  void saveAll();
+  /**
+   * @brief 负责管理Asset的弱引用
+   * 使用load() 可以将Asset以三种方式加载到内存中（栈、uptr、shared_ptr）
+   *
+   */
+  class AssetPtr {
+  public:
+    enum MemType { NONE, STACK, UNIQUE, SHARED };
+    auto isAlive() -> MemType;
+    auto get() -> Asset*; // nullable
+    template <MemType loadType = STACK>
+    auto load(); // if isAlive is false, load from file
+    auto getTypeName() -> std::string;
+  };
+  auto getAllAssets() -> std::vector<AssetPtr>;
+
+private:
+  void saveGuidPageMap() {
+    _file.setCurrent(1);
+    _file.write<GuidPageMap, GuidPageMapSerializer>(_guid2page);
+  }
+  static void setAssetOwner(Asset* asset, Package* owner) {
+    if (asset->_package.get() == owner) {
+      return;
+    }
+    if (auto origin = asset->_package) {
+      auto page = origin->_guid2page.extract(asset->getAssetGuid()).mapped();
+      origin->_assets.erase(asset->getAssetGuid());
+      origin->_file.free(page);
+      origin->saveGuidPageMap();
+    }
+    owner->_guid2page[asset->getAssetGuid()] = owner->_file.allocate();
+    owner->_assets[asset->getAssetGuid()] = asset;
+    owner->saveGuidPageMap();
+    asset->_package = owner->shared_from_this();
+  }
+  static void resetAssetOwner(Asset* asset) {
+    if (auto origin = asset->_package) {
+      auto page = origin->_guid2page.extract(asset->getAssetGuid()).mapped();
+      origin->_assets.erase(asset->getAssetGuid());
+      origin->_file.free(page);
+      origin->saveGuidPageMap();
+    }
+    asset->_package = nullptr;
+  }
+
+
+
+  auto getAsset(Guid const& guid) -> std::shared_ptr<Asset> {
+    if (auto it = _assets.find(guid); it != _assets.end()) {
+      return it->second;
+    }
+    TOY_ASSERT(_guid2page.contains(guid));
+    _file.setCurrent(_guid2page[guid]);
+    auto asset = std::make_shared<Asset>();
+    asset->_package = this;
+    asset->assetDeserialize(_file.read<AssetPackager>());
+    _assets[guid] = asset.get();
+    return asset;
+  }
+
+  using GuidPageMap = std::unordered_map<Guid, LinkedFile::PageNumber, GuidHasher>;
+  using GuidPageMapSerializer =
+    toy::MapSerializer<GuidPageMap, GuidSerializer, toy::DefaultSerializer<LinkedFile::PageNumber>>;
+  LinkedFile                                   _file;
+  GuidPageMap                                  _guid2page;
+  std::unordered_map<Guid, Asset*, GuidHasher> _assets;
+};
+
+class AssetPackager;
+class AssetUnpacker;
+
+class AssetPackager {};
+
+} // namespace eg
