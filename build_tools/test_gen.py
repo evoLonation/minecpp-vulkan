@@ -22,8 +22,10 @@ if __name__ == "__main__":
               try {{
                 func();
               }} catch (const std::exception& e) {{
-                std::println("test {{}} failed: \\n{{}}", name, e.what());
+                std::println("\033[31mTEST {{}} FAILED!\033[0m reason:\\n{{}}", name, e.what());
+                continue;
               }}
+              std::println("\033[32mTEST {{}} SUCCESS! \033[0m", name);
             }}
             """
         )

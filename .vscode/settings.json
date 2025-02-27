@@ -7,5 +7,6 @@
    "files.associations": {
       "*.ccm": "cpp"
    },
-   "python.analysis.typeCheckingMode": "standard"
+   "python.analysis.typeCheckingMode": "standard",
+   "editor.wordSeparators": "`~!@#$%^&*()-=+[{]}\\|;:'\",.<>/?，。；、：“”！？《》【】……￥"
 }
