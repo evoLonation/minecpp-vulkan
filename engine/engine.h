@@ -3,7 +3,7 @@
 
 #define REGISTER_ASSET(cls)                                                                        \
   static inline bool __asset_default_getter_register = []() {                                      \
-    AssetManager::registerDefaultAsset<cls>();                                                     \
+    ::eg::registerDefaultAsset<cls>();                                                             \
     return true;                                                                                   \
   }()
 

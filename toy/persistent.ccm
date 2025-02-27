@@ -25,6 +25,7 @@ protected:
   virtual void writeBytes(std::span<std::byte const> b) = 0;
 
 public:
+  void write(std::span<std::byte> b) { writeBytes(b); }
   void write(std::span<std::byte const> b) { writeBytes(b); }
   template <typename T, typename SerializerT = DefaultSerializer<T>>
   void write(T const& t, SerializerT serializer = {}) {

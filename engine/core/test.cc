@@ -2,7 +2,7 @@ import toy;
 import math;
 import std;
 import glm;
-import engine.asset;
+import engine.package;
 import engine.base;
 // import engine.node;
 #include <engine.h>
@@ -11,6 +11,83 @@ import engine.base;
 
 using namespace eg;
 
+TEST(LinkedFile) {
+  if (fs::exists("test_linked_file")) {
+    TOY_ASSERT(!fs::is_directory("test_linked_file"));
+    fs::remove("test_linked_file");
+  }
+  auto page_1 = LinkedFile::PageNumber{};
+  auto page_2 = LinkedFile::PageNumber{};
+  {
+
+    auto file = LinkedFile{ "test_linked_file" };
+
+    TOY_ASSERT(file.getAll().size() == 0);
+    page_1 = file.allocate();
+    // first page must be 1
+    TOY_ASSERT(page_1 == 1);
+    TOY_ASSERT(file.getAll().size() == 1);
+
+    file.setCurrent(page_1);
+
+    auto recover = file.snapshot();
+    file.write(std::string{ "hello world" });
+    recover.recover();
+    auto data = file.read<std::string>();
+    TOY_ASSERT(data == "hello world", data);
+
+    std::array<char, 102400> large_data{};
+    // fill random data
+    std::generate(large_data.begin(), large_data.end(), []() { return std::rand() % 256; });
+    recover = file.snapshot();
+    file.write(large_data);
+    // judge if data is correct
+    recover.recover();
+    auto read_data = file.read<std::array<char, 102400>>();
+    TOY_ASSERT(read_data == large_data);
+
+    {
+      // snapshot test
+      auto recover = file.snapshot();
+      {
+        auto recover = file.snapshot();
+        {
+          auto recover = file.snapshot();
+          file.write(123);
+          recover.recover();
+        }
+        TOY_ASSERT(file.read<int>() == 123);
+      }
+      file.write(456);
+      recover.recover();
+      TOY_ASSERT(file.read<int>() == 456);
+    }
+    page_2 = file.allocate();
+    auto pages = file.getAll();
+    TOY_ASSERT(
+      pages.size() == 2 && std::find(pages.begin(), pages.end(), page_1) != pages.end() &&
+      std::find(pages.begin(), pages.end(), page_2) != pages.end()
+    );
+    file.setCurrent(page_2);
+    recover = file.snapshot();
+    file.write(789);
+    recover.recover();
+    TOY_ASSERT(file.read<int>() == 789);
+  }
+
+  {
+    // open a existed file
+    auto file = LinkedFile{ "test_linked_file" };
+    file.release(page_1);
+    auto pages = file.getAll();
+    TOY_ASSERT(pages.size() == 1 && pages[0] == page_2);
+    file.release(page_2);
+    TOY_ASSERT(file.getAll().size() == 0);
+  }
+
+  fs::remove("test_linked_file");
+}
+
 struct TestAsset1 : public Asset {
 public:
   TestAsset1() = default;
@@ -18,12 +95,9 @@ public:
   std::vector<glm::vec3> positions;
   std::vector<uint16>    indices;
 
-  auto assetSerialize() -> AssetPackager override {
-    return { std::tuple{ positions, indices }, Asset::assetSerialize() };
-  }
-  void assetDeserialize(AssetUnpacker unpacker) override {
-    Asset::assetDeserialize(unpacker.extractInherited());
-    std::tie(positions, indices) = unpacker.extract<std::vector<glm::vec3>, std::vector<uint16>>();
+  void assetSerialize(AssetPackager& packager) override { packager.pack(positions, indices); }
+  void assetDeserialize(AssetUnpacker& unpacker) override {
+    std::tie(positions, indices) = unpacker.unpack<std::vector<glm::vec3>, std::vector<uint16>>();
   }
 
   friend auto operator==(TestAsset1 const& lhs, TestAsset1 const& rhs) -> bool {
@@ -38,12 +112,9 @@ struct TestAssetMember1 : public Asset {
 public:
   int data = 0;
 
-  auto assetSerialize() -> AssetPackager override {
-    return { std::tuple{ data }, Asset::assetSerialize() };
-  }
-  void assetDeserialize(AssetUnpacker unpacker) override {
-    Asset::assetDeserialize(unpacker.extractInherited());
-    std::tie(data) = unpacker.extract<int>();
+  void assetSerialize(AssetPackager& packager) override { packager.pack(data); }
+  void assetDeserialize(AssetUnpacker& unpacker) override {
+    std::tie(data) = unpacker.unpack<int>();
   }
 
   friend auto operator==(TestAssetMember1 const& lhs, TestAssetMember1 const& rhs) -> bool {
@@ -61,98 +132,98 @@ public:
   std::shared_ptr<TestAsset1>       _ref;
   std::unique_ptr<TestAssetMember1> _member;
 
-  auto assetSerialize() -> AssetPackager override {
+  void assetSerialize(AssetPackager& packager) override {
     if (_type) {
-      return {
-        0,
-        std::tuple{ _data, AssetRef{ _ref }, AssetMember{ _member } },
-        Asset::assetSerialize(),
-      };
+      packager.pack(0);
+      packager.pack(_data, _ref, _member);
     } else {
-      return {
-        1,
-        std::tuple{ AssetRef{ _ref }, _data, AssetMember{ _member } },
-        Asset::assetSerialize(),
-      };
+      packager.pack(1);
+      packager.pack(_ref, _data, _member);
     }
   }
-  void assetDeserialize(AssetUnpacker unpacker) override {
-    Asset::assetDeserialize(unpacker.extractInherited());
-    auto        id = unpacker.getId();
-    int         data;
-    AssetRef    ref;
-    AssetMember member;
+  void assetDeserialize(AssetUnpacker& unpacker) override {
+    auto id = std::get<0>(unpacker.unpack<int>());
     if (id == 0) {
       _type = true;
-      std::tie(data, ref, member) = unpacker.extract<int, AssetRef, AssetMember>();
+      unpacker.unpack(_data, _ref, _member);
     } else if (id == 1) {
       _type = false;
-      std::tie(ref, data, member) = unpacker.extract<AssetRef, int, AssetMember>();
+      unpacker.unpack(_ref, _data, _member);
     }
-    _data = data;
-    _ref = ref.consume<TestAsset1>();
-    _member = member.consume<TestAssetMember1>();
   }
 
   friend auto operator==(TestAsset2 const& lhs, TestAsset2 const& rhs) -> bool {
     return lhs._type == rhs._type && lhs._data == rhs._data && *lhs._ref == *rhs._ref &&
            *lhs._member == *rhs._member;
   }
+  static auto weakEqual(TestAsset2 const& lhs, TestAsset2 const& rhs) -> bool {
+    return lhs._type == rhs._type && lhs._data == rhs._data;
+  }
 
 private:
   REGISTER_ASSET(TestAsset2);
 };
 
-auto getManager() -> AssetManager { return AssetManager{ "assets/test" }; }
-
-TEST(AssetManager1) {
-  auto manager = getManager();
-
-  auto assetConstructor = []() -> std::shared_ptr<TestAsset1> {
+TEST(Package1) {
+  if (fs::exists("assets/test")) {
+    TOY_ASSERT(!fs::is_directory("assets/test"));
+    fs::remove("assets/test");
+  }
+  auto guid_asset1 = Guid{};
+  auto asset1Constructor = []() -> std::shared_ptr<TestAsset1> {
     auto asset = std::make_shared<TestAsset1>();
     asset->positions = { { 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 } };
     asset->indices = { 0, 1, 2, 1, 2, 3, 2, 3, 4 };
     return asset;
   };
-
   {
-    auto guid = Guid{};
+    auto package = Package::get("assets/test");
     {
-      auto asset = assetConstructor();
-      guid = asset->getAssetGuid();
-      manager.save(asset);
+      {
+        auto asset1 = asset1Constructor();
+        guid_asset1 = asset1->getAssetGuid();
+        asset1->setOwnedPackage(package.get());
+        asset1->saveAsset();
+      }
+      auto asset1 = package->getAssetShared<TestAsset1>(guid_asset1);
+      TOY_ASSERT(*asset1 == *asset1Constructor());
+      TOY_ASSERT(asset1->getAssetGuid() == guid_asset1);
+      TOY_ASSERT(asset1->getOwnedPackage() == package.get());
     }
-    auto asset = manager.load<TestAsset1>(guid);
-    TOY_ASSERT(*asset == *assetConstructor());
-    TOY_ASSERT(asset->getAssetGuid() == guid);
-    manager.remove(asset.get());
   }
+  auto package = Package::get("assets/test");
+  auto asset1 = package->getAssetShared<TestAsset1>(guid_asset1);
+  TOY_ASSERT(*asset1 == *asset1Constructor());
+  TOY_ASSERT(asset1->getAssetGuid() == guid_asset1);
+  TOY_ASSERT(asset1->getOwnedPackage() == package.get());
 
+  // test change owned package of asset
+  if (fs::exists("assets/test2")) {
+    TOY_ASSERT(!fs::is_directory("assets/test2"));
+    fs::remove("assets/test2");
+  }
+  auto package2 = Package::get("assets/test2");
   {
-    {
-      auto asset = assetConstructor();
-      asset->setAssetName("my_asset1");
-      manager.save(asset);
+    asset1->setOwnedPackage(package2.get());
+    TOY_ASSERT(asset1->getOwnedPackage() == package2.get());
+    try {
+      package->getAssetShared<TestAsset1>(guid_asset1);
+      TOY_ASSERT(false);
+    } catch (std::exception& e) {
+      toy::debugf("catched error: {}", e.what());
     }
-    auto asset = manager.load<TestAsset1>("my_asset1");
-    TOY_ASSERT(*asset == *assetConstructor());
-    TOY_ASSERT(asset->getAssetName() == "my_asset1");
-    manager.remove(asset.get());
   }
-
-  {
-    auto asset = assetConstructor();
-    asset->setAssetName("my_asset1");
-    manager.save(asset);
-    auto asset1 = manager.load<TestAsset1>("my_asset1");
-    TOY_ASSERT(asset1.get() == asset.get());
-    manager.remove(asset.get());
-  }
+  asset1.reset();
+  auto asset2 = package2->getAssetShared<TestAsset1>(guid_asset1);
+  TOY_ASSERT(*asset2 == *asset1Constructor());
 }
 
-TEST(AssetManager2) {
-  auto manager = getManager();
-
+TEST(Package2) {
+  if (fs::exists("assets/test")) {
+    TOY_ASSERT(!fs::is_directory("assets/test"));
+    fs::remove("assets/test");
+  }
+  auto package = Package::get("assets/test");
   auto assetConstructor = [](bool type) -> std::shared_ptr<TestAsset2> {
     auto asset = std::make_shared<TestAsset2>();
     asset->_data = 123;
@@ -167,21 +238,99 @@ TEST(AssetManager2) {
 
   auto test = [&](bool type) {
     auto guid = Guid{};
+    auto guid_ref = Guid{};
+    auto guid_member = Guid{};
     {
-      auto asset = assetConstructor(type);
-      guid = asset->getAssetGuid();
-      manager.save(asset);
+      // ref of asset only set in package but not save (can just load default value)
+      {
+        auto asset = assetConstructor(type);
+        asset->setOwnedPackage(package.get());
+        asset->saveAsset(package.get());
+        guid = asset->getAssetGuid();
+        guid_ref = asset->_ref->getAssetGuid();
+        guid_member = asset->_member->getAssetGuid();
+      }
+      auto asset = package->getAssetUnique<TestAsset2>(guid);
+      TOY_ASSERT(TestAsset2::weakEqual(*asset, *assetConstructor(type)));
+      TOY_ASSERT(*asset->_ref == TestAsset1{} && *asset->_member == TestAssetMember1{});
+      TOY_ASSERT(asset->getAssetGuid() == guid && asset->getOwnedPackage() == package.get());
+      TOY_ASSERT(
+        asset->_ref->getAssetGuid() == guid_ref && asset->_ref->getOwnedPackage() == package.get()
+      );
+      TOY_ASSERT(
+        asset->_member->getAssetGuid() == guid_member &&
+        asset->_member->getOwnedPackage() == package.get()
+      );
     }
-    auto asset = manager.load<TestAsset2>(guid);
-    TOY_ASSERT(*asset == *assetConstructor(type));
-    TOY_ASSERT(asset->getAssetGuid() == guid);
-    manager.remove(asset.get());
-    manager.remove(asset->_ref.get());
-    manager.remove(asset->_member.get());
+    {
+      {
+        auto asset = assetConstructor(type);
+        guid = asset->getAssetGuid();
+        asset->setOwnedPackage(package.get());
+        asset->saveAsset(package.get());
+        asset->_ref->saveAsset(package.get());
+        asset->_member->saveAsset(package.get());
+      }
+      auto asset = package->getAssetUnique<TestAsset2>(guid);
+      TOY_ASSERT(*asset == *assetConstructor(type));
+    }
+    // setOwnedPackageShared
+    {
+      {
+        auto asset = assetConstructor(type);
+        guid = asset->getAssetGuid();
+        Asset::setOwnedPackageShared(asset, package.get());
+        asset->saveAsset(package.get());
+        asset->_ref->saveAsset(package.get());
+        asset->_member->saveAsset(package.get());
+        try {
+          auto asset2 = package->getAssetUnique<TestAsset2>(guid);
+          TOY_ASSERT(false);
+        } catch (std::exception& e) {
+          toy::debugf("catched error: {}", e.what());
+        }
+        auto asset2 = package->getAssetShared<TestAsset2>(guid);
+        TOY_ASSERT(asset.get() == asset2.get());
+      }
+      auto asset = package->getAssetShared<TestAsset2>(guid);
+      TOY_ASSERT(*asset == *assetConstructor(type));
+    }
   };
 
   test(true);
   test(false);
+}
+
+TEST(Package3) {
+  // ref of asset is stored in another package
+  if (fs::exists("assets/test")) {
+    TOY_ASSERT(!fs::is_directory("assets/test"));
+    fs::remove("assets/test");
+  }
+  if (fs::exists("assets/test_ref")) {
+    TOY_ASSERT(!fs::is_directory("assets/test_ref"));
+    fs::remove("assets/test_ref");
+  }
+  auto package = Package::get("assets/test");
+  auto package_ref = Package::get("assets/test_ref");
+
+  auto assetConstructor = []() -> std::shared_ptr<TestAsset2> {
+    auto asset = std::make_shared<TestAsset2>();
+    asset->_data = 123;
+    asset->_ref = std::make_shared<TestAsset1>();
+    asset->_ref->positions = { { 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 } };
+    asset->_ref->indices = { 0, 1, 2, 1, 2, 3, 2, 3, 4 };
+    asset->_member = std::make_unique<TestAssetMember1>();
+    asset->_member->data = 456;
+    asset->_type = true;
+    return asset;
+  };
+  auto asset = assetConstructor();
+  asset->setOwnedPackage(package.get());
+  asset->saveAsset(package.get());
+  // wrong: _ref change its owned package but asset dont know
+  asset->_ref->setOwnedPackage(package_ref.get());
+  asset->_ref->saveAsset(package_ref.get());
 }
 
 // TEST(Reval) {
