@@ -1,7 +1,7 @@
 module;
 #include <toy.h>
 
-export module toy.persistent;
+export module toy.serializer;
 
 import toy.trait;
 import std;
@@ -10,7 +10,9 @@ import toy.log;
 export namespace toy {
 
 template <typename T>
-struct DefaultSerializerS;
+struct DefaultSerializerS {
+  using type = void;
+};
 template <typename T>
 using DefaultSerializer = DefaultSerializerS<T>::type;
 
@@ -27,9 +29,13 @@ protected:
 public:
   void write(std::span<std::byte> b) { writeBytes(b); }
   void write(std::span<std::byte const> b) { writeBytes(b); }
-  template <typename T, typename SerializerT = DefaultSerializer<T>>
-  void write(T const& t, SerializerT serializer = {}) {
-    serializer.serialize(*this, t);
+  template <typename T>
+  void write(T const& t) {
+    if constexpr (std::same_as<DefaultSerializer<T>, void>) {
+      T::serialize(*this, t);
+    } else {
+      DefaultSerializer<T>::serialize(*this, t);
+    }
   }
 };
 
@@ -39,9 +45,13 @@ protected:
 
 public:
   void read(std::span<std::byte> b) { readBytes(b); }
-  template <typename T, typename SerializerT = DefaultSerializer<T>>
-  auto read(SerializerT serializer = {}) -> T {
-    return serializer.deserialize(*this);
+  template <typename T>
+  auto read() -> T {
+    if constexpr (std::same_as<DefaultSerializer<T>, void>) {
+      return T::deserialize(*this);
+    } else {
+      return DefaultSerializer<T>::deserialize(*this);
+    }
   }
 };
 
@@ -123,7 +133,7 @@ struct DefaultSerializerS<T> {
   using type = TrivialSerializer<T>;
 };
 
-template <typename T, typename ES = DefaultSerializer<typename T::value_type>>
+template <typename T>
 struct SequenceSerializer {
   static constexpr bool is_trivial =
     std::is_trivially_copyable_v<typename T::value_type> && ranges::contiguous_range<T>;
@@ -133,7 +143,7 @@ struct SequenceSerializer {
       output.write(std::as_bytes(std::span{ ranges::data(t), ranges::size(t) }));
     } else {
       for (auto const& e : t) {
-        output.write(e, ES{});
+        output.write(e);
       }
     }
   }
@@ -145,7 +155,7 @@ struct SequenceSerializer {
       input.read(std::as_writable_bytes(std::span{ ranges::data(t), ranges::size(t) }));
     } else {
       for (std::size_t i = 0; i < size; ++i) {
-        t.push_back(input.read<typename T::value_type, ES>());
+        t.push_back(input.read<typename T::value_type>());
       }
     }
     return t;
@@ -168,19 +178,19 @@ struct DefaultSerializerS<std::string> {
   using type = SequenceSerializer<std::string>;
 };
 
-template <typename T, typename ES = DefaultSerializer<typename T::value_type>>
+template <typename T>
 struct SetSerializer {
   static void serialize(OutputStream& output, T const& t) {
     output.write(static_cast<std::size_t>(t.size()));
     for (auto const& e : t) {
-      output.write(e, ES{});
+      output.write(e);
     }
   }
   static auto deserialize(InputStream& input) -> T {
     auto size = input.read<std::size_t>();
     auto t = T{};
     for (auto i = 0; i < size; ++i) {
-      t.insert(input.read<typename T::value_type, ES>());
+      t.insert(input.read<typename T::value_type>());
     }
     return t;
   }
@@ -189,29 +199,26 @@ template <typename T>
 struct DefaultSerializerS<std::set<T>> {
   using type = SetSerializer<std::set<T>>;
 };
-template <typename T>
-struct DefaultSerializerS<std::unordered_set<T>> {
-  using type = SetSerializer<std::unordered_set<T>>;
+template <typename T, typename... Args>
+struct DefaultSerializerS<std::unordered_set<T, Args...>> {
+  using type = SetSerializer<std::unordered_set<T, Args...>>;
 };
 
-template <
-  typename T,
-  typename KS = DefaultSerializer<typename T::key_type>,
-  typename VS = DefaultSerializer<typename T::mapped_type>>
+template <typename T>
 struct MapSerializer {
   static void serialize(OutputStream& output, T const& t) {
     output.write(static_cast<std::size_t>(t.size()));
     for (auto const& [k, v] : t) {
-      output.write(k, KS{});
-      output.write(v, VS{});
+      output.write(k);
+      output.write(v);
     }
   }
   static auto deserialize(InputStream& input) -> T {
     auto size = input.read<std::size_t>();
     auto t = T{};
     for (auto i = 0; i < size; ++i) {
-      auto k = input.read<typename T::key_type, KS>();
-      auto v = input.read<typename T::mapped_type, VS>();
+      auto k = input.read<typename T::key_type>();
+      auto v = input.read<typename T::mapped_type>();
       t.insert({ std::move(k), std::move(v) });
     }
     return t;
@@ -221,23 +228,20 @@ template <typename K, typename V>
 struct DefaultSerializerS<std::map<K, V>> {
   using type = MapSerializer<std::map<K, V>>;
 };
-template <typename K, typename V>
-struct DefaultSerializerS<std::unordered_map<K, V>> {
-  using type = MapSerializer<std::unordered_map<K, V>>;
+template <typename K, typename V, typename... Args>
+struct DefaultSerializerS<std::unordered_map<K, V, Args...>> {
+  using type = MapSerializer<std::unordered_map<K, V, Args...>>;
 };
 
-template <
-  typename T,
-  typename FS = DefaultSerializer<typename T::first_type>,
-  typename SS = DefaultSerializer<typename T::second_type>>
+template <typename T>
 struct PairSerializer {
   static void serialize(OutputStream& output, T const& t) {
-    output.write(t.first, FS{});
-    output.write(t.second, SS{});
+    output.write(t.first);
+    output.write(t.second);
   }
   static auto deserialize(InputStream& input) -> T {
-    auto first = input.read<typename T::first_type, FS>();
-    auto second = input.read<typename T::second_type, SS>();
+    auto first = input.read<typename T::first_type>();
+    auto second = input.read<typename T::second_type>();
     return { std::move(first), std::move(second) };
   }
 };
@@ -246,17 +250,17 @@ struct DefaultSerializerS<std::pair<T1, T2>> {
   using type = PairSerializer<std::pair<T1, T2>>;
 };
 
-template <typename T, typename... ESs>
+template <typename T>
 struct TupleSerializer {
   static void serialize(OutputStream& output, T const& t) {
     applyIndexSequence<std::tuple_size_v<T>>([&]<size_t... is>() {
-      (output.write(std::get<is>(t), ESs{}), ...);
+      (output.write(std::get<is>(t)), ...);
     });
   }
   static auto deserialize(InputStream& input) -> T {
     typename toy::ToTypePack<T>::template applyTo<std::optional>::template apply<std::tuple> t_opts;
     applyIndexSequence<std::tuple_size_v<T>>([&]<size_t... is>() {
-      ((std::get<is>(t_opts) = input.read<std::tuple_element_t<is, T>, ESs>()), ...);
+      ((std::get<is>(t_opts) = input.read<std::tuple_element_t<is, T>>()), ...);
     });
     return applyIndexSequence<std::tuple_size_v<T>>([&]<size_t... is>() {
       return T{ std::move(*std::get<is>(t_opts))... };
@@ -265,35 +269,32 @@ struct TupleSerializer {
 };
 template <typename... Ts>
 struct DefaultSerializerS<std::tuple<Ts...>> {
-  using type = TupleSerializer<std::tuple<Ts...>, DefaultSerializer<Ts>...>;
-};
-
-template <typename T, typename M, typename S>
-struct MemberSerializerInfo {
-  M T::* member;
-  S      serializer = DefaultSerializer<M>{};
+  using type = TupleSerializer<std::tuple<Ts...>>;
 };
 
 template <typename T, typename M>
-MemberSerializerInfo(M T::*) -> MemberSerializerInfo<T, M, DefaultSerializer<M>>;
+struct MemberSerializerInfo {
+  M T::* member;
+};
+
+// template <typename T, typename M>
+// MemberSerializerInfo(M T::*) -> MemberSerializerInfo<T, M>;
 
 template <typename T, auto creator, auto... members>
 struct CustomSerializer {
   static void serialize(OutputStream& output, T const& t) {
     applyIndexSequence<sizeof...(members)>([&]<size_t... is>() {
-      (output.write(t.*members.member, members.serializer), ...);
+      (output.write(t.*members.member), ...);
     });
   }
   static auto deserialize(InputStream& input) -> T {
     using MemberPack =
       toy::TypePack<std::remove_reference_t<decltype(std::declval<T>().*members.member)>...>;
-    using SerializerPack = toy::TypePack<decltype(members.serializer)...>;
     using TupleOpt = MemberPack::template applyTo<std::optional>::template apply<std::tuple>;
     auto tuple_opt = TupleOpt{};
     templateForEach<sizeof...(members)>([&]<size_t i>() {
       using Member = MemberPack::template at<i>;
-      using Serializer = SerializerPack::template at<i>;
-      std::get<i>(tuple_opt) = input.read<Member, Serializer>();
+      std::get<i>(tuple_opt) = input.read<Member>();
     });
 
     return std::apply(

@@ -9,8 +9,6 @@ module:
     provide: engine.mesh
 - texture.ccm:
     provide: engine.texture
-- assets.ccm:
-    provide: engine.asset
 - object.ccm:
     provide: engine.object
 - base.ccm:
@@ -19,8 +17,6 @@ module:
     provide: engine.importer
 - reactive.ccm:
     provide: engine.base.reactive
-- assets.cc:
-    implement: engine.asset
 - camera.cc:
     implement: engine.camera
 - node.cc:

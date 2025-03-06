@@ -25,7 +25,7 @@ module:
     provide: toy.traceable
 - observer.ccm:
     provide: toy.observer
-- persistent.ccm:
-    provide: toy.persistent
+- serializer.ccm:
+    provide: toy.serializer
 test:
 - test.cc

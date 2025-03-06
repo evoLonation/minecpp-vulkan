@@ -2,7 +2,6 @@ module;
 #include <toy.h>
 export module engine.package;
 
-import toy.persistent;
 import std;
 import toy;
 
@@ -264,8 +263,10 @@ public:
     return lhs._guid == rhs._guid;
   }
 
+  static void serialize(toy::OutputStream& io, Guid const& guid) { io.write(guid._guid); }
+  static auto deserialize(toy::InputStream& io) -> Guid { return Guid{ io.read<std::string>() }; }
+
 private:
-  friend class GuidSerializer;
   static auto randomChar() -> unsigned char {
     std::random_device              rd;
     std::mt19937                    gen(rd());
@@ -289,11 +290,6 @@ private:
 struct GuidHasher {
   size_t operator()(const Guid& x) const { return std::hash<std::string>{}(x.get()); }
 };
-
-struct GuidSerializer : toy::CustomSerializer<
-                          Guid,
-                          [](std::string a) { return Guid{ std::move(a) }; },
-                          toy::MemberSerializerInfo{ &Guid::_guid }> {};
 
 /**
  * @brief
@@ -322,7 +318,7 @@ class Asset {
 public:
   Asset() = default;
   virtual ~Asset();
-  UNCOPYABLE_MOVEABLE(Asset);
+  ONLY_MOVEABLE(Asset);
   auto getAssetGuid() -> Guid {
     if (!_guid.valid()) {
       _guid = Guid::generate();
@@ -342,6 +338,10 @@ public:
   void saveAsset();
   void saveAsset(Package* package);
 
+  auto getAssetName() -> std::string const& { return _name; }
+  void setAssetName(std::string name);
+  void resetAssetName();
+
 protected:
   virtual void assetSerialize(AssetPackager& packer) = 0;
   virtual void assetDeserialize(AssetUnpacker& unpacker) = 0;
@@ -349,6 +349,7 @@ protected:
 private:
   std::shared_ptr<Package> _package;
   Guid                     _guid;
+  std::string              _name;
 };
 
 class Package : public std::enable_shared_from_this<Package> {
@@ -372,6 +373,14 @@ public:
   auto getAssetShared(Guid const& guid) -> std::shared_ptr<T> {
     return std::dynamic_pointer_cast<T>(getAssetShared(guid));
   }
+  auto getAssetShared(std::string const& name) -> std::shared_ptr<Asset> {
+    TOY_ASSERT(_meta_info.name2guid.contains(name));
+    return getAssetShared(_meta_info.name2guid[name]);
+  }
+  template <std::derived_from<Asset> T>
+  auto getAssetShared(std::string const& name) -> std::shared_ptr<T> {
+    return std::dynamic_pointer_cast<T>(getAssetShared(name));
+  }
   auto getAssetUnique(Guid const& guid) -> std::unique_ptr<Asset> {
     return getAssetUniqueImpl(guid);
   }
@@ -383,12 +392,30 @@ public:
     base_ptr.release();
     return std::unique_ptr<T>{ upcast };
   }
+  auto getAssetUnique(std::string const& name) -> std::unique_ptr<Asset> {
+    TOY_ASSERT(_meta_info.name2guid.contains(name));
+    return getAssetUnique(_meta_info.name2guid[name]);
+  }
+  template <std::derived_from<Asset> T>
+  auto getAssetUnique(std::string const& name) -> std::unique_ptr<T> {
+    return std::dynamic_pointer_cast<T>(getAssetUnique(name));
+  }
   void loadAsset(Asset& asset, Guid const& guid) {
     TOY_ASSERT(!asset._guid.valid());
     loadAsset(guid, [&](std::string const& type_name) -> Asset& {
       TOY_ASSERT(type_name == typeid(asset).name());
       return asset;
     });
+  }
+  void loadAsset(Asset& asset, std::string const& name) {
+    TOY_ASSERT(_meta_info.name2guid.contains(name));
+    loadAsset(asset, _meta_info.name2guid[name]);
+  }
+  auto getAllAssetGuids() -> std::vector<Guid> {
+    return _meta_info.guid2page | views::keys | ranges::to<std::vector>();
+  }
+  auto getAllAssetNames() -> std::vector<std::string> {
+    return _meta_info.name2guid | views::keys | ranges::to<std::vector>();
   }
 
 private:
@@ -397,12 +424,30 @@ private:
   friend AssetUnpacker;
 
 private:
+  fs::path   _path;
+  LinkedFile _file;
+
   using GuidPageMap = std::unordered_map<Guid, LinkedFile::PageNumber, GuidHasher>;
-  using GuidPageMapSerializer =
-    toy::MapSerializer<GuidPageMap, GuidSerializer, toy::DefaultSerializer<LinkedFile::PageNumber>>;
-  fs::path    _path;
-  LinkedFile  _file;
-  GuidPageMap _guid2page;
+  using NameGuidMap = std::unordered_map<std::string, Guid>;
+  using GuidNameMap = std::unordered_map<Guid, std::string, GuidHasher>;
+  struct MetaInfo {
+    GuidPageMap guid2page;
+    NameGuidMap name2guid;
+    GuidNameMap guid2name;
+    static void serialize(toy::OutputStream& io, MetaInfo const& t) {
+      io.write(t.guid2page);
+      io.write(t.name2guid);
+      io.write(t.guid2name);
+    }
+    static auto deserialize(toy::InputStream& io) -> MetaInfo {
+      auto guid2page = io.read<GuidPageMap>();
+      auto name2guid = io.read<NameGuidMap>();
+      auto guid2name = io.read<GuidNameMap>();
+      return { std::move(guid2page), std::move(name2guid), std::move(guid2name) };
+    }
+  };
+  MetaInfo _meta_info;
+
   static inline std::unordered_map<Guid, std::optional<std::weak_ptr<Asset>>, GuidHasher> _assets;
   static inline std::unordered_map<fs::path, Package*>                                    _packages;
 
@@ -412,12 +457,11 @@ private:
     _packages[_path] = this;
     if (!_file.getAll().empty()) {
       _file.setCurrent(1);
-      _guid2page = _file.read<GuidPageMap, GuidPageMapSerializer>();
+      _meta_info = _file.read<MetaInfo>();
     } else {
       auto id = _file.allocate();
       TOY_ASSERT(id == 1);
-      _file.setCurrent(1);
-      _file.write<GuidPageMap, GuidPageMapSerializer>({});
+      saveGuid2Page();
     }
   }
 
@@ -425,7 +469,7 @@ private:
 
   void saveGuid2Page() {
     _file.setCurrent(1);
-    _file.write<GuidPageMap, GuidPageMapSerializer>(_guid2page);
+    _file.write<MetaInfo>(_meta_info);
   }
 
   static void setAssetOwner(
@@ -434,16 +478,27 @@ private:
     if (asset->_package.get() == owner) {
       return;
     }
+    if (!asset->_name.empty()) {
+      TOY_ASSERT(!owner->_meta_info.name2guid.contains(asset->_name));
+    }
     auto guid = asset->getAssetGuid();
     auto origin = asset->_package;
     asset->_package = owner->shared_from_this();
     auto owner_page = owner->_file.allocate();
-    owner->_guid2page[guid] = owner_page;
+    owner->_meta_info.guid2page[guid] = owner_page;
+    if (!asset->_name.empty()) {
+      owner->_meta_info.name2guid[asset->_name] = guid;
+      owner->_meta_info.guid2name[guid] = asset->_name;
+    }
     owner->saveGuid2Page();
     if (origin) {
       // move data from old package to new package and release old package
       auto old_data = std::vector<std::byte>{};
-      auto origin_page = origin->_guid2page.extract(guid).mapped();
+      auto origin_page = origin->_meta_info.guid2page.extract(guid).mapped();
+      if (!asset->_name.empty()) {
+        origin->_meta_info.name2guid.erase(asset->_name);
+        origin->_meta_info.guid2name.erase(guid);
+      }
       origin->saveGuid2Page();
       origin->_file.setCurrent(origin_page);
       old_data.resize(origin->_file.read<size_t>());
@@ -454,7 +509,7 @@ private:
       owner->_file.write(std::span{ old_data });
     } else {
       // mark new page has no data
-      owner->saveAsset(*asset, true);
+      owner->saveAsset(*asset, false);
       Package::_assets[guid] = std::move(weak);
     }
   }
@@ -465,7 +520,11 @@ private:
 
   static void resetAssetOwner(Asset* asset) {
     if (auto origin = asset->_package) {
-      auto page = origin->_guid2page.extract(asset->getAssetGuid()).mapped();
+      auto page = origin->_meta_info.guid2page.extract(asset->getAssetGuid()).mapped();
+      if (!asset->_name.empty()) {
+        origin->_meta_info.name2guid.erase(asset->_name);
+        origin->_meta_info.guid2name.erase(asset->getAssetGuid());
+      }
       origin->saveGuid2Page();
       Package::_assets.erase(asset->getAssetGuid());
       origin->_file.release(page);
@@ -507,7 +566,10 @@ private:
   static auto getDefaultAssetShared(std::string const& type_name) -> std::shared_ptr<Asset>;
   static auto getDefaultAssetUnique(std::string const& type_name) -> std::unique_ptr<Asset>;
 
-  static void saveAsset(Asset& asset, bool only_typename);
+  /**
+   * @param serialize_data : 是否通过用户自定义的Packager序列化asset内部的数据
+   */
+  static void saveAsset(Asset& asset, bool serialize_data);
 };
 
 /**
@@ -526,11 +588,36 @@ void Asset::setOwnedPackageShared(std::shared_ptr<Asset> shared, Package* packag
 }
 void Asset::saveAsset() {
   TOY_ASSERT(_package);
-  _package->saveAsset(*this, false);
+  _package->saveAsset(*this, true);
 }
 void Asset::saveAsset(Package* package) {
   setOwnedPackage(package);
   saveAsset();
+}
+void Asset::setAssetName(std::string name) {
+  TOY_ASSERT(!name.empty());
+  if (_name != name) {
+    if (_package) {
+      TOY_ASSERT(!_package->_meta_info.name2guid.contains(name));
+      if (!_name.empty()) {
+        _package->_meta_info.name2guid.erase(_name);
+        _package->_meta_info.guid2name.erase(_guid);
+      }
+      _package->_meta_info.name2guid[name] = _guid;
+      _package->_meta_info.guid2name[_guid] = name;
+      _package->saveGuid2Page();
+    }
+    _name = std::move(name);
+  }
+}
+
+void Asset::resetAssetName() {
+  if (_package && !_name.empty()) {
+    _package->_meta_info.name2guid.erase(_name);
+    _package->_meta_info.guid2name.erase(_guid);
+    _package->saveGuid2Page();
+  }
+  _name.clear();
 }
 
 /**
@@ -543,18 +630,16 @@ struct AssetRef {
   RefType  type;
   Guid     guid;
   fs::path package_path;
-};
 
-struct AssetRefSerializer {
   static void serialize(toy::OutputStream& io, AssetRef const& t) {
     io.write(t.type);
-    io.write(t.guid, GuidSerializer{});
+    io.write(t.guid);
     io.write(t.package_path.generic_string());
     io.write(123456);
   }
   static auto deserialize(toy::InputStream& io) -> AssetRef {
     auto type = io.read<AssetRef::RefType>();
-    auto guid = io.read<Guid, GuidSerializer>();
+    auto guid = io.read<Guid>();
     auto path = io.read<std::string>();
     TOY_ASSERT(io.read<int>() == 123456);
     return { type, guid, path };
@@ -580,7 +665,7 @@ public:
             _package->setAssetOwner(data.get(), _package);
           }
           asset_ref.package_path = data->_package->_path;
-          _stream->write(asset_ref, AssetRefSerializer{});
+          _stream->write(asset_ref);
         } else {
           _stream->write(data);
         }
@@ -615,7 +700,7 @@ public:
                                           : AssetRef::SHARED;
               using Element = typename Args::element_type;
 
-              auto asset_ref = _stream->read<AssetRef, AssetRefSerializer>();
+              auto asset_ref = _stream->read<AssetRef>();
               TOY_ASSERT(asset_ref.type == ref_type);
               auto package = std::shared_ptr<Package>{}; // default nullptr
               auto recover = LinkedFile::PtrRecover{};
@@ -659,36 +744,39 @@ private:
 
 void Package::loadAsset(Guid const& guid, std::function<Asset&(std::string const&)> asset_getter) {
   TOY_ASSERT(guid.valid());
-  toy::throwf(_guid2page.contains(guid), "Asset not found in this package");
-  _file.setCurrent(_guid2page[guid]);
+  toy::throwf(_meta_info.guid2page.contains(guid), "Asset not found in this package");
+  _file.setCurrent(_meta_info.guid2page[guid]);
   _file.read<size_t>(); // skip data size
-  auto  only_typename = _file.read<bool>();
+  auto  serialize_data = _file.read<bool>();
   auto  type_name = _file.read<std::string>();
   auto& asset = asset_getter(type_name);
   asset._guid = guid;
   asset._package = this->shared_from_this();
-  if (!only_typename) {
+  if (auto iter = _meta_info.guid2name.find(guid); iter != _meta_info.guid2name.end()) {
+    asset._name = iter->second;
+  }
+  if (serialize_data) {
     auto unpacker = AssetUnpacker{ this };
     asset.assetDeserialize(unpacker);
   }
 }
 
-void Package::saveAsset(Asset& asset, bool only_typename) {
+void Package::saveAsset(Asset& asset, bool serialize_data) {
   toy::throwf((bool)asset._package, "Asset must have a owned package");
   auto& package = *asset._package.get();
   auto  guid = asset.getAssetGuid();
-  toy::throwf(package._guid2page.contains(guid), "Asset not found in this package");
-  package._file.setCurrent(package._guid2page[guid]);
+  toy::throwf(package._meta_info.guid2page.contains(guid), "Asset not found in this package");
+  package._file.setCurrent(package._meta_info.guid2page[guid]);
   package._file.write<size_t>(0); // later will write real data size
-  package._file.write<bool>(only_typename);
+  package._file.write<bool>(serialize_data);
   package._file.write<std::string>(typeid(asset).name());
-  if (!only_typename) {
+  if (serialize_data) {
     auto packager = AssetPackager{ &package };
     asset.assetSerialize(packager);
   }
   package._file.releaseTail();
   auto data_size = package._file.getWriteSize() - sizeof(size_t);
-  package._file.setCurrent(package._guid2page[guid]);
+  package._file.setCurrent(package._meta_info.guid2page[guid]);
   package._file.write<size_t>(data_size);
 }
 

@@ -154,24 +154,58 @@ struct Test {
   }
 };
 
-struct TestSerializer : CustomSerializer<
-                          Test,
-                          [](int a, std::string b, std::vector<float> c, MoveOnly d) {
-                            TOY_DEBUG(d.aa);
-                            return Test{ a, b, std::move(c), std::move(d) };
-                          },
-                          MemberSerializerInfo{ &Test::a },
-                          MemberSerializerInfo{ &Test::b },
-                          MemberSerializerInfo{ &Test::c },
-                          MemberSerializerInfo{ &Test::d }> {};
+using TestSerializer = CustomSerializer<
+  Test,
+  [](int a, std::string b, std::vector<float> c, MoveOnly d) {
+    TOY_DEBUG(d.aa);
+    return Test{ a, b, std::move(c), std::move(d) };
+  },
+  MemberSerializerInfo{ &Test::a },
+  MemberSerializerInfo{ &Test::b },
+  MemberSerializerInfo{ &Test::c },
+  MemberSerializerInfo{ &Test::d }>;
+
+template <>
+struct toy::DefaultSerializerS<Test> {
+  using type = TestSerializer;
+};
+
+struct Test2 {
+  int                a;
+  std::string        b;
+  std::vector<float> c;
+  MoveOnly           d;
+  friend auto        operator==(Test2 const& lhs, Test2 const& rhs) -> bool {
+    TOY_ASSERT(lhs.a == rhs.a, lhs.a, rhs.a);
+    TOY_ASSERT(lhs.d.aa == rhs.d.aa, lhs.d.aa, rhs.d.aa);
+    return lhs.a == rhs.a && lhs.b == rhs.b && lhs.c == rhs.c && lhs.d.aa == rhs.d.aa;
+  }
+  static void serialize(OutputStream& io, Test2 const& t) {
+    io.write(t.a);
+    io.write(t.b);
+    io.write(t.c);
+    io.write(t.d.aa);
+  }
+  static auto deserialize(InputStream& io) -> Test2 {
+    auto a = io.read<int>();
+    auto b = io.read<std::string>();
+    auto c = io.read<std::vector<float>>();
+    auto d = io.read<int>();
+    return Test2{ a, b, c, MoveOnly{ d } };
+  }
+};
 
 TEST(CustomSerializer) {
   auto buf = std::vector<std::byte>{};
   auto stream = VectorStream{ &buf };
   auto t = Test{ 1, "2", { 3.0, 4.0, 5.0 }, 6 };
-  stream.write(t, TestSerializer{});
-  auto t2 = stream.read<Test>(TestSerializer{});
+  stream.write(t);
+  auto t2 = stream.read<Test>();
   TOY_ASSERT(t == t2);
+  auto t3 = Test2{ 1, "2", { 3.0, 4.0, 5.0 }, 6 };
+  stream.write(t3);
+  auto t4 = stream.read<Test2>();
+  TOY_ASSERT(t3 == t4);
 }
 
 TEST(json) {
@@ -207,7 +241,7 @@ TEST(json) {
   j0["123"] = 456;
   TOY_ASSERT(j0["123"].to<Number>() == 456);
   TOY_ASSERT(j0["123"] == 456);
-  auto  json = Json::parse(std::ifstream("test.json", std::ios_base::in));
+  auto  json = Json::parse("{ \"a\": 1, \"b\": [1, 2, 3] }");
   auto& object = json.to<Object>();
   TOY_ASSERT(object.at("a").toInteger() == 1, "error test json");
   TOY_ASSERT(object.at("b").to<List>()[0].toInteger() == 1, "error test json");

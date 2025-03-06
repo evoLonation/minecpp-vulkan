@@ -164,18 +164,19 @@ private:
   REGISTER_ASSET(TestAsset2);
 };
 
+auto asset1Constructor() -> std::shared_ptr<TestAsset1> {
+  auto asset = std::make_shared<TestAsset1>();
+  asset->positions = { { 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 } };
+  asset->indices = { 0, 1, 2, 1, 2, 3, 2, 3, 4 };
+  return asset;
+}
+
 TEST(Package1) {
   if (fs::exists("assets/test")) {
     TOY_ASSERT(!fs::is_directory("assets/test"));
     fs::remove("assets/test");
   }
   auto guid_asset1 = Guid{};
-  auto asset1Constructor = []() -> std::shared_ptr<TestAsset1> {
-    auto asset = std::make_shared<TestAsset1>();
-    asset->positions = { { 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 } };
-    asset->indices = { 0, 1, 2, 1, 2, 3, 2, 3, 4 };
-    return asset;
-  };
   {
     auto package = Package::get("assets/test");
     {
@@ -216,6 +217,64 @@ TEST(Package1) {
   asset1.reset();
   auto asset2 = package2->getAssetShared<TestAsset1>(guid_asset1);
   TOY_ASSERT(*asset2 == *asset1Constructor());
+}
+
+TEST(AssetName) {
+  if (fs::exists("assets/test")) {
+    TOY_ASSERT(!fs::is_directory("assets/test"));
+    fs::remove("assets/test");
+  }
+  // setAssetName
+  auto package = Package::get("assets/test");
+  // setAssetName before setOwnedPackage
+  {
+    auto asset1 = asset1Constructor();
+    asset1->setAssetName("asset1");
+    asset1->setOwnedPackage(package.get());
+  }
+  {
+    auto asset1 = package->getAssetShared<TestAsset1>("asset1");
+    TOY_ASSERT(asset1->getAssetName() == "asset1");
+  }
+  // setAssetName after setOwnedPackage
+  {
+    auto asset1 = asset1Constructor();
+    asset1->setOwnedPackage(package.get());
+    asset1->setAssetName("asset2");
+  }
+  {
+    auto asset1 = package->getAssetShared<TestAsset1>("asset2");
+    TOY_ASSERT(asset1->getAssetName() == "asset2", asset1->getAssetName());
+  }
+  // resetAssetName
+  {
+    auto asset_names = package->getAllAssetNames();
+    std::sort(asset_names.begin(), asset_names.end());
+    auto expected_asset_names = std::vector<std::string>{ "asset1", "asset2" };
+    std::sort(expected_asset_names.begin(), expected_asset_names.end());
+    TOY_ASSERT(asset_names == expected_asset_names);
+    auto asset1 = package->getAssetShared<TestAsset1>("asset1");
+    asset1->resetAssetName();
+    asset_names = package->getAllAssetNames();
+    TOY_ASSERT(asset_names.size() == 1 && asset_names[0] == "asset2");
+  }
+  // duplicate name error
+  {
+    try {
+      auto asset1 = asset1Constructor();
+      asset1->setOwnedPackage(package.get());
+      asset1->setAssetName("asset2");
+    } catch (std::exception& e) {
+      toy::debugf("catched error: {}", e.what());
+    }
+    try {
+      auto asset1 = asset1Constructor();
+      asset1->setAssetName("asset2");
+      asset1->setOwnedPackage(package.get());
+    } catch (std::exception& e) {
+      toy::debugf("catched error: {}", e.what());
+    }
+  }
 }
 
 TEST(Package2) {
@@ -332,194 +391,6 @@ TEST(Package3) {
   asset->_ref->setOwnedPackage(package_ref.get());
   asset->_ref->saveAsset(package_ref.get());
 }
-
-// TEST(Reval) {
-//   {
-//     auto  a = Reval<glm::vec3>{ { 1, 2, 3 } };
-//     auto& v = a.get();
-//     TOY_ASSERT(v == glm::vec3(1, 2, 3));
-//     a.set(glm::vec3(4, 5, 6));
-//     TOY_ASSERT(v == glm::vec3(4, 5, 6));
-
-//     auto b = Reval<glm::vec3>{ { 7, 8, 9 } };
-//     auto f = b.bind(&a, [](glm::vec3 const& value) { return value; });
-//     TOY_ASSERT(b.getWithoutUpdate() != v);
-//     TOY_ASSERT(b.get() == v);
-
-//     b.unbind(std::move(f));
-//     a.set(glm::vec3(10, 11, 12));
-//     TOY_ASSERT(b.get() != v);
-//   }
-//   {
-//     auto  b = Reval<glm::vec3>{ { 7, 8, 9 } };
-//     auto  a1 = Reval<glm::vec3>{ { 1, 2, 3 } };
-//     auto& v1 = a1.getWithoutUpdate();
-//     auto  a2 = Reval<glm::vec3>{ { 4, 5, 6 } };
-//     auto& v2 = a2.getWithoutUpdate();
-//     b.bind(&a1, [](glm::vec3 const& value) { return value; });
-//     b.bind(&a2, [](glm::vec3 const& value) { return value; });
-
-//     TOY_ASSERT(v1 != v2);
-//     TOY_ASSERT(b.get() == v2);
-
-//     a1.set(glm::vec3(7, 8, 9));
-//     TOY_ASSERT(b.get() == v1);
-//   }
-
-//   {
-//     /**
-//      * a > b > a
-//      */
-//     auto  a = Reval<int>{ 1 };
-//     auto& va = a.getWithoutUpdate();
-//     auto  b = Reval<int>{ 10 };
-//     auto& vb = b.getWithoutUpdate();
-
-//     b.bind(&a, [](auto& value) { return value + 1; });
-//     TOY_ASSERT(vb != va + 1);
-//     a.bind(&b, [](auto& value) { return value + 2; });
-//     TOY_ASSERT(a.get() == 12);
-//     TOY_ASSERT(b.get() == 13);
-//     TOY_ASSERT(a.get() == 15);
-
-//     // can not double bind
-//     try {
-//       b.bind(&a, [](auto& value) { return value + 1; });
-//       throw std::string("error");
-//     } catch (std::exception& e) {
-//       toy::debugf({}, "(if print this, is normal) catched error: {}", e.what());
-//     }
-//   }
-
-//   {
-//     // multi bind
-//     auto  a = Reval<int>{ 1 };
-//     auto& va = a.getWithoutUpdate();
-//     auto  b1 = Reval<int>{ 10 };
-//     auto  b2 = Reval<int>{ 20 };
-
-//     a.bind([](int v1, int v2) { return v1 + v2; }, &b1, &b2);
-//     TOY_ASSERT(a.get() == 30);
-//     b1.bind([](int v) { return v + 1; }, &a);
-//     TOY_ASSERT(b1.get() == 31);
-//     TOY_ASSERT(a.get() == 51);
-//     b2.set(30);
-//     TOY_ASSERT(a.get() == 82);
-//   }
-
-//   {
-//     // destruct
-//     auto a = Reval<int>{ 1 };
-//     auto c = Reval<int>{ 2 };
-//     {
-//       auto b = Reval<int>{ 10 };
-//       b.bind(&a, [](auto& value) { return value + 1; });
-//       c.bind(&b, [](auto& value) { return value + 1; });
-//       TOY_ASSERT(c.get() == 3);
-//     }
-//     TOY_ASSERT(c.get() == 3);
-//     TOY_ASSERT(a.get() == 1);
-//   }
-
-//   {
-//     // bindPair
-//     auto a = Reval<int>{ 1 };
-//     auto b = Reval<int>{ 10 };
-
-//     auto u = a.bindPair(&b);
-//     TOY_ASSERT(a.get() == 10);
-//     a.set(2);
-//     TOY_ASSERT(b.get() == 2);
-//     a.unbind(std::move(u));
-//   }
-
-//   {
-//     auto location = Reval<glm::vec3>{ { 1, 2, 3 } };
-//     auto rotation = Reval<glm::vec3>{ { 1, 2, 3 } };
-
-//     auto middle = Reval<std::tuple<glm::vec3, glm::vec3>>{ { glm::vec3{ 4, 5, 6 }, glm::vec3{} }
-//     };
-//     // middle.bind(
-//     //   [](glm::vec3 const& location, glm::vec3 const& rotation) {
-//     //     return std::tuple{ location, rotation };
-//     //   },
-//     //   &location,
-//     //   &rotation
-//     // );
-//     location.bind([](auto const& tuple) { return std::get<0>(tuple); }, &middle);
-//     rotation.bind([](auto const& tuple) { return std::get<1>(tuple); }, &middle);
-//     location.setName("location");
-//     location.set(glm::vec3{ 1, 2, 3 });
-//     rotation = glm::vec3{ 1, 2, 3 };
-//     auto model = Reval<glm::mat4>{};
-//     model.setName("model");
-//     model.setTrack(true);
-//     auto computer = [](glm::vec3 const& location, glm::vec3 const& rotation) {
-//       return mt::translate(location) * mt::rotate(rotation);
-//     };
-//     model.bind(computer, &location, &rotation);
-
-//     middle.bind(
-//       [](glm::mat4 model) {
-//         auto location = glm::vec3{ model[3] };
-//         model[3] = glm::vec4{ 0, 0, 0, 1 };
-//         auto rotate_euler = mt::getEulerAngle(model);
-//         return std::tuple{ location, rotate_euler };
-//       },
-//       &model
-//     );
-//     TOY_ASSERT(mt::eq(model.get(), computer(glm::vec3(1, 2, 3), glm::vec3(1, 2, 3))));
-//     // location = glm::vec3{ 4, 5, 6 };
-//     // TOY_ASSERT(mt::eq(model.get(), computer(location.get(), rotation.get())));
-//     // TOY_ASSERT(location == glm::vec3(4, 5, 6));
-//   }
-// }
-
-// TEST(ModelController) {
-//   {
-//     auto controller = ModelController{};
-//     auto model = Reval<glm::mat4>{};
-//     controller.setModelTransform(&model, ModelController::CHANGE_MODEL);
-//     // TOY_DEBUG(model.get());
-//     // controller.refLocation() = glm::vec3{ 1, 2, 3 };
-//     // TOY_DEBUG(model.get());
-//     // model.set(mt::translate(glm::vec3{ 4, 5, 6 }));
-//     // TOY_DEBUG(controller.refLocation().get());
-//     // controller.refScaleFactor() = glm::vec3{ 1, 2, 3 };
-//     // controller.refScaleFactor().set([](auto& value) { value *= 2; });
-//     // TOY_DEBUG(model.get());
-
-//     controller.refLocation().set(glm::vec3{ 7, 8, 9 });
-//     TOY_DEBUG(model.get());
-//     TOY_DEBUG(controller.refRotateEuler().get());
-
-//     auto controller2 = ModelController{};
-//     auto model2 = Reval<glm::mat4>{};
-//     controller2.setModelTransform(&model2, ModelController::CHANGE_MODEL);
-//     controller2.refLocation().bindPair(&controller.refLocation());
-
-//     controller2.translate(glm::vec3{ 1, 2, 3 });
-//     TOY_DEBUG(model.get());
-//   }
-
-//   {
-//     auto controller = ModelController{};
-//     controller.setName("controller");
-//     auto model = Reval<glm::mat4>{};
-//     model.setName("model");
-//     controller.setModelTransform(&model, ModelController::CHANGE_MODEL);
-
-//     auto controller2 = ModelController{};
-//     controller2.setName("controller2");
-//     controller2.setModelTransform(&model, ModelController::CHANGE_CONTROLLER);
-
-//     controller2.refLocation().setTrack(true);
-//     controller2.refLocation().set(glm::vec3{ 1, 2, 3 });
-
-//     controller.refLocation().setTrack(true);
-//     TOY_DEBUG(controller.refLocation().get());
-//   }
-// }
 
 TEST(Reval) {
   bool track = true;
