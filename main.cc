@@ -17,8 +17,7 @@ import framework;
 import pipeline.loop;
 // import editor.transform.move;
 // import pipeline.uniform;
-import engine.asset;
-import engine.asset.registry;
+import engine.package;
 import engine.object;
 // import engine.mesh;
 // import engine.texture;
@@ -36,7 +35,7 @@ int main() {
     auto& input = fw::InputProcessor::getInstance();
     auto  render_pass = eg::RenderPassLoop{};
 
-    auto manager = eg::AssetManager{ eg::default_asset_map, eg::default_asset_member_map };
+    // auto manager = eg::AssetManager{ eg::default_asset_map, eg::default_asset_member_map };
 
     auto camera = eg::Camera{};
     auto controller = eg::CameraController{ &camera };

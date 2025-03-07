@@ -4,7 +4,7 @@ export module engine.editor.scene;
 
 import engine.mesh;
 import engine.shape;
-import engine.asset;
+import engine.package;
 import engine.base;
 import <imgui_config.h>;
 import framework;
@@ -18,28 +18,14 @@ import toy;
 
 export namespace eg {
 
-class Scene : public Node {
-public:
-private:
-};
-
 class ScenePanel : public PROACTIVE_SINGLETON(ScenePanel), public gui::Drawer, public fw::Action {
 public:
   ScenePanel() : fw::Action(fw::Stage::BEFORE_RENDER) {
-    if (fs::exists(_scene_names_file)) {
-      auto pickle = toy::Pickle{ _scene_names_file };
-      _unloaded_nodes.insert_range(pickle.pop<std::vector<std::string>>());
-    }
-    _asset_manager = AssetManager{ _asset_dir };
+    _package = Package::get(_asset_path);
+    auto names = _package->getAllAssetNames();
+    _unloaded_nodes.insert_range(names);
   }
-  ~ScenePanel() {
-    auto pickle = toy::Pickle{};
-    auto names = std::vector<std::string>{};
-    names.append_range(_unloaded_nodes);
-    names.append_range(_loaded_nodes | views::keys);
-    pickle.push(names);
-    pickle.dump(_scene_names_file);
-  }
+  ~ScenePanel() {}
   void draw() override {
     ImGui::SeparatorText("UnLoaded Node List");
     {
@@ -53,17 +39,19 @@ public:
       if (!_unloaded_nodes.contains(_selected_unloaded_name)) {
         _selected_unloaded_name = {};
       }
-      
+
       if (ImGui::Button("Load Node")) {
         if (!_selected_unloaded_name.empty()) {
-          auto node = _asset_manager.load<Node>(_selected_unloaded_name);
-          node->doRecursively([](Node& node) {
+          auto node = _package->getAssetShared<Node>(_selected_unloaded_name);
+          node->doRecursively([&](Node& node) {
+            if (!node.getAssetName().empty()) {
+              _unloaded_nodes.erase(node.getAssetName());
+              _loaded_nodes[node.getAssetName()] = node.getPtr();
+            }
             if (auto scene_object = dynamic_cast<SceneObject*>(&node)) {
               scene_object->setActive(false);
             }
           });
-          _unloaded_nodes.erase(_selected_unloaded_name);
-          _loaded_nodes[_selected_unloaded_name] = node;
           _selected_unloaded_name = {};
         }
       }
@@ -110,7 +98,8 @@ public:
         }
       }
       if (ImGui::Button("Save Node")) {
-        _asset_manager.save(_loaded_nodes[_selected_loaded_name]);
+        auto node = _loaded_nodes[_selected_loaded_name];
+        node->saveAsset();
       }
     }
 
@@ -182,6 +171,7 @@ public:
             scene_object->setActive(false);
           }
         });
+        node->setOwnedPackage(_package.get());
         _loaded_nodes[node_name.data()] = std::move(node);
       }
     }
@@ -212,7 +202,7 @@ public:
   void runLoop(fw::ActionContext const& ctx) override {}
 
 private:
-  AssetManager                               _asset_manager;
+  std::shared_ptr<Package>                   _package;
   std::unordered_set<std::string>            _unloaded_nodes;
   std::unordered_map<std::string, ptr<Node>> _loaded_nodes;
   std::string                                _selected_unloaded_name;
@@ -220,10 +210,8 @@ private:
   int                                        _loaded_node_index = -1;
   Node*                                      _current_node{};
   std::string                                _current_node_name;
-  std::array<char, 30>                       _asset_name = {};
 
-  static inline fs::path _asset_dir = fs::path{ "assets" } / "scenes";
-  static inline fs::path _scene_names_file = _asset_dir / "scene_names.pkl";
+  static inline fs::path _asset_path = fs::path{ "assets" } / "scenes.asset";
 };
 
 } // namespace eg

@@ -5,7 +5,7 @@ module;
 export module engine.object;
 
 import engine.camera;
-import engine.asset;
+import engine.package;
 import engine.base;
 import framework;
 import math;
@@ -31,6 +31,9 @@ protected:
   friend SceneObject;
   virtual void setActive(SceneObject* scene_object, Reval<glm::mat4> const* transform);
   virtual void resetActive();
+
+  void assetSerialize(AssetPackager& packager) override {}
+  void assetDeserialize(AssetUnpacker& unpacker) override {}
 
 private:
   SceneObject*            _scene_object = nullptr;
@@ -94,8 +97,8 @@ private:
   bool         _up_layer = false;
 
 public:
-  auto assetSerialize() -> AssetPackager override;
-  void assetDeserialize(AssetUnpacker unpacker) override;
+  void assetSerialize(AssetPackager& packager) override;
+  void assetDeserialize(AssetUnpacker& unpacker) override;
 
 private:
   REGISTER_ASSET(LightUnit);
@@ -118,8 +121,8 @@ private:
   uptr<DrawUnitBase> _draw_unit;
 
 public:
-  auto assetSerialize() -> AssetPackager override;
-  void assetDeserialize(AssetUnpacker unpacker) override;
+  void assetSerialize(AssetPackager& packager) override;
+  void assetDeserialize(AssetUnpacker& unpacker) override;
 
 private:
   REGISTER_ASSET(SceneObject);

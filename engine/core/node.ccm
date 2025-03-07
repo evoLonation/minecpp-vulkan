@@ -4,7 +4,7 @@ module;
 
 export module engine.node;
 
-import engine.asset;
+import engine.package;
 import engine.base;
 import std;
 import toy;
@@ -84,8 +84,8 @@ private:
   void resetParent();
 
 public:
-  auto assetSerialize() -> AssetPackager override;
-  void assetDeserialize(AssetUnpacker unpacker) override;
+  void assetSerialize(AssetPackager& packager) override;
+  void assetDeserialize(AssetUnpacker& unpacker) override;
 
 private:
   REGISTER_ASSET(Node);

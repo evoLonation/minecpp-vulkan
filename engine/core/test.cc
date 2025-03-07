@@ -97,7 +97,7 @@ public:
 
   void assetSerialize(AssetPackager& packager) override { packager.pack(positions, indices); }
   void assetDeserialize(AssetUnpacker& unpacker) override {
-    std::tie(positions, indices) = unpacker.unpack<std::vector<glm::vec3>, std::vector<uint16>>();
+    std::tie(positions, indices) = unpacker.unpacks<std::vector<glm::vec3>, std::vector<uint16>>();
   }
 
   friend auto operator==(TestAsset1 const& lhs, TestAsset1 const& rhs) -> bool {
@@ -113,9 +113,7 @@ public:
   int data = 0;
 
   void assetSerialize(AssetPackager& packager) override { packager.pack(data); }
-  void assetDeserialize(AssetUnpacker& unpacker) override {
-    std::tie(data) = unpacker.unpack<int>();
-  }
+  void assetDeserialize(AssetUnpacker& unpacker) override { data = unpacker.unpack<int>(); }
 
   friend auto operator==(TestAssetMember1 const& lhs, TestAssetMember1 const& rhs) -> bool {
     return lhs.data == rhs.data;
@@ -129,20 +127,29 @@ struct TestAsset2 : public Asset {
 public:
   bool                              _type;
   int                               _data;
+  bool                              _with_save;
   std::shared_ptr<TestAsset1>       _ref;
   std::unique_ptr<TestAssetMember1> _member;
 
   void assetSerialize(AssetPackager& packager) override {
     if (_type) {
       packager.pack(0);
-      packager.pack(_data, _ref, _member);
+      if (_with_save) {
+        packager.packWithSave(_data, _ref, _member);
+      } else {
+        packager.pack(_data, _ref, _member);
+      }
     } else {
       packager.pack(1);
-      packager.pack(_ref, _data, _member);
+      if (_with_save) {
+        packager.packWithSave(_ref, _data, _member);
+      } else {
+        packager.pack(_ref, _data, _member);
+      }
     }
   }
   void assetDeserialize(AssetUnpacker& unpacker) override {
-    auto id = std::get<0>(unpacker.unpack<int>());
+    auto id = unpacker.unpack<int>();
     if (id == 0) {
       _type = true;
       unpacker.unpack(_data, _ref, _member);
@@ -277,22 +284,27 @@ TEST(AssetName) {
   }
 }
 
+auto asset2Constructor(bool type, bool with_save) -> std::shared_ptr<TestAsset2> {
+  auto asset = std::make_shared<TestAsset2>();
+  asset->_data = 123;
+  asset->_ref = std::make_shared<TestAsset1>();
+  asset->_ref->positions = { { 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 } };
+  asset->_ref->indices = { 0, 1, 2, 1, 2, 3, 2, 3, 4 };
+  asset->_member = std::make_unique<TestAssetMember1>();
+  asset->_member->data = 456;
+  asset->_type = type;
+  asset->_with_save = with_save;
+  return asset;
+}
+
 TEST(Package2) {
   if (fs::exists("assets/test")) {
     TOY_ASSERT(!fs::is_directory("assets/test"));
     fs::remove("assets/test");
   }
   auto package = Package::get("assets/test");
-  auto assetConstructor = [](bool type) -> std::shared_ptr<TestAsset2> {
-    auto asset = std::make_shared<TestAsset2>();
-    asset->_data = 123;
-    asset->_ref = std::make_shared<TestAsset1>();
-    asset->_ref->positions = { { 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 } };
-    asset->_ref->indices = { 0, 1, 2, 1, 2, 3, 2, 3, 4 };
-    asset->_member = std::make_unique<TestAssetMember1>();
-    asset->_member->data = 456;
-    asset->_type = type;
-    return asset;
+  auto assetConstructor = [&](bool type) -> std::shared_ptr<TestAsset2> {
+    return asset2Constructor(type, false);
   };
 
   auto test = [&](bool type) {
@@ -358,6 +370,30 @@ TEST(Package2) {
 
   test(true);
   test(false);
+}
+
+TEST(PackageWithSave) {
+  if (fs::exists("assets/test")) {
+    TOY_ASSERT(!fs::is_directory("assets/test"));
+    fs::remove("assets/test");
+  }
+  auto package = Package::get("assets/test");
+  auto assetConstructor = [&]() -> std::shared_ptr<TestAsset2> {
+    return asset2Constructor(false, true);
+  };
+  auto guid = Guid{};
+  auto guid_ref = Guid{};
+  auto guid_member = Guid{};
+  {
+    auto asset = assetConstructor();
+    asset->setOwnedPackage(package.get());
+    asset->saveAsset(package.get());
+    guid = asset->getAssetGuid();
+    guid_ref = asset->_ref->getAssetGuid();
+    guid_member = asset->_member->getAssetGuid();
+  }
+  auto asset = package->getAssetUnique<TestAsset2>(guid);
+  TOY_ASSERT(*asset == *assetConstructor());
 }
 
 TEST(Package3) {

@@ -115,6 +115,29 @@ public:
   ProactiveSingleton(ProactiveSingleton&&) noexcept { _instance_ptr = &self(); }
 };
 
+class Defer {
+public:
+  Defer() = default;
+  Defer(std::function<void()> func) : _func(std::move(func)) {}
+  auto operator=(std::function<void()> func) -> Defer& {
+    _func = std::move(func);
+    return *this;
+  }
+  void clear() { _func = {}; }
+  ~Defer() {
+    if (_func) {
+      _func();
+    }
+  }
+  Defer(const Defer&) noexcept = delete;
+  Defer(Defer&&) noexcept = delete;
+  auto operator=(const Defer&) noexcept -> Defer& = delete;
+  auto operator=(Defer&&) noexcept -> Defer& = delete;
+
+private:
+  std::function<void()> _func;
+};
+
 namespace test_StringLiteral {
 
 template <StringLiteral a>

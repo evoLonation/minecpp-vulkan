@@ -53,22 +53,19 @@ void LightUnit::init(MeshData mesh_data, glm::vec3 color, bool up_layer) {
   init(std::move(mesh), std::move(texture), up_layer);
 }
 
-auto LightUnit::assetSerialize() -> AssetPackager {
+void LightUnit::assetSerialize(AssetPackager& packager) {
+  DrawUnit::assetSerialize(packager);
   toy::debug("LightUnit::assetSerialize");
-  return {
-    std::tuple{
-      AssetRef{ getMesh().getPtr() },
-      AssetRef{ getTexture().getPtr() },
-      isUpLayer(),
-    },
-    DrawUnit::assetSerialize(),
-  };
+  packager.packWithSave(getMesh().getPtr());
+  packager.packWithSave(getTexture().getPtr());
+  packager.packWithSave(isUpLayer());
 }
 
-void LightUnit::assetDeserialize(AssetUnpacker unpacker) {
-  DrawUnit::assetDeserialize(unpacker.extractInherited());
-  auto [mesh, texture, up_layer] = unpacker.extract<AssetRef, AssetRef, bool>();
-  init(mesh.consume<Mesh>(), texture.consume<Texture>(), up_layer);
+void LightUnit::assetDeserialize(AssetUnpacker& unpacker) {
+  DrawUnit::assetDeserialize(unpacker);
+  auto [mesh, texture, up_layer] =
+    unpacker.unpacks<std::shared_ptr<Mesh>, std::shared_ptr<Texture>, bool>();
+  init(std::move(mesh), std::move(texture), up_layer);
 }
 
 void SceneObject::setDrawUnit(uptr<DrawUnitBase> draw_unit) {
@@ -94,27 +91,20 @@ void SceneObject::setActive(bool active) {
 
 auto SceneObject::isActive() -> bool { return _draw_unit && _draw_unit->isActive(); }
 
-auto SceneObject::assetSerialize() -> AssetPackager {
-  if (!_draw_unit) {
-    return { 0, {}, Node::assetSerialize() };
-  } else {
-    return {
-      1,
-      std::tuple{ AssetMember{ _draw_unit } },
-      Node::assetSerialize(),
-    };
+void SceneObject::assetSerialize(AssetPackager& packager) {
+  Node::assetSerialize(packager);
+  auto has_draw_unit = _draw_unit != nullptr;
+  packager.pack(has_draw_unit);
+  if (has_draw_unit) {
+    packager.packWithSave(_draw_unit);
   }
 }
 
-void SceneObject::assetDeserialize(AssetUnpacker unpacker) {
-  Node::assetDeserialize(unpacker.extractInherited());
-  auto id = unpacker.getId();
-  TOY_DEBUG(id);
-  if (id == 0) {
-    unpacker.extract<>();
-  } else {
-    auto [draw_unit] = unpacker.extract<AssetMember>();
-    setDrawUnit(draw_unit.consume<DrawUnitBase>());
+void SceneObject::assetDeserialize(AssetUnpacker& unpacker) {
+  Node::assetDeserialize(unpacker);
+  if (unpacker.unpack<bool>()) {
+    auto draw_unit = unpacker.unpack<uptr<DrawUnitBase>>();
+    setDrawUnit(std::move(draw_unit));
   }
 }
 

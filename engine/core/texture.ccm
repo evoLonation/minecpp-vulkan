@@ -5,7 +5,7 @@ module;
 export module engine.texture;
 
 import engine.base;
-import engine.asset;
+import engine.package;
 import render;
 import std;
 import toy;
@@ -25,7 +25,7 @@ private:
   rd::SampledTexture _texture;
 
 public:
-  auto assetSerialize() -> AssetPackager override {
+  void assetSerialize(AssetPackager& packager) override {
     auto format = _texture.getImage().getFormat();
     auto extent = _texture.getImage().getExtent();
     auto mipmap = _texture.getImage().enableMipmap();
@@ -37,16 +37,15 @@ public:
       first_pixel,
       first_pixel + extent.width * extent.height * rd::getFormatInfo(format).size,
     };
-    return {
-      std::tuple{ std::move(data), format, extent, mipmap, use_stage },
-      Asset::assetSerialize(),
-    };
+    packager.pack(data, format, extent, mipmap, use_stage);
   }
-  void assetDeserialize(AssetUnpacker unpacker) override {
-    Asset::assetDeserialize(unpacker.extractInherited());
-    auto [data, format, extent, mipmap, use_stage] =
-      unpacker.extract<std::vector<std::byte>, VkFormat, VkExtent2D, bool, VkPipelineStageFlagBits>(
-      );
+  void assetDeserialize(AssetUnpacker& unpacker) override {
+    auto [data, format, extent, mipmap, use_stage] = unpacker.unpacks< //
+      std::vector<std::byte>,
+      VkFormat,
+      VkExtent2D,
+      bool,
+      VkPipelineStageFlagBits>();
     _texture = rd::SampledTexture{ std::span{ data }, format, extent, mipmap, use_stage };
   }
 

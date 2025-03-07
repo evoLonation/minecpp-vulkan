@@ -451,6 +451,10 @@ private:
   static inline std::unordered_map<Guid, std::optional<std::weak_ptr<Asset>>, GuidHasher> _assets;
   static inline std::unordered_map<fs::path, Package*>                                    _packages;
 
+  // for avoid multi save in one saveAsset() call
+  static inline bool                                 _is_inner_save;
+  static inline std::unordered_set<Guid, GuidHasher> _guids_in_this_save;
+
 private:
   Package(fs::path const& path) : _path(path), _file(path) {
     TOY_ASSERT(!_packages.contains(_path));
@@ -646,32 +650,70 @@ struct AssetRef {
   }
 };
 
+template <typename Arg>
+concept isSharedAssetRef = std::convertible_to<Arg, std::shared_ptr<Asset>>;
+template <typename Arg>
+concept isUniqueAssetRef = std::convertible_to<Arg, std::unique_ptr<Asset>>;
+template <typename Arg>
+concept isAssetRef = isSharedAssetRef<Arg> || isUniqueAssetRef<Arg>;
+
 struct AssetPackager {
   friend Package;
 
-public:
+private:
+  template <typename Arg>
+    requires isAssetRef<Arg>
+  auto packAssetRefImpl(Arg const& ref, bool with_save) {
+    constexpr auto ref_type = isUniqueAssetRef<Arg> ? AssetRef::UNIQUE : AssetRef::SHARED;
+    auto           asset_ref = AssetRef{ ref_type, ref->getAssetGuid(), "" };
+    if (!ref->_package || with_save) {
+      auto recover = _package->_file.snapshot();
+      if (!ref->_package) {
+        if constexpr (ref_type == AssetRef::SHARED) {
+          Asset::setOwnedPackageShared(ref, _package);
+        } else {
+          ref->setOwnedPackage(_package);
+        }
+      }
+      if (with_save) {
+        ref->saveAsset();
+      }
+    }
+    asset_ref.package_path = ref->_package->_path;
+    _stream->write(asset_ref);
+  }
+  template <typename Arg>
+    requires(!isAssetRef<Arg>)
+  auto packDataImpl(Arg const& data) {
+    _stream->write(data);
+  }
+
   template <typename... Args>
-  auto pack(Args const&... data) {
+  auto packImpl(bool with_save, Args const&... data) {
     (
       [&]() {
         _stream->write(std::string{ typeid(Args).name() });
-        if constexpr (std::convertible_to<Args, std::unique_ptr<Asset>> ||
-                      std::convertible_to<Args, std::shared_ptr<Asset>>) {
-          auto ref_type =
-            std::convertible_to<Args, std::unique_ptr<Asset>> ? AssetRef::UNIQUE : AssetRef::SHARED;
-          auto asset_ref = AssetRef{ ref_type, data->getAssetGuid(), "" };
-          if (!data->_package) {
-            auto recover = _package->_file.snapshot();
-            _package->setAssetOwner(data.get(), _package);
-          }
-          asset_ref.package_path = data->_package->_path;
-          _stream->write(asset_ref);
+        if constexpr (isAssetRef<Args>) {
+          packAssetRefImpl(data, with_save);
         } else {
-          _stream->write(data);
+          packDataImpl(data);
         }
       }(),
       ...
     );
+  }
+
+public:
+  template <typename... Args>
+  auto pack(Args const&... data) {
+    packImpl(false, data...);
+  }
+  /**
+   * @brief will call saveAsset() to each ref of assets
+   */
+  template <typename... Args>
+  auto packWithSave(Args const&... data) {
+    packImpl(true, data...);
   }
 
 private:
@@ -683,9 +725,9 @@ private:
 struct AssetUnpacker {
   friend Package;
 
-public:
+private:
   template <typename... Args>
-  auto unpack() -> std::tuple<Args...> {
+  auto unpackImpl() -> std::tuple<Args...> {
     auto tuple_opt = std::tuple<std::optional<Args>...>{};
     std::apply(
       [&](auto&... opt) {
@@ -693,8 +735,7 @@ public:
           [&]() {
             auto type_name = _stream->read<std::string>();
             TOY_ASSERT(type_name == typeid(Args).name(), type_name, typeid(Args).name());
-            if constexpr (std::convertible_to<Args, std::unique_ptr<Asset>> ||
-                          std::convertible_to<Args, std::shared_ptr<Asset>>) {
+            if constexpr (isAssetRef<Args>) {
               constexpr auto ref_type = std::convertible_to<Args, std::unique_ptr<Asset>>
                                           ? AssetRef::UNIQUE
                                           : AssetRef::SHARED;
@@ -730,9 +771,19 @@ public:
       [](auto&... opt) -> std::tuple<Args...> { return { std::move(opt.value())... }; }, tuple_opt
     );
   }
+
+public:
+  template <typename... Args>
+  auto unpacks() -> std::tuple<Args...> {
+    return unpackImpl<Args...>();
+  }
   template <typename... Args>
   void unpack(Args&... args) {
-    std::tie(args...) = unpack<Args...>();
+    std::tie(args...) = unpackImpl<Args...>();
+  }
+  template <typename Arg>
+  auto unpack() -> Arg {
+    return std::get<0>(unpackImpl<Arg>());
   }
 
 private:
@@ -765,6 +816,23 @@ void Package::saveAsset(Asset& asset, bool serialize_data) {
   toy::throwf((bool)asset._package, "Asset must have a owned package");
   auto& package = *asset._package.get();
   auto  guid = asset.getAssetGuid();
+
+  auto defer = toy::Defer{};
+  // could call setOwnedPackage first(saveAsset with serialize_data=false) then call saveAsset()
+  // so we just consider the call that serialize_data = true
+  if (serialize_data) {
+    if (!_is_inner_save) {
+      _is_inner_save = true;
+      defer = []() {
+        _is_inner_save = false;
+        _guids_in_this_save.clear();
+      };
+    } else if (_guids_in_this_save.contains(guid)) {
+      return;
+    }
+    _guids_in_this_save.insert(guid);
+  }
+
   toy::throwf(package._meta_info.guid2page.contains(guid), "Asset not found in this package");
   package._file.setCurrent(package._meta_info.guid2page[guid]);
   package._file.write<size_t>(0); // later will write real data size

@@ -203,22 +203,22 @@ void Node::resetParent() {
   }
 }
 
-auto Node::assetSerialize() -> AssetPackager {
-  auto children_data = std::vector<AssetRef>{};
+void Node::assetSerialize(AssetPackager& packager) {
+  packager.pack<size_t>(_children.size());
   for (auto& child : _children) {
-    children_data.push_back(AssetRef{ child });
+    packager.packWithSave(child);
   }
-  return { std::tuple{ _to_parent.get(), children_data }, Asset::assetSerialize() };
+  packager.pack(_to_parent.get());
 }
 
-void Node::assetDeserialize(AssetUnpacker unpacker) {
-  Asset::assetDeserialize(unpacker.extractInherited());
-  auto [to_parent, children_data] = unpacker.extract<glm::mat4, std::vector<AssetRef>>();
-  _to_parent = to_parent;
-  for (auto& child_data : children_data) {
-    auto child = child_data.consume<Node>();
+void Node::assetDeserialize(AssetUnpacker& unpacker) {
+  auto size = unpacker.unpack<size_t>();
+  while (size--) {
+    auto child = unpacker.unpack<ptr<Node>>();
     child->attachTo(this);
   }
+  auto to_parent = unpacker.unpack<glm::mat4>();
+  _to_parent = to_parent;
 }
 
 } // namespace eg
