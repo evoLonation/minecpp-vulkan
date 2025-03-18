@@ -11,3 +11,4 @@ export import toy.pool;
 export import toy.traceable;
 export import toy.observer;
 export import toy.serializer;
+export import toy.default_constructor;

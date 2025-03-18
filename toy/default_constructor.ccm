@@ -1,0 +1,86 @@
+module;
+#include <toy.h>
+export module toy.default_constructor;
+
+import std;
+import toy.log;
+
+/**
+ * @brief 用于注册多态类的默认构造函数
+ * use static function variable to avoid static initialization order fiasco
+ */
+
+namespace toy {
+
+template <typename Base>
+struct DefaultConstructorGetter {
+  virtual auto getShared() -> std::shared_ptr<Base> = 0;
+  virtual auto getUnique() -> std::unique_ptr<Base> = 0;
+  virtual ~DefaultConstructorGetter() = default;
+};
+
+template <typename Base>
+auto registerOrGet(
+  std::optional<std::pair<std::string_view, std::unique_ptr<DefaultConstructorGetter<Base>>>> kv
+) -> std::unordered_map<std::string_view, std::unique_ptr<DefaultConstructorGetter<Base>>>& {
+  static auto default_asset_map =
+    std::unordered_map<std::string_view, std::unique_ptr<DefaultConstructorGetter<Base>>>{};
+  if (kv) {
+    default_asset_map[kv->first] = std::move(kv->second);
+  }
+  return default_asset_map;
+}
+
+export template <typename T, typename Base>
+void registerDefaultConstructor() {
+  static_assert(std::default_initializable<T> && std::derived_from<T, Base>);
+  struct DefaultAssetGetter : public DefaultConstructorGetter<Base> {
+    auto getShared() -> std::shared_ptr<Base> override { return std::make_shared<T>(); }
+    auto getUnique() -> std::unique_ptr<Base> override { return std::make_unique<T>(); }
+  };
+  registerOrGet<Base>(std::pair{
+    std::string_view{ typeid(T).name() },
+    std::make_unique<DefaultAssetGetter>(),
+  });
+}
+
+export template <typename Base>
+auto getDefaultObjectShared(std::string_view type_name) -> std::shared_ptr<Base> {
+  auto& _default_asset_map = registerOrGet<Base>({});
+  toy::throwf(
+    _default_asset_map.contains(type_name),
+    "type_name {} is not registered, base class is {}",
+    type_name,
+    typeid(Base).name()
+  );
+  return _default_asset_map[type_name]->getShared();
+}
+
+export template <typename Base>
+auto getDefaultObjectUnique(std::string_view type_name) -> std::unique_ptr<Base> {
+  auto& _default_asset_map = registerOrGet<Base>({});
+  toy::throwf(
+    _default_asset_map.contains(type_name),
+    "type_name {} is not registered, base class is {}",
+    type_name,
+    typeid(Base).name()
+  );
+  return _default_asset_map[type_name]->getUnique();
+}
+
+// CRTP实现默认构造函数的注册
+export template <typename Derived, typename Base>
+class DefaultConstructorRegister {
+private:
+  static inline bool register_default_constructor = []() {
+    toy::registerDefaultConstructor<Derived, Base>();
+    return true;
+  }();
+  // force the static member to be initialized
+  // more information:
+  // https://stackoverflow.com/questions/6420985/how-to-force-a-static-member-to-be-initialized
+  // https://www.reddit.com/r/cpp_questions/comments/1659hxf/forcing_static_class_member_initialzation_and/
+  static_assert(&register_default_constructor == &register_default_constructor);
+};
+
+} // namespace toy

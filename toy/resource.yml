@@ -27,5 +27,7 @@ module:
     provide: toy.observer
 - serializer.ccm:
     provide: toy.serializer
+- default_constructor.ccm:
+    provide: toy.default_constructor
 test:
 - test.cc
