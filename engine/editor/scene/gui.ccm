@@ -2,6 +2,9 @@ module;
 #include <toy.h>
 export module engine.editor.scene;
 
+import engine.editor.scene.scene;
+
+import math;
 import engine.mesh;
 import engine.shape;
 import engine.package;
@@ -23,95 +26,70 @@ public:
   ScenePanel() : fw::Action(fw::Stage::BEFORE_RENDER) {
     _package = Package::get(_asset_path);
     auto names = _package->getAllAssetNames();
-    _unloaded_nodes.insert_range(names);
+    _unloaded_scenes.insert_range(names);
   }
   ~ScenePanel() {}
   void draw() override {
-    ImGui::SeparatorText("UnLoaded Node List");
+    ImGui::SeparatorText("UnLoaded Scene List");
     {
-      for (auto& name : _unloaded_nodes) {
+      for (auto& name : _unloaded_scenes) {
         if (ImGui::Selectable(
-              std::format("{}##UnloadedNodeList", name).c_str(), _selected_unloaded_name == name
+              std::format("{}##UnloadedSceneList", name).c_str(), _selected_unloaded_name == name
             )) {
           _selected_unloaded_name = name;
         }
       }
-      if (!_unloaded_nodes.contains(_selected_unloaded_name)) {
+      if (!_unloaded_scenes.contains(_selected_unloaded_name)) {
         _selected_unloaded_name = {};
       }
 
-      if (ImGui::Button("Load Node")) {
+      if (ImGui::Button("Load Scene")) {
         if (!_selected_unloaded_name.empty()) {
-          auto node = _package->getAssetShared<Node>(_selected_unloaded_name);
-          node->doRecursively([&](Node& node) {
-            if (!node.getAssetName().empty()) {
-              _unloaded_nodes.erase(node.getAssetName());
-              _loaded_nodes[node.getAssetName()] = node.getPtr();
-            }
-            if (auto scene_object = dynamic_cast<SceneObject*>(&node)) {
-              scene_object->setActive(false);
-            }
-          });
+          auto scene = SceneNode{};
+          _package->loadAsset(scene, _selected_unloaded_name);
+          _unloaded_scenes.erase(_selected_unloaded_name);
+          _loaded_scenes[_selected_unloaded_name] = std::move(scene);
           _selected_unloaded_name = {};
         }
       }
     }
 
-    ImGui::SeparatorText("Loaded Node List");
+    ImGui::SeparatorText("Loaded Scene List");
     {
-
-      for (auto& name : _loaded_nodes | views::keys) {
+      for (auto& name : _loaded_scenes | views::keys) {
         if (ImGui::Selectable(
-              std::format("{}##loadedNodeList", name).c_str(), _selected_loaded_name == name
+              std::format("{}##LoadedSceneList", name).c_str(), _selected_loaded_name == name
             )) {
           _selected_loaded_name = name;
         }
       }
-      if (!_loaded_nodes.contains(_selected_loaded_name)) {
+      if (!_loaded_scenes.contains(_selected_loaded_name)) {
         _selected_loaded_name = {};
       }
-      if (ImGui::Button("Set as Current Node")) {
-        if (_current_node) {
-          _current_node->doRecursively([](Node& node) {
-            if (auto scene_object = dynamic_cast<SceneObject*>(&node)) {
-              scene_object->setActive(false);
-            }
-          });
-        }
-        _current_node = _loaded_nodes[_selected_loaded_name].get();
-        _current_node_name = _selected_loaded_name;
-        _current_node->doRecursively([](Node& node) {
-          if (auto scene_object = dynamic_cast<SceneObject*>(&node)) {
-            scene_object->setActive(true);
-          }
-        });
+      if (ImGui::Button("Set as Current Scene")) {
+        _current_scene_name = _selected_loaded_name;
+        _loaded_scenes[_selected_loaded_name].show();
       }
-      if (ImGui::Button("Attach to Current Node")) {
-        if (!_selected_loaded_name.empty() && _current_node) {
-          auto node = _loaded_nodes[_selected_loaded_name].get();
-          node->attachTo(_current_node);
-          node->doRecursively([](Node& node) {
-            if (auto scene_object = dynamic_cast<SceneObject*>(&node)) {
-              scene_object->setActive(true);
-            }
-          });
+      if (ImGui::Button("Attach to Current Scene Node")) {
+        if (!_selected_loaded_name.empty() && !_current_scene_name.empty()) {
+          _loaded_scenes[_current_scene_name].addSubScene(_loaded_scenes[_selected_loaded_name]);
         }
       }
-      if (ImGui::Button("Save Node")) {
-        auto node = _loaded_nodes[_selected_loaded_name];
-        node->saveAsset();
+      if (ImGui::Button("Save Scene")) {
+        _loaded_scenes[_selected_loaded_name].saveAsset();
+        // _loaded_scenes[_selected_loaded_name].unshow();
+        // _loaded_scenes[_selected_loaded_name].getNode().saveAsset();
       }
     }
 
-    ImGui::SeparatorText("Node Create");
+    ImGui::SeparatorText("Scene Create");
     {
-      // node create
       ptr<Node> node;
-      // ImGui::PushItemWidth(200);
-      static auto node_name = std::array<char, 30>{};
-      ImGui::InputText("Node Name", node_name.data(), node_name.size());
-      // ImGui::SameLine();
-      if (ImGui::Button("Create Empty Node")) {
+      ImGui::PushItemWidth(200);
+      static auto scene_name = std::array<char, 30>{};
+      ImGui::InputText("Scene Name", scene_name.data(), scene_name.size());
+      ImGui::SameLine();
+      if (ImGui::Button("Create Empty Scene")) {
         node = std::make_shared<Node>();
       }
       // ImGui::PushItemWidth(200);
@@ -129,7 +107,7 @@ public:
       ImGui::RadioButton("Cylinder", &shape_type, 2);
       ImGui::SameLine();
       ImGui::RadioButton("Cone", &shape_type, 3);
-      if (ImGui::Button("Create Node By Shape")) {
+      if (ImGui::Button("Create Scene By Shape")) {
         auto mesh_data = MeshData{};
         if (shape_type >= 0) {
           switch (shape_type) {
@@ -151,51 +129,48 @@ public:
           draw_unit->init(std::move(mesh_data));
           object->setDrawUnit(std::move(draw_unit));
           node = std::make_shared<Node>();
-          object->attachTo(node.get());
+          object->attachTo(*node);
         }
       }
 
       ImGui::Separator();
       static auto model_path = std::array<char, 100>{};
       ImGui::InputText("Model Path", model_path.data(), model_path.size());
-      if (ImGui::Button("Create Node By Model File")) {
+      if (ImGui::Button("Create Scene By Model File")) {
         node = std::make_shared<Node>();
-        eg::DoTheImportThing(model_path.data())->attachTo(node.get());
+        // eg::DoTheImportThing("model/backpack/backpack.obj")->attachTo(*node);
+        eg::DoTheImportThing(model_path.data())->attachTo(*node);
       }
 
       if (node) {
-        node->setName(node_name.data());
-        node->setAssetName(node_name.data());
-        node->doRecursively([](Node& node) {
-          if (auto scene_object = dynamic_cast<SceneObject*>(&node)) {
-            scene_object->setActive(false);
-          }
-        });
+        // node->setName(scene_name.data());
+        // node->setAssetName(scene_name.data());
         node->setOwnedPackage(_package.get());
-        _loaded_nodes[node_name.data()] = std::move(node);
+        auto scene_node = SceneNode{ std::move(node), scene_name.data() };
+        scene_node.setAssetName(scene_name.data());
+        scene_node.setOwnedPackage(_package.get());
+        _loaded_scenes[scene_name.data()] = std::move(scene_node);
       }
     }
 
-    ImGui::SeparatorText("Current Node Info");
+    ImGui::SeparatorText("Current Scene Info");
     {
-      if (!_current_node) {
-        ImGui::Text("No Current Node");
+      if (_current_scene_name.empty()) {
+        ImGui::Text("No Current Scene");
       } else {
-        std::function<void(Node&, std::string const&, std::string const&)> drawNode{};
-        drawNode = [&](Node& node, std::string const& default_name, std::string const& father_id) {
-          auto name =
-            node.getAssetName().empty() ? default_name.c_str() : node.getAssetName().c_str();
-          if (ImGui::TreeNode(name)) {
-            for (auto [i, child] : node.getChildren() | toy::enumerate) {
-              auto id = std::format("{}-{}", father_id, i);
-              drawNode(*child, std::format("Node {}##{}", i, id), id);
+        std::function<void(SceneNode&)> drawNode{};
+        drawNode = [&](SceneNode& node) {
+          if (ImGui::TreeNode(node.getName().c_str())) {
+            for (auto [i, child] : node.getSubNodes() | toy::enumerate) {
+              drawNode(child);
             }
             ImGui::TreePop();
             return true;
+          } else {
+            return false;
           }
-          return false;
         };
-        drawNode(*_current_node, _current_node_name, "Node Tree");
+        drawNode(_loaded_scenes[_current_scene_name]);
       }
     }
   }
@@ -203,13 +178,11 @@ public:
 
 private:
   std::shared_ptr<Package>                   _package;
-  std::unordered_set<std::string>            _unloaded_nodes;
-  std::unordered_map<std::string, ptr<Node>> _loaded_nodes;
+  std::unordered_set<std::string>            _unloaded_scenes;
+  std::unordered_map<std::string, SceneNode> _loaded_scenes;
   std::string                                _selected_unloaded_name;
   std::string                                _selected_loaded_name;
-  int                                        _loaded_node_index = -1;
-  Node*                                      _current_node{};
-  std::string                                _current_node_name;
+  std::string                                _current_scene_name;
 
   static inline fs::path _asset_path = fs::path{ "assets" } / "scenes.asset";
 };

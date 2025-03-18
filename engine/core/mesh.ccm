@@ -50,7 +50,7 @@ struct MeshData {
 
 using Vertex = rd::Vertex<glm::vec3, glm::vec3, glm::vec2>;
 
-struct Mesh : public Component, public Asset {
+struct Mesh : public AssetWithRegister<Mesh>, public EnableGetPtr<Mesh> {
 public:
   Mesh() = default;
   Mesh(MeshData const& data) { init(data); }
@@ -91,8 +91,15 @@ private:
 
 public:
   void assetSerialize(AssetPackager& packager) override {
-    toy::debugf("mesh serialize");
     auto [positions, normals, tex_coords, indices] = getData();
+    // toy::debugf(
+    //   "mesh serialize: {}, sizes: {}, {}, {}, {}",
+    //   (void*)this,
+    //   positions.size(),
+    //   normals.size(),
+    //   tex_coords.size(),
+    //   indices.size()
+    // );
     packager.pack(positions, normals, tex_coords, indices);
   }
   void assetDeserialize(AssetUnpacker& unpacker) override {
@@ -106,9 +113,6 @@ public:
     };
     init(data);
   }
-
-private:
-  REGISTER_ASSET(Mesh);
 };
 
 } // namespace eg

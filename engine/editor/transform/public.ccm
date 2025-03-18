@@ -59,7 +59,7 @@ FixedDistanceNode::FixedDistanceNode() {
   _fixed_distance_node = std::make_shared<Node>();
   _view_pos = &Camera::getInstance().getViewPos();
   // todo: make _distance reactive too
-  _fixed_distance_node->attachTo(this);
+  _fixed_distance_node->attachTo(*this);
   _fixed_distance_node->getTransToParent().bindNow(
     [this](glm::mat4 const& to_world, glm::vec3 const& location_camera) {
       {
@@ -107,10 +107,11 @@ private:
  * @brief Helper class to bind target transform info to tool transform info.
  *
  */
-class ToolBase : public Component {
+class ToolBase : public fw::Action {
 public:
   using enum BindMode;
   ToolBase() {
+    fw::Action::setStage(fw::Stage::BEFORE_RENDER);
     _root = std::make_shared<FixedDistanceNode>();
     _root->getController().refLocation().bindPair(&_target_controller.refLocation());
     _root->setDistance(_fixed_distance);
@@ -209,7 +210,7 @@ public:
     controller.refScaleFactor() = glm::vec3{ 1, 1, 1 } - normal * (1 - _thickness) -
                                   (glm::vec3{ 1, 1, 1 } - normal) * (1 - _edge);
     controller.refLocation() = -normal * (_thickness / 2);
-    _cube->attachTo(_root.get());
+    _cube->attachTo(*_root);
 
     auto unit_1 = mt::unitVec(mt::Axis(((int)normal_axis + 1) % 3));
     auto unit_2 = mt::unitVec(mt::Axis(((int)normal_axis + 2) % 3));
@@ -224,7 +225,7 @@ public:
         controller.rotate(cross, 90);
       }
       controller.translate(unit2 * _edge);
-      edge.attachTo(_root.get());
+      edge.attachTo(*_root);
     };
     _edge_1 = std::make_shared<SceneObject>();
     createEdge(*_edge_1, unit_1, unit_2);
@@ -295,7 +296,7 @@ public:
     if (auto cross = glm::cross(arrow_dir, unit); !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
       _arrow->getController().rotate(cross, 90);
     }
-    _arrow->attachTo(_root.get());
+    _arrow->attachTo(*_root);
   }
   auto isSelected() -> bool {
     auto* selected = IdPipeline::getInstance().getSelectedDrawUnit();

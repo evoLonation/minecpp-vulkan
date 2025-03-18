@@ -88,7 +88,7 @@ TEST(LinkedFile) {
   fs::remove("test_linked_file");
 }
 
-struct TestAsset1 : public Asset {
+struct TestAsset1 : public AssetWithRegister<TestAsset1> {
 public:
   TestAsset1() = default;
 
@@ -103,12 +103,13 @@ public:
   friend auto operator==(TestAsset1 const& lhs, TestAsset1 const& rhs) -> bool {
     return lhs.positions == rhs.positions && lhs.indices == rhs.indices;
   }
-
-private:
-  REGISTER_ASSET(TestAsset1);
+  static inline bool register_default_constructor = []() {
+    toy::registerDefaultConstructor<TestAsset1, Asset>();
+    return true;
+  }();
 };
 
-struct TestAssetMember1 : public Asset {
+struct TestAssetMember1 : public AssetWithRegister<TestAssetMember1> {
 public:
   int data = 0;
 
@@ -118,12 +119,9 @@ public:
   friend auto operator==(TestAssetMember1 const& lhs, TestAssetMember1 const& rhs) -> bool {
     return lhs.data == rhs.data;
   }
-
-private:
-  REGISTER_ASSET(TestAssetMember1);
 };
 
-struct TestAsset2 : public Asset {
+struct TestAsset2 : public AssetWithRegister<TestAsset2> {
 public:
   bool                              _type;
   int                               _data;
@@ -166,9 +164,6 @@ public:
   static auto weakEqual(TestAsset2 const& lhs, TestAsset2 const& rhs) -> bool {
     return lhs._type == rhs._type && lhs._data == rhs._data;
   }
-
-private:
-  REGISTER_ASSET(TestAsset2);
 };
 
 auto asset1Constructor() -> std::shared_ptr<TestAsset1> {

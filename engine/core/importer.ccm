@@ -158,7 +158,7 @@ auto getNodeRecursively(std::string const& base_path, aiScene const* scene, aiNo
   TOY_DEBUG(node->mNumChildren);
   for (auto i = 0u; i < node->mNumChildren; ++i) {
     auto child = getNodeRecursively(base_path, scene, node->mChildren[i]);
-    child->attachTo(target.get());
+    child->attachTo(*target);
   }
   return target;
 }

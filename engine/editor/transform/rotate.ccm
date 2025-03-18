@@ -29,7 +29,7 @@ public:
     if (auto cross = glm::cross(norm, origin_norm); !mt::eq(cross, glm::vec3{ 0, 0, 0 })) {
       _plane->getController().rotate(cross, 90);
     }
-    _plane->attachTo(&_root->getFixedDistanceNode());
+    _plane->attachTo(_root->getFixedDistanceNode());
   }
   auto getRoot() -> Node& { return *_root; }
   auto isSelected() -> bool {
@@ -66,7 +66,7 @@ public:
   RotateTool() {
     for (auto [i, plane] : _planes | toy::enumerate) {
       plane.init(static_cast<mt::Axis>(i));
-      plane.getRoot().attachTo(&getFixedDistanceNode());
+      plane.getRoot().attachTo(getFixedDistanceNode());
     }
     setMode(WORLD);
     resetTarget();

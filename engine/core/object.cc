@@ -56,9 +56,9 @@ void LightUnit::init(MeshData mesh_data, glm::vec3 color, bool up_layer) {
 void LightUnit::assetSerialize(AssetPackager& packager) {
   DrawUnit::assetSerialize(packager);
   toy::debug("LightUnit::assetSerialize");
-  packager.packWithSave(getMesh().getPtr());
-  packager.packWithSave(getTexture().getPtr());
-  packager.packWithSave(isUpLayer());
+  packager.packWithSave(_mesh);
+  packager.packWithSave(_texture);
+  packager.packWithSave(_up_layer);
 }
 
 void LightUnit::assetDeserialize(AssetUnpacker& unpacker) {

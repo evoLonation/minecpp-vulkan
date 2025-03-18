@@ -20,12 +20,13 @@ export namespace eg {
 
 class SceneObject;
 
-class DrawUnitBase : public Asset {
+class DrawUnitBase : public AssetWithRegister<DrawUnitBase> {
 public:
   DrawUnitBase() = default;
   auto getTransform() -> Reval<glm::mat4> const&;
   auto getSceneObject() -> SceneObject*;
   auto isActive() -> bool { return _scene_object; }
+  ~DrawUnitBase() = default;
 
 protected:
   friend SceneObject;
@@ -61,22 +62,33 @@ private:
   static inline toy::Observable<T&> _deactivated;
 };
 
+// 对于直接继承DrawUnit的实现进行分类，不同类型的分派到不同的pipeline去
 template <typename Derived>
-class DrawUnit : public DrawUnitBase {
+class DrawUnit : public DrawUnitBase, public AssetRegister<Derived> {
 public:
-  void setActive(SceneObject* scene_object, Reval<glm::mat4> const* transform) override {
+  void setActive(SceneObject* scene_object, Reval<glm::mat4> const* transform) override final {
     DrawUnitBase::setActive(scene_object, transform);
     DrawUnitObservable<Derived>::_activated.notify(*static_cast<Derived*>(this));
   }
-  void resetActive() override {
+  void resetActive() override final {
     DrawUnitBase::resetActive();
     DrawUnitObservable<Derived>::_deactivated.notify(*static_cast<Derived*>(this));
+  }
+  ~DrawUnit() {
+    // can not directly call resetActive because virtual function can not be called in destructor
+    if (isActive()) {
+      DrawUnitObservable<Derived>::_deactivated.notify(*static_cast<Derived*>(this));
+    }
   }
 };
 
 struct MaterialInfo {
   float shininess = 16.0f;
 };
+
+// 每个直接或者间接继承DrawUnit的 non abstract class 都必须同时继承 DrawUnitRegister
+template <typename Derived>
+using DrawUnitRegister = AssetRegister<Derived>;
 
 class LightUnit : public DrawUnit<LightUnit> {
 public:
@@ -99,12 +111,9 @@ private:
 public:
   void assetSerialize(AssetPackager& packager) override;
   void assetDeserialize(AssetUnpacker& unpacker) override;
-
-private:
-  REGISTER_ASSET(LightUnit);
 };
 
-class SceneObject : public Node {
+class SceneObject : public NodeWithRegister<SceneObject> {
 public:
   SceneObject() = default;
   ~SceneObject() = default;
@@ -117,15 +126,12 @@ public:
   void setActive(bool active);
   auto isActive() -> bool;
 
-private:
-  uptr<DrawUnitBase> _draw_unit;
-
-public:
+protected:
   void assetSerialize(AssetPackager& packager) override;
   void assetDeserialize(AssetUnpacker& unpacker) override;
 
 private:
-  REGISTER_ASSET(SceneObject);
+  uptr<DrawUnitBase> _draw_unit;
 };
 
 } // namespace eg

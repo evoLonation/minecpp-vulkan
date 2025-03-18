@@ -14,7 +14,7 @@ export namespace eg {
 
 using FormatInfo = rd::FormatInfo;
 
-class Texture : public Component, public Asset {
+class Texture : public AssetWithRegister<Texture>, public EnableGetPtr<Texture> {
 public:
   Texture() = default;
   Texture(rd::SampledTexture texture) : _texture{ std::move(texture) } {}
@@ -48,9 +48,6 @@ public:
       VkPipelineStageFlagBits>();
     _texture = rd::SampledTexture{ std::span{ data }, format, extent, mipmap, use_stage };
   }
-
-private:
-  REGISTER_ASSET(Texture);
 };
 
 // todo: serializer

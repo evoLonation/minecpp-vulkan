@@ -51,12 +51,14 @@ private:
   Reval<std::tuple<glm::vec3, glm::vec3, glm::vec3>> _middle_reval;
 };
 
-class Node : public Component, public Asset {
+class Component;
+
+class Node : public EnableGetPtr<Node>, public AssetWithRegister<Node> {
 public:
   Node();
   void setName(std::string name);
   ~Node();
-  void attachTo(Node* node);
+  void attachTo(Node& node);
   void detach();
   auto getController() -> ModelController& { return _controller; }
   auto getTransToParent() -> Reval<glm::mat4>& { return _to_parent; }
@@ -71,6 +73,14 @@ public:
   auto getRoot() -> Node& { return *_root; }
   void doRecursively(std::function<void(Node&)> const& dealer);
 
+  void addComponent(ptr<Component> component, bool enable_cover = false);
+  template <typename T>
+  void removeComponent();
+  template <typename T>
+  auto getComponent() -> T&;
+  template <typename T>
+  auto hasComponent() -> bool;
+
 private:
   Reval<glm::mat4>              _to_parent;
   ModelController               _controller;
@@ -80,15 +90,77 @@ private:
   Node*                         _root = nullptr;
   Unbinder                      _unbinder;
 
-  void setParent(Node* parent);
+  std::unordered_map<std::string_view, ptr<Component>> _components;
+
+  void setParent(Node& parent);
   void resetParent();
 
-public:
+  void removeComponent(std::string_view name);
+  auto getComponent(std::string_view name) -> Component&;
+  auto hasComponent(std::string_view name) -> bool;
+
+protected:
   void assetSerialize(AssetPackager& packager) override;
   void assetDeserialize(AssetUnpacker& unpacker) override;
+};
+
+// 每个直接或者间接继承 Node 的 non abstract class 都必须同时继承 NodeRegister
+template <typename Derived>
+using NodeRegister = AssetRegister<Derived>;
+
+template <typename Derived>
+class NodeWithRegister : public Node, public NodeRegister<Derived> {
+public:
+  using Node::Node;
+};
+
+class Component : public EnableGetPtr<Component>, public AssetWithRegister<Component> {
+  friend class Node;
+
+public:
+  Component() = default;
+  UNCOPYABLE_MOVEABLE(Component);
+
+  auto isAttached() -> bool { return _node != nullptr; }
+  auto getNode() -> Node& {
+    TOY_ASSERT(_node);
+    return *_node;
+  }
+  ~Component() = default;
+
+protected:
+  void assetSerialize(AssetPackager& packager) override {}
+  void assetDeserialize(AssetUnpacker& unpacker) override {}
+
+  virtual void afterAddToNode() {}
 
 private:
-  REGISTER_ASSET(Node);
+  Node* _node = nullptr;
 };
+
+// 每个直接或者间接继承 Component 的 non abstract class 都必须同时继承 ComponentRegister
+template <typename Derived>
+using ComponentRegister = AssetRegister<Derived>;
+
+template <typename Derived>
+class ComponentWithRegister : public Component, public ComponentRegister<Derived> {
+public:
+  using Component::Component;
+};
+
+template <typename T>
+void Node::removeComponent() {
+  removeComponent(std::string_view{ typeid(T).name() });
+}
+
+template <typename T>
+auto Node::getComponent() -> T& {
+  return dynamic_cast<T&>(getComponent(std::string_view{ typeid(T).name() }));
+}
+
+template <typename T>
+auto Node::hasComponent() -> bool {
+  return hasComponent(std::string_view{ typeid(T).name() });
+}
 
 } // namespace eg

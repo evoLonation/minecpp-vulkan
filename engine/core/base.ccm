@@ -17,17 +17,12 @@ using uptr = std::unique_ptr<T>;
 template <typename T>
 using wptr = std::weak_ptr<T>;
 
-struct Component : public fw::Action, public std::enable_shared_from_this<Component> {
-  Component() { setStage(fw::Stage::BEFORE_RENDER); }
-  UNCOPYABLE_MOVEABLE(Component);
-  void runLoop(fw::ActionContext const& ctx) override {}
-  auto getPtr(this auto&& self) {
-    return std::static_pointer_cast<std::remove_reference_t<decltype(self)>>(self.shared_from_this()
-    );
-  }
+template <typename T>
+struct EnableGetPtr : public std::enable_shared_from_this<T> {
+  auto getPtr() { return std::static_pointer_cast<T>(this->shared_from_this()); }
 
 private:
-  using std::enable_shared_from_this<Component>::shared_from_this;
+  using std::enable_shared_from_this<T>::shared_from_this;
 };
 
 } // namespace eg

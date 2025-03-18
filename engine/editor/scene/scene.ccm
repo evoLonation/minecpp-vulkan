@@ -1,0 +1,265 @@
+module;
+#include <toy.h>
+export module engine.editor.scene.scene;
+
+import math;
+import engine.package;
+import engine.base;
+import engine.object;
+import engine.node;
+import std;
+import toy;
+
+export namespace eg {
+
+struct SceneComponent : public ComponentWithRegister<SceneComponent> {
+public:
+  SceneComponent() = default;
+
+  // 使得该节点及其子节点渲染，同时只能渲染一个
+  void show() {
+    if (auto node = _last_show_root_node.lock()) {
+      node->getComponent<SceneComponent>().setActiveRecursively(false);
+    }
+    _last_show_root_node = getNode().getPtr();
+    setActiveRecursively(true);
+  }
+  void unshow() {
+    if (isShowing()) {
+      setActiveRecursively(false);
+      _last_show_root_node = {};
+    }
+  }
+  auto isShowing() -> bool { return _last_show_root_node.lock().get() == &getNode(); }
+
+  static void initNode(Node& node, std::string name) {
+    initCurrentNode(node, std::move(name));
+    for (auto [i, node] : node.getChildren() | toy::enumerate) {
+      initNode(*node, std::format("{}_{}", name, i));
+    }
+  }
+
+  void addSceneView(ptr<Node> scene, glm::mat4 trans = mt::model::create()) {
+    if (isShowing()) {
+      auto view = scene->getComponent<SceneComponent>().createView();
+      view->attachTo(getNode());
+      view->getTransToParent() = trans;
+      view->getComponent<SceneComponent>().setActiveRecursively(true);
+      _scene_views[scene] = std::move(view);
+    } else {
+      _scene_views[scene] = trans;
+    }
+  }
+
+  void removeSceneView(ptr<Node> scene) {
+    if (auto it = _scene_views.find(scene); it != _scene_views.end()) {
+      if (auto* view = std::get_if<ptr<Node>>(&it->second)) {
+        (*view)->detach();
+      }
+      _scene_views.erase(it);
+    }
+  }
+
+  auto getName() -> std::string const& { return _node_name; }
+  auto isView() -> bool { return _is_view; }
+  auto getSubScenes() { return _scene_views | views::keys; }
+
+private:
+  void init(std::string name, bool is_view) {
+    _node_name = std::move(name);
+    _is_view = is_view;
+  }
+
+  static void initCurrentNode(Node& node, std::string name) {
+    auto component = std::make_shared<SceneComponent>();
+    component->init(std::move(name), false);
+    node.addComponent(component);
+  }
+
+  // 基于 this 创建一份一模一样的 view，除了渲染资源外内存都是独立的
+  // 返回的节点是不可见的
+  auto createView() -> ptr<Node> {
+    auto& node = getNode();
+    // 对所有节点都复制一份
+    auto view = ptr<Node>{};
+    if (auto* object = dynamic_cast<SceneObject*>(&node)) {
+      auto view_object = std::make_shared<SceneObject>();
+      if (auto* draw_unit = dynamic_cast<LightUnit*>(object->getDrawUnit())) {
+        auto draw_unit_copy = std::make_unique<LightUnit>();
+        draw_unit_copy->init(
+          draw_unit->getMesh().getPtr(), draw_unit->getTexture().getPtr(), draw_unit->isUpLayer()
+        );
+        view_object->setDrawUnit(std::move(draw_unit_copy));
+      } else {
+        toy::throwf("SceneObject's draw unit is not LightUnit");
+      }
+      view = std::move(view_object);
+    } else {
+      view = std::make_shared<Node>();
+    }
+    view->getTransToParent() = node.getTransToParent().get();
+    auto component = std::make_shared<SceneComponent>();
+    component->init(_node_name, true);
+    view->addComponent(component);
+
+    for (auto& child : node.getChildren()) {
+      auto& component = child->getComponent<SceneComponent>();
+      // view 节点不用于创建 view，而是使用 _scene_views 创建，因此跳过
+      if (component._is_view) {
+        continue;
+      }
+      auto child_view = component.createView();
+      child_view->attachTo(*view);
+    }
+    for (auto& [scene, var] : _scene_views) {
+      glm::mat4 trans;
+      if (auto* p_view = std::get_if<ptr<Node>>(&var)) {
+        trans = (*p_view)->getTransToParent().get();
+      } else {
+        trans = std::get<glm::mat4>(var);
+      }
+      auto scene_view = scene->getComponent<SceneComponent>().createView();
+      scene_view->getTransToParent() = trans;
+      scene_view->attachTo(*view);
+    }
+    return view;
+  }
+
+  void setActiveRecursively(bool active) {
+    getNode().doRecursively([&](Node& node) {
+      if (auto scene_object = dynamic_cast<SceneObject*>(&node)) {
+        scene_object->setActive(active);
+      }
+      if (active) {
+        for (auto& [origin, var] : _scene_views) {
+          if (auto* trans = std::get_if<glm::mat4>(&var)) {
+            auto view = origin->getComponent<SceneComponent>().createView();
+            view->attachTo(node);
+            view->getTransToParent() = *trans;
+            view->getComponent<SceneComponent>().setActiveRecursively(true);
+            var = view;
+          }
+        }
+      } else {
+        for (auto& [origin, var] : _scene_views) {
+          if (auto* p_view = std::get_if<ptr<Node>>(&var)) {
+            auto view = *p_view;
+            view->detach();
+            var = view->getTransToParent().get();
+          }
+        }
+      }
+    });
+  }
+
+protected:
+  void assetSerialize(AssetPackager& packager) override {
+    // 就不应该让处于 show 状态的节点序列化
+    TOY_ASSERT(!_is_view);
+    Component::assetSerialize(packager);
+    packager.pack(_node_name);
+    packager.pack(_scene_views.size());
+    for (auto& [origin, var] : _scene_views) {
+      packager.pack(origin);
+      if (auto view = std::get_if<ptr<Node>>(&var)) {
+        packager.pack(true);
+        packager.packWithSave(*view);
+      } else {
+        packager.pack(false);
+        packager.pack(std::get<glm::mat4>(var));
+      }
+    }
+  }
+  void assetDeserialize(AssetUnpacker& unpacker) override {
+    Component::assetDeserialize(unpacker);
+    unpacker.unpack(_node_name);
+    auto size = unpacker.unpack<size_t>();
+    for (size_t i = 0; i < size; ++i) {
+      auto origin = unpacker.unpack<ptr<Node>>();
+      if (unpacker.unpack<bool>()) {
+        auto view = unpacker.unpack<ptr<Node>>();
+        _scene_views[origin] = view;
+      } else {
+        auto trans = unpacker.unpack<glm::mat4>();
+        _scene_views[origin] = trans;
+      }
+    }
+  }
+
+  // 可以保证所有node组装了SceneComponent后是不可见的
+  void afterAddToNode() override {
+    Component::afterAddToNode();
+    setActiveRecursively(false);
+  }
+
+private:
+  std::string _node_name;
+  bool        _is_view = false;
+  // origin scene -> scene view | glm::mat4 (to create view)
+  // when show, every element must is ptr<Node>, vice versa
+  std::unordered_map<ptr<Node>, std::variant<ptr<Node>, glm::mat4>> _scene_views;
+
+  static inline wptr<Node> _last_show_root_node;
+};
+
+// just wrapper and handle
+class SceneNode : public AssetWithRegister<SceneNode> {
+public:
+  ONLY_MOVEABLE(SceneNode)
+  SceneNode() = default;
+  // node（及其子node）必须没有被通过该方式初始化过
+  SceneNode(ptr<Node> node, std::string name) {
+    SceneComponent::initNode(*node, std::move(name));
+    _node = std::move(node);
+    _component.reset(&_node->getComponent<SceneComponent>());
+  }
+
+  void addSubNode(SceneNode& node) { node._node->attachTo(*_node); }
+  void addSubScene(SceneNode& scene) { _component->addSceneView(scene._node); }
+  void show() { _component->show(); }
+  void unshow() { _component->unshow(); }
+  auto isShowing() -> bool { return _component->isShowing(); }
+  auto getName() -> std::string const& { return _component->getName(); }
+  auto isView() -> bool { return _component->isView(); }
+  // without view of scenes
+  auto getSubNodes();
+  auto getSubScenes();
+  auto getNode() -> Node& { return *_node; }
+
+protected:
+  void assetSerialize(AssetPackager& packager) override {
+    auto showing = isShowing();
+    unshow();
+    packager.packWithSave(_node);
+    if (showing) {
+      show();
+    }
+  }
+  void assetDeserialize(AssetUnpacker& unpacker) override {
+    _node = unpacker.unpack<ptr<Node>>();
+    _component.reset(&_node->getComponent<SceneComponent>());
+  }
+
+private:
+  // node（及其子node）必须已经被初始化过
+  SceneNode(ptr<Node> node) {
+    _node = std::move(node);
+    _component.reset(&_node->getComponent<SceneComponent>());
+  }
+
+  ptr<Node>                        _node;
+  toy::PtrManager<SceneComponent*> _component;
+};
+
+// 这个inline必须加，否则会出现lambda相关的abi问题，详见：
+// https://github.com/llvm/llvm-project/commit/6345b009c3e58a6cd0eca835d5a935f8784cfda6
+inline auto SceneNode::getSubNodes() {
+  return _node->getChildren() | views::transform([](auto& node) { return SceneNode{ node }; }) |
+         views::filter([](auto&& node) { return !node.isView(); });
+}
+inline auto SceneNode::getSubScenes() {
+  return _component->getSubScenes() |
+         views::transform([](auto& node) { return SceneNode{ node }; });
+}
+
+} // namespace eg

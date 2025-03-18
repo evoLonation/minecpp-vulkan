@@ -1,3 +1,5 @@
 module:
 - gui.ccm:
     provide: engine.editor.scene
+- scene.ccm:
+    provide: engine.editor.scene.scene

@@ -25,9 +25,9 @@ private:
 
 /**
  * @brief
- * call setCurrentPage() to start a read and write, user can write or read (ptr is shared).
- * any function call excepted write and read will make ptr undefined
- * after write, user can call releaseTail() to release tail pages
+ * Call setCurrent() to start a read or write, user can only choice one between read and write util done.
+ * Any function call excepted write and read will make ptr undefined.
+ * After write, user can call releaseTail() to release tail pages.
  */
 class LinkedFile : public toy::OutputStream, public toy::InputStream {
 public:
@@ -96,6 +96,31 @@ public:
     }
   }
 
+  void skip(size_t size, bool enable_append = false) {
+    _write_size += size;
+    _read_size += size;
+    auto page_remain_size = getPageRemainSize();
+    auto remain_size = size;
+    while (remain_size != 0) {
+      TOY_ASSERT(page_remain_size > 0);
+      if (page_remain_size > remain_size) {
+        _file.seekg(remain_size, std::ios::cur);
+        return;
+      } else {
+        remain_size -= page_remain_size;
+        auto now_page = getNowPage();
+        auto next_page = readNextPage(now_page);
+        if (next_page == 0) {
+          toy::throwf(enable_append, "skip out of range");
+          next_page = allocatePage();
+          writeNextPage(now_page, next_page);
+        }
+        seekPage(next_page);
+        page_remain_size = getPageRemainSize();
+      }
+    }
+  }
+
   auto getReadSize() -> size_t { return _read_size; }
   auto getWriteSize() -> size_t { return _write_size; }
 
@@ -103,9 +128,13 @@ public:
    * @brief call after all write done to release unused tail pages
    */
   void releaseTail() {
+    // first_page: first page which can be released
     auto first_page = getNowPage();
     if (getCurrentPageSize() != 0) {
       first_page = readNextPage(first_page);
+      if (first_page == 0) {
+        return;
+      }
     }
     auto last_page = toLastPage(first_page);
     writeNextPage(last_page, readFreePage());
@@ -113,6 +142,7 @@ public:
   }
 
   void setCurrent(PageNumber id) {
+    // toy::debugf("set current page: {}", id);
     _read_size = 0;
     _write_size = 0;
     seekPage(id);
@@ -193,17 +223,20 @@ private:
     _stream.write<PageNumber>(free_page);
   }
   void writeAllocatedPages(std::vector<PageNumber> const& allocated_pages) {
+    setCurrent(0);
     // next page + magic number + free page
-    _file.seekg(sizeof(PageNumber) + sizeof(MagicNumber) + sizeof(PageNumber));
-    _stream.write<std::vector<PageNumber>>(allocated_pages);
+    skip(sizeof(PageNumber) + sizeof(MagicNumber) + sizeof(PageNumber));
+    write<std::vector<PageNumber>>(allocated_pages);
   }
   auto readAllocatedPages() -> std::vector<PageNumber> {
+    setCurrent(0);
     // next page + magic number + free page
-    _file.seekg(sizeof(PageNumber) + sizeof(MagicNumber) + sizeof(PageNumber));
-    return _stream.read<std::vector<PageNumber>>();
+    skip(sizeof(PageNumber) + sizeof(MagicNumber) + sizeof(PageNumber));
+    return read<std::vector<PageNumber>>();
   }
 
   void seekPage(PageNumber page) { _file.seekg(page * _page_size + sizeof(PageNumber)); }
+  // next page tag: 0 means end, other means next page
   auto readNextPage(PageNumber page) -> PageNumber {
     _file.seekg(page * _page_size);
     return _stream.read<PageNumber>();
@@ -218,27 +251,37 @@ private:
   auto getNowPage() -> PageNumber { return _file.tellg() / _page_size; }
 
 public:
+  // 如果读写过程中需要进行其他操作，可以使用snapshot来保存当前读写上下文，然后在析构时恢复
   class PtrRecover {
   public:
     PtrRecover() = default;
-    PtrRecover(std::fstream* fs) : _fs(fs), _last_pos(fs->tellg()) {}
+    PtrRecover(LinkedFile* file) {
+      _file.reset(file);
+      _pos = file->_file.tellg();
+      _read_size = file->_read_size;
+      _write_size = file->_write_size;
+    }
     ONLY_MOVEABLE(PtrRecover);
     void recover() {
-      TOY_ASSERT(_fs);
-      _fs->seekg(_last_pos);
-      _fs = nullptr;
+      TOY_ASSERT(_file);
+      _file->_file.seekg(_pos);
+      _file->_read_size = _read_size;
+      _file->_write_size = _write_size;
+      _file = nullptr;
     }
     ~PtrRecover() {
-      if (_fs) {
+      if (_file) {
         recover();
       }
     }
 
   private:
-    toy::PtrManager<std::fstream*> _fs;
-    std::fstream::pos_type         _last_pos;
+    toy::PtrManager<LinkedFile*> _file;
+    std::fstream::pos_type       _pos;
+    size_t                       _read_size;
+    size_t                       _write_size;
   };
-  auto snapshot() -> PtrRecover { return &_file; }
+  auto snapshot() -> PtrRecover { return this; }
 
 private:
   FileStream   _stream;
@@ -403,7 +446,7 @@ public:
   void loadAsset(Asset& asset, Guid const& guid) {
     TOY_ASSERT(!asset._guid.valid());
     loadAsset(guid, [&](std::string const& type_name) -> Asset& {
-      TOY_ASSERT(type_name == typeid(asset).name());
+      TOY_ASSERT(type_name == typeid(asset).name(), type_name, typeid(asset).name());
       return asset;
     });
   }
@@ -482,8 +525,10 @@ private:
     if (asset->_package.get() == owner) {
       return;
     }
-    if (!asset->_name.empty()) {
-      TOY_ASSERT(!owner->_meta_info.name2guid.contains(asset->_name));
+    if (!asset->_name.empty() && owner->_meta_info.name2guid.contains(asset->_name)) {
+      toy::throwf(
+        "Asset name {} is already used in package {}", asset->_name, owner->_path.generic_string()
+      );
     }
     auto guid = asset->getAssetGuid();
     auto origin = asset->_package;
@@ -797,7 +842,7 @@ void Package::loadAsset(Guid const& guid, std::function<Asset&(std::string const
   TOY_ASSERT(guid.valid());
   toy::throwf(_meta_info.guid2page.contains(guid), "Asset not found in this package");
   _file.setCurrent(_meta_info.guid2page[guid]);
-  _file.read<size_t>(); // skip data size
+  _file.skip(sizeof(size_t)); // skip data size
   auto  serialize_data = _file.read<bool>();
   auto  type_name = _file.read<std::string>();
   auto& asset = asset_getter(type_name);
@@ -835,7 +880,7 @@ void Package::saveAsset(Asset& asset, bool serialize_data) {
 
   toy::throwf(package._meta_info.guid2page.contains(guid), "Asset not found in this package");
   package._file.setCurrent(package._meta_info.guid2page[guid]);
-  package._file.write<size_t>(0); // later will write real data size
+  package._file.skip(sizeof(size_t)); // later will write real data size
   package._file.write<bool>(serialize_data);
   package._file.write<std::string>(typeid(asset).name());
   if (serialize_data) {
@@ -850,45 +895,25 @@ void Package::saveAsset(Asset& asset, bool serialize_data) {
 
 /**
  * @brief 下面是 Package::getDefaultAssetShared 和 Package::getDefaultAssetUnique 的具体实现
- * use static function variable to avoid static initialization order fiasco
  */
 
-struct DefaultAssetGetter {
-  std::function<std::shared_ptr<Asset>()> shared_getter;
-  std::function<std::unique_ptr<Asset>()> unique_getter;
-};
-
-auto registerOrGet(std::optional<std::pair<std::string, DefaultAssetGetter>> kv)
-  -> std::unordered_map<std::string, DefaultAssetGetter>& {
-  static auto default_asset_map = std::unordered_map<std::string, DefaultAssetGetter>{};
-  if (kv) {
-    default_asset_map[kv->first] = kv->second;
-  }
-  return default_asset_map;
-}
-
-template <typename T>
-void registerDefaultAsset() {
-  static_assert(std::is_default_constructible_v<T>);
-  registerOrGet(std::pair{
-    std::string{ typeid(T).name() },
-    DefaultAssetGetter{
-      []() { return std::make_shared<T>(); },
-      []() { return std::make_unique<T>(); },
-    },
-  });
-}
-
 auto Package::getDefaultAssetShared(std::string const& type_name) -> std::shared_ptr<Asset> {
-  auto& _default_asset_map = registerOrGet({});
-  TOY_ASSERT(_default_asset_map.contains(type_name));
-  return _default_asset_map[type_name].shared_getter();
+  return toy::getDefaultObjectShared<Asset>(type_name);
 }
 
 auto Package::getDefaultAssetUnique(std::string const& type_name) -> std::unique_ptr<Asset> {
-  auto& _default_asset_map = registerOrGet({});
-  TOY_ASSERT(_default_asset_map.contains(type_name));
-  return _default_asset_map[type_name].unique_getter();
+  return toy::getDefaultObjectUnique<Asset>(type_name);
 }
+
+// 每个直接或者间接继承Asset的 non abstract class 都必须同时继承 AssetRegister ，从而实现默认构造函数的注册
+template <typename Derived>
+using AssetRegister = toy::DefaultConstructorRegister<Derived, Asset>;
+
+// 等价于同时继承Asset和AssetRegister
+template <typename Derived>
+class AssetWithRegister : public Asset, public AssetRegister<Derived> {
+public:
+  using Asset::Asset;
+};
 
 } // namespace eg

@@ -16,15 +16,15 @@ public:
     _arrows[0].init(mt::Axis::X, true);
     _arrows[1].init(mt::Axis::Y, true);
     _arrows[2].init(mt::Axis::Z, true);
-    _arrows[0].getRoot().attachTo(&getFixedDistanceNode());
-    _arrows[1].getRoot().attachTo(&getFixedDistanceNode());
-    _arrows[2].getRoot().attachTo(&getFixedDistanceNode());
+    _arrows[0].getRoot().attachTo(getFixedDistanceNode());
+    _arrows[1].getRoot().attachTo(getFixedDistanceNode());
+    _arrows[2].getRoot().attachTo(getFixedDistanceNode());
     _planes[0].init(mt::Axis::X);
     _planes[1].init(mt::Axis::Y);
     _planes[2].init(mt::Axis::Z);
-    _planes[0].getRoot().attachTo(&getFixedDistanceNode());
-    _planes[1].getRoot().attachTo(&getFixedDistanceNode());
-    _planes[2].getRoot().attachTo(&getFixedDistanceNode());
+    _planes[0].getRoot().attachTo(getFixedDistanceNode());
+    _planes[1].getRoot().attachTo(getFixedDistanceNode());
+    _planes[2].getRoot().attachTo(getFixedDistanceNode());
     setMode(LOCAL);
     resetTarget();
   }

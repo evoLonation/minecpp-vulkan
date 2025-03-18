@@ -251,7 +251,7 @@ public:
     return *this;
   }
   auto operator=(T&& v) -> Reval& {
-    set(std::move(v));
+    set(FORWARD(v));
     return *this;
   }
 

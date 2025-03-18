@@ -73,7 +73,9 @@ export template <typename Derived, typename Base>
 class DefaultConstructorRegister {
 private:
   static inline bool register_default_constructor = []() {
-    toy::registerDefaultConstructor<Derived, Base>();
+    if constexpr (!std::is_abstract_v<Derived>) {
+      toy::registerDefaultConstructor<Derived, Base>();
+    }
     return true;
   }();
   // force the static member to be initialized

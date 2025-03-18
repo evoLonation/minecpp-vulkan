@@ -161,12 +161,12 @@ Node::~Node() {
   // can ensure _parent is nullptr (otherwise this will not destroyed)
 }
 
-void Node::attachTo(Node* node) {
+void Node::attachTo(Node& node) {
   if (_parent) {
     detach();
   }
   setParent(node);
-  doRecursively([node](Node& child) { child._root = node->_root; });
+  doRecursively([&node](Node& child) { child._root = node._root; });
 }
 
 void Node::detach() {
@@ -182,11 +182,11 @@ void Node::doRecursively(std::function<void(Node&)> const& dealer) {
   }
 }
 
-void Node::setParent(Node* parent) {
+void Node::setParent(Node& parent) {
   // resetParent();
   _unbinder.unbind();
-  _parent = parent;
-  parent->_children.insert(getPtr());
+  _parent = &parent;
+  parent._children.insert(getPtr());
   _unbinder = _to_world.bindNow(
     [](glm::mat4 const& parent, glm::mat4 const& to_parent) { return parent * to_parent; },
     &_parent->_to_world,
@@ -203,22 +203,66 @@ void Node::resetParent() {
   }
 }
 
+void Node::addComponent(ptr<Component> component, bool enable_cover) {
+  auto* ptr = component.get();
+  auto  name = std::string_view{ typeid(*ptr).name() };
+  if (auto it = _components.find(name); it != _components.end()) {
+    if (!enable_cover) {
+      toy::throwf("Component {} already exists in node", typeid(*ptr).name());
+    }
+    it->second->_node = nullptr;
+    it->second = component;
+  } else {
+    _components[name] = component;
+  }
+  component->_node = this;
+  component->afterAddToNode();
+}
+
+void Node::removeComponent(std::string_view name) {
+  if (auto it = _components.find(name); it != _components.end()) {
+    it->second->_node = nullptr;
+    _components.erase(it);
+  }
+}
+
+auto Node::getComponent(std::string_view name) -> Component& {
+  if (auto it = _components.find(name); it != _components.end()) {
+    return *it->second;
+  }
+  toy::throwf("Component not found");
+}
+
+auto Node::hasComponent(std::string_view name) -> bool {
+  auto it = _components.find(name);
+  return it != _components.end();
+}
+
 void Node::assetSerialize(AssetPackager& packager) {
   packager.pack<size_t>(_children.size());
   for (auto& child : _children) {
     packager.packWithSave(child);
   }
   packager.pack(_to_parent.get());
+  packager.pack<size_t>(_components.size());
+  for (auto& component : _components | views::values) {
+    packager.packWithSave(component);
+  }
 }
 
 void Node::assetDeserialize(AssetUnpacker& unpacker) {
-  auto size = unpacker.unpack<size_t>();
-  while (size--) {
+  auto child_n = unpacker.unpack<size_t>();
+  while (child_n--) {
     auto child = unpacker.unpack<ptr<Node>>();
-    child->attachTo(this);
+    child->attachTo(*this);
   }
   auto to_parent = unpacker.unpack<glm::mat4>();
   _to_parent = to_parent;
+  auto component_n = unpacker.unpack<size_t>();
+  while (component_n--) {
+    auto component = unpacker.unpack<ptr<Component>>();
+    addComponent(std::move(component));
+  }
 }
 
 } // namespace eg
