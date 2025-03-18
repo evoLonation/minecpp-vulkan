@@ -29,5 +29,7 @@ module:
     implement: engine.shape
 - package.ccm:
     provide: engine.package
+- package.cc:
+    implement: engine.package
 test:
 - test.cc
