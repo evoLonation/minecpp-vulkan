@@ -40,10 +40,10 @@ private:
   float                         _unit_length = 0.3;
 
   void runLoop(fw::ActionContext const& ctx) override {
+    ToolBase::runLoop(ctx);
     if (!getTarget()) {
       return;
     }
-    ToolBase::runLoop(ctx);
     auto& input = fw::InputProcessor::getInstance();
     if (input.getState(fw::Mouse::LEFT)->state == fw::ButtonState::DOWN) {
       auto& x_axis = _arrows[0];

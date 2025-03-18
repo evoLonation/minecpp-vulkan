@@ -80,32 +80,11 @@ enum class BindMode {
   WORLD, // bind location only and set rotate to 0
 };
 
-class TargetController : public ModelController {
-public:
-  TargetController() { setMode(BindMode::LOCAL); }
-  void resetTarget() {
-    resetModelTransform();
-    _target.reset();
-  }
-  void setTarget(ptr<Node> target) {
-    _target = std::move(target);
-    setModelTransform(&_target->getTransToParent(), ModelController::CHANGE_CONTROLLER);
-  }
-  auto getTarget() -> Node* { return _target.get(); }
-  void setMode(BindMode mode) {
-    ModelController::setMode(
-      mode == BindMode::LOCAL ? ModelController::LOCAL : ModelController::WORLD
-    );
-  }
-
-private:
-  // extend the node's lifetime
-  ptr<Node> _target;
-};
-
 /**
  * @brief Helper class to bind target transform info to tool transform info.
- *
+ * Tool's node need attach to getFixedDistanceNode().
+ * Active state is auto set according to target's existence in runLoop().
+ * Only accept nodes which root == parent and parent's trans is identity.
  */
 class ToolBase : public fw::Action {
 public:
@@ -113,20 +92,13 @@ public:
   ToolBase() {
     fw::Action::setStage(fw::Stage::BEFORE_RENDER);
     _root = std::make_shared<FixedDistanceNode>();
-    _root->getController().refLocation().bindPair(&_target_controller.refLocation());
     _root->setDistance(_fixed_distance);
-    _target_controller.setMode(_mode);
+    _root->getController().refLocation().bindPair(&_target_controller.refLocation());
+    _target_controller.setMode(toControllerMode(_mode));
   }
   UNCOPYABLE_MOVEABLE(ToolBase);
   ~ToolBase() = default;
 
-  void runLoop(fw::ActionContext const& ctx) override {
-    if (auto target = getTarget()) {
-      if (!target->isRoot()) {
-        resetTarget();
-      }
-    }
-  }
   void setMode(BindMode mode) {
     if (_mode == mode) {
       return;
@@ -138,10 +110,22 @@ public:
       _rotate_unbinder =
         _root->getController().refRotateEuler().bindPair(&_target_controller.refRotateEuler());
     }
-    _target_controller.setMode(mode);
+    _target_controller.setMode(toControllerMode(_mode));
     _mode = mode;
   }
+
   auto getMode() const -> BindMode { return _mode; }
+
+  void runLoop(fw::ActionContext const& ctx) override {
+    if (_target_node.expired()) {
+      setActiveRecursively(false);
+    } else if (checkTargetNode(*_target_node.lock())) {
+      setActiveRecursively(true);
+    } else {
+      resetTarget();
+    }
+  }
+
   /**
    * @brief if mode is LOCAL, unbind rotate and keep value unchanged util @ref disableKeepRotate
    * if mode is WORLD, nothing will happen
@@ -162,18 +146,23 @@ public:
    * @brief will extends the target's lifetime
    */
   void setTarget(ptr<Node> target) {
-    // todo remove
-    // if (target.get() == &getRoot()) {
-    //   return;
-    // }
-    setActiveRecursively(true);
-    _target_controller.setTarget(target);
+    resetTarget();
+    TOY_ASSERT(checkTargetNode(*target));
+    if (_target_node.expired()) {
+      _target_controller.setModelTransformInvalid();
+    }
+    _target_controller.setModelTransform(
+      &target->getTransToParent(), ModelController::CHANGE_CONTROLLER
+    );
+    _target_node = target;
   }
   void resetTarget() {
-    setActiveRecursively(false);
-    _target_controller.resetTarget();
+    if (!_target_node.expired()) {
+      _target_controller.resetModelTransform();
+      _target_node.reset();
+    }
   }
-  auto getTarget() -> Node* { return _target_controller.getTarget(); }
+  auto getTarget() -> Node* { return _target_node.lock().get(); }
   auto getTargetController() -> ModelController& { return _target_controller; }
   auto getRoot() -> Node& { return *_root; }
 
@@ -184,7 +173,8 @@ private:
   ptr<FixedDistanceNode> _root;
   BindMode               _mode = WORLD;
   PairUnbinder           _rotate_unbinder;
-  TargetController       _target_controller;
+  wptr<Node>             _target_node;
+  ModelController        _target_controller;
   constexpr static float _fixed_distance = 10.0f;
 
   void setActiveRecursively(bool active) {
@@ -193,6 +183,13 @@ private:
         object->setActive(active);
       }
     });
+  }
+  auto toControllerMode(BindMode mode) -> ModelController::Mode {
+    return mode == LOCAL ? ModelController::LOCAL : ModelController::WORLD;
+  }
+  static auto checkTargetNode(Node& node) -> bool {
+    return !node.isRoot() && &node.getParent() == &node.getRoot() &&
+           mt::eq(node.getRoot().getTransToParent(), mt::model::create());
   }
 };
 

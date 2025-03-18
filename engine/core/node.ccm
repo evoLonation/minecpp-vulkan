@@ -15,13 +15,21 @@ import <imgui_config.h>;
 
 export namespace eg {
 
+// Not have a model, just control the model by transform information
 class ModelController {
 public:
   ModelController();
   void setName(std::string name);
-  enum SettingMode { CHANGE_MODEL, CHANGE_CONTROLLER };
+  enum SettingMode {
+    CHANGE_MODEL,      // model is changed according to the transform information.
+    CHANGE_CONTROLLER, // transform information is changed according to the model.
+  };
   ModelController(Reval<glm::mat4>* model, SettingMode mode);
+  UNCOPYABLE_MOVEABLE(ModelController);
   ~ModelController() = default;
+  /**
+   * @brief if model is destroyed, must call it before next call to @ref setModelTransform and @ref resetModelTransform.
+   */
   void setModelTransformInvalid();
   void resetModelTransform();
   void setModelTransform(Reval<glm::mat4>* model, SettingMode mode);
@@ -32,9 +40,14 @@ public:
   void rotate(glm::vec3 const& axis, float degree);
   void scale(glm::vec3 const& factor);
   void scale(mt::Axis axis, float factor);
-  enum Mode { LOCAL, WORLD };
+  // The mode of translate and rotate method.
+  enum Mode {
+    LOCAL, // translated or rotated by its own coordinate system.
+    WORLD, // translated or rotated by the world coordinate system.
+  };
   void setMode(Mode mode);
   auto getMode() -> Mode { return _mode; }
+  // trans_matrix = translate_matrix * rotate_matrix * scale_matrix
   auto refLocation() -> Reval<glm::vec3>& { return _location; }
   auto refRotateEuler() -> Reval<glm::vec3>& { return _rotate_euler; }
   auto refScaleFactor() -> Reval<glm::vec3>& { return _scale_factor; }

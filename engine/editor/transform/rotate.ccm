@@ -82,10 +82,10 @@ private:
   float                      _cycle_length = 3.0f;
 
   void runLoop(fw::ActionContext const& ctx) override {
+    ToolBase::runLoop(ctx);
     if (!getTarget()) {
       return;
     }
-    ToolBase::runLoop(ctx);
     auto& input = fw::InputProcessor::getInstance();
     if (input[fw::Mouse::LEFT]->state == fw::ButtonState::DOWN) {
       auto iter = ranges::find_if(_planes, [](auto& x) { return x.isSelected(); });

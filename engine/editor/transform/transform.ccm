@@ -23,7 +23,11 @@ export namespace eg {
 class ObjectClickObserver : public fw::Action {
 public:
   ObjectClickObserver() : fw::Action(fw::Stage::BEFORE_RENDER) {}
-  void exclude(wptr<Node> object) { _exclusions.push_back(object); }
+  // When a node is passed in exclude(), the whole tree will be excluded.
+  void exclude(ptr<Node> object) {
+    TOY_ASSERT(object->isRoot());
+    _exclusions.push_back(object);
+  }
   auto getClick() -> Node* { return _clicked.expired() ? nullptr : _clicked.lock().get(); }
 
 private:
@@ -35,9 +39,16 @@ private:
     if (auto state = input.getState(fw::Mouse::LEFT)) {
       Node* selected = nullptr;
       if (auto* draw_unit = IdPipeline::getInstance().getSelectedDrawUnit()) {
-        selected = &draw_unit->getSceneObject()->getRoot();
+        selected = draw_unit->getSceneObject();
+        if (selected->isRoot()) {
+          selected = nullptr;
+        }
+        while (&selected->getParent() != &selected->getRoot()) {
+          selected = &selected->getParent();
+        }
         if (auto iter = ranges::find_if(
-              _exclusions, [selected](auto& object) { return object.lock().get() == selected; }
+              _exclusions,
+              [selected](auto& object) { return object.lock().get() == &selected->getRoot(); }
             );
             iter != _exclusions.end()) {
           selected = nullptr;

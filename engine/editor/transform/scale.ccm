@@ -47,10 +47,10 @@ private:
   glm::vec2                     _last_plane_factor;
 
   void runLoop(fw::ActionContext const& ctx) override {
+    ToolBase::runLoop(ctx);
     if (!getTarget()) {
       return;
     }
-    ToolBase::runLoop(ctx);
     auto& input = fw::InputProcessor::getInstance();
     if (input.getState(fw::Mouse::LEFT)->state == fw::ButtonState::DOWN) {
       auto& x_axis = _arrows[0];
