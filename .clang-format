@@ -3,8 +3,8 @@
 # https://clang.llvm.org/docs/ClangFormatStyleOptions.html
 # 语言: None, Cpp, Java, JavaScript, ObjC, Proto, TableGen, TextProto
 Language:	Cpp
-# 连续声明时，对齐所有声明的变量名
-AlignConsecutiveDeclarations:	true
+# 连续声明时(可跨注释)，对齐所有声明的变量名
+AlignConsecutiveDeclarations:	AcrossComments
 # 水平对齐二元和三元表达式的操作数
 AlignOperands:	true
 # 允许函数声明的所有参数在放在下一行
