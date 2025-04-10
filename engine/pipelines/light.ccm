@@ -15,11 +15,11 @@ import render;
 import framework;
 
 import math;
-import pipeline.base;
+import pipeline.render_pass;
 import pipeline.uniform;
 import engine.camera;
 
-namespace eg {
+namespace eg::light {
 
 auto vertex_layout_light = rd::VertexLayout{ {
   { Vertex::getVertexInfo(), { 0, 1, 2 } },
@@ -65,16 +65,21 @@ struct LightContext : public CustomLightContext<layout_model_light> {
   UniformBuffer<LightModelFragmentData> frag_data;
 };
 
+struct CameraData {
+  rd::align::mat4 view;
+  rd::align::mat4 proj;
+};
+
 export class LightPipeline : public RenderPass<LightPipeline, LightUnit> {
 public:
   auto fromDrawUnit(uint32 subpass_i, LightUnit& draw_unit) -> uptr<DrawContextBase> {
     if (_uplayer == draw_unit.isUpLayer()) {
       auto ret = std::make_unique<LightContext>(&draw_unit);
       ret->setDescriptorSet({
-        &ret->vertex_data,
-        &ret->frag_data,
-        &draw_unit.getTexture().getTexture(),
-        &draw_unit.getTexture().getTexture(),
+        ret->vertex_data,
+        ret->frag_data,
+        draw_unit.getTexture().getTexture(),
+        draw_unit.getTexture().getTexture(),
       });
       return ret;
     }
@@ -94,6 +99,7 @@ public:
         .vertex_layout = vertex_layout_light,
         .unit_dset_layout = getLayoutHandle<layout_model_light>(),
         .global_dset_layout = getLayoutHandle<layout_global_light>(),
+        .push_constants = { rd::PushConstantInfo::get<CameraData>(VK_SHADER_STAGE_VERTEX_BIT) },
       },
     };
     auto info = RenderPassInfo{
@@ -103,27 +109,33 @@ public:
       .pipelines = std::move(pipeline_infos),
     };
     RenderPass::init({ info });
+    setPushConstant(0, VK_SHADER_STAGE_VERTEX_BIT, _camera_data);
     if (clear_op == CLEAR_DEPST) {
       setDepstClearValue(0, 1.0f);
     } else if (clear_op == CLEAR_ALL) {
       setColorClearValue(0, { 0.5f, 0.5f, 0.5f, 1.0f });
       setDepstClearValue(0, 1.0f);
     }
-    _dset_global_light = { &_uniform_light };
+    _dset_global_light = { _uniform_light };
     setGlobalDescriptorSet(0, &_dset_global_light);
   }
 
   auto getLight() -> LightData& { return _uniform_light.get(); }
 
   void draw(RenderTarget* color, RenderTarget* depth) {
+    _camera_data = CameraData{
+      .view = Camera::getInstance().getView().get(),
+      .proj = Camera::getInstance().getProj().get(),
+    };
     _uniform_light->view_pos = Camera::getInstance().getViewPos();
     RenderPass::draw({ color }, { depth });
   }
 
 private:
+  CameraData                                   _camera_data;
   bool                                         _uplayer = false;
   UniformBuffer<LightData>                     _uniform_light;
   rd::meta::DescriptorSet<layout_global_light> _dset_global_light;
 };
 
-} // namespace eg
+} // namespace eg::light

@@ -3,15 +3,19 @@ module:
     provide: pipeline.basic
 - uniform.ccm:
     provide: pipeline.uniform
-- base.ccm:
-    provide: pipeline.base
-- light.ccm:
-    provide: pipeline.light
-- loop.ccm:
-    provide: pipeline.loop
 - render_pass.ccm:
     provide: pipeline.render_pass
+- light.ccm:
+    provide: pipeline.light
+- shadow_map.ccm:
+    provide: pipeline.shadow_map
+- loop.ccm:
+    provide: pipeline.loop
+- render_pass_base.ccm:
+    provide: pipeline.render_pass_base
 - id.ccm:
     provide: pipeline.id
 - render_target.ccm:
     provide: pipeline.render_target
+- depth2color.ccm:
+    provide: pipeline.depth2color

@@ -15,11 +15,22 @@ export namespace eg {
 class RenderTarget : public rd::FrameImage, public toy::Observer<VkExtent2D> {
 public:
   RenderTarget() = default;
-  RenderTarget(VkFormat format, toy::Observable<VkExtent2D>* extent_reval, VkExtent2D extent) {
-    init(format, extent_reval, extent);
+  RenderTarget(
+    VkFormat                     format,
+    toy::Observable<VkExtent2D>* extent_reval,
+    VkExtent2D                   extent,
+    VkImageUsageFlags            extra_usage = 0
+  ) {
+    init(format, extent_reval, extent, extra_usage);
   }
-  void init(VkFormat format, toy::Observable<VkExtent2D>* extent_reval, VkExtent2D extent) {
+  void init(
+    VkFormat                     format,
+    toy::Observable<VkExtent2D>* extent_reval,
+    VkExtent2D                   extent,
+    VkImageUsageFlags            extra_usage = 0
+  ) {
     _format = format;
+    _extra_usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | extra_usage;
     _extent_reval = extent_reval;
     _extent_reval->addObserver(this);
     rd::FrameImage::operator=({
@@ -27,7 +38,7 @@ public:
       extent.width,
       extent.height,
       VK_SAMPLE_COUNT_1_BIT,
-      VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+      _extra_usage,
     });
   }
   UNCOPYABLE_MOVEABLE(RenderTarget);
@@ -56,7 +67,7 @@ public:
       extent.width,
       extent.height,
       VK_SAMPLE_COUNT_1_BIT,
-      VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+      _extra_usage,
     });
     for (auto& [sample_count, target] : _ms_targets) {
       target = { _format, extent.width, extent.height, sample_count, 0 };
@@ -75,6 +86,7 @@ public:
 
 private:
   VkFormat                                                  _format;
+  VkImageUsageFlags                                         _extra_usage{};
   toy::Observable<VkExtent2D>*                              _extent_reval = nullptr;
   std::unordered_map<VkSampleCountFlagBits, rd::FrameImage> _ms_targets;
 

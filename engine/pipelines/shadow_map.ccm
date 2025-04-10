@@ -1,0 +1,82 @@
+module;
+#include <toy.h>
+export module pipeline.shadow_map;
+
+import pipeline.render_target;
+import engine.base;
+import engine.texture;
+import engine.object;
+import engine.mesh;
+import std;
+import toy;
+import glm;
+
+import render;
+import framework;
+
+import math;
+import pipeline.render_pass;
+import pipeline.uniform;
+import engine.camera;
+
+namespace eg::shadow_map {
+
+auto vertex_layout = rd::VertexLayout{ {
+  { Vertex::getVertexInfo(), { 0 } },
+} };
+
+constexpr auto layout_model = rd::meta::DescriptorLayout{
+  rd::meta::UniformBinding{ rd::meta::type<rd::align::mat4>(), rd::meta::Stage::VERTEX },
+};
+
+struct ShadowMapContext : public CustomLightContext<layout_model> {
+  using CustomLightContext::CustomLightContext;
+  auto checkNeedDestroy() -> bool override { return false; }
+  void beforeRecord() override { model = getDrawUnit().getTransform().get(); }
+  UniformBuffer<rd::align::mat4> model;
+};
+
+export struct LightData {
+  rd::align::mat4 view;
+  rd::align::mat4 proj;
+};
+
+export class Pipeline : public RenderPass<Pipeline, LightUnit> {
+public:
+  auto fromDrawUnit(uint32 subpass_i, LightUnit& draw_unit) -> uptr<DrawContextBase> {
+    auto ret = std::make_unique<ShadowMapContext>(&draw_unit);
+    ret->setDescriptorSet({ ret->model });
+    return ret;
+  }
+
+  Pipeline() = default;
+  void init() {
+    auto pipeline_infos = std::vector<PipelineInfo>{
+      PipelineInfo{
+        .depst = { { .attachment = 0, .depth = { {} } } },
+        .vertex_shader_name = "shadow_map.vert",
+        .frag_shader_name = "shadow_map.frag",
+        .vertex_layout = vertex_layout,
+        .unit_dset_layout = getLayoutHandle<layout_model>(),
+        .push_constants = { rd::PushConstantInfo::get<LightData>(VK_SHADER_STAGE_VERTEX_BIT) },
+      },
+    };
+    auto info = RenderPassInfo{
+      .depsts = { { VK_FORMAT_D32_SFLOAT, true } },
+      .multi_sampling = std::nullopt,
+      .pipelines = std::move(pipeline_infos),
+    };
+    RenderPass::init({ info });
+    setDepstClearValue(0, 1.0f);
+    setPushConstant(0, VK_SHADER_STAGE_VERTEX_BIT, _light_data);
+  }
+
+  auto getLightData() -> LightData& { return _light_data; }
+
+  void draw(RenderTarget* depth) { RenderPass::draw({}, { depth }); }
+
+private:
+  LightData _light_data;
+};
+
+} // namespace eg::shadow_map

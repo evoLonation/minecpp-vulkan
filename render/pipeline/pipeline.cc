@@ -40,13 +40,13 @@ void PipelineDrawer::bindVertexBuffer(uint32 binding, VertexBuffer* vertex_buffe
     auto offset = VkDeviceSize{ 0 };
     auto buffer = vertex_buffer->get();
     vkCmdBindVertexBuffers(_cmdbuf, binding, 1, &buffer, &offset);
-    if (!_index) {
-      if (_vertex_count != 0) {
-        TOY_CHECK_ASSERT(_vertex_count == vertex_buffer->getVertexNumber());
-      } else {
-        _vertex_count = vertex_buffer->getVertexNumber();
-      }
-    }
+    _vertex_count = vertex_buffer->getVertexNumber();
+    // if (_vertex_count != 0) {
+    //   // vertex number must be the same for all bindings
+    //   TOY_CHECK_ASSERT(_vertex_count == vertex_buffer->getVertexNumber());
+    // } else {
+    //   _vertex_count = vertex_buffer->getVertexNumber();
+    // }
     _bound_vertex_bufs[binding] = true;
   } else {
     _vertex_buffers->push_back(vertex_buffer);
@@ -56,10 +56,15 @@ void PipelineDrawer::bindVertexBuffer(uint32 binding, VertexBuffer* vertex_buffe
 void PipelineDrawer::bindIndexBuffer(IndexBuffer* index_buffer) {
   if (_execute_type == RECORD) {
     vkCmdBindIndexBuffer(_cmdbuf, *index_buffer, 0, index_buffer->getIndexType());
-    _vertex_count = index_buffer->getIndexNumber();
-    _index = true;
+    _index_count = index_buffer->getIndexNumber();
   } else {
     _index_buffers->push_back(index_buffer);
+  }
+}
+
+void PipelineDrawer::unbindIndexBuffer() {
+  if (_execute_type == RECORD) {
+    _index_count = std::nullopt;
   }
 }
 
@@ -96,14 +101,15 @@ void PipelineDrawer::setStencilReference(uint32 reference) {
 
 void PipelineDrawer::draw() {
   if (_execute_type == RECORD) {
-    TOY_CHECK_ASSERT(_vertex_count > 0);
+    TOY_CHECK_ASSERT(*_vertex_count > 0);
     TOY_CHECK_ASSERT(ranges::all_of(_bound_vertex_bufs, std::identity{}), _bound_vertex_bufs);
     TOY_CHECK_ASSERT(ranges::all_of(_bound_sets, std::identity{}), _bound_sets);
     TOY_CHECK_ASSERT(ranges::all_of(_bound_pushes, std::identity{}), _bound_pushes);
-    if (_index) {
-      vkCmdDrawIndexed(_cmdbuf, _vertex_count, 1, 0, 0, 0);
+    TOY_CHECK_ASSERT(_vertex_count);
+    if (_index_count) {
+      vkCmdDrawIndexed(_cmdbuf, _index_count.value(), 1, 0, 0, 0);
     } else {
-      vkCmdDraw(_cmdbuf, _vertex_count, 1, 0, 0);
+      vkCmdDraw(_cmdbuf, _vertex_count.value(), 1, 0, 0);
     }
   }
 }

@@ -230,7 +230,7 @@ public:
     createEdge(*_edge_2, unit_2, unit_1);
   }
   auto isSelected() -> bool {
-    auto* selected = IdPipeline::getInstance().getSelectedDrawUnit();
+    auto* selected = id::IdPipeline::getInstance().getSelectedDrawUnit();
     return _cube->getDrawUnit() == selected || _edge_1->getDrawUnit() == selected ||
            _edge_2->getDrawUnit() == selected;
   }
@@ -296,7 +296,7 @@ public:
     _arrow->attachTo(*_root);
   }
   auto isSelected() -> bool {
-    auto* selected = IdPipeline::getInstance().getSelectedDrawUnit();
+    auto* selected = id::IdPipeline::getInstance().getSelectedDrawUnit();
     return _arrow->getDrawUnit() == selected;
   }
   void setDragging(bool dragging) {

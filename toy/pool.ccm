@@ -2,6 +2,7 @@ module;
 #include <toy.h>
 export module toy.pool;
 
+import toy.log;
 import std;
 
 export namespace toy {
@@ -33,7 +34,7 @@ public:
     return self.extract();
   }
 
-  ONLY_MOVEABLE(ObjectPoolHelper);
+  UNCOPYABLE_MOVEABLE(ObjectPoolHelper);
 };
 
 template <typename P, typename T>
@@ -48,8 +49,8 @@ template <typename P, typename T>
   }
 class RecyclableObject : public T {
 public:
-  RecyclableObject() = default;
-  RecyclableObject(P* pool) : T{ pool->allocate() }, _pool(pool) {}
+  RecyclableObject() { TOY_ASSERT(!T::valid()); }
+  RecyclableObject(P& pool) : T{ pool.allocate() }, _pool(&pool) {}
   ~RecyclableObject() { recycle(); }
   RecyclableObject(const RecyclableObject&) noexcept = delete;
   RecyclableObject(RecyclableObject&&) noexcept = default;

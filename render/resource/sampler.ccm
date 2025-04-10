@@ -15,7 +15,25 @@ import toy;
 
 export namespace rd {
 
-class SampledTexture : toy::AutoMoveAssigner<SampledTexture>, public DescriptorResource {
+class SampledImage {
+public:
+  SampledImage() = default;
+  SampledImage(ImageManager& image, float max_anisotropy);
+  // only call when resource is NOT using as descriptor set
+  void setImage(ImageManager& image) { _image = &image; }
+  operator ResourceContext<VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER>();
+
+private:
+  ImageManager* _image;
+  rs::Sampler   _sampler;
+
+  static std::vector<VkFormat> _available_formats;
+
+public:
+  static auto checkPdevice(DeviceCapabilityBuilder& request) -> std::expected<void, std::string>;
+};
+
+class SampledTexture : toy::AutoMoveAssigner<SampledTexture> {
 public:
   SampledTexture() = default;
   SampledTexture(
@@ -25,39 +43,32 @@ public:
     bool                       mipmap,
     VkPipelineStageFlagBits    use_stage
   );
+  ~SampledTexture();
+  SampledTexture(const SampledTexture&) noexcept = delete;
+  SampledTexture(SampledTexture&&) noexcept;
+  auto operator=(const SampledTexture&) noexcept -> SampledTexture& = delete;
+  auto operator=(SampledTexture&&) noexcept -> SampledTexture&;
+
   static auto fromFile(const std::string& path, bool mipmap, VkPipelineStageFlagBits use_stage)
     -> SampledTexture;
   void writeContent(std::span<std::byte const> data);
   auto getImage() -> Image& { return _image; }
-  auto getSampler() const -> VkSampler { return _sampler; }
   auto getUseStage() const -> VkPipelineStageFlagBits { return _use_stage; }
-  auto getLayout() const -> VkImageLayout { return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; }
 
-  auto getDescriptorContext() -> Context override;
-
-  REGISTER_BEFORE_DESTROY(SampledTexture, {
-    if (_image.valid()) {
-      _image.getTracker().waitIdle();
-    }
-  })
+  operator ResourceContext<VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER>() { return _sampled_image; }
 
 private:
   VkPipelineStageFlagBits _use_stage;
   ImageLocalWriter        _writer;
   Image                   _image;
-  rs::Sampler             _sampler;
+  SampledImage            _sampled_image;
 
 private:
-  static std::vector<VkFormat> _formats;
-
   static constexpr auto _usage =
     VkImageUsageFlags{ VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                        VK_IMAGE_USAGE_TRANSFER_SRC_BIT };
   static constexpr auto _aspect = VK_IMAGE_ASPECT_COLOR_BIT;
   static inline auto    _max_anisotropy = float{};
-
-public:
-  static auto checkPdevice(DeviceCapabilityBuilder& request) -> std::expected<void, std::string>;
 };
 
 } // namespace rd

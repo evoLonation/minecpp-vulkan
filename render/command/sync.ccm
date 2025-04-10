@@ -107,7 +107,7 @@ private:
 };
 
 /**
- * @brief if constructed, must used (submit signal) before destroy
+ * @brief Must used (submit signal) before destroy
  */
 using DisposableSemaphore = toy::RecyclableObject<TimelineSemaphorePool, IncrementalSemaphore>;
 

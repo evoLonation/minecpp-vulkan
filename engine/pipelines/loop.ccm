@@ -2,6 +2,8 @@ module;
 #include <toy.h>
 export module pipeline.loop;
 
+import engine.camera;
+import math;
 import engine.base;
 import render;
 import <vulkan_config.h>;
@@ -9,6 +11,8 @@ import pipeline.render_target;
 import pipeline.basic;
 import pipeline.light;
 import pipeline.id;
+import pipeline.shadow_map;
+import pipeline.depth2color;
 import framework;
 import std;
 import toy;
@@ -23,9 +27,20 @@ public:
     _id_output.init(VK_FORMAT_R32_UINT, &_reval_extent, extent);
     _depth.init(VK_FORMAT_D32_SFLOAT, &_reval_extent, extent);
     _depth_id.init(VK_FORMAT_D32_SFLOAT, &_reval_extent, extent);
+    _shadow_map.init(
+      VK_FORMAT_D32_SFLOAT, &_reval_extent, { 1024, 1024 }, VK_IMAGE_USAGE_SAMPLED_BIT
+    );
 
-    _light.init(false, LightPipeline::CLEAR_ALL);
-    _light_uplayer.init(true, LightPipeline::CLEAR_DEPST);
+    _light.init(false, light::LightPipeline::CLEAR_ALL);
+    _light_uplayer.init(true, light::LightPipeline::CLEAR_DEPST);
+    _shadow_map_pipeline.init();
+    _depth2color.init();
+
+    _depth2color.setDepth(_shadow_map);
+    _shadow_map_pipeline.getLightData() = shadow_map::LightData{
+      .view = mt::view::create(glm::vec3{ 0.0f, 0.0f, 3.0f }),
+      .proj = mt::proj::orthogonal(0, 6, 5, -5, -5, 5),
+    };
   }
 
   void runLoop(fw::ActionContext const& ctx) override {
@@ -33,10 +48,19 @@ public:
       _reval_extent.notify(rd::Presentation::getInstance().getSwapchain().getExtent());
     }
     RenderTarget::tryResizeAll();
+    if (ctx.recreated) {
+      _depth2color.setDepth(_shadow_map);
+    }
+    _shadow_map_pipeline.getLightData() = shadow_map::LightData{
+      .view = Camera::getInstance().getView().get(),
+      .proj = Camera::getInstance().getProj().get(),
+    };
     // _basic.draw(ctx);
     _light.draw(&_color, &_depth);
     _light_uplayer.draw(&_color, &_depth);
     _id.draw(&_id_output, &_depth, &_depth_id);
+    _shadow_map_pipeline.draw(&_shadow_map);
+    _depth2color.draw(&_color);
 
     auto submitter = rd::Submitter{ rd::FamilyType::TRANSFER };
     submitter.addNeedSync(
@@ -68,11 +92,14 @@ private:
   RenderTarget                _id_output;
   RenderTarget                _depth;
   RenderTarget                _depth_id;
+  RenderTarget                _shadow_map;
 
-  BasicPipeline _basic;
-  IdPipeline    _id;
-  LightPipeline _light;
-  LightPipeline _light_uplayer;
+  basic::BasicPipeline  _basic;
+  id::IdPipeline        _id;
+  light::LightPipeline  _light;
+  light::LightPipeline  _light_uplayer;
+  shadow_map::Pipeline  _shadow_map_pipeline;
+  depth2color::Pipeline _depth2color;
 };
 
 } // namespace eg

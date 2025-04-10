@@ -1,0 +1,236 @@
+module;
+#include <toy.h>
+export module pipeline.render_pass_base;
+
+import engine.base;
+import engine.object;
+import pipeline.render_target;
+import framework;
+import render;
+import std;
+import toy;
+
+export namespace eg {
+
+struct PipelineInfo {
+  std::vector<uint32>               colors;
+  std::optional<rd::DepstOption>    depst;
+  std::string                       vertex_shader_name;
+  std::string                       frag_shader_name;
+  VkPrimitiveTopology               topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+  VkCullModeFlagBits                cull_mode = VK_CULL_MODE_BACK_BIT;
+  rd::VertexLayout                  vertex_layout;
+  VkDescriptorSetLayout             unit_dset_layout;
+  VkDescriptorSetLayout             global_dset_layout; // nullable
+  std::vector<rd::PushConstantInfo> push_constants;
+};
+
+/**
+ * @brief  if use_present_attachment, the color index @ref PipelineInfo::colors is begin at the
+ * swapchain format
+ *
+ */
+struct RenderPassInfo {
+  struct AttachmentInfo {
+    VkFormat format;
+    bool     clear = false;
+  };
+  std::vector<AttachmentInfo>          colors;
+  std::vector<AttachmentInfo>          depsts;
+  std::optional<VkSampleCountFlagBits> multi_sampling;
+  std::vector<PipelineInfo>            pipelines;
+};
+
+class DrawContextBase {
+public:
+  DrawContextBase() = default;
+  UNCOPYABLE_MOVEABLE(DrawContextBase);
+  virtual void recordDraw(rd::PipelineDrawer& drawer) = 0;
+  /**
+   * @brief called on each frame in render stage before @ref recordDraw
+   */
+  virtual auto checkNeedDestroy() -> bool = 0;
+  virtual ~DrawContextBase() = default;
+};
+
+class RenderPassBase {
+public:
+  RenderPassBase() = default;
+  RenderPassBase(RenderPassInfo const& info) { init(info); }
+  void init(RenderPassInfo const& info) {
+    auto attachment_infos = std::vector<rd::AttachmentInfo>{};
+    {
+      // todo: better is_store setting to improve performance
+      for (auto& [format, clear] : info.colors) {
+        attachment_infos.push_back(rd::AttachmentInfo{
+          .format = format,
+          .sample_count = info.multi_sampling.value_or(VK_SAMPLE_COUNT_1_BIT),
+          .load_op = clear ? rd::LoadOp::CLEAR : rd::LoadOp::LOAD,
+        });
+        if (info.multi_sampling) {
+          attachment_infos.push_back(rd::AttachmentInfo{
+            .format = format,
+            .sample_count = VK_SAMPLE_COUNT_1_BIT,
+          });
+        }
+      }
+      for (auto& [format, clear] : info.depsts) {
+        attachment_infos.push_back(rd::AttachmentInfo{
+          .format = format,
+          .sample_count = info.multi_sampling.value_or(VK_SAMPLE_COUNT_1_BIT),
+          .load_op = clear ? rd::LoadOp::CLEAR : rd::LoadOp::LOAD,
+        });
+      }
+    }
+    auto subpass_infos = std::vector<rd::SubpassPipelineInfo>{};
+    for (auto& pipeline : info.pipelines) {
+      auto colors = std::vector<uint32>{};
+      auto resolves = std::vector<std::optional<uint32>>{};
+      for (auto i : pipeline.colors) {
+        if (info.multi_sampling) {
+          colors.push_back(i * 2);
+          resolves.push_back(i * 2 + 1);
+        } else {
+          colors.push_back(i);
+        }
+      }
+      auto dset_layouts = std::vector<VkDescriptorSetLayout>{ pipeline.unit_dset_layout };
+      if (pipeline.global_dset_layout) {
+        dset_layouts.push_back(pipeline.global_dset_layout);
+      }
+      auto subpass_info = rd::SubpassPipelineInfo{
+        .colors = colors,
+        .multi_sample = info.multi_sampling.transform([&](auto x) {
+          return rd::SubpassInfo::MultiSample{ resolves, x };
+        }),
+        .depst = pipeline.depst,
+        .vertex_shader_name = pipeline.vertex_shader_name,
+        .frag_shader_name = pipeline.frag_shader_name,
+        .topology = pipeline.topology,
+        .cull_mode = pipeline.cull_mode,
+        .vertex_layout = pipeline.vertex_layout,
+        .dset_layouts = std::move(dset_layouts),
+        .push_constants = pipeline.push_constants,
+      };
+      if (subpass_info.depst) {
+        subpass_info.depst->attachment +=
+          info.multi_sampling ? info.colors.size() * 2 : info.colors.size();
+      }
+      subpass_infos.push_back(subpass_info);
+    }
+    _render_pass = rd::RenderPassPipeline{ attachment_infos, subpass_infos };
+    _multi_sampling = info.multi_sampling;
+    _color_n = info.colors.size();
+    _global_dsets.resize(info.pipelines.size());
+    _push_constants.resize(info.pipelines.size());
+    _draw_contexts.resize(info.pipelines.size());
+    _unbound_units.resize(info.pipelines.size());
+  }
+  void setColorClearValue(uint32 index, rd::ColorClearValue clear_value) {
+    _render_pass.setColorClear(_multi_sampling ? index * 2 : index, clear_value);
+  }
+  void setDepstClearValue(uint32 index, rd::DepstClearValue clear_value) {
+    _render_pass.setDepstClear((_multi_sampling ? _color_n * 2 : _color_n) + index, clear_value);
+  }
+  void setGlobalDescriptorSet(uint32 index, rd::DescriptorSet* dset) {
+    _global_dsets.at(index) = dset;
+  }
+  template <typename T>
+  void setPushConstant(uint32 index, VkShaderStageFlags stage, T& data) {
+    _push_constants.at(index)[stage] = std::as_bytes(std::span{ &data, 1 });
+  }
+  void addDrawUnit(DrawUnitBase* draw_unit) {
+    for (auto& unbound_units : _unbound_units) {
+      unbound_units.insert(draw_unit);
+    }
+  }
+  void removeDrawUnit(DrawUnitBase* draw_unit) {
+    for (auto [draw_contexts, unbound_units] : views::zip(_draw_contexts, _unbound_units)) {
+      draw_contexts.erase(draw_unit);
+      unbound_units.erase(draw_unit);
+    }
+  }
+
+  void draw(std::vector<RenderTarget*> colors, std::vector<RenderTarget*> depsts) {
+    updateDrawContexts();
+    for (auto [index, draw_contexts, global_dset, push_constants] :
+         views::zip(views::iota(0u), _draw_contexts, _global_dsets, _push_constants)) {
+      _render_pass.setRecorder(index, [&](rd::PipelineDrawer drawer) {
+        for (auto& [stage, data] : push_constants) {
+          drawer.bindPushConstant(stage, data);
+        }
+        if (global_dset) {
+          drawer.bindDescriptorSet(1, global_dset);
+        }
+        for (auto& draw_ctx : draw_contexts | views::values) {
+          draw_ctx->recordDraw(drawer);
+        }
+      });
+    }
+    auto attachments = std::vector<rd::FrameImageManager*>{};
+    if (_multi_sampling) {
+      for (auto render_target : colors) {
+        attachments.push_back(&render_target->getMSTarget(_multi_sampling.value()));
+        attachments.push_back(render_target);
+      }
+    } else {
+      for (auto render_target : colors) {
+        attachments.push_back(render_target);
+      }
+    }
+    for (auto& depst : depsts) {
+      if (_multi_sampling) {
+        attachments.push_back(&depst->getMSTarget(_multi_sampling.value()));
+      } else {
+        attachments.push_back(depst);
+      }
+    }
+    _render_pass.recordDraw(attachments);
+  }
+
+  void updateDrawContexts() {
+    tryCreateContexts();
+    tryDestroyContexts();
+  }
+
+  void tryCreateContexts() {
+    for (auto [i, draw_contexts, unbound_units] :
+         views::zip(views::iota(0u), _draw_contexts, _unbound_units)) {
+      for (auto iter = unbound_units.begin(); iter != unbound_units.end();) {
+        if (auto draw_context = fromDrawUnitBase(i, **iter)) {
+          draw_contexts.emplace(*iter, std::move(draw_context));
+          iter = unbound_units.erase(iter);
+        } else {
+          ++iter;
+        }
+      }
+    }
+  }
+  void tryDestroyContexts() {
+    for (auto [draw_contexts, unbound_units] : views::zip(_draw_contexts, _unbound_units)) {
+      for (auto iter = draw_contexts.begin(); iter != draw_contexts.end();) {
+        if (iter->second->checkNeedDestroy()) {
+          iter = draw_contexts.erase(iter);
+          unbound_units.insert(iter->first);
+        } else {
+          ++iter;
+        }
+      }
+    }
+  }
+
+public:
+  virtual auto fromDrawUnitBase(uint32 subpass_i, DrawUnitBase& draw_unit)
+    -> uptr<DrawContextBase> = 0;
+
+private:
+  rd::RenderPassPipeline                                                          _render_pass;
+  std::optional<VkSampleCountFlagBits>                                            _multi_sampling;
+  uint32                                                                          _color_n;
+  std::vector<rd::DescriptorSet*>                                                 _global_dsets;
+  std::vector<std::unordered_map<VkShaderStageFlags, std::span<std::byte const>>> _push_constants;
+  std::vector<std::unordered_map<DrawUnitBase*, uptr<DrawContextBase>>>           _draw_contexts;
+  std::vector<std::unordered_set<DrawUnitBase*>>                                  _unbound_units;
+};
+
+} // namespace eg

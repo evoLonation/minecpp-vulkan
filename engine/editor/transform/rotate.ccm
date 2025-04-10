@@ -33,7 +33,7 @@ public:
   }
   auto getRoot() -> Node& { return *_root; }
   auto isSelected() -> bool {
-    auto* selected = IdPipeline::getInstance().getSelectedDrawUnit();
+    auto* selected = id::IdPipeline::getInstance().getSelectedDrawUnit();
     return _plane->getDrawUnit() == selected;
   }
   void setDragging(bool dragging) {

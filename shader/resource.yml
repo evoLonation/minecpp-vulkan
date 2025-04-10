@@ -11,3 +11,7 @@ shader:
 - solid_color.vert
 - light.vert
 - light.frag
+- shadow_map.vert
+- shadow_map.frag
+- depth2color.vert
+- depth2color.frag

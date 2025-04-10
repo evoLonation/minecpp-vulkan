@@ -197,7 +197,7 @@ auto CommandExecutor::getSignalInfos(std::vector<CommandBatch::SignalInfo> const
   auto signal_infos = std::vector<VkSemaphoreSubmitInfo>{};
   auto stage_sema_map = Waitable::StageSemaphoreMap{};
   for (auto& signal : signals) {
-    auto sema = DisposableSemaphore{ _sema_pool };
+    auto sema = DisposableSemaphore{ *_sema_pool };
     auto [handle, value] = sema.getDeviceSyncInfo();
     signal_infos.push_back(VkSemaphoreSubmitInfo{
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
@@ -211,7 +211,7 @@ auto CommandExecutor::getSignalInfos(std::vector<CommandBatch::SignalInfo> const
 }
 
 auto CommandExecutor::getSubmitInfo(CommandBatch const& batch) -> std::pair<SubmitInfo, Waitable> {
-  auto cmdbuf = DisposableCmdbuf{ &_cmdbuf_pool };
+  auto cmdbuf = DisposableCmdbuf{ _cmdbuf_pool };
   cmdbuf.record(batch.recorder);
   auto cmdbuf_info = std::make_unique<VkCommandBufferSubmitInfo>(VkCommandBufferSubmitInfo{
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,

@@ -2,6 +2,7 @@ module;
 #include <toy.h>
 export module pipeline.basic;
 
+import engine.camera;
 import engine.object;
 import pipeline.render_target;
 import engine.base;
@@ -14,9 +15,9 @@ import glm;
 import render;
 import framework;
 
-import pipeline.base;
+import pipeline.render_pass;
 
-namespace eg {
+namespace eg::basic {
 
 auto vertex_layout_basic = rd::VertexLayout{ {
   { Vertex::getVertexInfo(), { 0, 2 } },
@@ -52,16 +53,21 @@ struct ColorContext : public CustomLightContext<layout_model_color> {
   UniformBuffer<rd::align::vec3> color;
 };
 
+struct CameraData {
+  rd::align::mat4 view;
+  rd::align::mat4 proj;
+};
+
 export class BasicPipeline : public RenderPass<BasicPipeline, LightUnit> {
 public:
   auto fromDrawUnit(uint32 subpass_i, LightUnit& draw_unit) -> uptr<DrawContextBase> {
     if (subpass_i == 0) {
       auto ret = std::make_unique<TextureContext>(&draw_unit);
-      ret->setDescriptorSet({ &ret->transform, &draw_unit.getTexture().getTexture() });
+      ret->setDescriptorSet({ ret->transform, draw_unit.getTexture().getTexture() });
       return ret;
     } else if (subpass_i == 1 || subpass_i == 2) {
       auto ret = std::make_unique<ColorContext>(&draw_unit);
-      ret->setDescriptorSet({ &ret->transform, &ret->color });
+      ret->setDescriptorSet({ ret->transform, ret->color });
       ret->color = glm::vec3{ 0.5f, 0.5f, 0.5f }; // default color
       return ret;
     }
@@ -79,6 +85,7 @@ public:
         .cull_mode = VK_CULL_MODE_BACK_BIT,
         .vertex_layout = vertex_layout_basic,
         .unit_dset_layout = getLayoutHandle<layout_model_texture>(),
+        .push_constants = { rd::PushConstantInfo::get<CameraData>(VK_SHADER_STAGE_VERTEX_BIT) },
       },
       PipelineInfo{
         .colors = { 0 },
@@ -89,6 +96,7 @@ public:
         .cull_mode = VK_CULL_MODE_BACK_BIT,
         .vertex_layout = vertex_layout_color,
         .unit_dset_layout = getLayoutHandle<layout_model_color>(),
+        .push_constants = { rd::PushConstantInfo::get<CameraData>(VK_SHADER_STAGE_VERTEX_BIT) },
       },
       PipelineInfo{
         .colors = { 0 },
@@ -99,6 +107,7 @@ public:
         .cull_mode = VK_CULL_MODE_NONE,
         .vertex_layout = vertex_layout_color,
         .unit_dset_layout = getLayoutHandle<layout_model_color>(),
+        .push_constants = { rd::PushConstantInfo::get<CameraData>(VK_SHADER_STAGE_VERTEX_BIT) },
       },
     };
     auto info = RenderPassInfo{
@@ -108,11 +117,23 @@ public:
       .pipelines = std::move(pipeline_infos),
     };
     init(info);
+    setPushConstant(0, VK_SHADER_STAGE_VERTEX_BIT, _camera_data);
+    setPushConstant(1, VK_SHADER_STAGE_VERTEX_BIT, _camera_data);
+    setPushConstant(2, VK_SHADER_STAGE_VERTEX_BIT, _camera_data);
     setColorClearValue(0, { 0.5f, 0.5f, 0.5f, 1.0f });
     setDepstClearValue(0, 1.0f);
   }
 
-  void draw(RenderTarget* color, RenderTarget* depth) { RenderPass::draw({ color }, { depth }); }
+  void draw(RenderTarget* color, RenderTarget* depth) {
+    _camera_data = CameraData{
+      .view = Camera::getInstance().getView().get(),
+      .proj = Camera::getInstance().getProj().get(),
+    };
+    RenderPass::draw({ color }, { depth });
+  }
+
+private:
+  CameraData _camera_data;
 };
 
-} // namespace eg
+} // namespace eg::basic

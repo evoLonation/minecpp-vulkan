@@ -28,7 +28,6 @@ struct UniformBinding {
   uint32         count = 1;
 
   static constexpr Type type = Type::UNIFORM;
-  using ResourceType = UniformBuffer<DataType>;
 };
 
 struct TextureBinding {
@@ -36,7 +35,15 @@ struct TextureBinding {
   uint32 count = 1;
 
   static constexpr Type type = Type::SAMPLED_IMAGE;
-  using ResourceType = rd::SampledTexture;
+};
+
+constexpr auto toVkDescriptorType(Type type) -> VkDescriptorType {
+  switch (type) {
+  case Type::UNIFORM:
+    return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  case Type::SAMPLED_IMAGE:
+    return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  }
 };
 
 auto toBindingInfo(auto binding_info) -> BindingInfo {
@@ -46,14 +53,6 @@ auto toBindingInfo(auto binding_info) -> BindingInfo {
       return VK_SHADER_STAGE_VERTEX_BIT;
     case Stage::FRAGMENT:
       return VK_SHADER_STAGE_FRAGMENT_BIT;
-    }
-  };
-  auto toVkDescriptorType = [](Type type) -> VkDescriptorType {
-    switch (type) {
-    case Type::UNIFORM:
-      return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    case Type::SAMPLED_IMAGE:
-      return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     }
   };
   return BindingInfo{
@@ -93,33 +92,20 @@ private:
 };
 
 template <auto layout, auto... binding_infos>
-class DescriptorSet_ : public rd::DescriptorSet {
+class DescriptorSetImpl : public rd::DescriptorSet {
 public:
-  DescriptorSet_() = default;
-  template <typename ResourceType, uint32 count>
-  using ResourceBinding =
-    std::conditional_t<count == 1, ResourceType*, std::array<ResourceType*, count>>;
+  DescriptorSetImpl() = default;
+  template <Type type, uint32 count>
+  using ResourceBinding = std::conditional_t<
+    count == 1,
+    ResourceContext<toVkDescriptorType(type)>,
+    std::array<ResourceContext<toVkDescriptorType(type)>, count>>;
 
-  DescriptorSet_(
-    ResourceBinding<typename decltype(binding_infos)::ResourceType, binding_infos.count>... bindings
-  )
+  DescriptorSetImpl(ResourceBinding<decltype(binding_infos)::type, binding_infos.count>... bindings)
     : rd::DescriptorSet{
         &DescriptorPools::getInstance().getPool<layout>(),
-        { toResourceBinding(bindings)... },
+        { rd::ResourceBinding(bindings)... },
       } {}
-
-private:
-  static auto toResourceBinding(auto binding) -> rd::ResourceBinding {
-    if constexpr (ranges::range<decltype(binding)>) {
-      auto resources = std::vector<rd::DescriptorResource*>{};
-      for (auto* r : binding) {
-        resources.push_back(r);
-      }
-      return { resources };
-    } else {
-      return { binding };
-    }
-  }
 };
 
 /**
@@ -129,7 +115,7 @@ template <auto layout>
 using DescriptorSet =
   decltype(toy::applyIndexSequence<std::tuple_size_v<decltype(layout.toTuple())>>(
     []<size_t... indices>() {
-      return type<DescriptorSet_<layout, std::get<indices>(layout.toTuple())...>>{};
+      return type<DescriptorSetImpl<layout, std::get<indices>(layout.toTuple())...>>{};
     }
   ))::type;
 

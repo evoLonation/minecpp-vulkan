@@ -14,12 +14,12 @@ import render;
 import framework;
 
 import math;
-import pipeline.base;
+import pipeline.render_pass;
 import engine.object;
 import pipeline.uniform;
 import engine.camera;
 
-namespace eg {
+namespace eg::id {
 
 auto vertex_layout_id = rd::VertexLayout{ {
   { Vertex::getVertexInfo(), { 0 } },
@@ -46,6 +46,11 @@ struct IdContext : public CustomLightContext<layout_id> {
   }
 };
 
+struct CameraData {
+  rd::align::mat4 view;
+  rd::align::mat4 proj;
+};
+
 export class IdPipeline : public RenderPass<IdPipeline, LightUnit>,
                           public PROACTIVE_SINGLETON(IdPipeline) {
 public:
@@ -53,7 +58,7 @@ public:
     if ((subpass_i == 1) == draw_unit.isUpLayer()) {
       auto ret = std::make_unique<IdContext>(&draw_unit);
       ret->id = _last_allocated_id++;
-      ret->setDescriptorSet({ &ret->transform, &ret->id });
+      ret->setDescriptorSet({ ret->transform, ret->id });
       IdContext::draw_unit2id[&draw_unit] = ret->id;
       IdContext::id2draw_unit[ret->id] = &draw_unit;
       return ret;
@@ -70,6 +75,7 @@ public:
         .frag_shader_name = "id.frag",
         .vertex_layout = vertex_layout_id,
         .unit_dset_layout = getLayoutHandle<layout_id>(),
+        .push_constants = { rd::PushConstantInfo::get<CameraData>(VK_SHADER_STAGE_VERTEX_BIT) },
       },
       PipelineInfo{
         .colors = { 0 },
@@ -78,6 +84,7 @@ public:
         .frag_shader_name = "id.frag",
         .vertex_layout = vertex_layout_id,
         .unit_dset_layout = getLayoutHandle<layout_id>(),
+        .push_constants = { rd::PushConstantInfo::get<CameraData>(VK_SHADER_STAGE_VERTEX_BIT) },
       },
     };
     auto info = RenderPassInfo{
@@ -87,6 +94,8 @@ public:
       .pipelines = std::move(pipeline_infos),
     };
     init({ info });
+    setPushConstant(0, VK_SHADER_STAGE_VERTEX_BIT, _camera_data);
+    setPushConstant(1, VK_SHADER_STAGE_VERTEX_BIT, _camera_data);
     setColorClearValue(0, { 0u });
     setDepstClearValue(0, 1.0f);
     setDepstClearValue(1, 1.0f);
@@ -102,6 +111,10 @@ public:
   }
 
   void draw(RenderTarget* id_output, RenderTarget* depth, RenderTarget* depth_uplayer) {
+    _camera_data = CameraData{
+      .view = Camera::getInstance().getView().get(),
+      .proj = Camera::getInstance().getProj().get(),
+    };
     auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
     auto cursor = fw::InputProcessor::getInstance().getCursorState();
     if (cursor.visible) {
@@ -116,9 +129,10 @@ public:
   }
 
 private:
+  CameraData           _camera_data;
   rd::ImageLocalReader _reader;
   uint32               _current_id = 0;
   uint32               _last_allocated_id = 1;
 };
 
-} // namespace eg
+} // namespace eg::id

@@ -375,8 +375,8 @@ auto create(
 namespace proj {
 
 // transform projection coordinate to vulkan viewport coordinate
-// projection coordinate: x -> front, y -> left, z -> up
-// viewport coordinate: x -> right, y -> down, z -> front
+// projection coordinate: x -> front, y -> left, z -> up (right hand)
+// viewport coordinate: x -> right, y -> down, z -> front (also right hand)
 // the viewport coordinate unit vectors: x -> -y, y -> -z, z -> x
 const auto viewport = matrix({
   glm::vec4{ 0.0f, -1.0f, 0.0f, 0.0f },
@@ -387,8 +387,11 @@ const auto viewport = matrix({
 
 auto orthogonal(float near, float far, float left, float right, float bottom, float top)
   -> glm::mat4 {
-  auto t = translate(-glm::vec3{ (near + far) / 2, (left + right) / 2, (top + bottom) / 2 });
-  auto s = scale(glm::vec3{ 2 / (far - near), 2 / (left - right), 2 / (top - bottom) });
+  // note: before transformed by viewport, coordinate is right hand and x is front;
+  // front's range is [0, 1] after transform, other is [-1, 1]
+  // and remember left is y+, so left > right
+  auto t = translate(-glm::vec3{ near, (left + right) / 2, (top + bottom) / 2 });
+  auto s = scale(glm::vec3{ 1 / (far - near), 2 / (left - right), 2 / (top - bottom) });
   return viewport * s * t;
 }
 

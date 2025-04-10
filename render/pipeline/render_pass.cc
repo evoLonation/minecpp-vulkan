@@ -157,21 +157,31 @@ void RenderPassPipeline::recordDraw(std::span<FrameImageManager*> images) {
         );
       }
       for (auto* dset : dsets) {
-        for (auto resource : dset->getResources()) {
-          auto ctx = resource.resource->getDescriptorContext();
-          auto type = dset->getInfo()[resource.binding_i].type;
-          auto shader_stage = dset->getInfo()[resource.binding_i].stage;
-          using ImageContext = DescriptorResource::ImageContext;
-          using BufferContext = DescriptorResource::BufferContext;
-          if (auto* image_ctx = std::get_if<ImageContext>(&ctx)) {
-            auto stage = [&]() -> VkPipelineStageFlags {
-              switch (shader_stage) {
-              case VK_SHADER_STAGE_FRAGMENT_BIT:
-                return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-              default:
-                toy::throwf("unsupported shader stage");
-              }
-            }();
+        for (auto [binding_i, binding] : dset->getResourceBindings() | toy::enumerate) {
+          auto type = binding.getType();
+          auto shader_stage = dset->getInfo()[binding_i].stage;
+          auto resource_contexts = binding.getResourceContexts();
+          auto stage = [&]() -> VkPipelineStageFlags {
+            switch (shader_stage) {
+            case VK_SHADER_STAGE_FRAGMENT_BIT:
+              return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            case VK_SHADER_STAGE_VERTEX_BIT:
+              return VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+            default:
+              toy::throwf("unsupported shader stage");
+            }
+          }();
+          auto access = [&]() -> VkAccessFlags {
+            switch (type) {
+            case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+              return VK_ACCESS_SHADER_READ_BIT;
+            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+              return VK_ACCESS_UNIFORM_READ_BIT;
+            default:
+              toy::throwf("unsupported descriptor type");
+            }
+          }();
+          if (auto* image_ctxs = std::get_if<ResourceBinding::ImageContexts>(&resource_contexts)) {
             auto layout = [&]() -> VkImageLayout {
               switch (type) {
               case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
@@ -180,35 +190,16 @@ void RenderPassPipeline::recordDraw(std::span<FrameImageManager*> images) {
                 toy::throwf("unsupported descriptor type");
               }
             }();
-            auto access = [&]() -> VkAccessFlags {
-              switch (type) {
-              case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-                return VK_ACCESS_SHADER_READ_BIT;
-              default:
-                toy::throwf("unsupported descriptor type");
-              }
-            }();
-            submitter.addNeedSync(image_ctx->tracker, Scope{ stage, access }, layout);
-          } else if (auto* buffer_ctx = std::get_if<BufferContext>(&ctx)) {
-            auto stage = [&]() -> VkPipelineStageFlags {
-              switch (shader_stage) {
-              case VK_SHADER_STAGE_FRAGMENT_BIT:
-                return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-              case VK_SHADER_STAGE_VERTEX_BIT:
-                return VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
-              default:
-                toy::throwf("unsupported shader stage");
-              }
-            }();
-            auto access = [&]() -> VkAccessFlags {
-              switch (type) {
-              case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-                return VK_ACCESS_UNIFORM_READ_BIT;
-              default:
-                toy::throwf("unsupported descriptor type");
-              }
-            }();
-            submitter.addNeedSync(buffer_ctx->tracker, Scope{ stage, access });
+            for (auto& image_ctx : *image_ctxs) {
+              submitter.addNeedSync(image_ctx.tracker, Scope{ stage, access }, layout);
+            }
+          } else if (auto* buffer_ctxs =
+                       std::get_if<ResourceBinding::BufferContexts>(&resource_contexts)) {
+            for (auto& buffer_ctx : *buffer_ctxs) {
+              submitter.addNeedSync(buffer_ctx.tracker, Scope{ stage, access });
+            }
+          } else {
+            toy::throwf("unsupported resource context");
           }
         }
       }

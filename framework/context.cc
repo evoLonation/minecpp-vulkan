@@ -27,7 +27,7 @@ Context::Context(const std::string& app_name, uint32 width, uint32 height) {
   auto device_checkers = std::vector<rd::DeviceCapabilityChecker>{
     [&](auto& ctx) { return queue_requestor.checkPdevice(ctx); },
     std::bind(rd::Swapchain::checkPdevice, _surface->get(), _1),
-    rd::SampledTexture::checkPdevice,
+    rd::SampledImage::checkPdevice,
     rd::device_checkers::vertex,
     rd::device_checkers::sync,
     rd::device_checkers::attachment,

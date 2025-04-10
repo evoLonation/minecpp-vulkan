@@ -60,7 +60,7 @@ private:
 };
 
 /**
- * @brief if constructed, must used (submit cmdbuf and signal) before destroy
+ * @brief Must used (submit cmdbuf and signal) before destroy
  */
 using DisposableCmdbuf = toy::RecyclableObject<CommandBufferPool, CommandBuffer>;
 
@@ -105,17 +105,6 @@ struct CommandBatch {
   std::vector<SignalInfo>              signals;
   std::vector<RawWaitInfo>             raw_waits;
   std::vector<RawSignalInfo>           raw_signals;
-};
-
-struct RawWaitCommandBatch {
-  std::function<void(VkCommandBuffer)>                       recorder;
-  std::vector<std::pair<VkSemaphore, VkPipelineStageFlags2>> waits;
-  std::vector<VkPipelineStageFlags2>                         signals;
-};
-struct RawSignalCommandBatch {
-  std::function<void(VkCommandBuffer)>                       recorder;
-  std::vector<std::pair<Waitable*, VkPipelineStageFlags2>>   waits;
-  std::vector<std::pair<VkSemaphore, VkPipelineStageFlags2>> signals;
 };
 
 class CommandExecutor {

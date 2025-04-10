@@ -12,6 +12,12 @@ import <stb_image.h>;
 namespace rd {
 
 auto createSampler(float max_anisotropy) -> rs::Sampler {
+  TOY_ASSERT(
+    max_anisotropy <=
+      Device::getInstance().getPdevice().getProperties().limits.maxSamplerAnisotropy,
+    max_anisotropy,
+    Device::getInstance().getPdevice().getProperties().limits.maxSamplerAnisotropy
+  );
   toy::debugf("max_anisotropy: {}", max_anisotropy);
   // lod 是 lod 等级，用于选择纹理过滤模式等等
   // level 是在 lod 基础上计算得到的 mip 等级
@@ -52,10 +58,46 @@ auto createSampler(float max_anisotropy) -> rs::Sampler {
   return { sampler_info };
 }
 
-decltype(SampledTexture::_formats) SampledTexture::_formats = {
+SampledImage::SampledImage(ImageManager& image, float max_anisotropy) {
+  TOY_ASSERT(toy::find(_available_formats, image.getFormat()));
+  TOY_ASSERT(image.getUsage() & VK_IMAGE_USAGE_SAMPLED_BIT);
+  _image = &image;
+  _sampler = createSampler(max_anisotropy);
+}
+
+SampledImage::operator ResourceContext<VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER>() {
+  return { ImageResourceContext{
+    .dscriptor_info =
+      VkDescriptorImageInfo{
+        .sampler = _sampler,
+        .imageView = _image->getImageView(),
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+      },
+    .tracker = &_image->getTracker(),
+  } };
+}
+
+decltype(SampledImage::_available_formats) SampledImage::_available_formats = {
   VK_FORMAT_R8G8B8A8_SRGB,
   VK_FORMAT_R32G32B32A32_SFLOAT,
+  VK_FORMAT_D32_SFLOAT,
 };
+
+auto SampledImage::checkPdevice(DeviceCapabilityBuilder& request)
+  -> std::expected<void, std::string> {
+  if (!request.enableFeature(&VkPhysicalDeviceFeatures::samplerAnisotropy)) {
+    return std::unexpected{ "sampler anisotropy not supported" };
+  }
+  if (!request.getPdevice().checkFormatSupport(
+        FormatTarget::OPTIMAL_TILING,
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+          VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT,
+        _available_formats
+      )) {
+    return std::unexpected{ "formats is not support for sampled texture" };
+  }
+  return {};
+}
 
 SampledTexture::SampledTexture(
   std::span<std::byte const> data,
@@ -63,9 +105,8 @@ SampledTexture::SampledTexture(
   VkExtent2D                 extent,
   bool                       mipmap,
   VkPipelineStageFlagBits    use_stage
-)
-  : DescriptorResource{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER }, _use_stage{ use_stage } {
-  TOY_ASSERT(toy::find(_formats, format));
+) {
+  _use_stage = use_stage;
   // todo: just execute once in whole program
   _max_anisotropy = Device::getInstance().getPdevice().getProperties().limits.maxSamplerAnisotropy;
   auto [width, height] = extent;
@@ -73,7 +114,7 @@ SampledTexture::SampledTexture(
   _image = Image{
     format, width, height, _usage, mipmap, VK_SAMPLE_COUNT_1_BIT,
   };
-  _sampler = createSampler(_max_anisotropy);
+  _sampled_image = SampledImage{ _image, _max_anisotropy };
   _writer.writeImage(
     _image,
     _aspect,
@@ -81,6 +122,32 @@ SampledTexture::SampledTexture(
     Scope{ _use_stage, VK_ACCESS_SHADER_READ_BIT },
     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
   );
+}
+
+SampledTexture::~SampledTexture() {
+  if (_image.valid()) {
+    _image.getTracker().waitIdle();
+  }
+}
+
+SampledTexture::SampledTexture(SampledTexture&& other) noexcept {
+  _use_stage = other._use_stage;
+  _writer = std::move(other._writer);
+  _image = std::move(other._image);
+  _sampled_image = std::move(other._sampled_image);
+  _sampled_image.setImage(_image);
+}
+
+auto SampledTexture::operator=(SampledTexture&& other) noexcept -> SampledTexture& {
+  if (_image.valid()) {
+    _image.getTracker().waitIdle();
+  }
+  _use_stage = other._use_stage;
+  _writer = std::move(other._writer);
+  _image = std::move(other._image);
+  _sampled_image = std::move(other._sampled_image);
+  _sampled_image.setImage(_image);
+  return *this;
 }
 
 auto SampledTexture::fromFile(
@@ -111,34 +178,6 @@ void SampledTexture::writeContent(std::span<std::byte const> data) {
     Scope{ _use_stage, VK_ACCESS_SHADER_READ_BIT },
     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
   );
-}
-
-auto SampledTexture::getDescriptorContext() -> Context {
-  return ImageContext{
-    .dscriptor_info =
-      VkDescriptorImageInfo{
-        .sampler = getSampler(),
-        .imageView = getImage().getImageView(),
-        .imageLayout = getLayout(),
-      },
-    .tracker = &_image.getTracker(),
-  };
-}
-
-auto SampledTexture::checkPdevice(DeviceCapabilityBuilder& request)
-  -> std::expected<void, std::string> {
-  if (!request.enableFeature(&VkPhysicalDeviceFeatures::samplerAnisotropy)) {
-    return std::unexpected{ "sampler anisotropy not supported" };
-  }
-  if (!request.getPdevice().checkFormatSupport(
-        FormatTarget::OPTIMAL_TILING,
-        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
-          VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT,
-        _formats
-      )) {
-    return std::unexpected{ "formats is not support for sampled texture" };
-  }
-  return {};
 }
 
 }; // namespace rd

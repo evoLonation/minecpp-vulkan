@@ -67,14 +67,13 @@ private:
  */
 template <typename DataType>
   requires std::is_trivially_copyable_v<DataType> && std::is_default_constructible_v<DataType>
-class UniformBuffer : private HostBuffer, public DescriptorResource {
+class UniformBuffer : private HostBuffer {
 public:
   UniformBuffer() : UniformBuffer(DataType{}) {}
   UniformBuffer(DataType const& data)
     : HostBuffer(
         std::as_bytes(std::span<DataType const>{ &data, 1 }), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
-      ),
-      DescriptorResource{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER } {}
+      ) {}
 
   void update(DataType const& data) {
     // because uniform is read only, so no need to execute available operation from device to host
@@ -88,8 +87,8 @@ public:
     ranges::copy(getMemory().data(), writable.begin());
     return data;
   }
-  auto getDescriptorContext() -> Context override {
-    return BufferContext{
+  operator ResourceContext<VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER>() {
+    return { BufferResourceContext{
       .dscriptor_info =
         VkDescriptorBufferInfo{
           .buffer = get(),
@@ -97,7 +96,7 @@ public:
           .range = VK_WHOLE_SIZE,
         },
       .tracker = &getTracker(),
-    };
+    } };
   }
 };
 

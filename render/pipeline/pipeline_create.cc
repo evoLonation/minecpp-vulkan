@@ -144,6 +144,7 @@ auto createGraphicsPipeline(
     .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
     .pNext = nullptr,
     .flags = 0,
+    // Requires the VkPhysicalDeviceFeatures::depthBounds feature to be supported.
     .depthBoundsTestEnable = VK_FALSE,
     .minDepthBounds = 0.0f,
     .maxDepthBounds = 1.0f,
