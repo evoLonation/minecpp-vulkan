@@ -285,11 +285,31 @@ TEST(Enum) {
 
 enum class Giao2 { A, B, C, MAX_ENUM_VALUE };
 
+GENERATE_FLAGS(Giao2)
+
 TEST(EnumSet) {
-  static_assert(ranges::input_range<EnumSet<Giao2>>);
-  auto set = EnumSet<Giao2>{};
+  static_assert(ranges::input_range<EnumFlags<Giao2>>);
+  using enum Giao2;
+  auto set = Giao2Flags{};
+  set = { A, C };
+  set = A | C | B;
+  set = A & C & B;
+  set = A ^ C ^ B;
+  set = set;
+  set = set | A;
+  set = set & A;
+  set = set ^ A;
+  set |= A;
+  set |= set;
+  set &= A;
+  set &= set;
+  set ^= A;
+  set ^= set;
+  bool a = set;
+  a = set[A];
+  a = set == set;
+
   for (Giao2 a : set) {
-    toy::throwf(a != Giao2::B && a != Giao2::MAX_ENUM_VALUE, "enumset test wrong");
+    toy::throwf(a != Giao2::B && a != Giao2::MAX_ENUM_VALUE, "EnumFlags test wrong");
   }
-  set = EnumSet<Giao2>{ Giao2::A, Giao2::C };
 }

@@ -70,28 +70,46 @@ consteval auto __splitString(const char (&buf)[N])
 
 template <typename EnumT, EnumT max_enum_value = EnumT::MAX_ENUM_VALUE>
   requires((size_t)max_enum_value < 0xff)
-struct EnumSet {
-  std::bitset<(size_t)max_enum_value> _bitset;
-  EnumSet(std::initializer_list<EnumT> values) {
+class EnumFlags {
+public:
+  EnumFlags(std::initializer_list<EnumT> values) {
     for (auto value : values) {
       _bitset.set((size_t)value);
     }
   }
-  EnumSet(EnumT value) { _bitset.set((size_t)value); }
-  EnumSet() = default;
-  friend auto operator|(EnumSet set, EnumT key) -> EnumSet {
-    set._bitset.set((size_t)key);
-    return set;
+  EnumFlags(EnumT value) { _bitset.set((size_t)value); }
+  EnumFlags() = default;
+  friend auto operator|(EnumFlags a, EnumFlags b) -> EnumFlags { return a._bitset | b._bitset; }
+  friend auto operator&(EnumFlags a, EnumFlags b) -> EnumFlags { return a._bitset & b._bitset; }
+  friend auto operator^(EnumFlags a, EnumFlags b) -> EnumFlags { return a._bitset ^ b._bitset; }
+
+  auto operator|=(EnumFlags b) -> EnumFlags& {
+    _bitset |= b._bitset;
+    return *this;
   }
-  friend auto operator|(EnumSet a, EnumSet b) -> EnumSet { return a._bitset | b._bitset; }
+  auto operator&=(EnumFlags b) -> EnumFlags& {
+    _bitset &= b._bitset;
+    return *this;
+  }
+  auto operator^=(EnumFlags b) -> EnumFlags& {
+    _bitset ^= b._bitset;
+    return *this;
+  }
+  operator bool() const { return _bitset.any(); }
+  auto operator[](EnumT key) const -> bool { return _bitset[(size_t)key]; }
+
+  friend auto operator==(const EnumFlags& a, const EnumFlags& b) -> bool {
+    return a._bitset == b._bitset;
+  }
+
   class Iterator {
   private:
-    size_t         _index;
-    const EnumSet* _set;
+    size_t           _index;
+    const EnumFlags* _set;
 
   public:
     Iterator() = default;
-    Iterator(const EnumSet& set, size_t index) : _index(index), _set(&set) {
+    Iterator(const EnumFlags& set, size_t index) : _index(index), _set(&set) {
       while (_index < _set->_bitset.size() && !_set->_bitset[_index]) {
         _index++;
       }
@@ -116,6 +134,10 @@ struct EnumSet {
 
   auto begin() const { return Iterator(*this, 0); }
   auto end() const { return Iterator(*this, _bitset.size()); }
+
+private:
+  EnumFlags(std::bitset<(size_t)max_enum_value> bitset) : _bitset(bitset) {}
+  std::bitset<(size_t)max_enum_value> _bitset;
 };
 
 } // namespace toy

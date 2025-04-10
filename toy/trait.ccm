@@ -34,12 +34,11 @@ struct Tuple<T, Ts...> {
     return std::tuple_cat(std::tuple{ head }, tail.toTuple());
   }
 };
-template <typename T>
-struct Tuple<T> {
-  T head;
-
-  constexpr auto toTuple() const -> std::tuple<T> { return std::tuple{ head }; }
+template <>
+struct Tuple<> {
+  constexpr auto toTuple() const -> std::tuple<> { return {}; }
 };
+
 template <typename... Ts>
 Tuple(Ts&&... ts) -> Tuple<Ts...>;
 

@@ -91,4 +91,10 @@ void beforeDestroy() __VA_ARGS__ public:
   friend MoveOperation<cls>;                                                                       \
   void additionalMoveOp(cls&& e) __VA_ARGS__
 
+#define GENERATE_FLAGS(Enum, ...)                                                                  \
+  using Enum##Flags = toy::EnumFlags<Enum, ##__VA_ARGS__>;                                         \
+  auto operator|(Enum a, Enum b)->Enum##Flags { return Enum##Flags{ a, b }; }                      \
+  auto operator&(Enum a, Enum b)->Enum##Flags { return Enum##Flags{ a, b }; }                      \
+  auto operator^(Enum a, Enum b)->Enum##Flags { return Enum##Flags{ a, b }; }
+
 #endif
