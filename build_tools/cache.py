@@ -6,16 +6,21 @@ import pickle
 from typing import Any, Callable, ParamSpec, TypeVar, get_type_hints
 import subprocess as sp
 from public import NinjaFile, Root, Workspace
-
+from tool import (
+    Platform,
+    current_platform,
+)
 
 Param = ParamSpec("Param")
 RetType = TypeVar("RetType")
 
 enable_avoid_call: bool = True
 
+
 def set_enable_avoid_call(enable: bool):
     global enable_avoid_call
     enable_avoid_call = enable
+
 
 class CacheCtx:
     def __init__(self, func: Callable):
@@ -67,6 +72,7 @@ def cached(func: Callable[Param, RetType]) -> Callable[Param, RetType]:
             first_init = False
             os.makedirs(ctx.cache_dir(), exist_ok=True)
         return ctx
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs) -> Any:
         ctx = init_ctx()
@@ -85,12 +91,8 @@ def cached(func: Callable[Param, RetType]) -> Callable[Param, RetType]:
         if need_dep_file:
             if path.exists(ctx.Ninja.get_path()):
                 try:
-                    result = ctx.Ninja.execute(stdout=sp.PIPE)
-                    dep_file_cached = (
-                        result.stdout.decode("utf-8")
-                        .rstrip()
-                        .endswith("ninja: no work to do.")
-                    )
+                    result = ctx.Ninja.execute()
+                    dep_file_cached = result.rstrip().endswith("ninja: no work to do.")
                 except sp.CalledProcessError:
                     dep_file_cached = False
         else:
@@ -112,9 +114,15 @@ def cached(func: Callable[Param, RetType]) -> Callable[Param, RetType]:
         pickle.dump(mixed_params, open(ctx.param_file(), "wb"))
         if need_dep_file:
             with ctx.Ninja.open() as writer:
+                if current_platform == Platform.WINDOWS:
+                    command = "cmd.exe /c echo changed"
+                elif current_platform == Platform.MACOS:
+                    command = "echo changed"
+                else:
+                    raise RuntimeError(f"Unsupported platform: {current_platform}")
                 writer.rule(
                     "changed",
-                    command='cmd.exe /c echo "changed"',
+                    command=command,
                     description="Checking if files have been changed",
                 )
                 writer.build(
@@ -122,7 +130,7 @@ def cached(func: Callable[Param, RetType]) -> Callable[Param, RetType]:
                     rule="changed",
                     inputs=[path.abspath(file) for file in cache_dep_files],
                 )
-            ctx.Ninja.execute(stdout=sp.PIPE)
+            ctx.Ninja.execute()
         return result
 
     return wrapper

@@ -5,6 +5,7 @@ import subprocess as sp
 import argparse
 import json
 import tempfile
+from build_tools.tool import run_command
 from public import Compiler, DepCtx, Root, open_ninja
 
 parser = argparse.ArgumentParser()
@@ -62,17 +63,13 @@ with tempfile.NamedTemporaryFile(
     temp_file.flush()
     # print(f"temp file path: {temp_file_path}")
     # print(f"content: \n{source}")
-    command = Compiler.compile(
-        args.includes, None, temp_file_path, Compiler.obj_file(args.source)
-    )
+    command = Compiler.scan_deps(args.includes, temp_file_path)
     try:
-        result = sp.run(
-            f"clang-scan-deps -format=p1689 -- {command}", stdout=sp.PIPE, check=True
-        )
+        result = run_command(command)
     except Exception as e:
-        raise RuntimeError(e, f"the source file is {args.source}")
+        raise RuntimeError(f"The source file is {args.source}") from e
 
-rule = json.loads(result.stdout)["rules"][0]
+rule = json.loads(result)["rules"][0]
 provide = None
 if "provides" in rule:
     provide = rule["provides"][0]["logical-name"]

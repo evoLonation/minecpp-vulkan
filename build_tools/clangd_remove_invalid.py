@@ -24,12 +24,10 @@ def kill_process_by_name(process_name: str):
         print(f"Failed to terminate process {process_name}: {e}")
 
 
-def get_compile_commands_content() -> bytes:
+def get_compile_commands_content() -> str:
     Rule = CompileNinja.Rule
-    result = NinjaFile.execute(
-        f"-t compdb {Rule.compile} {Rule.precompile}", stdout=sp.PIPE
-    )
-    return result.stdout
+    result = NinjaFile.execute(f"-t compdb {Rule.compile} {Rule.precompile}")
+    return result
 
 
 def get_compile_commands_json_path() -> str:

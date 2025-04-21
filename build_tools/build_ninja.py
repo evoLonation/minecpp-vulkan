@@ -21,6 +21,10 @@ from public import (
     TargetNinja,
     TestGenNinja,
 )
+from tool import (
+    Platform,
+    current_platform,
+)
 from resources import (
     get_file_resources,
     Module,
@@ -393,9 +397,15 @@ def build_target(
             ),
             description="LINK $out",
         )
+        if current_platform == Platform.WINDOWS:
+            copy_command = "cmd.exe /c copy /Y $in $out  > NUL"
+        elif current_platform == Platform.MACOS:
+            copy_command = "cp -f $in $out"
+        else:
+            raise RuntimeError(f"Unsupported platform: {current_platform}. ")
         writer.rule(
             name=Rule.copy,
-            command="cmd.exe /c copy /Y $in $out  > NUL",
+            command=copy_command,
             description="COPY DYLIB $out",
         )
         for dylib in dynamic_libs:
@@ -425,7 +435,13 @@ def build_target(
             writer.build(
                 outputs=Phony.target(target.name),
                 rule="phony",
-                inputs=[Compiler.executable_file(target.name)]
+                inputs=[
+                    (
+                        Compiler.executable_file(target.name)
+                        if target.type == "executable"
+                        else Compiler.dll_file(target.name)
+                    )
+                ]
                 + [Compiler.dynamic_dest(dylib.file) for dylib in dynamic_libs],
             )
 

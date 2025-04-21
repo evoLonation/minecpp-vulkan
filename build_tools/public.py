@@ -9,7 +9,11 @@ import subprocess as sp
 from typing import overload
 import uuid
 import ninja_syntax as ninja
-
+from tool import (
+    Platform,
+    current_platform,
+    run_command,
+)
 
 class Workspace(Enum):
     build = "build"
@@ -75,8 +79,9 @@ class NinjaFile:
         return open_ninja(cls.get_path())
 
     @classmethod
-    def execute(cls, extra: str = "", stdout=None, check=True):
-        return sp.run(cls.get_command(extra), stdout=stdout, check=check)
+    def execute(cls, extra: str = ""):
+        command = cls.get_command(extra)
+        return run_command(command)
 
     @classmethod
     def get_command(cls, extra: str = ""):
@@ -86,7 +91,7 @@ class NinjaFile:
 
     @classmethod
     def dry_run(cls, targets: str):
-        result = cls.execute(f"{targets} -n", stdout=sp.PIPE).stdout.decode("utf-8")
+        result = cls.execute(f"{targets} -n")
         lines = [x.strip() for x in result.split("\n")]
         if lines[-1] == "":
             lines = lines[:-1]
@@ -216,24 +221,26 @@ class Script(Enum):
 
 
 class Compiler:
-    clang_executable_path = "clang"
+    clang_executable_path = "clang++"
+
+    # only use for clang-scan-deps because clang-scan-deps unable to find system headers in p1689 format
+    # more information: https://github.com/llvm/llvm-project/issues/75057
+    # you can use `clang++ -v -E - < dev/null` to find the system include dirs
     system_include_dirs = [
-        "C:/Users/ZhengyangZhao/msys64/mingw64/include/c++/v1",
-        "C:/Users/ZhengyangZhao/msys64/mingw64/lib/clang/19/include",
+        "/opt/homebrew/Cellar/llvm/20.1.2/include/c++/v1",
+        "/opt/homebrew/Cellar/llvm/20.1.2/lib/clang/20/include",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk/usr/include",
     ]
-    system_link_dirs = [
-        "C:/Users/18389/msys2/mingw64/lib",
-    ]
-    system_link_libs = [
-        "c++",
-    ]
+    system_framework_dir = "/Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk/System/Library/Frameworks"
+
+    # only use when macos
+    system_link_frameworks = ["Cocoa", "IOKit"]
 
     base_flag = [
         clang_executable_path,
         "-std=c++23",
         "-fexperimental-library",
-        "-nostdinc++",
-        "-nostdlib++",
+        # todo: delete unused flags
         "-Wno-unused-command-line-argument",
         # for a deprecation bug occured in clang18 with std module:
         # https://github.com/llvm/llvm-project/issues/75057
@@ -252,7 +259,6 @@ class Compiler:
             Compiler.base_flag
             + ([] if config is None else ["--config", config])
             + ["-fprebuilt-module-path=" + Workspace.pcm.get_dir()]
-            + ["-isystem" + x for x in Compiler.system_include_dirs]
             + ["-I" + x for x in include_dirs]
             + ["--precompile", input, "-o", output]
         )
@@ -270,9 +276,19 @@ class Compiler:
             + ([] if config is None else ["--config", config])
             + ([extra] if extra else [])
             + ["-fprebuilt-module-path=" + Workspace.pcm.get_dir()]
-            + ["-isystem" + x for x in Compiler.system_include_dirs]
             + ["-I" + x for x in include_dirs]
             + ["-c", input, "-o", output]
+        )
+
+    @staticmethod
+    def scan_deps(include_dirs: list[str], input: str):
+        return "clang-scan-deps -format=p1689 -- " + sp.list2cmdline(
+            Compiler.base_flag
+            + ["-fprebuilt-module-path=" + Workspace.pcm.get_dir()]
+            + ["-isystem" + x for x in Compiler.system_include_dirs]
+            + ["-F" + Compiler.system_framework_dir]
+            + ["-I" + x for x in include_dirs]
+            + [input]
         )
 
     @staticmethod
@@ -298,12 +314,25 @@ class Compiler:
                 link_libs.append(filename[3:-2])
             elif filename.endswith(".lib") or filename.endswith(".dll"):
                 link_libs.append(filename[:-4])
+            elif filename.startswith("lib") and filename.endswith(".dylib"):
+                link_libs.append(filename[3:-6])
+            else:
+                link_libs.append(filename)
         return (
             Compiler.base_flag
             + inputs
             + (["-shared"] if shared else [])
-            + ["-L" + dir for dir in link_dirs + Compiler.system_link_dirs]
-            + ["-l" + lib for lib in link_libs + Compiler.system_link_libs]
+            + ["-L" + dir for dir in link_dirs]
+            + ["-l" + lib for lib in link_libs]
+            + [
+                x
+                for pair in [
+                    ["-framework", x]
+                    for x in Compiler.system_link_frameworks
+                    if current_platform == Platform.MACOS
+                ]
+                for x in pair
+            ]
             + ["-o", output]
         )
 
@@ -330,11 +359,20 @@ class Compiler:
 
     @staticmethod
     def executable_file(target: str):
-        return path.join(Workspace.out.get_dir(), target + ".exe")
+        suffix = ".exe" if current_platform == Platform.WINDOWS else ""
+        return path.join(Workspace.out.get_dir(), target + suffix)
 
     @staticmethod
     def dll_file(target: str):
-        return path.join(Workspace.out.get_dir(), target + ".dll")
+        if current_platform == Platform.WINDOWS:
+            prefix = ""
+            suffix = ".dll"
+        elif current_platform == Platform.MACOS:
+            prefix = "lib"
+            suffix = ".dylib"
+        else:
+            raise RuntimeError("Unsupported platform")
+        return path.join(Workspace.out.get_dir(), prefix + target + suffix)
 
     @staticmethod
     def dynamic_dest(file: str):

@@ -1,6 +1,6 @@
 import argparse
 import subprocess as sp
-
+import tool
 
 def module2namespace(module: str) -> str:
     return module.replace(".", "::")
@@ -18,7 +18,9 @@ if __name__ == "__main__":
     total_parser.add_argument("module", type=str)
     total_parser.add_argument("output", type=str)
     total_parser.add_argument("--modules", type=str, nargs="+", required=True)
-    total_parser.add_argument("--names", type=str, nargs="+", help="shader names in map", required=True)
+    total_parser.add_argument(
+        "--names", type=str, nargs="+", help="shader names in map", required=True
+    )
 
     args = parser.parse_args()
 
@@ -49,11 +51,10 @@ if __name__ == "__main__":
     elif args.task == "single":
         shader_file = args.input
         module = args.module
-        shader_codes = sp.run(
+        shader_codes = tool.run_command(
             f"glslc {shader_file} --target-env=vulkan1.3 -o -",
-            check=True,
-            stdout=sp.PIPE,
-        ).stdout
+            errlog=f"Failed to compile shader {shader_file}",
+        )
         code = f"""export module {module};
                 import std;
                 export namespace {module2namespace(module)}{{

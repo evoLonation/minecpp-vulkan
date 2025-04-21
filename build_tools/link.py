@@ -1,5 +1,6 @@
 import argparse
 import subprocess as sp
+from build_tools.tool import run_command
 from public import Compiler, DepCtx, Root
 
 parser = argparse.ArgumentParser()
@@ -62,12 +63,11 @@ while len(dep_modules_stack) > 0:
 
 link_files = [lib.file for lib in resources.lib_files]
 
-sp.run(
+run_command(
     Compiler.link(
         link_files=link_files,
         inputs=obj_files,
         output=args.output,
         shared=args.type == "dll",
-    ),
-    check=True,
+    )
 )
