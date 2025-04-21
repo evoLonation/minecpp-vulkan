@@ -8,3 +8,5 @@ imgui.ini
 save
 imgui
 assets
+.DS_Store
+.venv
