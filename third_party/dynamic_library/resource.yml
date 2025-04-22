@@ -1,6 +1,10 @@
 dylib:
-- glfw3.dll
-- imgui.dll
-- libassimp-5.dll
+- libimgui.dylib
+- libassimp.5.dylib
+- libvulkan.1.dylib
+- libglfw.3.dylib
 lib:
-- imgui.dll
+- libimgui.dylib
+- libassimp.5.dylib
+- libvulkan.1.dylib
+- libglfw.3.dylib

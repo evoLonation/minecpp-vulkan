@@ -1,5 +1,5 @@
 module:
-- glm/glm.cppm:
+- glm.cppm:
     provide: glm
 - std/std.cppm:
     provide: std
