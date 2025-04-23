@@ -1,6 +1,7 @@
 import subprocess as sp
 from enum import Enum, auto
 from typing import Any, Literal, overload
+import platform
 
 
 class Platform(Enum):
@@ -8,7 +9,13 @@ class Platform(Enum):
     MACOS = auto()
 
 
-current_platform = Platform.MACOS
+system = platform.system()
+if system == "Windows":
+    current_platform = Platform.WINDOWS
+elif system == "Darwin":
+    current_platform = Platform.MACOS
+else:
+    raise RuntimeError(f"Unsupported platform: {system}")
 
 
 class OutputMode(Enum):
@@ -24,6 +31,7 @@ def run_command(
     errlog: str | None = None,
     cwd: Any = None,
 ) -> str: ...
+
 
 @overload
 def run_command(

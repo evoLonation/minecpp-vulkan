@@ -253,12 +253,23 @@ class Compiler:
     ]
 
     @staticmethod
+    def __get_platform_macro() -> str:
+        if current_platform == Platform.WINDOWS:
+            macro = "PLATFORM_WINDOWS"
+        elif current_platform == Platform.MACOS:
+            macro = "PLATFORM_MACOS"
+        else:
+            raise RuntimeError(f"Unsupported platform: {current_platform}")
+        return macro
+
+    @staticmethod
     def precompile(
         include_dirs: list[str], config: str | None, input: str, output: str
     ):
         return sp.list2cmdline(
             Compiler.base_flag
             + ([] if config is None else ["--config", config])
+            + ["-D" + Compiler.__get_platform_macro()]
             + ["-fprebuilt-module-path=" + Workspace.pcm.get_dir()]
             + ["-I" + x for x in include_dirs]
             + ["--precompile", input, "-o", output]
@@ -276,6 +287,7 @@ class Compiler:
             Compiler.base_flag
             + ([] if config is None else ["--config", config])
             + ([extra] if extra else [])
+            + ["-D" + Compiler.__get_platform_macro()]
             + ["-fprebuilt-module-path=" + Workspace.pcm.get_dir()]
             + ["-I" + x for x in include_dirs]
             + ["-c", input, "-o", output]
