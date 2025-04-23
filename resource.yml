@@ -7,6 +7,8 @@ module:
     provide: glfw
 - transform.ccm:
     provide: math
+- std/std.cppm:
+    provide: std
 source:
 - header_impl.cc
 sub_dir:
