@@ -1,5 +1,0 @@
-module:
-- glm.cppm:
-    provide: glm
-- std/std.cppm:
-    provide: std

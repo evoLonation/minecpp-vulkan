@@ -1,7 +1,0 @@
-include_dir:
-- include
-sub_dir:
-- static_library
-- dynamic_library
-- module
-- include

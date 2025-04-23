@@ -10,3 +10,5 @@ imgui
 assets
 .DS_Store
 .venv
+VulkanSDK
+third_party
