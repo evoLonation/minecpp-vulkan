@@ -1,5 +1,6 @@
 import subprocess as sp
 from enum import Enum, auto
+from typing import Any, Literal, overload
 
 
 class Platform(Enum):
@@ -10,13 +11,60 @@ class Platform(Enum):
 current_platform = Platform.MACOS
 
 
-def run_command(command: str | list[str], errlog: str | None = None) -> str:
+class OutputMode(Enum):
+    STRING = auto()
+    RAW = auto()
+    NO_CAPTURE = auto()
+
+
+@overload
+def run_command(
+    command: str | list[str],
+    output: Literal[OutputMode.STRING] = OutputMode.STRING,
+    errlog: str | None = None,
+    cwd: Any = None,
+) -> str: ...
+
+@overload
+def run_command(
+    command: str | list[str],
+    output: Literal[OutputMode.RAW],
+    errlog: str | None = None,
+    cwd: Any = None,
+) -> bytes: ...
+
+
+@overload
+def run_command(
+    command: str | list[str],
+    output: Literal[OutputMode.NO_CAPTURE],
+    errlog: str | None = None,
+    cwd: Any = None,
+) -> None: ...
+
+
+def run_command(
+    command: str | list[str],
+    output: OutputMode = OutputMode.STRING,
+    errlog: str | None = None,
+    cwd: Any = None,
+) -> str | bytes | None:
     try:
         if isinstance(command, list):
             command = sp.list2cmdline(command)
-        return sp.run(
-            command, shell=True, capture_output=True, check=True
-        ).stdout.decode()
+        ret = sp.run(
+            command,
+            shell=True,
+            capture_output=output != OutputMode.NO_CAPTURE,
+            check=True,
+            cwd=cwd,
+        )
+        if output == OutputMode.STRING:
+            return ret.stdout.decode()
+        elif output == OutputMode.RAW:
+            return ret.stdout
+        else:
+            return
     except sp.CalledProcessError as e:
         if not errlog:
             errlog = f"Failed to run {command}"

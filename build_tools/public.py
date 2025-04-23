@@ -15,6 +15,7 @@ from tool import (
     run_command,
 )
 
+
 class Workspace(Enum):
     build = "build"
     ninja = build
@@ -79,7 +80,7 @@ class NinjaFile:
         return open_ninja(cls.get_path())
 
     @classmethod
-    def execute(cls, extra: str = ""):
+    def execute(cls, extra: str = "") -> str:
         command = cls.get_command(extra)
         return run_command(command)
 
@@ -333,7 +334,18 @@ class Compiler:
                 ]
                 for x in pair
             ]
+            + (
+                ["-Wl,-rpath,@executable_path"]
+                if not shared and current_platform == Platform.MACOS
+                else []
+            )
             + ["-o", output]
+            # macos -install_name 设置的是：其他程序链接这个库时记住的运行时路径
+            + (
+                ["-install_name", f"@rpath/{path.basename(output)}"]
+                if shared and current_platform == Platform.MACOS
+                else []
+            )
         )
 
     @staticmethod

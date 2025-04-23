@@ -49,7 +49,7 @@ def build_gen_shader(resources: list[Shader]) -> list[Module]:
     with ShaderGenNinja.open() as ninja_writer:
         command = Script.get_command(
             Script.shader_gen,
-            ["single", "$in", "$module", "$out"],
+            ["--root_dir", Root.dir, "single", "$in", "$module", "$out"],
         )
         ninja_writer.rule(
             name=Rule.shader_code,

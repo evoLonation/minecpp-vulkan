@@ -8,9 +8,14 @@
       "type": "lldb",
       "request": "launch",
       "name": "Debug",
-      "program": "${workspaceFolder}/build/out/hello_vulkan.exe",
+      "program": "${workspaceFolder}/build/out/hello_vulkan",
       "args": [],
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PATH": "${workspaceFolder}/VulkanSDK/1.4.309.0/macOS/bin:${env:PATH}",
+        "VK_ICD_FILENAMES": "${workspaceFolder}/VulkanSDK/1.4.309.0/macOS/share/vulkan/icd.d/MoltenVK_icd.json",
+        "VK_LAYER_PATH": "${workspaceFolder}/VulkanSDK/1.4.309.0/macOS/share/vulkan/explicit_layer.d"
+      },
     }
   ]
 }

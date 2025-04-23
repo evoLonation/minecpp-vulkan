@@ -14,11 +14,19 @@ from public import (
     Root,
 )
 import subprocess as sp
-
+from tool import (
+    run_command, Platform, current_platform
+)
 
 def kill_process_by_name(process_name: str):
     try:
-        sp.run(["taskkill", "/f", "/im", process_name], check=True)
+        if current_platform == Platform.WINDOWS:
+            command = f"taskkill /f /im {process_name}"
+        elif current_platform == Platform.MACOS:
+            command = f"killall -9 {process_name}"
+        else:
+            raise RuntimeError(f"Unsupported platform: {current_platform}")
+        run_command(command)
         print(f"Process {process_name} terminated.")
     except sp.CalledProcessError as e:
         print(f"Failed to terminate process {process_name}: {e}")
@@ -151,7 +159,13 @@ if __name__ == "__main__":
     if need_remove:
         print("rebuild compile_commands with empty...")
         write_compile_commands_json("[]")
-        kill_process_by_name("clangd.exe")
+        if current_platform == Platform.WINDOWS:
+            process_name = "clangd.exe"
+        elif current_platform == Platform.MACOS:
+            process_name = "clangd"
+        else:
+            raise RuntimeError(f"Unsupported platform: {current_platform}")
+        kill_process_by_name(process_name)
         print("remove invalid pcm files...")
         for pcm in need_remove_pcms:
             retry = 0

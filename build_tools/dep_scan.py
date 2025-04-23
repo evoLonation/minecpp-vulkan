@@ -5,7 +5,7 @@ import subprocess as sp
 import argparse
 import json
 import tempfile
-from build_tools.tool import run_command
+from tool import run_command
 from public import Compiler, DepCtx, Root, open_ninja
 
 parser = argparse.ArgumentParser()

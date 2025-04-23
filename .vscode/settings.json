@@ -8,5 +8,10 @@
       "*.ccm": "cpp"
    },
    "python.analysis.typeCheckingMode": "standard",
-   "editor.wordSeparators": "`~!@#$%^&*()-=+[{]}\\|;:'\",.<>/?，。；、：“”！？《》【】……￥"
+   "editor.wordSeparators": "`~!@#$%^&*()-=+[{]}\\|;:'\",.<>/?，。；、：“”！？《》【】……￥",
+   "terminal.integrated.env.osx": {
+      "PATH": "${workspaceFolder}/VulkanSDK/1.4.309.0/macOS/bin:${env:PATH}",
+      "VK_ICD_FILENAMES": "${workspaceFolder}/VulkanSDK/1.4.309.0/macOS/share/vulkan/icd.d/MoltenVK_icd.json",
+      "VK_LAYER_PATH": "${workspaceFolder}/VulkanSDK/1.4.309.0/macOS/share/vulkan/explicit_layer.d"
+   }
 }

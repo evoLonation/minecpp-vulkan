@@ -1,6 +1,7 @@
 import argparse
+import os
 import subprocess as sp
-from build_tools.tool import run_command
+from tool import Platform, run_command, current_platform
 from public import Compiler, DepCtx, Root
 
 parser = argparse.ArgumentParser()
@@ -62,6 +63,13 @@ while len(dep_modules_stack) > 0:
 #     NinjaCtx.execute(NinjaCtx.get_file(NinjaCtx.Task.compile), obj_file)
 
 link_files = [lib.file for lib in resources.lib_files]
+
+if current_platform == Platform.MACOS:
+    for file in link_files:
+        if file.endswith(".dylib"):
+            run_command(
+                ["install_name_tool", "-id", f"@rpath/{os.path.basename(file)}", file]
+            )
 
 run_command(
     Compiler.link(

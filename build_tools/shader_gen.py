@@ -1,6 +1,8 @@
 import argparse
+import os
 import subprocess as sp
 import tool
+from public import Root
 
 def module2namespace(module: str) -> str:
     return module.replace(".", "::")
@@ -8,6 +10,7 @@ def module2namespace(module: str) -> str:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--root_dir", type=str, dest="root_dir", default="./")
     sub_parsers = parser.add_subparsers(dest="task")
     single_parser = sub_parsers.add_parser("single")
     single_parser.add_argument("input", type=str)
@@ -23,6 +26,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    Root.set_dir(args.root_dir)
 
     if args.task == "total":
         import_decl = ""
@@ -52,8 +56,10 @@ if __name__ == "__main__":
         shader_file = args.input
         module = args.module
         shader_codes = tool.run_command(
-            f"glslc {shader_file} --target-env=vulkan1.3 -o -",
+            # todo: can configure glslc path and vulkan version
+            f"glslc {shader_file} --target-env=vulkan1.2 -o -",
             errlog=f"Failed to compile shader {shader_file}",
+            output=tool.OutputMode.RAW,
         )
         code = f"""export module {module};
                 import std;
