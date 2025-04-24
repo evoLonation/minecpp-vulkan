@@ -312,6 +312,7 @@ class Compiler:
     def header_precompile(include_dirs: list[str], input: str, output: str):
         return sp.list2cmdline(
             Compiler.base_flag
+            + ["-D" + Compiler.__get_platform_macro()]
             + ["-I" + x for x in include_dirs]
             + ["-fmodule-header", "-xc++-header"]
             + [input, "-o", output]

@@ -1,6 +1,7 @@
 export module render.resource;
 
 import <vulkan_config.h>;
+import <glfw_config.h>;
 import render.tool;
 import render.reflections;
 import std;
@@ -89,11 +90,13 @@ DEF_SINGETON_RESOURCE(Device, VkDevice, vkCreateDevice, vkDestroyDevice)
 
 // vkCreateXXX(singleton, createInfo, allocator, &handle);
 // vkDestroyXXX(singleton, handle, allocator);
-template <typename VkHandle, auto* Creator, auto* Destroyer>
+template <typename VkHandle, auto* Creator, auto* Destroyer, bool remove_create_info_pointer = true>
 class ContextualResource {
 private:
-  using CreateInfoArg =
-    std::remove_pointer_t<typename toy::FuncArgs<decltype(Creator)>::template at<1>>&;
+  using CreateInfoArg = std::conditional_t<
+    remove_create_info_pointer,
+    std::remove_pointer_t<typename toy::FuncArgs<decltype(Creator)>::template at<1>>&,
+    typename toy::FuncArgs<decltype(Creator)>::template at<1>>;
   using ContextResource =
     SingletonResourceRetriever<typename toy::FuncArgs<decltype(Creator)>::template at<0>>::type;
 
@@ -101,8 +104,13 @@ public:
   ContextualResource() = default;
   ContextualResource(CreateInfoArg create_info) {
     VkHandle handle;
-    auto     result = Creator(ContextResource::getInstance().get(), &create_info, nullptr, &handle);
-    auto     msg = std::format("create resource {}", refl::resource<VkHandle>());
+    VkResult result;
+    if constexpr (remove_create_info_pointer) {
+      result = Creator(ContextResource::getInstance().get(), &create_info, nullptr, &handle);
+    } else {
+      result = Creator(ContextResource::getInstance().get(), create_info, nullptr, &handle);
+    }
+    auto msg = std::format("create resource {}", refl::resource<VkHandle>());
     checkVkResult(result, msg);
     _handle.reset(handle);
     if constexpr (enable_debug) {
@@ -128,9 +136,9 @@ private:
   std::unique_ptr<std::remove_pointer_t<VkHandle>, decltype(deleter)> _handle;
 };
 
-#define DEF_CONTEXTUAL_RESOURCE(Name, VkHandle, Creator, Destroyer)                                \
-  template class ContextualResource<VkHandle, Creator, Destroyer>;                                 \
-  export using Name = ContextualResource<VkHandle, Creator, Destroyer>;
+#define DEF_CONTEXTUAL_RESOURCE(Name, VkHandle, Creator, Destroyer, ...)                           \
+  template class ContextualResource<VkHandle, Creator, Destroyer __VA_OPT__(, ) __VA_ARGS__>;      \
+  export using Name = ContextualResource<VkHandle, Creator, Destroyer __VA_OPT__(, ) __VA_ARGS__>;
 
 DEF_CONTEXTUAL_RESOURCE(
   DebugMessenger,
@@ -138,7 +146,7 @@ DEF_CONTEXTUAL_RESOURCE(
   vkCreateDebugUtilsMessengerEXT,
   vkDestroyDebugUtilsMessengerEXT
 )
-DEF_CONTEXTUAL_RESOURCE(Surface, VkSurfaceKHR, vkCreateWin32SurfaceKHR, vkDestroySurfaceKHR)
+DEF_CONTEXTUAL_RESOURCE(Surface, VkSurfaceKHR, glfwCreateWindowSurface, vkDestroySurfaceKHR, false)
 DEF_CONTEXTUAL_RESOURCE(Swapchain, VkSwapchainKHR, vkCreateSwapchainKHR, vkDestroySwapchainKHR)
 DEF_CONTEXTUAL_RESOURCE(ImageView, VkImageView, vkCreateImageView, vkDestroyImageView)
 DEF_CONTEXTUAL_RESOURCE(Image, VkImage, vkCreateImage, vkDestroyImage)

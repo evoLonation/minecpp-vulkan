@@ -138,7 +138,9 @@ ImageResource::ImageResource(
       mip_levels,
       [&]() {
         TOY_ASSERT(
-          (ImageContext::getInstance().getAvailableSampleCounts() & sample_count) > 0, sample_count
+          (ImageContext::getInstance().getAvailableSampleCounts() & sample_count) > 0,
+          sample_count,
+          ImageContext::getInstance().getAvailableSampleCounts()
         );
         return sample_count;
       }()

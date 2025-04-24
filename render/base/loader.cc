@@ -1,6 +1,7 @@
 import <vulkan_config.h>;
 
 import toy;
+import render.loader;
 
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateDebugUtilsMessengerEXT(
   VkInstance                                instance,
@@ -8,37 +9,27 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDebugUtilsMessengerEXT(
   const VkAllocationCallbacks*              pAllocator,
   VkDebugUtilsMessengerEXT*                 pMessenger
 ) {
-  auto func = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
-    vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT")
-  );
-  if (func != nullptr) {
-    return func(instance, pCreateInfo, pAllocator, pMessenger);
-  } else {
-    return VK_ERROR_EXTENSION_NOT_PRESENT;
-  }
+  return rd::p_PFN_vkCreateDebugUtilsMessengerEXT(instance, pCreateInfo, pAllocator, pMessenger);
 }
 
 VKAPI_ATTR void VKAPI_CALL vkDestroyDebugUtilsMessengerEXT(
   VkInstance instance, VkDebugUtilsMessengerEXT messenger, const VkAllocationCallbacks* pAllocator
 ) {
-  auto func = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
-    vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT")
-  );
-  if (func != nullptr) {
-    func(instance, messenger, pAllocator);
-  } else {
-    toy::debugf("error: vkDestroyDebugUtilsMessengerEXT not found");
-  }
+  rd::p_PFN_vkDestroyDebugUtilsMessengerEXT(instance, messenger, pAllocator);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
 vkReleaseSwapchainImagesEXT(VkDevice device, const VkReleaseSwapchainImagesInfoEXT* pReleaseInfo) {
-  auto func = reinterpret_cast<PFN_vkReleaseSwapchainImagesEXT>(
-    vkGetDeviceProcAddr(device, "vkReleaseSwapchainImagesEXT")
-  );
-  if (func != nullptr) {
-    return func(device, pReleaseInfo);
-  } else {
-    return VK_ERROR_EXTENSION_NOT_PRESENT;
-  }
+  return rd::p_PFN_vkReleaseSwapchainImagesEXT(device, pReleaseInfo);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit2KHR(
+  VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence
+) {
+  return rd::p_PFN_vkQueueSubmit2KHR(queue, submitCount, pSubmits, fence);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+vkCmdPipelineBarrier2KHR(VkCommandBuffer commandBuffer, const VkDependencyInfo* pDependencyInfo) {
+  rd::p_PFN_vkCmdPipelineBarrier2KHR(commandBuffer, pDependencyInfo);
 }

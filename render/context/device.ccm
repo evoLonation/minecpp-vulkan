@@ -23,8 +23,23 @@ public:
   auto get() const -> VkPhysicalDevice { return _handle; }
   auto getProperties() const -> VkPhysicalDeviceProperties const& { return _properties; }
   auto getFeatures() const -> VkPhysicalDeviceFeatures const& { return _features; }
+  auto getVk11Features() const -> VkPhysicalDeviceVulkan11Features const& { return _vk11features; }
   auto getVk12Features() const -> VkPhysicalDeviceVulkan12Features const& { return _vk12features; }
   auto getVk13Features() const -> VkPhysicalDeviceVulkan13Features const& { return _vk13features; }
+  auto getVk14Features() const -> VkPhysicalDeviceVulkan14Features const& { return _vk14features; }
+  template <typename S, VkStructureType T>
+  auto getExtensionFeatures() const -> S {
+    auto features = S{
+      .sType = T,
+      .pNext = nullptr,
+    };
+    auto feature = VkPhysicalDeviceFeatures2{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+      .pNext = &features,
+    };
+    vkGetPhysicalDeviceFeatures2(_handle, &feature);
+    return features;
+  }
   auto getMemoryProperties() const -> VkPhysicalDeviceMemoryProperties const& {
     return _memory_properties;
   }
@@ -39,12 +54,18 @@ public:
     FormatTarget type, VkFormatFeatureFlags features, std::span<VkFormat const> formats
   ) const -> bool;
 
+  auto getUnsupportFormats(
+    FormatTarget type, VkFormatFeatureFlags features, std::span<VkFormat const> formats
+  ) const -> std::vector<VkFormat>;
+
 private:
   VkPhysicalDevice                                       _handle;
   VkPhysicalDeviceProperties                             _properties;
   VkPhysicalDeviceFeatures                               _features;
+  VkPhysicalDeviceVulkan11Features                       _vk11features;
   VkPhysicalDeviceVulkan12Features                       _vk12features;
   VkPhysicalDeviceVulkan13Features                       _vk13features;
+  VkPhysicalDeviceVulkan14Features                       _vk14features;
   VkPhysicalDeviceMemoryProperties                       _memory_properties;
   std::vector<VkQueueFamilyProperties>                   _queue_family_properties;
   std::unordered_map<std::string, VkExtensionProperties> _extension_properties;
@@ -59,11 +80,15 @@ struct FamilyQueueCount {
 struct DeviceCapabilityBuilder {
   DeviceCapabilityBuilder() = default;
   DeviceCapabilityBuilder(PhysicalDevice const& device) : _device(&device) {}
-  std::vector<std::string>                                  extensions;
-  std::vector<VkBool32 VkPhysicalDeviceFeatures::*>         features;
-  std::vector<VkBool32 VkPhysicalDeviceVulkan12Features::*> vk12features;
-  std::vector<VkBool32 VkPhysicalDeviceVulkan13Features::*> vk13features;
-  std::vector<FamilyQueueCount>                             family_queue_counts;
+  std::vector<std::string>                                            extensions;
+  std::vector<VkBool32 VkPhysicalDeviceFeatures::*>                   features;
+  std::vector<VkBool32 VkPhysicalDeviceVulkan11Features::*>           vk11features;
+  std::vector<VkBool32 VkPhysicalDeviceVulkan12Features::*>           vk12features;
+  std::vector<VkBool32 VkPhysicalDeviceVulkan13Features::*>           vk13features;
+  std::vector<VkBool32 VkPhysicalDeviceVulkan14Features::*>           vk14features;
+  // function: accept last pNext pointer and new feature structure, return new pNext pointer
+  std::vector<std::function<std::pair<std::any, void*>(void* pnext)>> feature_chains;
+  std::vector<FamilyQueueCount>                                       family_queue_counts;
 
   auto enableExtension(std::string name) -> bool {
     if (_device->getAllExtensionProperties().contains(name)) {
@@ -75,6 +100,20 @@ struct DeviceCapabilityBuilder {
   auto enableFeature(VkBool32 VkPhysicalDeviceFeatures::* member) -> bool {
     if (_device->getFeatures().*member) {
       features.push_back(member);
+      return true;
+    }
+    return false;
+  }
+  auto enableFeature(VkBool32 VkPhysicalDeviceVulkan14Features::* member) -> bool {
+    if (_device->getVk14Features().*member) {
+      vk14features.push_back(member);
+      return true;
+    }
+    return false;
+  }
+  auto enableFeature(VkBool32 VkPhysicalDeviceVulkan11Features::* member) -> bool {
+    if (_device->getVk11Features().*member) {
+      vk11features.push_back(member);
       return true;
     }
     return false;
@@ -93,6 +132,26 @@ struct DeviceCapabilityBuilder {
     }
     return false;
   }
+  template <typename S, VkStructureType T>
+  auto enableFeature(std::initializer_list<VkBool32 S::*> members) -> bool {
+    auto support_feature = _device->getExtensionFeatures<S, T>();
+    if (ranges::all_of(members, [&](auto member) { return support_feature.*member; })) {
+      feature_chains.emplace_back([members = std::vector<VkBool32 S::*>{ members }](void* pnext) {
+        // std::any does not support move only type 
+        auto feature = std::make_shared<S>(S{
+          .sType = T,
+          .pNext = pnext,
+        });
+        for (auto member : members) {
+          (*feature).*member = true;
+        }
+        return std::pair{ std::any{ feature }, feature.get() };
+      });
+      return true;
+    }
+    return false;
+  }
+
   auto getPdevice() -> const PhysicalDevice& { return *_device; }
 
 private:

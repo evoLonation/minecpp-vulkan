@@ -9,3 +9,7 @@ module:
     provide: render.reflections
 - reflections.cc:
     implement: render.reflections
+- loader.ccm:
+    provide: render.loader
+include_dir:
+- .

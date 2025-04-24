@@ -1,5 +1,8 @@
+module;
+#include <platform.h>
 module render.instance;
 
+import render.loader;
 import <vulkan_config.h>;
 import render.tool;
 
@@ -65,9 +68,9 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugHandler(
   return VK_FALSE;
 }
 
-auto createInstance(
+InstanceResource::InstanceResource(
   const std::string& app_name, std::span<std::string> extensions, bool enable_debug_messenger
-) -> InstanceResource {
+) {
   auto debug_info = std::optional<VkDebugUtilsMessengerCreateInfoEXT>{};
   auto messenger_config = std::unique_ptr<DebugMessengerConfig>{};
   if (enable_debug_messenger) {
@@ -89,18 +92,13 @@ auto createInstance(
     };
   }
 
-  /*
-   * 1. 创建appInfo
-   * 2. 创建createInfo（指向appInfo）
-   * 3. 调用createInstance创建instance
-   */
-
+  auto api_version = PLATFORM_VULKAN_VERSION;
   auto app_info = VkApplicationInfo{
     .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
     .pApplicationName = app_name.data(),
     .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
     .engineVersion = VK_MAKE_VERSION(1, 0, 0),
-    .apiVersion = VK_API_VERSION_1_3,
+    .apiVersion = api_version,
   };
 
   std::vector<const char*> required_extensions;
@@ -109,6 +107,12 @@ auto createInstance(
   required_extensions.append_range(extensions | views::transform([](const auto& str) {
                                      return str.data();
                                    }));
+  if (platform::portability_subset) {
+    // 此扩展允许应用程序控制是否将公开 VK_KHR_portability_subset 扩展的设备包含在物理设备枚举的结果中。
+    // 由于支持 VK_KHR_portability_subset 扩展的设备并非完全符合 Vulkan 规范的实现，因此 Vulkan 加载程序不会报告这些设备，除非应用程序明确请求它们。
+    // 这可以防止可能不了解非符合设备情况的应用程序意外使用它们，因为任何支持 VK_KHR_portability_subset 扩展的设备都要求在使用该设备时必须启用此扩展。
+    required_extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+  }
 
   if constexpr (toy::enable_debug) {
     // VK_EXT_debug_utils 扩展用于扩展debug功能
@@ -137,12 +141,21 @@ auto createInstance(
     .enabledExtensionCount = (uint32)required_extensions.size(),
     .ppEnabledExtensionNames = required_extensions.data(),
   };
+  if (platform::portability_subset) {
+    create_info.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+  }
+
+  this->instance.detachSingleton();
   auto instance = rs::Instance{ create_info };
+  loadInstanceFunctions(instance);
   auto debug_messenger = rs::DebugMessenger{};
   if (enable_debug_messenger) {
     debug_messenger = { debug_info.value() };
   }
-  return { std::move(instance), std::move(debug_messenger), std::move(messenger_config) };
+  this->instance = std::move(instance);
+  this->debug_messenger = std::move(debug_messenger);
+  this->messenger_config = std::move(messenger_config);
+  this->api_version = api_version;
 }
 
 } // namespace rd

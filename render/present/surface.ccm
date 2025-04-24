@@ -15,11 +15,15 @@ export namespace rd {
 namespace extensions {
 auto surface = std::vector<std::string>{
   "VK_KHR_surface",
+#ifdef PLATFORM_WINDOWS
   "VK_KHR_win32_surface",
+#elif PLATFORM_MACOS
+  VK_EXT_METAL_SURFACE_EXTENSION_NAME,
+#endif
   "VK_EXT_surface_maintenance1",
   "VK_KHR_get_surface_capabilities2",
 };
-}
+} // namespace extensions
 
 /**
  * @brief Create a Surface object, need created instance first
@@ -28,13 +32,12 @@ auto surface = std::vector<std::string>{
  * @return rs::Surface
  */
 auto createSurface(glfw::Window& window) -> rs::Surface {
-  auto create_info = VkWin32SurfaceCreateInfoKHR{
-    .sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
-    .hinstance = GetModuleHandle(nullptr),
-    .hwnd = glfwGetWin32Window(window.get()),
-  };
+  // these three lines is for debug
+  // VkSurfaceKHR surface;
+  // glfwCreateWindowSurface(rs::Instance::getInstance(), window, nullptr, &surface);
+  // glfw::checkGlfwError();
   // implicit use instance
-  return rs::Surface{ create_info };
+  return rs::Surface{ window.get() };
 }
 
 } // namespace rd

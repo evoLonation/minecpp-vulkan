@@ -1,4 +1,5 @@
 module;
+#include <platform.h>
 #include <toy.h>
 #include <vulkan_tool.h>
 module render.sync;
@@ -9,8 +10,19 @@ import render.tool;
 namespace rd {
 
 auto device_checkers::sync(DeviceCapabilityBuilder& builder) -> std::expected<void, std::string> {
-  if (!builder.enableFeature(&VkPhysicalDeviceVulkan13Features::synchronization2)) {
-    return std::unexpected{ "synchronization2 not supported" };
+  if constexpr (PLATFORM_VULKAN_VERSION >= VK_API_VERSION_1_3) {
+    if (!builder.enableFeature(&VkPhysicalDeviceVulkan13Features::synchronization2)) {
+      return std::unexpected{ "synchronization2 not supported" };
+    }
+  } else {
+    if (!builder.enableExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME) ||
+        !builder.enableFeature<
+          VkPhysicalDeviceSynchronization2Features,
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES>(
+          { &VkPhysicalDeviceSynchronization2Features::synchronization2 }
+        )) {
+      return std::unexpected{ "synchronization2 extension not supported" };
+    }
   }
   if (!builder.enableFeature(&VkPhysicalDeviceVulkan12Features::timelineSemaphore)) {
     return std::unexpected{ "timelineSemaphore not supported" };
@@ -234,7 +246,7 @@ void recordPipelineBarrier(
     .imageMemoryBarrierCount = static_cast<uint32>(image_barriers.size()),
     .pImageMemoryBarriers = image_barriers.data(),
   };
-  vkCmdPipelineBarrier2(cmdbuf, &dependency_info);
+  vkCmdPipelineBarrier2KHR(cmdbuf, &dependency_info);
 };
 
 void recordBufferBarrier(

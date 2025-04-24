@@ -52,7 +52,7 @@ Memory::Memory(VkMemoryRequirements requirements, VkMemoryPropertyFlags property
                  (memory_type.propertyFlags & property_flags) == property_flags;
         }
       )) {
-    memory_type_index = optional->first;
+    memory_type_index = std::get<0>(*optional);
   } else {
     toy::throwf("can not find suitable memory type");
   }

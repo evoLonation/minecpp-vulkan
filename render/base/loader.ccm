@@ -1,0 +1,41 @@
+export module render.loader;
+
+import toy;
+import <vulkan_config.h>;
+
+export namespace rd {
+
+PFN_vkCreateDebugUtilsMessengerEXT  p_PFN_vkCreateDebugUtilsMessengerEXT = nullptr;
+PFN_vkDestroyDebugUtilsMessengerEXT p_PFN_vkDestroyDebugUtilsMessengerEXT = nullptr;
+
+void loadInstanceFunctions(VkInstance instance) {
+#define REGISTER_INSTANCE_FUNC(name)                                                               \
+  p_PFN_##name = reinterpret_cast<PFN_##name>(vkGetInstanceProcAddr(instance, #name));             \
+  if (p_PFN_##name == nullptr) {                                                                   \
+    toy::throwf("error: {} not found", #name);                                                     \
+  }
+
+  REGISTER_INSTANCE_FUNC(vkCreateDebugUtilsMessengerEXT);
+  REGISTER_INSTANCE_FUNC(vkDestroyDebugUtilsMessengerEXT);
+
+#undef REGISTER_INSTANCE_FUNC
+}
+
+PFN_vkReleaseSwapchainImagesEXT p_PFN_vkReleaseSwapchainImagesEXT = nullptr;
+PFN_vkQueueSubmit2KHR           p_PFN_vkQueueSubmit2KHR = nullptr;
+PFN_vkCmdPipelineBarrier2KHR    p_PFN_vkCmdPipelineBarrier2KHR = nullptr;
+
+void loadDeviceFunctions(VkDevice device) {
+#define REGISTER_DEVICE_FUNC(name)                                                                 \
+  p_PFN_##name = reinterpret_cast<PFN_##name>(vkGetDeviceProcAddr(device, #name));                 \
+  if (p_PFN_##name == nullptr) {                                                                   \
+    toy::throwf("error: {} not found", #name);                                                     \
+  }
+
+  REGISTER_DEVICE_FUNC(vkReleaseSwapchainImagesEXT);
+  REGISTER_DEVICE_FUNC(vkQueueSubmit2KHR);
+  REGISTER_DEVICE_FUNC(vkCmdPipelineBarrier2KHR);
+#undef REGISTER_DEVICE_FUNC
+}
+
+} // namespace rd

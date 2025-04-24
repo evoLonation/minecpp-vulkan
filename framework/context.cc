@@ -19,8 +19,7 @@ Context::Context(const std::string& app_name, uint32 width, uint32 height) {
   _glfw_window = make_unique<glfw::Window>(width, height, app_name);
   auto instance_extensions = std::vector<std::string>{};
   instance_extensions.append_range(rd::extensions::surface);
-  _instance =
-    std::make_unique<rd::InstanceResource>(rd::createInstance(app_name, instance_extensions));
+  _instance = std::make_unique<rd::InstanceResource>(app_name, instance_extensions);
   _surface = std::make_unique<rd::rs::Surface>(rd::createSurface(*_glfw_window));
   using namespace std::placeholders;
   auto queue_requestor = rd::QueueRequestor{ _surface->get() };

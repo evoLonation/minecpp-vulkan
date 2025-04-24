@@ -59,8 +59,8 @@ public:
     _light.draw(&_color, &_depth);
     _light_uplayer.draw(&_color, &_depth);
     _id.draw(&_id_output, &_depth, &_depth_id);
-    _shadow_map_pipeline.draw(&_shadow_map);
-    _depth2color.draw(&_color);
+    // _shadow_map_pipeline.draw(&_shadow_map);
+    // _depth2color.draw(&_color);
 
     auto submitter = rd::Submitter{ rd::FamilyType::TRANSFER };
     submitter.addNeedSync(

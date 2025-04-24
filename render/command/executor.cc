@@ -129,7 +129,7 @@ auto Waitable::getWaitInfo(VkPipelineStageFlags2 stage) -> std::pair<VkSemaphore
  */
 auto CommandExecutor::submit(CommandBatch const& batch) -> Waitable {
   auto [submit_info, waitable] = getSubmitInfo(batch);
-  CHECK_VK_RESULT(vkQueueSubmit2(_queue, 1, &submit_info.info, VK_NULL_HANDLE));
+  CHECK_VK_RESULT(vkQueueSubmit2KHR(_queue, 1, &submit_info.info, VK_NULL_HANDLE));
   return std::move(waitable);
 }
 
@@ -154,12 +154,14 @@ auto CommandExecutor::getWaitInfos(std::vector<CommandBatch::WaitInfo> const& wa
   auto wait_infos = std::vector<VkSemaphoreSubmitInfo>{};
   for (auto& wait : waits) {
     auto [sema, value] = wait.first->getWaitInfo(wait.second);
-    wait_infos.push_back(VkSemaphoreSubmitInfo{
-      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-      .semaphore = sema,
-      .value = value,
-      .stageMask = wait.second,
-    });
+    wait_infos.push_back(
+      VkSemaphoreSubmitInfo{
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+        .semaphore = sema,
+        .value = value,
+        .stageMask = wait.second,
+      }
+    );
   }
   return wait_infos;
 }
@@ -168,11 +170,13 @@ auto CommandExecutor::getWaitInfos(std::vector<CommandBatch::RawWaitInfo> const&
   -> std::vector<VkSemaphoreSubmitInfo> {
   auto wait_infos = std::vector<VkSemaphoreSubmitInfo>{};
   for (auto& [sema, stage] : raw_waits) {
-    wait_infos.push_back(VkSemaphoreSubmitInfo{
-      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-      .semaphore = sema,
-      .stageMask = stage,
-    });
+    wait_infos.push_back(
+      VkSemaphoreSubmitInfo{
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+        .semaphore = sema,
+        .stageMask = stage,
+      }
+    );
   }
   return wait_infos;
 }
@@ -199,12 +203,14 @@ auto CommandExecutor::getSignalInfos(std::vector<CommandBatch::SignalInfo> const
   for (auto& signal : signals) {
     auto sema = DisposableSemaphore{ *_sema_pool };
     auto [handle, value] = sema.getDeviceSyncInfo();
-    signal_infos.push_back(VkSemaphoreSubmitInfo{
-      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-      .semaphore = handle,
-      .value = value,
-      .stageMask = signal,
-    });
+    signal_infos.push_back(
+      VkSemaphoreSubmitInfo{
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+        .semaphore = handle,
+        .value = value,
+        .stageMask = signal,
+      }
+    );
     stage_sema_map.emplace(signal, std::move(sema));
   }
   return { std::move(signal_infos), std::move(stage_sema_map) };

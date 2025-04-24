@@ -45,8 +45,9 @@ struct OverloadLambda : public Lambdas... {
   using Lambdas::operator()...;
 };
 
-auto _ptr_manager_lambda = [](auto) {};
-
+// 这个inline必须加，否则会出现lambda相关的abi问题，详见：
+// https://github.com/llvm/llvm-project/commit/6345b009c3e58a6cd0eca835d5a935f8784cfda6
+inline auto _ptr_manager_lambda = [](auto) {};
 template <typename P>
 using PtrManager = std::unique_ptr<std::remove_pointer_t<P>, decltype(_ptr_manager_lambda)>;
 
@@ -104,6 +105,11 @@ public:
       toy::throwf(loc, "need proactively construct {} first!", name.value);
     }
     return *_instance_ptr;
+  }
+  void detachSingleton() {
+    if (_instance_ptr == this) {
+      _instance_ptr = nullptr;
+    }
   }
 
   ProactiveSingleton& operator=(const ProactiveSingleton&) = delete;

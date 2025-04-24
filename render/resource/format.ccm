@@ -28,10 +28,10 @@ using FormatTypeInfos = toy::TypePack<
   FormatTypePair<VK_FORMAT_R32G32_SFLOAT, glm::vec2>,        //
   FormatTypePair<VK_FORMAT_R32G32B32_SFLOAT, glm::vec3>,     //
   FormatTypePair<VK_FORMAT_R32G32B32A32_SFLOAT, glm::vec4>,  //
-  FormatTypePair<VK_FORMAT_R64_SFLOAT, double>,              //
-  FormatTypePair<VK_FORMAT_R64G64_SFLOAT, glm::dvec2>,       //
-  FormatTypePair<VK_FORMAT_R64G64B64_SFLOAT, glm::dvec3>,    //
-  FormatTypePair<VK_FORMAT_R64G64B64A64_SFLOAT, glm::dvec4>, //
+  // FormatTypePair<VK_FORMAT_R64_SFLOAT, double>,              //
+  // FormatTypePair<VK_FORMAT_R64G64_SFLOAT, glm::dvec2>,       //
+  // FormatTypePair<VK_FORMAT_R64G64B64_SFLOAT, glm::dvec3>,    //
+  // FormatTypePair<VK_FORMAT_R64G64B64A64_SFLOAT, glm::dvec4>, //
   FormatTypePair<VK_FORMAT_R32_SINT, int>,                   //
   FormatTypePair<VK_FORMAT_R32G32_SINT, glm::ivec2>,         //
   FormatTypePair<VK_FORMAT_R32G32B32_SINT, glm::ivec3>,      //

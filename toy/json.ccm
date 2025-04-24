@@ -178,13 +178,13 @@ public:
     case Type::STRING:
       return a.to<String>() == b.to<String>();
     case Type::OBJECT:
-      return ranges::all_of(views::zip(a.to<Object>(), b.to<Object>()), [](auto pair) {
-        return pair.first == pair.second;
+      return ranges::all_of(views::zip(a.to<Object>(), b.to<Object>()), [](auto x) {
+        return std::get<0>(x) == std::get<1>(x);
       });
     case Type::LIST:
-      return ranges::all_of(views::zip(a.to<List>(), b.to<List>()), [](auto pair) {
-        return pair.first == pair.second;
-      });
+      return ranges::all_of(views::zip(a.to<List>(), b.to<List>()), [](auto x) {
+        return std::get<0>(x) == std::get<1>(x);
+      }); 
     }
   }
 };

@@ -12,3 +12,4 @@ assets
 .venv
 VulkanSDK
 third_party
+test.cc

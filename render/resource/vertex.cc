@@ -13,13 +13,18 @@ auto device_checkers::vertex(DeviceCapabilityBuilder& builder) -> std::expected<
   auto formats =
     FormatTypeInfos::applyFunc([]<typename... Info> { return std::array{ Info::format... }; });
   toy::debugf("the vertex formats: {::}", formats);
-  if (!builder.enableFeature(&VkPhysicalDeviceFeatures::shaderFloat64)) {
-    return std::unexpected{ "shaderFloat64 not supported" };
-  }
+  // if (!builder.enableFeature(&VkPhysicalDeviceFeatures::shaderFloat64)) {
+  //   return std::unexpected{ "shaderFloat64 not supported" };
+  // }
   if (!builder.getPdevice().checkFormatSupport(
         FormatTarget::BUFFER, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT, formats
       )) {
-    return std::unexpected{ "formats is not support for vertex" };
+    return std::unexpected{ std::format(
+      "formats is not support for vertex: {::}",
+      builder.getPdevice().getUnsupportFormats(
+        FormatTarget::BUFFER, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT, formats
+      )
+    ) };
   }
   return {};
 }

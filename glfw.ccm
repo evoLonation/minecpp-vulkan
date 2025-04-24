@@ -47,11 +47,22 @@ void checkGlfwError() {
   const char* description;
 
   // todo: 使用generator实现
-  auto errors = views::repeat(description) | views::take_while([&description](auto _) {
-                  return glfwGetError(&description) != GLFW_NO_ERROR;
-                });
-  if (!errors.empty()) {
-    toy::throwf("{::}", errors);
+  auto descriptions = std::vector<std::string_view>{};
+  auto errors = std::vector<int32>{};
+  while (true) {
+    auto error = glfwGetError(&description);
+    if (error == GLFW_NO_ERROR) {
+      break;
+    }
+    errors.push_back(error);
+    descriptions.push_back(description);
+  }
+  if (!descriptions.empty()) {
+    auto msg = std::string{};
+    for (auto [desc, error] : views::zip(descriptions, errors)) {
+      msg += std::format("glfw error (0x{:08X}): {}\n", error, desc);
+    }
+    toy::throwf("{}", msg);
   }
 }
 

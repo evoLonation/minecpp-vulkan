@@ -13,7 +13,6 @@ import engine.mesh;
 import engine.base;
 import engine.node;
 import engine.object;
-import <tinyobj_loader_c.h>;
 import std;
 import toy;
 import render.vertex;

@@ -18,8 +18,11 @@ auto color_formats = std::array{
 };
 auto depst_formats = std::array{
   // VK_FORMAT_D16_UNORM_S8_UINT,
-  VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_S8_UINT,
-  VK_FORMAT_D16_UNORM,         VK_FORMAT_D32_SFLOAT,
+  // VK_FORMAT_D24_UNORM_S8_UINT,
+  VK_FORMAT_D32_SFLOAT_S8_UINT,
+  VK_FORMAT_S8_UINT,
+  VK_FORMAT_D16_UNORM,
+  VK_FORMAT_D32_SFLOAT,
 };
 
 auto device_checkers::attachment(DeviceCapabilityBuilder& builder)
@@ -33,7 +36,12 @@ auto device_checkers::attachment(DeviceCapabilityBuilder& builder)
   if (!pdevice.checkFormatSupport(
         FormatTarget::OPTIMAL_TILING, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT, depst_formats
       )) {
-    return std::unexpected{ "depst formats is not support for attachment" };
+    return std::unexpected{ std::format(
+      "depst formats is not support for attachment: {::}",
+      pdevice.getUnsupportFormats(
+        FormatTarget::OPTIMAL_TILING, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT, depst_formats
+      )
+    ) };
   }
   return {};
 }
@@ -132,14 +140,14 @@ auto createSubpassDescriptions(
   auto addAttachmentRef =
     [&](uint32 attach_i, VkImageLayout layout, VkImageAspectFlags aspect = {}) {
       now_attachment_refs->push_back(VkAttachmentReference2{
-        .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
-        // 引用的 attachment 的索引
-        .attachment = attach_i,
-        // 用到该 ref 的 subpass 过程中使用的布局，会自动转换
-        // if enable multi sample, resolve op also occur in color attachment ouput stage
-        .layout = layout,
-        // aspectMask is just used for input attachment
-        .aspectMask = aspect,
+          .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
+          // 引用的 attachment 的索引
+          .attachment = attach_i,
+          // 用到该 ref 的 subpass 过程中使用的布局，会自动转换
+          // if enable multi sample, resolve op also occur in color attachment ouput stage
+          .layout = layout,
+          // aspectMask is just used for input attachment
+          .aspectMask = aspect,
       });
       if (attach_i != VK_ATTACHMENT_UNUSED) {
         if (initial_layouts[attach_i] == VK_IMAGE_LAYOUT_UNDEFINED) {
@@ -186,23 +194,23 @@ auto createSubpassDescriptions(
       }
     }
     subpass_descriptions.push_back(VkSubpassDescription2{
-      .sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2,
-      // 还有 compute、 ray tracing 等等
-      .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-      // 这里的数组的索引和 着色器里的 layout 数值一一对应
-      .inputAttachmentCount = static_cast<uint32>(subpass.inputs.size()),
-      .pInputAttachments = attachment_refs.data() + input_index,
-      .colorAttachmentCount = static_cast<uint32>(subpass.colors.size()),
-      .pColorAttachments = attachment_refs.data() + color_index,
-      .pResolveAttachments =
-        subpass.multi_sample ? attachment_refs.data() + resolve_index : nullptr,
-      // pInputAttachments: Attachments that are read from a shader
-      // pResolveAttachments: Attachments used for multisampling color attachments
-      // pDepthStencilAttachment: Attachment for depth and stencil data
-      .pDepthStencilAttachment =
-        depst_index.transform([&](auto i) { return &attachment_refs[i]; }).value_or(nullptr),
-      // pPreserveAttachments: Attachments that are not used by this subpass, but
-      // for which the data must be preserved
+        .sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2,
+        // 还有 compute、 ray tracing 等等
+        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        // 这里的数组的索引和 着色器里的 layout 数值一一对应
+        .inputAttachmentCount = static_cast<uint32>(subpass.inputs.size()),
+        .pInputAttachments = attachment_refs.data() + input_index,
+        .colorAttachmentCount = static_cast<uint32>(subpass.colors.size()),
+        .pColorAttachments = attachment_refs.data() + color_index,
+        .pResolveAttachments =
+          subpass.multi_sample ? attachment_refs.data() + resolve_index : nullptr,
+        // pInputAttachments: Attachments that are read from a shader
+        // pResolveAttachments: Attachments used for multisampling color attachments
+        // pDepthStencilAttachment: Attachment for depth and stencil data
+        .pDepthStencilAttachment =
+          depst_index.transform([&](auto i) { return &attachment_refs[i]; }).value_or(nullptr),
+        // pPreserveAttachments: Attachments that are not used by this subpass, but
+        // for which the data must be preserved
     });
   }
   return SubpassAttachmentInfo{
@@ -432,10 +440,10 @@ auto createDependencies(
   auto dependencies = std::vector<VkSubpassDependency2>{};
   for (auto [subpass_info, memory_barrier] : views::zip(barriers | views::keys, barrier_list)) {
     dependencies.emplace_back(VkSubpassDependency2{
-      .sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2,
-      .pNext = &memory_barrier,
-      .srcSubpass = subpass_info.first,
-      .dstSubpass = subpass_info.second,
+        .sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2,
+        .pNext = &memory_barrier,
+        .srcSubpass = subpass_info.first,
+        .dstSubpass = subpass_info.second,
     });
   }
   for (auto i : views::iota(0u, attachments.size())) {

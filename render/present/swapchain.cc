@@ -17,6 +17,8 @@ namespace rd {
  */
 auto Swapchain::_present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
 auto Swapchain::_format = VK_FORMAT_R8G8B8A8_SRGB;
+// auto Swapchain::_present_mode = VK_PRESENT_MODE_FIFO_KHR;
+// auto Swapchain::_format = VK_FORMAT_B8G8R8A8_SRGB;
 auto Swapchain::_usage = VkImageUsageFlags{
   VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
     VK_IMAGE_USAGE_TRANSFER_DST_BIT,
@@ -38,7 +40,10 @@ Swapchain::Swapchain(
   toy::throwf(
     eq_extent(capabilities.currentExtent, capabilities.minImageExtent) &&
       eq_extent(capabilities.currentExtent, capabilities.maxImageExtent),
-    "minImageExtent, maxImageExtent, and currentExtent must always equal."
+    "minImageExtent({}), maxImageExtent({}), and currentExtent({}) must always equal.",
+    std::pair{ capabilities.minImageExtent.width, capabilities.minImageExtent.height },
+    std::pair{ capabilities.maxImageExtent.width, capabilities.maxImageExtent.height },
+    std::pair{ capabilities.currentExtent.width, capabilities.currentExtent.height }
   );
   auto extent = capabilities.currentExtent;
   if (extent.height == 0 || extent.width == 0) {
@@ -105,7 +110,12 @@ auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& requ
   if (!request.enableExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
     return std::unexpected{ "swapchain extension not supported" };
   }
-  if (!request.enableExtension("VK_EXT_swapchain_maintenance1")) {
+  if (!request.enableExtension("VK_EXT_swapchain_maintenance1") ||
+      !request.enableFeature<
+        VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT,
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT>(
+        { &VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT::swapchainMaintenance1 }
+      )) {
     return std::unexpected{ "swapchain maintenance1 extension not supported" };
   }
   auto& pdevice = request.getPdevice();
@@ -129,7 +139,11 @@ auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& requ
   auto present_modes =
     getVkResources(vkGetPhysicalDeviceSurfacePresentModesKHR, pdevice.get(), surface);
   if (!ranges::contains(present_modes, _present_mode)) {
-    return std::unexpected{ "no suitable present mode" };
+    return std::unexpected{
+      std::format("no suitable present mode: {::}", present_modes | views::transform([](auto x) {
+                                                      return (int)x;
+                                                    }))
+    };
   }
   return {};
 }

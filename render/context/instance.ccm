@@ -1,3 +1,5 @@
+module;
+#include <toy.h>
 export module render.instance;
 
 import <vulkan_config.h>;
@@ -12,16 +14,18 @@ struct DebugMessengerConfig {
   VkDebugUtilsMessageTypeFlagsEXT        message_type_flags;
 };
 
-struct InstanceResource {
+struct InstanceResource : PROACTIVE_SINGLETON(InstanceResource) {
+public:
   rs::Instance                          instance;
   rs::DebugMessenger                    debug_messenger;
   std::unique_ptr<DebugMessengerConfig> messenger_config;
-};
+  uint32                                api_version;
 
-auto createInstance(
-  const std::string&     app_name,
-  std::span<std::string> extensions,
-  bool                   enable_debug_messenger = toy::enable_debug
-) -> InstanceResource;
+  InstanceResource(
+    const std::string&     app_name,
+    std::span<std::string> extensions,
+    bool                   enable_debug_messenger = toy::enable_debug
+  );
+};
 
 } // namespace rd
