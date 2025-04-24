@@ -24,6 +24,7 @@ DYN_LIB_DIR = TP_DIR / "dynamic_library"
 STATIC_LIB_DIR = TP_DIR / "static_library"
 MODULE_DIR = TP_DIR / "module"
 TEMP_DIR = BASE_DIR / "temp"
+VULKAN_DYLIB_FILE = "libvulkan.1.4.309.dylib"
 
 dynamic_libs = []
 dynamic_as_static_libs = []
@@ -97,7 +98,7 @@ def build_vulkan():
     print("build vulkan...")
     # 假设已经包含VulkanSDK目录在项目目录中
     vulkan_dir = BASE_DIR / "VulkanSDK/1.4.309.0/macOS"
-    dylib_path = vulkan_dir / "lib/libvulkan.1.4.309.dylib"
+    dylib_path = vulkan_dir / "lib" / VULKAN_DYLIB_FILE
     copy_dynamic_lib(dylib_path, as_static=True)
     copy_include(vulkan_dir / "include/vulkan")
     copy_include(vulkan_dir / "include/vk_video")
@@ -190,11 +191,12 @@ def build_imgui():
         INCLUDE_DIR / "GLFW",
     ]:
         shutil.copytree(sub, imgui_dir / "include" / sub.name, dirs_exist_ok=True)
-    for libname in ["libglfw.3.dylib", "libvulkan.1.4.309.dylib"]:
+    for libname in ["libglfw.3.dylib", VULKAN_DYLIB_FILE]:
         shutil.copy(DYN_LIB_DIR / libname, imgui_dir / libname)
     resource_yml = imgui_dir / "resource.yml"
     resource_yml.write_text(
-        textwrap.dedent("""\
+        textwrap.dedent(
+            f"""\
         source:
         - imgui_demo.cpp
         - imgui_draw.cpp
@@ -212,7 +214,11 @@ def build_imgui():
         - backends
         lib:
         - libglfw.3.dylib
-        - libvulkan.1.4.309.dylib
+        - { VULKAN_DYLIB_FILE }
+        # need change install_name
+        dylib: 
+        - libglfw.3.dylib
+        - { VULKAN_DYLIB_FILE }
         """
         )
     )
@@ -239,13 +245,13 @@ def build_imgui():
 
 
 def append_resource_files():
-    def append(path, content):
-        with open(path, "a") as f:
-            f.write(content)
+    def write(path: Path, content):
+        path.write_text(content)
 
-    append(
+    write(
         TP_DIR / "resource.yml",
-        textwrap.dedent("""\
+        textwrap.dedent(
+            """\
         include_dir:
         - include
         sub_dir:
@@ -257,9 +263,10 @@ def append_resource_files():
         ),
     )
 
-    append(
+    write(
         MODULE_DIR / "resource.yml",
-        textwrap.dedent("""\
+        textwrap.dedent(
+            """\
         module:
         - glm.cppm:
             provide: glm
@@ -267,35 +274,38 @@ def append_resource_files():
         ),
     )
 
-    append(
+    write(
         STATIC_LIB_DIR / "resource.yml",
-        textwrap.dedent("""\
+        textwrap.dedent(
+            """\
         lib:
         - libglm.a
         """
         ),
     )
 
-    append(
+    write(
         DYN_LIB_DIR / "resource.yml",
-        textwrap.dedent("""\
+        textwrap.dedent(
+            f"""\
         dylib:
         - libimgui.dylib
         - libassimp.5.4.3.dylib
-        - libvulkan.1.4.309.dylib
+        - { VULKAN_DYLIB_FILE }
         - libglfw.3.dylib
         lib:
         - libimgui.dylib
         - libassimp.5.4.3.dylib
-        - libvulkan.1.4.309.dylib
+        - { VULKAN_DYLIB_FILE }
         - libglfw.3.dylib
         """
         ),
     )
 
-    append(
+    write(
         INCLUDE_DIR / "resource.yml",
-        textwrap.dedent("""\
+        textwrap.dedent(
+            """\
         header_unit:
         - stb_image.h
         """
@@ -318,6 +328,7 @@ def main():
     build_imgui()
     append_resource_files()
     shutil.rmtree(TEMP_DIR)
+
 
 if __name__ == "__main__":
     main()

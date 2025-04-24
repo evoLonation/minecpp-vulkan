@@ -64,13 +64,6 @@ while len(dep_modules_stack) > 0:
 
 link_files = [lib.file for lib in resources.lib_files]
 
-if current_platform == Platform.MACOS:
-    for file in link_files:
-        if file.endswith(".dylib"):
-            run_command(
-                ["install_name_tool", "-id", f"@rpath/{os.path.basename(file)}", file]
-            )
-
 run_command(
     Compiler.link(
         link_files=link_files,
@@ -79,3 +72,41 @@ run_command(
         shared=args.type == "dll",
     )
 )
+
+
+def get_linked_install_names(binary_path: str):
+    output = run_command(["otool", "-L", str(binary_path)])
+    lines = output.splitlines()[1:]  # 跳过第一行（是可执行文件名）
+    if args.type == "dll":
+        # 动态库的第一个是它自己, 忽略
+        lines = lines[1:]
+    return [line.strip().split(" ")[0] for line in lines]
+
+
+
+def get_dylib_install_name(dylib_path: str):
+    output = run_command(["otool", "-D", str(dylib_path)])
+    return output.splitlines()[1].strip()
+
+
+# 获取可执行文件中所有动态库 install_name
+exe_install_names = set(get_linked_install_names(args.output))
+
+# 遍历目录中的所有 .dylib
+dylib_map = {}
+dylib_install_names = set()
+# print(resources.dylib_files)
+for dylib in resources.dylib_files:
+    # print(f"Checking: {dylib.file}")
+    install_name = get_dylib_install_name(dylib.file)
+    dylib_map[install_name] = dylib.file
+    dylib_install_names.add(install_name)
+# dylib_install_names 是 exe_install_names 的子集
+assert dylib_install_names.issubset(
+    exe_install_names
+), f"exe_install_names: {exe_install_names}, dylib_install_names: {dylib_install_names}"
+
+for old_name, dylib_file in dylib_map.items():
+    new_name = f"@rpath/{os.path.basename(dylib_file)}"
+    # print(f"Patching: {old_name} -> {new_name}")
+    run_command(["install_name_tool", "-change", old_name, new_name, str(args.output)])
