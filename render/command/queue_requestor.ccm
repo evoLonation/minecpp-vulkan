@@ -1,5 +1,6 @@
 export module render.queue_requestor;
 
+import toy;
 import <vulkan_config.h>;
 import render.device;
 import render.executor;
@@ -53,7 +54,7 @@ public:
       { FamilyType::TRANSFER, getTransferQueueChecker(), 1 },
     };
   }
-  auto checkPdevice(DeviceCapabilityBuilder& request) -> std::expected<void, std::string>;
+  auto checkPdevice(DeviceCapabilityBuilder& request) -> toy::Expected<void>;
   /**
    * @brief call after @ref rd::Device is constructed
    */

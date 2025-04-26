@@ -84,9 +84,9 @@ decltype(SampledImage::_available_formats) SampledImage::_available_formats = {
 };
 
 auto SampledImage::checkPdevice(DeviceCapabilityBuilder& request)
-  -> std::expected<void, std::string> {
+  -> toy::Expected<void> {
   if (!request.enableFeature(&VkPhysicalDeviceFeatures::samplerAnisotropy)) {
-    return std::unexpected{ "sampler anisotropy not supported" };
+    return toy::UnExpected{ "sampler anisotropy not supported" };
   }
   if (!request.getPdevice().checkFormatSupport(
         FormatTarget::OPTIMAL_TILING,
@@ -94,7 +94,7 @@ auto SampledImage::checkPdevice(DeviceCapabilityBuilder& request)
           VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT,
         _available_formats
       )) {
-    return std::unexpected{ "formats is not support for sampled texture" };
+    return toy::UnExpected{ "formats is not support for sampled texture" };
   }
   return {};
 }

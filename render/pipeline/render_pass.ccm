@@ -21,7 +21,7 @@ import toy;
 export namespace rd {
 
 namespace device_checkers {
-auto attachment(DeviceCapabilityBuilder&) -> std::expected<void, std::string>;
+auto attachment(DeviceCapabilityBuilder&) -> toy::Expected<void>;
 } // namespace device_checkers
 
 enum LoadOp {

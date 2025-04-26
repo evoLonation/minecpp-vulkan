@@ -29,7 +29,7 @@ auto Device::create(std::span<DeviceCapabilityChecker> checkers) -> Device {
       } else {
         is_support = false;
         toy::debugf(
-          "physical device {} not support, reason: {}",
+          "physical device {} not support, reason: \n{}",
           device.getProperties().deviceName,
           res.error()
         );

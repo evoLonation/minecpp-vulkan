@@ -106,9 +106,9 @@ Swapchain::Swapchain(
 }
 
 auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& request)
-  -> std::expected<void, std::string> {
+  -> toy::Expected<void> {
   if (!request.enableExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
-    return std::unexpected{ "swapchain extension not supported" };
+    return toy::UnExpected{ "swapchain extension not supported" };
   }
   if (!request.enableExtension("VK_EXT_swapchain_maintenance1") ||
       !request.enableFeature<
@@ -116,7 +116,7 @@ auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& requ
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT>(
         { &VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT::swapchainMaintenance1 }
       )) {
-    return std::unexpected{ "swapchain maintenance1 extension not supported" };
+    return toy::UnExpected{ "swapchain maintenance1 extension not supported" };
   }
   auto& pdevice = request.getPdevice();
   auto  formats = getVkResources(vkGetPhysicalDeviceSurfaceFormatsKHR, pdevice.get(), surface);
@@ -126,20 +126,20 @@ auto Swapchain::checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& requ
   if (!toy::findIf(formats, [&](auto format) {
         return format.format == _format && format.colorSpace == _color_space;
       })) {
-    return std::unexpected{ "no suitable format" };
+    return toy::UnExpected{ "no suitable format" };
   }
   if (!pdevice.checkFormatSupport(
         FormatTarget::OPTIMAL_TILING,
         VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
         { &_format, &_format + 1 }
       )) {
-    return std::unexpected{ "format not support color attachment" };
+    return toy::UnExpected{ "format not support color attachment" };
   }
 
   auto present_modes =
     getVkResources(vkGetPhysicalDeviceSurfacePresentModesKHR, pdevice.get(), surface);
   if (!ranges::contains(present_modes, _present_mode)) {
-    return std::unexpected{
+    return toy::UnExpected{
       std::format("no suitable present mode: {::}", present_modes | views::transform([](auto x) {
                                                       return (int)x;
                                                     }))

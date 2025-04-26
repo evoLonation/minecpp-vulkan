@@ -1,3 +1,5 @@
+module;
+#include "toy.h"
 export module toy.helper;
 
 import std;
@@ -142,6 +144,17 @@ public:
 
 private:
   std::function<void()> _func;
+};
+
+template <typename T>
+using Expected = std::expected<T, std::string>;
+
+class UnExpected : public std::unexpected<std::string> {
+public:
+  UnExpected(std::string str, std::source_location location = std::source_location::current())
+    : std::unexpected<std::string>(std::format("{}: {}", toy::formatSourceLocation(location), str)
+      ) {}
+  DEFAULT_COPYABLE_MOVEABLE(UnExpected);
 };
 
 namespace test_StringLiteral {

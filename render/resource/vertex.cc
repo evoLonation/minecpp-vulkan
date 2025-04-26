@@ -9,17 +9,17 @@ auto operator==(const VertexInfo& a, const VertexInfo& b) -> bool {
          a.attribute_descriptions.end() == b.attribute_descriptions.end();
 }
 
-auto device_checkers::vertex(DeviceCapabilityBuilder& builder) -> std::expected<void, std::string> {
+auto device_checkers::vertex(DeviceCapabilityBuilder& builder) -> toy::Expected<void> {
   auto formats =
     FormatTypeInfos::applyFunc([]<typename... Info> { return std::array{ Info::format... }; });
   toy::debugf("the vertex formats: {::}", formats);
   // if (!builder.enableFeature(&VkPhysicalDeviceFeatures::shaderFloat64)) {
-  //   return std::unexpected{ "shaderFloat64 not supported" };
+  //   return toy::UnExpected{ "shaderFloat64 not supported" };
   // }
   if (!builder.getPdevice().checkFormatSupport(
         FormatTarget::BUFFER, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT, formats
       )) {
-    return std::unexpected{ std::format(
+    return toy::UnExpected{ std::format(
       "formats is not support for vertex: {::}",
       builder.getPdevice().getUnsupportFormats(
         FormatTarget::BUFFER, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT, formats

@@ -26,17 +26,17 @@ auto depst_formats = std::array{
 };
 
 auto device_checkers::attachment(DeviceCapabilityBuilder& builder)
-  -> std::expected<void, std::string> {
+  -> toy::Expected<void> {
   auto& pdevice = builder.getPdevice();
   if (!pdevice.checkFormatSupport(
         FormatTarget::OPTIMAL_TILING, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT, color_formats
       )) {
-    return std::unexpected{ "color formats is not support for attachment" };
+    return toy::UnExpected{ "color formats is not support for attachment" };
   }
   if (!pdevice.checkFormatSupport(
         FormatTarget::OPTIMAL_TILING, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT, depst_formats
       )) {
-    return std::unexpected{ std::format(
+    return toy::UnExpected{ std::format(
       "depst formats is not support for attachment: {::}",
       pdevice.getUnsupportFormats(
         FormatTarget::OPTIMAL_TILING, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT, depst_formats

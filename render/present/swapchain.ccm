@@ -45,7 +45,7 @@ private:
 
 public:
   static auto checkPdevice(VkSurfaceKHR surface, DeviceCapabilityBuilder& request)
-    -> std::expected<void, std::string>;
+    -> toy::Expected<void>;
 
 private:
   VkExtent2D                 _swapchain_extent;

@@ -12,9 +12,9 @@ export namespace rd::align {
 
 namespace device_checkers {
 
-auto alignment(DeviceCapabilityBuilder& builder) -> std::expected<void, std::string> {
+auto alignment(DeviceCapabilityBuilder& builder) -> toy::Expected<void> {
   if (!builder.enableFeature(&VkPhysicalDeviceVulkan12Features::uniformBufferStandardLayout)) {
-    return std::unexpected{ "uniformBufferStandardLayout not supported" };
+    return toy::UnExpected{ "uniformBufferStandardLayout not supported" };
   }
   return {};
 }

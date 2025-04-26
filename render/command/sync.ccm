@@ -14,7 +14,7 @@ export namespace rd {
 
 namespace device_checkers {
 
-auto sync(DeviceCapabilityBuilder& builder) -> std::expected<void, std::string>;
+auto sync(DeviceCapabilityBuilder& builder) -> toy::Expected<void>;
 
 } // namespace device_checkers
 

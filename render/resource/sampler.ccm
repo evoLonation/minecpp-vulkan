@@ -30,7 +30,7 @@ private:
   static std::vector<VkFormat> _available_formats;
 
 public:
-  static auto checkPdevice(DeviceCapabilityBuilder& request) -> std::expected<void, std::string>;
+  static auto checkPdevice(DeviceCapabilityBuilder& request) -> toy::Expected<void>;
 };
 
 class SampledTexture : toy::AutoMoveAssigner<SampledTexture> {

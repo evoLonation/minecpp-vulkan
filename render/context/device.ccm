@@ -159,7 +159,7 @@ private:
 };
 
 using DeviceCapabilityChecker =
-  std::function<std::expected<void, std::string>(DeviceCapabilityBuilder& request)>;
+  std::function<toy::Expected<void>(DeviceCapabilityBuilder& request)>;
 class Device : public rs::Device, public PROACTIVE_SINGLETON(Device) {
 private:
   Device(rs::Device device, PhysicalDevice pdevice, VkPhysicalDeviceFeatures features)

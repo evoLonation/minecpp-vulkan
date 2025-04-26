@@ -48,7 +48,7 @@ auto hungarian(std::span<const std::vector<int>> graph, int right_count)
 }
 
 auto QueueRequestor::checkPdevice(DeviceCapabilityBuilder& request)
-  -> std::expected<void, std::string> {
+  -> toy::Expected<void> {
   auto& pdevice = request.getPdevice();
 
   auto family_count = pdevice.getAllQueueFamilyProperties().size();
@@ -82,7 +82,7 @@ auto QueueRequestor::checkPdevice(DeviceCapabilityBuilder& request)
     }
     return {};
   } else {
-    return std::unexpected("queue request failed");
+    return toy::UnExpected("queue request failed");
   }
 }
 } // namespace rd
