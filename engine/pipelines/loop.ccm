@@ -23,7 +23,7 @@ class RenderPassLoop : public fw::Action {
 public:
   RenderPassLoop() : fw::Action(fw::Stage::RENDER) {
     auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
-    _color.init(VK_FORMAT_R8G8B8A8_SRGB, &_reval_extent, extent);
+    _color.init(rd::Presentation::getInstance().getSwapchain().getFormat(), &_reval_extent, extent);
     _id_output.init(VK_FORMAT_R32_UINT, &_reval_extent, extent);
     _depth.init(VK_FORMAT_D32_SFLOAT, &_reval_extent, extent);
     _depth_id.init(VK_FORMAT_D32_SFLOAT, &_reval_extent, extent);
