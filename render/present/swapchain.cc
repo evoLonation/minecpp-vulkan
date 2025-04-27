@@ -1,3 +1,6 @@
+module;
+#include "toy.h"
+#include <platform.h>
 module render.swapchain;
 
 import <vulkan_config.h>;
@@ -15,10 +18,14 @@ namespace rd {
  * VK_PRESENT_MODE_MAILBOX_KHR: 有一个 single-entry queue, 当队列满时,
  * 不阻塞而是直接将队中图像替换为提交的图像
  */
+#ifdef PLATFORM_WINDOWS
 auto Swapchain::_present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
 auto Swapchain::_format = VK_FORMAT_R8G8B8A8_SRGB;
+#elifdef PLATFORM_MACOS
 // auto Swapchain::_present_mode = VK_PRESENT_MODE_FIFO_KHR;
-// auto Swapchain::_format = VK_FORMAT_B8G8R8A8_SRGB;
+auto Swapchain::_present_mode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+auto Swapchain::_format = VK_FORMAT_B8G8R8A8_SRGB;
+#endif
 auto Swapchain::_usage = VkImageUsageFlags{
   VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
     VK_IMAGE_USAGE_TRANSFER_DST_BIT,
@@ -31,21 +38,35 @@ Swapchain::Swapchain(
   VkSwapchainKHR            old_swapchain,
   uint32                    concurrent_image_count
 ) {
+  VkExtent2D extent;
+  if constexpr (platform::windows) {
+    // With Win32, minImageExtent, maxImageExtent, and currentExtent must always equal the window
+    // size.
+    // The currentExtent of a Win32 surface must have both width and height greater than 0, or
+    // both of them 0.
+    auto eq_extent = [](auto a, auto b) { return a.height == b.height && a.width == b.width; };
+    toy::throwf(
+      eq_extent(capabilities.currentExtent, capabilities.minImageExtent) &&
+        eq_extent(capabilities.currentExtent, capabilities.maxImageExtent),
+      "minImageExtent({}), maxImageExtent({}), and currentExtent({}) must always equal.",
+      std::pair{ capabilities.minImageExtent.width, capabilities.minImageExtent.height },
+      std::pair{ capabilities.maxImageExtent.width, capabilities.maxImageExtent.height },
+      std::pair{ capabilities.currentExtent.width, capabilities.currentExtent.height }
+    );
+    extent = capabilities.currentExtent;
+  }
+  if constexpr (platform::macos) {
+    // minImageExtent = {1, 1}, maxImageExtent is big enough
+    // currentExtent is 2x scale of the window size
+    TOY_DEBUG(std::pair{ capabilities.minImageExtent.width, capabilities.minImageExtent.height });
+    TOY_DEBUG(std::pair{ capabilities.maxImageExtent.width, capabilities.maxImageExtent.height });
+    TOY_DEBUG(std::pair{ capabilities.currentExtent.width, capabilities.currentExtent.height });
+    extent = capabilities.currentExtent;
+    // if extent != currentExtent, present engine will scale to fullscreen
+    // vkAcquireNextImageKHR and vkQueuePresentKHR will return VK_SUBOPTIMAL_KHR
+    // extent = {1280, 720};
+  }
 
-  // With Win32, minImageExtent, maxImageExtent, and currentExtent must always equal the window
-  // size.
-  // The currentExtent of a Win32 surface must have both width and height greater than 0, or both
-  // of them 0.
-  auto eq_extent = [](auto a, auto b) { return a.height == b.height && a.width == b.width; };
-  toy::throwf(
-    eq_extent(capabilities.currentExtent, capabilities.minImageExtent) &&
-      eq_extent(capabilities.currentExtent, capabilities.maxImageExtent),
-    "minImageExtent({}), maxImageExtent({}), and currentExtent({}) must always equal.",
-    std::pair{ capabilities.minImageExtent.width, capabilities.minImageExtent.height },
-    std::pair{ capabilities.maxImageExtent.width, capabilities.maxImageExtent.height },
-    std::pair{ capabilities.currentExtent.width, capabilities.currentExtent.height }
-  );
-  auto extent = capabilities.currentExtent;
   if (extent.height == 0 || extent.width == 0) {
     return;
   }

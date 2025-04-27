@@ -30,7 +30,7 @@ import engine.editor.scene;
 
 int main() {
   try {
-    auto  ctx = ctx::Context{ "hello vulkan", 1920, 1080 };
+    auto  ctx = ctx::Context{ "hello vulkan", 1280, 720 };
     auto  dset_pools = rd::meta::DescriptorPools{};
     auto& input = fw::InputProcessor::getInstance();
     auto  render_pass = eg::RenderPassLoop{};

@@ -1,4 +1,5 @@
 module;
+#include <platform.h>
 #include <toy.h>
 export module framework.input;
 
@@ -24,12 +25,16 @@ struct ButtonState {
   // in DOWN, is always at 0
   float hold_time;
 };
+
 struct CursorState {
-  uint32 x;
-  uint32 y;
-  int32  x_move;
-  int32  y_move;
-  bool   visible;
+  // x, y: the position of cursor
+  // in macos may < 0 or > window size
+  // todo: check in windows 
+  int32 x;
+  int32 y;
+  int32 x_move;
+  int32 y_move;
+  bool  visible;
 };
 
 class InputProcessor : public PROACTIVE_SINGLETON(InputProcessor) {
@@ -52,23 +57,30 @@ public:
     glfwSetMouseButtonCallback(window, [](GLFWwindow* window, int mouse_, int action, int mods) {
       updateState(getInstance()._mouse_states, mouseMapper(mouse_), action);
     });
+
     double last_x, last_y;
     glfwGetCursorPos(window, &last_x, &last_y);
-    TOY_ASSERT(
-      last_x == static_cast<int32>(last_x) && last_y == static_cast<int32>(last_y), last_x, last_y
-    );
+    if constexpr (platform::windows) {
+      TOY_ASSERT(
+        last_x == static_cast<int32>(last_x) && last_y == static_cast<int32>(last_y), last_x, last_y
+      );
+    }
     _cursor_state = {
-      .x = static_cast<uint32>(last_x),
-      .y = static_cast<uint32>(last_y),
+      .x = static_cast<int32>(std::round(last_x)),
+      .y = static_cast<int32>(std::round(last_y)),
       .x_move = 0,
       .y_move = 0,
       .visible = false,
     };
-    glfwSetCursorPosCallback(window, [](GLFWwindow* window, double x, double y) {
+    glfwSetCursorPosCallback(window, [](GLFWwindow* window, double x_, double y_) {
       auto& instance = getInstance();
-      TOY_CHECK(x == (int32)x && y == (int32)y, x, y);
-      instance._cursor_state.x_move = (int32)x - (int32)instance._cursor_state.x;
-      instance._cursor_state.y_move = (int32)y - (int32)instance._cursor_state.y;
+      int32 x = static_cast<int32>(std::round(x_));
+      int32 y = static_cast<int32>(std::round(y_));
+      if constexpr (platform::windows) {
+        TOY_CHECK(x == x_ && y == y_, x_, y_);
+      }
+      instance._cursor_state.x_move = x - instance._cursor_state.x;
+      instance._cursor_state.y_move = y - instance._cursor_state.y;
       instance._cursor_state.x = x;
       instance._cursor_state.y = y;
     });
