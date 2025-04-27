@@ -151,7 +151,31 @@ auto Device::create(std::span<DeviceCapabilityChecker> checkers) -> Device {
 
 PhysicalDevice::PhysicalDevice(VkPhysicalDevice pdevice) {
   _handle = pdevice;
-  vkGetPhysicalDeviceProperties(pdevice, &_properties);
+
+  // get properties
+  auto properties2 = VkPhysicalDeviceProperties2{
+    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+    .pNext = &_vk11properties,
+  };
+  _vk11properties = {
+    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES,
+    .pNext = &_vk12properties,
+  };
+  _vk12properties = {
+    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES,
+    .pNext = &_vk13properties,
+  };
+  _vk13properties = {
+    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES,
+    .pNext = &_vk14properties,
+  };
+  _vk14properties = {
+    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_PROPERTIES,
+  };
+  vkGetPhysicalDeviceProperties2(pdevice, &properties2);
+  _properties = properties2.properties;
+
+  // get features
   auto features2 = VkPhysicalDeviceFeatures2{
     .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
     .pNext = &_vk11features,
@@ -173,6 +197,7 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice pdevice) {
   };
   vkGetPhysicalDeviceFeatures2(pdevice, &features2);
   _features = features2.features;
+
   vkGetPhysicalDeviceMemoryProperties(pdevice, &_memory_properties);
   _queue_family_properties = getVkResources(vkGetPhysicalDeviceQueueFamilyProperties, pdevice);
 

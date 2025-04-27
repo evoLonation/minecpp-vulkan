@@ -5,18 +5,21 @@
 
 #define NAME_TUPLE_STRING(...)                                                                     \
   toy::macro::nameTupleFormat({ #__VA_ARGS__ }, toy::macro::getTuple(__VA_ARGS__))
+
 #define TOY_ASSERT(condition, ...)                                                                 \
   toy::throwf(                                                                                     \
     static_cast<bool>(condition),                                                                  \
     "{}",                                                                                          \
     toy::macro::nextLineIfExist("assert error: " #condition, NAME_TUPLE_STRING(__VA_ARGS__))       \
   )
+
 #define TOY_CHECK(condition, ...)                                                                  \
   toy::checkf(                                                                                     \
     condition,                                                                                     \
     "{}",                                                                                          \
     toy::macro::nextLineIfExist("check error: " #condition, NAME_TUPLE_STRING(__VA_ARGS__))        \
   )
+
 #define TOY_CHECK_ASSERT(condition, ...)                                                           \
   do {                                                                                             \
     auto condition_ = static_cast<bool>(condition);                                                \

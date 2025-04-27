@@ -31,7 +31,6 @@ private:
   std::unique_ptr<rd::rs::Surface>      _surface;
   std::unique_ptr<rd::Device>           _device;
   std::unique_ptr<rd::ExecutorManager>  _executor_manager;
-  std::unique_ptr<rd::ImageContext>     _image_context;
   std::unique_ptr<rd::FramebufferPool>  _framebuffer_pool;
   std::unique_ptr<rd::Presentation>     _presentation;
   std::unique_ptr<fw::InputProcessor>   _input_processor;

@@ -109,17 +109,42 @@ auto createImageView(VkImage image, VkFormat format, uint32 mip_levels) -> rs::I
   return { create_info };
 }
 
-ImageContext::ImageContext() {
+auto getAvailableSampleCounts(VkImageUsageFlags usage, VkFormat format) {
   auto& properties = Device::getInstance().getPdevice().getProperties();
-  _available_sample_counts = properties.limits.framebufferColorSampleCounts &
-                             properties.limits.framebufferDepthSampleCounts &
-                             properties.limits.framebufferStencilSampleCounts &
-                             properties.limits.framebufferNoAttachmentsSampleCounts &
-                             properties.limits.sampledImageColorSampleCounts &
-                             properties.limits.sampledImageIntegerSampleCounts &
-                             properties.limits.sampledImageDepthSampleCounts &
-                             properties.limits.sampledImageStencilSampleCounts &
-                             properties.limits.storageImageSampleCounts;
+  auto  format_info = getFormatInfo(format);
+  auto& properties2 = Device::getInstance().getPdevice().getVk12Properties();
+  if ((usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) && format_info.type == FormatType::COLOR) {
+    if ((format_info.color.scalar & ScalarType::DEST_FLOAT)) {
+      return properties.limits.framebufferColorSampleCounts;
+    } else if ((format_info.color.scalar & ScalarType::DEST_INTEGER)) {
+      return properties2.framebufferIntegerColorSampleCounts;
+    }
+  } else if ((usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
+    if (format_info.type == FormatType::DEPTH) {
+      return properties.limits.framebufferDepthSampleCounts;
+    } else if (format_info.type == FormatType::STENCIL) {
+      return properties.limits.framebufferStencilSampleCounts;
+    } else if (format_info.type == FormatType::DEPTH_STENCIL) {
+      return properties.limits.framebufferDepthSampleCounts &
+             properties.limits.framebufferStencilSampleCounts;
+    }
+    toy::throwf("unreachable");
+  } else if ((usage & VK_IMAGE_USAGE_SAMPLED_BIT)) {
+    if (format_info.type == FormatType::COLOR) {
+      return properties.limits.sampledImageColorSampleCounts;
+    } else if (format_info.type == FormatType::DEPTH) {
+      return properties.limits.sampledImageDepthSampleCounts;
+    } else if (format_info.type == FormatType::STENCIL) {
+      return properties.limits.sampledImageStencilSampleCounts;
+    } else if (format_info.type == FormatType::DEPTH_STENCIL) {
+      return properties.limits.sampledImageDepthSampleCounts &
+             properties.limits.sampledImageStencilSampleCounts;
+    }
+    toy::throwf("unreachable");
+  } else if ((usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
+    return properties.limits.storageImageSampleCounts;
+  }
+  toy::throwf("unreachable");
 }
 
 ImageResource::ImageResource(
@@ -137,11 +162,8 @@ ImageResource::ImageResource(
       usage,
       mip_levels,
       [&]() {
-        TOY_ASSERT(
-          (ImageContext::getInstance().getAvailableSampleCounts() & sample_count) > 0,
-          sample_count,
-          ImageContext::getInstance().getAvailableSampleCounts()
-        );
+        auto available_sample_counts = getAvailableSampleCounts(usage, format);
+        TOY_ASSERT(sample_count & available_sample_counts, sample_count, available_sample_counts);
         return sample_count;
       }()
     )),
@@ -170,7 +192,7 @@ Image::Image(
     mipmap_levels = mipmap_extents.size();
   }
   ImageResource::operator=({ format, width, height, usage, mipmap_levels, sample_count });
-  ImageManager::operator=({
+  ImageManager:: operator=({
     ImageResource::_image,
     ImageResource::_image_view,
     usage,
@@ -182,7 +204,7 @@ Image::Image(
 }
 
 auto Image::operator=(Image&& e) noexcept -> Image& {
-  ImageManager::operator=(std::move(e));
+  ImageManager:: operator=(std::move(e));
   ImageResource::operator=(std::move(e));
   return *this;
 }

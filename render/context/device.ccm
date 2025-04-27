@@ -22,6 +22,19 @@ public:
   PhysicalDevice(VkPhysicalDevice pdevice);
   auto get() const -> VkPhysicalDevice { return _handle; }
   auto getProperties() const -> VkPhysicalDeviceProperties const& { return _properties; }
+  auto getVk11Properties() const -> VkPhysicalDeviceVulkan11Properties const& {
+    return _vk11properties;
+  }
+  auto getVk12Properties() const -> VkPhysicalDeviceVulkan12Properties const& {
+    return _vk12properties;
+  }
+  auto getVk13Properties() const -> VkPhysicalDeviceVulkan13Properties const& {
+    return _vk13properties;
+  }
+  auto getVk14Properties() const -> VkPhysicalDeviceVulkan14Properties const& {
+    return _vk14properties;
+  }
+
   auto getFeatures() const -> VkPhysicalDeviceFeatures const& { return _features; }
   auto getVk11Features() const -> VkPhysicalDeviceVulkan11Features const& { return _vk11features; }
   auto getVk12Features() const -> VkPhysicalDeviceVulkan12Features const& { return _vk12features; }
@@ -61,6 +74,10 @@ public:
 private:
   VkPhysicalDevice                                       _handle;
   VkPhysicalDeviceProperties                             _properties;
+  VkPhysicalDeviceVulkan11Properties                     _vk11properties;
+  VkPhysicalDeviceVulkan12Properties                     _vk12properties;
+  VkPhysicalDeviceVulkan13Properties                     _vk13properties;
+  VkPhysicalDeviceVulkan14Properties                     _vk14properties;
   VkPhysicalDeviceFeatures                               _features;
   VkPhysicalDeviceVulkan11Features                       _vk11features;
   VkPhysicalDeviceVulkan12Features                       _vk12features;
@@ -137,7 +154,7 @@ struct DeviceCapabilityBuilder {
     auto support_feature = _device->getExtensionFeatures<S, T>();
     if (ranges::all_of(members, [&](auto member) { return support_feature.*member; })) {
       feature_chains.emplace_back([members = std::vector<VkBool32 S::*>{ members }](void* pnext) {
-        // std::any does not support move only type 
+        // std::any does not support move only type
         auto feature = std::make_shared<S>(S{
           .sType = T,
           .pNext = pnext,

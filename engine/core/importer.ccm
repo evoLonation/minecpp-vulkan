@@ -129,8 +129,7 @@ auto getTexture(std::string const& base_path, aiMaterial const* material) -> ptr
   } else if (normal_count != 0) {
     return get_texture(aiTextureType_NORMALS);
   } else {
-    TOY_ASSERT(false);
-    std::unreachable();
+    toy::throwf("unreachable");
   }
 }
 

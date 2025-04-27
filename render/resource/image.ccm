@@ -49,15 +49,6 @@ auto createImage(
 
 auto createImageView(VkImage image, VkFormat format, uint32 mip_levels) -> rs::ImageView;
 
-class ImageContext : public PROACTIVE_SINGLETON(ImageContext) {
-public:
-  ImageContext();
-  auto getAvailableSampleCounts() -> VkSampleCountFlags { return _available_sample_counts; }
-
-private:
-  VkSampleCountFlags _available_sample_counts;
-};
-
 class ImageManager {
 public:
   ImageManager() = default;

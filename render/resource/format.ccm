@@ -111,7 +111,7 @@ enum FormatType {
   COLOR = 0b001,
   DEPTH = 0b010,
   STENCIL = 0b100,
-  DEPTH_STENCIL = 0b110,
+  DEPTH_STENCIL = DEPTH | STENCIL,
 };
 
 struct ColorFormatInfo {

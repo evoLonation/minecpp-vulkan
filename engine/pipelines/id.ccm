@@ -118,8 +118,8 @@ public:
     auto extent = rd::Presentation::getInstance().getSwapchain().getExtent();
     auto cursor = fw::InputProcessor::getInstance().getCursorState();
     if (cursor.visible) {
-      int32 x = std::clamp(cursor.x, 0u, extent.width - 1);
-      int32 y = std::clamp(cursor.y, 0u, extent.height - 1);
+      int32 x = std::clamp(cursor.x, 0, (int)extent.width - 1);
+      int32 y = std::clamp(cursor.y, 0, (int)extent.height - 1);
       _reader.loadImage(*id_output, VK_IMAGE_ASPECT_COLOR_BIT, { x, y }, { 1, 1 }, 0);
       _current_id = *reinterpret_cast<uint32*>(_reader.readPixel(0, 0));
     } else {
