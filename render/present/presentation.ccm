@@ -41,23 +41,14 @@ private:
 
   /**
    * @brief
-   * before vkacquire, if fence_waitable is true, set fence_waitable to false and fence.wait()
-   * pass sema and fence to vkacquire for signal
-   * after vkacquire, if success, set fence_waitable to true and submit wait operation for sema
-   * when destroy, need ensure destroy after ImageContext because if images is free, the sema is
-   *  also free
+   * before vkacquire, need wait waitable to ensure no pending operation on sema
+   * pass sema to vkacquire for signal
+   * waitable is assigned to execution which pending wait operation on sema
    */
   struct AcquireContext {
     rs::Semaphore available_sema;
-    Fence         available_fence;
-    bool          fence_waitable;
-    AcquireContext()
-      : available_sema(createSemaphore()), available_fence{ false }, fence_waitable(false) {}
-    ~AcquireContext() {
-      if (fence_waitable) {
-        available_fence.wait(false);
-      }
-    }
+    Waitable      waitable;
+    AcquireContext() : available_sema(createSemaphore()) {}
   };
   AcquireContext _acquire_ctx;
 

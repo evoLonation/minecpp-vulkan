@@ -33,7 +33,7 @@ auto Presentation::acquireNextImage() -> std::pair<uint32, VkResult> {
     _swapchain,
     max_timeout,
     _acquire_ctx.available_sema,
-    _acquire_ctx.available_fence,
+    VK_NULL_HANDLE,
     &image_index
   );
   CHECK_VK_RESULT(result, { VK_SUCCESS, VK_ERROR_OUT_OF_DATE_KHR, VK_SUBOPTIMAL_KHR });
@@ -47,9 +47,8 @@ auto Presentation::prepare() -> std::optional<Context> {
   if (_need_recreate || !_swapchain.isValid()) {
     return std::nullopt;
   }
-  if (_acquire_ctx.fence_waitable) {
-    _acquire_ctx.available_fence.wait(true);
-    _acquire_ctx.fence_waitable = false;
+  if (_acquire_ctx.waitable.valid()) {
+    _acquire_ctx.waitable.wait();
   }
   auto [image_index, result] = acquireNextImage();
   if (result == VK_ERROR_OUT_OF_DATE_KHR) {
@@ -57,7 +56,6 @@ auto Presentation::prepare() -> std::optional<Context> {
     return std::nullopt;
   }
   // success call
-  _acquire_ctx.fence_waitable = true;
   _image_ctxs[image_index].need_release = true;
   auto& ctx = _image_ctxs[image_index];
   auto  image = _swapchain.getImages()[image_index];
@@ -72,7 +70,7 @@ auto Presentation::prepare() -> std::optional<Context> {
     VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
     { { _acquire_ctx.available_sema, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT } }
   );
-  submitter.submit([](auto) {});
+  _acquire_ctx.waitable = submitter.submit([](auto) {});
   if (result == VK_SUCCESS) {
     return Context{
       .image_index = image_index,
@@ -148,12 +146,14 @@ auto Presentation::recreate() -> bool {
     return false;
   }
   for (auto [image, image_view] : views::zip(_swapchain.getImages(), _swapchain.getImageViews())) {
-    _image_ctxs.push_back(ImageContext{
-      image,
-      image_view,
-      _swapchain.getExtent(),
-      _swapchain.getFormat(),
-    });
+    _image_ctxs.push_back(
+      ImageContext{
+        image,
+        image_view,
+        _swapchain.getExtent(),
+        _swapchain.getFormat(),
+      }
+    );
   }
   _need_recreate = false;
   return true;

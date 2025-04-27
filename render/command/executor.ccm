@@ -22,6 +22,7 @@ public:
    * @param cmdbuf must is a newly created command buffer
    */
   CommandBuffer(rs::CommandBuffer cmdbuf) : rs::CommandBuffer(std::move(cmdbuf)) {}
+  CommandBuffer() = default;
 
   void record(std::function<void(VkCommandBuffer cmdbuf)> const& recorder);
   auto getSema() -> IncrementalSemaphore& { return _sema; }
@@ -75,6 +76,9 @@ public:
   using StageSemaphoreMap = std::unordered_map<VkPipelineStageFlags2, DisposableSemaphore>;
   Waitable(DisposableCmdbuf cmdbuf, StageSemaphoreMap stage_semas)
     : _stage_semas(std::move(stage_semas)), _cmdbuf(std::move(cmdbuf)) {}
+  Waitable() = default;
+
+  auto valid() const -> bool { return _cmdbuf.valid(); }
 
   auto wait(
     VkPipelineStageFlags2 stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
