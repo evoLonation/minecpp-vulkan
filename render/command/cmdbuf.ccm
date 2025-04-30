@@ -1,0 +1,154 @@
+module;
+#include <toy.h>
+#include <vulkan_tool.h>
+export module render.cmdbuf;
+
+import render.resource;
+import render.tool;
+import <vulkan_config.h>;
+import std;
+import toy;
+
+export namespace rd::exec {
+
+class CommandBuffer : public rs::CommandBuffer {
+public:
+  CommandBuffer() = default;
+  // cmdbuf must is a newly created command buffer
+  CommandBuffer(rs::CommandBuffer cmdbuf) : rs::CommandBuffer(std::move(cmdbuf)), _state(IDLE) {}
+  ONLY_MOVEABLE(CommandBuffer)
+  enum State {
+    IDLE,
+    RECORDING,
+    // 包含了 EXECUTABLE 和 PENDING 两种状态
+    AFTER_RECORD,
+  };
+  void beginRecord() {
+    TOY_ASSERT(_state == IDLE);
+    // vkBeginCommandBuffer 会隐式执行vkResetCommandBuffer，虽然目前是手动 Reset
+    auto begin_info = VkCommandBufferBeginInfo{
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+      /** \param VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT specifies that each
+       * recording of the command buffer will only be submitted once, and the
+       * command buffer will be reset and recorded again between each submission.
+       * \param VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT specifies that a
+       * secondary command buffer is considered to be entirely inside a render
+       * pass. If this is a primary command buffer, then this bit is ignored.
+       * \param VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT specifies that a
+       * command buffer can be resubmitted to any queue of the same queue family
+       * while it is in the pending state, and recorded into multiple primary
+       * command buffers.*/
+      .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+      .pInheritanceInfo = nullptr,
+    };
+    CHECK_VK_RESULT(vkBeginCommandBuffer(get(), &begin_info));
+    _state = RECORDING;
+  }
+  void endRecord() {
+    TOY_ASSERT(_state == RECORDING);
+    CHECK_VK_RESULT(vkEndCommandBuffer(get()));
+    _state = AFTER_RECORD;
+  }
+  // 虽然vkBeging隐式包含，但是显式调用可以提早发现问题（通过验证层），并且逻辑上更加清晰
+  // 需要人为保证此时不是 PENDING 状态
+  void reset() {
+    // 除了 PENDING 都可以 reset，因此无需 TOY_ASSERT，通过验证层判断
+    CHECK_VK_RESULT(vkResetCommandBuffer(get(), 0));
+    _state = IDLE;
+  }
+  auto valid() -> bool { return get(); }
+
+private:
+  State _state;
+};
+
+// 回收时必须不处于 PENDING 状态（人为保证）
+// 分配时已经处于 RECORDING 状态
+class CommandBufferPool : public toy::ObjectPoolHelper<CommandBuffer> {
+public:
+  friend ObjectPoolHelper;
+  CommandBufferPool(uint32 family_index) {
+    _pool = rs::CommandPool{ VkCommandPoolCreateInfo{
+      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      // VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT：允许重置单个command
+      // buffer，否则就要重置命令池里的所有buffer
+      // VK_COMMAND_POOL_CREATE_TRANSIENT_BIT: 命令缓冲区会很频繁的记录新命令
+      .flags =
+        VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+      .queueFamilyIndex = family_index,
+    } };
+  }
+
+  void recycle(CommandBuffer cmdbuf) {
+    cmdbuf.reset();
+    _idle_cmdbufs.push_back(std::move(cmdbuf));
+  }
+
+  ~CommandBufferPool() {
+    auto range = _idle_cmdbufs | views::transform([](CommandBuffer& cmdbuf) -> decltype(auto) {
+                   return static_cast<rs::CommandBuffer&>(cmdbuf);
+                 });
+    rs::CommandBuffers::join(range);
+  }
+
+  static auto get(uint32 family) -> CommandBufferPool& {
+    static std::unordered_map<uint32, CommandBufferPool> pools;
+    return pools.try_emplace(family, family).first->second;
+  }
+
+private:
+  rs::CommandPool            _pool;
+  std::vector<CommandBuffer> _idle_cmdbufs;
+
+  void workingToIdle() {}
+  void expand() {
+    auto cmdbufs = rs::CommandBuffers{ VkCommandBufferAllocateInfo{
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+      .commandPool = _pool,
+      // VK_COMMAND_BUFFER_LEVEL_PRIMARY: 主缓冲区，类似于main
+      // VK_COMMAND_BUFFER_LEVEL_SECONDARY: 次缓冲区，可复用，类似于其他函数
+      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+      .commandBufferCount = 5,
+    } };
+    _idle_cmdbufs.append_range(
+      rs::CommandBuffers::split(std::move(cmdbufs)) |
+      views::transform([](rs::CommandBuffer& cmdbuf) { return CommandBuffer(std::move(cmdbuf)); })
+    );
+  }
+  void tryShrink() {
+    // todo: better shrink strategy
+    auto shrink_size = 1000;
+    if (_idle_cmdbufs.size() <= shrink_size) {
+      return;
+    }
+    toy::debugf("shrink {} -> {}", _idle_cmdbufs.size(), shrink_size);
+    auto range = _idle_cmdbufs | views::transform([](CommandBuffer& cmdbuf) -> decltype(auto) {
+                   return static_cast<rs::CommandBuffer&>(cmdbuf);
+                 }) |
+                 views::drop(shrink_size);
+    rs::CommandBuffers::join(range);
+    _idle_cmdbufs.erase(_idle_cmdbufs.begin() + shrink_size, _idle_cmdbufs.end());
+  }
+  auto extract() -> CommandBuffer {
+    auto ret = std::move(_idle_cmdbufs.back());
+    _idle_cmdbufs.pop_back();
+    ret.beginRecord();
+    return ret;
+  }
+  auto isEmpty() -> bool { return _idle_cmdbufs.empty(); }
+};
+
+// 构造后可以直接 record
+class RecordableCmdbuf : public toy::RecyclableObject<CommandBufferPool, CommandBuffer> {
+  friend RecyclableObject;
+
+public:
+  using RecyclableObject::RecyclableObject;
+  using RecyclableObject::operator=;
+  using RecyclableObject::endRecord;
+  using RecyclableObject::get;
+  using RecyclableObject::valid;
+  using RecyclableObject::operator VkCommandBuffer;
+};
+
+} // namespace rd::exec

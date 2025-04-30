@@ -19,3 +19,9 @@ module:
     provide: render.submitter
 - submitter.cc:
     implement: render.submitter
+- execution.ccm:
+    provide: render.execution
+- execution0.ccm:
+    provide: render.execution0
+- cmdbuf.ccm:
+    provide: render.cmdbuf
