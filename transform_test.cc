@@ -52,10 +52,10 @@ TEST(math) {
   auto orthogonal = proj::orthogonal(near, far, left, right, bottom, top);
   TOY_ASSERT(eq(
     orthogonal * glm::vec4{ (near + far) / 2, (left + right) / 2, (bottom + top) / 2, 1.0f },
-    glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f }
+    glm::vec4{ 0.0f, 0.0f, 0.5f, 1.0f }
   ));
   TOY_ASSERT(
-    eq(orthogonal * glm::vec4{ near, left, bottom, 1.0f }, glm::vec4{ -1.0f, 1.0f, -1.0f, 1.0f })
+    eq(orthogonal * glm::vec4{ near, left, bottom, 1.0f }, glm::vec4{ -1.0f, 1.0f, 0.0f, 1.0f })
   );
   TOY_ASSERT(
     eq(orthogonal * glm::vec4{ far, right, top, 1.0f }, glm::vec4{ 1.0f, -1.0f, 1.0f, 1.0f })
@@ -64,16 +64,16 @@ TEST(math) {
     eq(orthogonal * glm::vec4{ far, right, bottom, 1.0f }, glm::vec4{ 1.0f, 1.0f, 1.0f, 1.0f })
   );
   TOY_ASSERT(
-    eq(orthogonal * glm::vec4{ near, left, top, 1.0f }, glm::vec4{ -1.0f, -1.0f, -1.0f, 1.0f })
+    eq(orthogonal * glm::vec4{ near, left, top, 1.0f }, glm::vec4{ -1.0f, -1.0f, 0.0f, 1.0f })
   );
   auto perspective = proj::perspective(near, far, left, right, bottom, top);
   auto perspective_i = proj::perspectiveInverse(near, far, left, right, bottom, top);
   TOY_ASSERT(eq(perspective * perspective_i, glm::mat4{ 1.0f }));
   TOY_ASSERT(equivalence(
-    perspective * glm::vec4{ near, left, bottom, 1.0f }, glm::vec4{ -1.0f, 1.0f, -1.0f, 1.0f }
+    perspective * glm::vec4{ near, left, bottom, 1.0f }, glm::vec4{ -1.0f, 1.0f, 0.0f, 1.0f }
   ));
   TOY_ASSERT(equivalence(
-    perspective * glm::vec4{ near, right, top, 1.0f }, glm::vec4{ 1.0f, -1.0f, -1.0f, 1.0f }
+    perspective * glm::vec4{ near, right, top, 1.0f }, glm::vec4{ 1.0f, -1.0f, 0.0f, 1.0f }
   ));
   TOY_ASSERT(equivalence(
     perspective *
@@ -92,13 +92,13 @@ TEST(math) {
   perspective_i = proj::perspectiveInverse({ 1920, 1080, 90.0f, 2.5f, 100.0f });
   TOY_ASSERT(eq(perspective * perspective_i, glm::mat4{ 1.0f }));
   TOY_ASSERT(equivalence(
-    perspective * glm::vec4{ 2.5f, 0.0f, 0.0f, 1.0f }, glm::vec4{ 0.0f, 0.0f, -1.0f, 1.0f }
+    perspective * glm::vec4{ 2.5f, 0.0f, 0.0f, 1.0f }, glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f }
   ));
   TOY_ASSERT(equivalence(
     perspective * glm::vec4{ 100.0f, 0.0f, 0.0f, 1.0f }, glm::vec4{ 0.0f, 0.0f, 1.0f, 1.0f }
   ));
   TOY_ASSERT(equivalence(
-    perspective * glm::vec4{ 2.5f, 2.5f, 0.0f, 1.0f }, glm::vec4{ -1.0f, 0.0f, -1.0f, 1.0f }
+    perspective * glm::vec4{ 2.5f, 2.5f, 0.0f, 1.0f }, glm::vec4{ -1.0f, 0.0f, 0.0f, 1.0f }
   ));
   // euler angle
   TOY_ASSERT(eq(rotate(174, 0, 0), rotate<Axis::X>(174)));
