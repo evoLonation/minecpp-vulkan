@@ -25,3 +25,5 @@ module:
     provide: render.execution0
 - cmdbuf.ccm:
     provide: render.cmdbuf
+- queue.ccm:
+    provide: render.queue
