@@ -119,8 +119,8 @@ private:
   void workingToIdle() {}
 };
 
-// once allocated, can only submit one signal op by specified value
-// the signal/wait op must done before recycled
+// can only submit one signal op by specified value
+// the signal/wait op must done before destroyed
 class DisposableSemaphore : private toy::RecyclableObject<SemaphorePool, IncrementalSemaphore> {
 public:
   using RecyclableObject::RecyclableObject;

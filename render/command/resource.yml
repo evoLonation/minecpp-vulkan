@@ -27,3 +27,7 @@ module:
     provide: render.cmdbuf
 - queue.ccm:
     provide: render.queue
+- tracker2.ccm:
+    provide: render.tracker2
+test:
+- test.cc

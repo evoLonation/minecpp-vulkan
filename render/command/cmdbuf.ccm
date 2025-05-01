@@ -138,7 +138,8 @@ private:
   auto isEmpty() -> bool { return _idle_cmdbufs.empty(); }
 };
 
-// 构造后可以直接 record
+// can directly record
+// must NOT be destroyed during execution 
 class RecordableCmdbuf : public toy::RecyclableObject<CommandBufferPool, CommandBuffer> {
   friend RecyclableObject;
 

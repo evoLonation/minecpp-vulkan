@@ -1,0 +1,190 @@
+module;
+#include <toy.h>
+export module render.tracker2;
+
+import <vulkan_config.h>;
+import render.sync;
+import std;
+import toy;
+
+export namespace rd::exec {
+
+GENERATE_FLAGS(AccessType, AccessType::READ)
+
+// 用于跟踪设备端的同步，主要考虑到一个写后面有多个读的情况
+class ScopeTracker {
+public:
+  ScopeTracker() = default;
+
+  // most sync operations just can call this except for read operations need call getReadNeedSync
+  auto getAllNeedSync() const -> std::optional<Scope> {
+    // if has reads, return all reads, else return old write
+    if (_last_read_stages != 0) {
+      return Scope{ .stage_mask = _last_read_stages };
+    } else if (_last_write_scope.stage_mask != 0) {
+      return _last_write_scope;
+    } else {
+      return std::nullopt;
+    }
+  }
+  auto getWriteNeedSync() const -> std::optional<Scope> { return getAllNeedSync(); }
+  auto getReadNeedSync() const -> std::optional<Scope> {
+    if (_last_write_scope.stage_mask != 0) {
+      return _last_write_scope;
+    } else {
+      return std::nullopt;
+    }
+  }
+  auto getNeedSync(AccessType type) const -> std::optional<Scope> {
+    if (type == AccessType::READ) {
+      return getReadNeedSync();
+    } else {
+      return getWriteNeedSync();
+    }
+  }
+  auto getNeedSync(Scope scope) const -> std::optional<Scope> {
+    return getNeedSync(scope.getAccessType());
+  }
+
+  // if write, clear all old scopes and set new write scope
+  // if read, just accumulate the read stages
+  void updateScope(Scope scope) {
+    auto type = scope.getAccessType();
+    if (type == AccessType::READ) {
+      _last_read_stages |= scope.stage_mask;
+    } else {
+      _last_read_stages = 0;
+      _last_write_scope = scope.extractWriteAccess();
+    }
+  }
+  void resetScope() {
+    _last_read_stages = 0;
+    _last_write_scope = {};
+  }
+  void resetAndUpdate(Scope scope) {
+    resetScope();
+    updateScope(scope);
+  }
+  // 强制刷新资源最新的需要同步的操作
+  // NOTE: is different with resetScope and updateScope!
+  // 通常的场景是中间有很多不知道的操作，只知道最后的操作，所以需要强制刷新
+  void setNeedSync(Scope scope) {
+    // 无论如何设置为 write_scope，因为后面的操作无论如何都需要直接与之同步
+    _last_read_stages = 0;
+    _last_write_scope = scope.extractWriteAccess();
+  }
+
+private:
+  // if _last_read_stages has value, they must newer than _last_write_scope
+  // when _last_write_scope is set, _last_read_stages must be cleared
+  // _last_write_scopt only contains write access
+  Scope                 _last_write_scope;
+  VkPipelineStageFlags2 _last_read_stages{};
+};
+
+struct ImageScope {
+  Scope         scope;
+  VkImageLayout layout;
+
+  auto extractWriteAccess() const -> ImageScope {
+    auto scope = *this;
+    scope.scope = scope.scope.extractWriteAccess();
+    return scope;
+  }
+  auto getAccessType() -> AccessType { return scope.getAccessType(); }
+
+  friend auto operator==(const ImageScope& lhs, const ImageScope& rhs) -> bool {
+    return lhs.scope == rhs.scope && lhs.layout == rhs.layout;
+  }
+
+  auto toJson() const -> json::Json {
+    return json::Json::merge(
+      scope.toJson(),
+      json::Json{
+        { "layout", layout },
+      }
+    );
+  }
+};
+
+// almost same as ScopeTracker, but:
+// getAllNeedSync() if all write and reads is empty but layout is changed, return layout
+// getReadNeedSync(): need sync between reads which has different layout
+// updateScope(): if not read or layout changed, clear all old scopes and set new write scope
+class ImageScopeTracker {
+public:
+  ImageScopeTracker() = default;
+
+  auto getAllNeedSync(VkImageLayout layout) const -> std::optional<ImageScope> {
+    if (_last_read_stages != 0) {
+      return ImageScope{
+        .scope = { .stage_mask = _last_read_stages },
+        .layout = _last_layout,
+      };
+    } else if (_last_write_scope.stage_mask != 0) {
+      return ImageScope{ .scope = _last_write_scope, .layout = _last_layout };
+    } else if (_last_layout != layout) {
+      return ImageScope{ .layout = _last_layout };
+    } else {
+      return std::nullopt;
+    }
+  }
+  auto getWriteNeedSync(VkImageLayout layout) const -> std::optional<ImageScope> {
+    return getAllNeedSync(layout);
+  }
+  auto getReadNeedSync(VkImageLayout layout) const -> std::optional<ImageScope> {
+    if (layout != _last_layout) {
+      return getAllNeedSync(layout);
+    } else if (_last_write_scope.stage_mask != 0) {
+      return ImageScope{ .scope = _last_write_scope, .layout = _last_layout };
+    } else {
+      return std::nullopt;
+    }
+  }
+  auto getNeedSync(AccessType access, VkImageLayout layout) const -> std::optional<ImageScope> {
+    if (access == AccessType::READ) {
+      return getReadNeedSync(layout);
+    } else {
+      return getWriteNeedSync(layout);
+    }
+  }
+  auto getNeedSync(ImageScope scope) const -> std::optional<ImageScope> {
+    return getNeedSync(scope.scope.getAccessType(), scope.layout);
+  }
+
+  void updateScope(ImageScope scope) {
+    auto type = scope.scope.getAccessType();
+    if (type == AccessType::READ && scope.layout == _last_layout) {
+      _last_read_stages |= scope.scope.stage_mask;
+    } else {
+      _last_read_stages = 0;
+      _last_write_scope = scope.scope.extractWriteAccess();
+      _last_layout = scope.layout;
+    }
+  }
+  void resetScope(VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED) {
+    _last_read_stages = 0;
+    _last_write_scope = {};
+    _last_layout = layout;
+  }
+  void resetAndUpdate(ImageScope scope) {
+    resetScope();
+    updateScope(scope);
+  }
+  void setNeedSync(ImageScope scope) {
+    _last_read_stages = 0;
+    _last_write_scope = scope.scope.extractWriteAccess();
+    _last_layout = scope.layout;
+  }
+
+private:
+  Scope                 _last_write_scope;
+  VkPipelineStageFlags2 _last_read_stages{};
+  VkImageLayout         _last_layout{};
+};
+
+} // namespace rd::exec
+
+CUSTOM_FORMATTER_JSON(rd::exec::ImageScope, [](rd::exec::ImageScope const& scope) {
+  return scope.toJson();
+});

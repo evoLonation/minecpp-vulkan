@@ -3,6 +3,7 @@ module;
 #include <vulkan_tool.h>
 export module render.execution;
 
+import render.cmdbuf;
 export import render.execution0;
 import render.tool;
 import <vulkan_config.h>;
@@ -12,113 +13,6 @@ import toy;
 
 export namespace rd::exec {
 
-struct QueueFamilyCheckContext {
-  VkPhysicalDevice        device;
-  size_t                  index;
-  VkQueueFamilyProperties properties;
-};
-
-struct QueueFamilyRequirement {
-  FamilyType                                   family;
-  uint32                                       queue_count;
-  std::function<bool(QueueFamilyCheckContext)> checker;
-};
-
-class QueueManager {
-public:
-  QueueManager(
-    std::unordered_map<FamilyType, std::pair<uint32, std::function<bool(QueueFamilyCheckContext)>>>
-      family_requirements
-  ) {
-    _requirements = {
-      { FamilyType::GRAPHICS, getGraphicQueueChecker(), 1 },
-      { FamilyType::PRESENT, getPresentQueueChecker(surface), 1 },
-      { FamilyType::TRANSFER, getTransferQueueChecker(), 1 },
-    };
-  }
-  // pass to device constructor
-  auto checkPdevice(DeviceCapabilityBuilder& request) -> std::expected<void, std::string>;
-
-  auto getQueue(FamilyType family, uint32 index);
-
-private:
-  std::vector<QueueFamilyRequirement> _requirements;
-  std::unordered_map<VkPhysicalDevice, std::vector<std::pair<FamilyType, FamilyQueueCount>>>
-    _family_infos;
-};
-
-// 用于跟踪设备端的同步，主要考虑到一个写后面有多个读的情况
-class ScopeTracker {
-public:
-  ScopeTracker() = default;
-  // if need record release op or host memory domain op, can call this
-  auto getNeedSync() -> std::optional<Scope> { return getNeedSync(AccessType::WRITE); }
-  auto getNeedSync(AccessType type) -> std::optional<Scope> {
-    if (type == AccessType::READ) {
-      return getReadNeedSync();
-    } else {
-      return getWriteNeedSync();
-    }
-  }
-  auto getWriteNeedSync() -> std::optional<Scope> {
-    // if has reads, return all reads, else return old write
-    auto scope = Scope{};
-    if (_last_read_stages != 0) {
-      return Scope{ .stage_mask = _last_read_stages };
-    } else if (_last_write_scope.stage_mask != 0) {
-      return _last_write_scope;
-    } else {
-      return std::nullopt;
-    }
-  }
-  auto getReadNeedSync() -> std::optional<Scope> {
-    if (_last_write_scope.stage_mask != 0) {
-      return _last_write_scope;
-    } else {
-      return std::nullopt;
-    }
-  }
-  // 跟踪资源最新进行的操作，不一定会直接覆盖之前的，比如读操作会累计
-  void updateScope(Scope scope) {
-    auto type = checkAccessType(scope.access_mask);
-    if (type == AccessType::READ) {
-      _last_read_stages |= scope.stage_mask;
-    } else {
-      _last_read_stages = 0;
-      _last_write_scope = scope.extractWriteAccess();
-    }
-  }
-  void resetScope() {
-    _last_read_stages = 0;
-    _last_write_scope = {};
-  }
-  void resetAndUpdate(Scope scope) {
-    resetScope();
-    updateScope(scope);
-  }
-  // 强制刷新资源最新的需要同步的操作
-  // NOTE: is different with resetScope and updateScope!
-  // 通常的场景是中间有很多不知道的操作，只知道最后的操作，所以需要强制刷新
-  void setNeedSync(Scope scope) {
-    // 无论如何设置为 write_scope，因为后面的操作无论如何都需要直接与之同步
-    _last_read_stages = 0;
-    _last_write_scope = scope.extractWriteAccess();
-  }
-
-private:
-  // if _last_read_stages has value, they must newer than _last_write_scope
-  // when _last_write_scope is set, _last_read_stages must be cleared
-  // _last_write_scopt only contains write access
-  Scope                 _last_write_scope;
-  VkPipelineStageFlags2 _last_read_stages{};
-};
-
-enum class AccessType {
-  WRITE,
-  READ,
-};
-
-GENERATE_FLAGS(AccessType, AccessType::READ)
 
 class Synchronizer {
 public:
@@ -151,52 +45,53 @@ public:
       recordBufferBarrier(cmdbuf, _buffer, BarrierScope::release(src_scope), family_info);
       auto cmdbufs = std::vector<RecordableCmdbuf>{};
       cmdbufs.push_back(std::move(cmdbuf));
-      auto exec = Execution{ CommandBatch{
-        .queue = _prev_exec.getQueue(),
-        .cmdbufs = std::move(cmdbufs),
-      } };
+      auto exec = Execution{
+        _prev_exec.getQueue(),
+        CommandBatch{
+          .cmdbufs = std::move(cmdbufs),
+        },
+      };
       addWait(std::move(exec), VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
       recordBufferBarrier(_now_cmdbuf, _buffer, BarrierScope::acquire(scope), family_info);
-      _tracker.setNeedSync(scope);
     };
     auto waitPrevExec = [&](VkPipelineStageFlags2 wait_stage) {
       if (!_prev_exec.canWait(wait_stage)) {
         wait_stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
       }
       addWait(std::move(_prev_exec), wait_stage);
-      _tracker.setNeedSync(scope);
     };
     auto recordBarrier = [&](Scope src_scope) {
       recordBufferBarrier(_now_cmdbuf, _buffer, BarrierScope{ src_scope, scope }, {});
-      _tracker.updateScope(scope);
     };
-    // serveral cases:
-    // 1. first call in this exec and has another exec before
-    // 1.1 call syncHost before (need_sync is empty)
-    // 1.1.1 diff family: family transfer from ALL_COMMANDS
-    // 1.2 diff family: family transfer from need_sync
-    // 1.3 diff queue: wait execution
-    // 1.3 otherwise: record barrier
-    // 2. not first call in this execution: record barrier
-    auto need_sync = _tracker.getNeedSync();
-    if (_prev_exec.valid()) {
+
+    if (_prev_exec.valid() && _prev_exec.getQueue() != _now_queue) {
+      // first record and diff queue, can't directly use barrier, and need sync all previous scopes
+      auto need_sync = _tracker.getAllNeedSync();
       if (!need_sync) {
-        // call syncHost before
+        // call syncHost before: dont need sync any scopes, just want to transfer family (if needed)
         if (_now_family != _prev_exec.getFamily()) {
-          familyTransfer(Scope{ .stage_mask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT });
+          familyTransfer(Scope{});
+          _tracker.setNeedSync(scope);
+        } else {
+          _tracker.updateScope(scope);
         }
       } else {
+        _tracker.resetScope();
         if (_now_family != _prev_exec.getFamily()) {
           familyTransfer(*need_sync);
-        } else if (_now_queue != _prev_exec.getQueue()) {
-          waitPrevExec(need_sync->stage_mask);
+          _tracker.setNeedSync(scope);
         } else {
-          recordBarrier(*need_sync);
+          waitPrevExec(need_sync->stage_mask);
+          _tracker.updateScope(scope);
         }
       }
+      _prev_exec.detach();
     } else {
-      TOY_ASSERT(need_sync);
-      recordBarrier(*need_sync);
+      auto need_sync = _tracker.getNeedSync(scope);
+      if (need_sync) {
+        recordBarrier(*need_sync);
+      }
+      _tracker.updateScope(scope);
     }
   }
   void addWait(Execution exec, VkPipelineStageFlags2 stage) {
@@ -212,7 +107,7 @@ public:
     TOY_ASSERT(!_is_recording);
     TOY_ASSERT(access);
     if (_prev_exec.valid()) {
-      auto need_sync = _tracker.getNeedSync();
+      auto need_sync = _tracker.getAllNeedSync();
       if (need_sync) {
         auto cmdbuf = RecordableCmdbuf{ CommandBufferPool::get(_prev_exec.getFamily()) };
         auto dst_scope = Scope{
@@ -227,10 +122,12 @@ public:
         recordBufferBarrier(cmdbuf, _buffer, BarrierScope{ *need_sync, dst_scope }, {});
         auto cmdbufs = std::vector<RecordableCmdbuf>{};
         cmdbufs.push_back(std::move(cmdbuf));
-        auto exec = Execution{ CommandBatch{
-          .queue = _prev_exec.getQueue(),
-          .cmdbufs = std::move(cmdbufs),
-        } };
+        auto exec = Execution{
+          _prev_exec.getQueue(),
+          CommandBatch{
+            .cmdbufs = std::move(cmdbufs),
+          },
+        };
         exec.hostWait();
         _tracker.resetScope();
       }
