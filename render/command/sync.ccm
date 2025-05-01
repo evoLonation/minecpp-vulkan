@@ -131,26 +131,28 @@ enum class AccessType {
 };
 
 constexpr auto read_accesses = std::array{
-  VK_ACCESS_INDIRECT_COMMAND_READ_BIT,
-  VK_ACCESS_INDEX_READ_BIT,
-  VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
-  VK_ACCESS_UNIFORM_READ_BIT,
-  VK_ACCESS_INPUT_ATTACHMENT_READ_BIT,
-  VK_ACCESS_SHADER_READ_BIT,
-  VK_ACCESS_SHADER_WRITE_BIT,
-  VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
-  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
-  VK_ACCESS_TRANSFER_READ_BIT,
-  VK_ACCESS_HOST_READ_BIT,
-  VK_ACCESS_MEMORY_READ_BIT,
+  VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT,
+  VK_ACCESS_2_INDEX_READ_BIT,
+  VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT,
+  VK_ACCESS_2_UNIFORM_READ_BIT,
+  VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT,
+  VK_ACCESS_2_SHADER_READ_BIT,
+  VK_ACCESS_2_SHADER_WRITE_BIT,
+  VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT,
+  VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
+  VK_ACCESS_2_TRANSFER_READ_BIT,
+  VK_ACCESS_2_HOST_READ_BIT,
+  VK_ACCESS_2_MEMORY_READ_BIT,
+  VK_ACCESS_2_SHADER_STORAGE_READ_BIT,
 };
 
 constexpr auto write_accesses = std::array{
-  VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, //
-  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-  VK_ACCESS_TRANSFER_WRITE_BIT,
-  VK_ACCESS_HOST_WRITE_BIT,
-  VK_ACCESS_MEMORY_WRITE_BIT,
+  VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, //
+  VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+  VK_ACCESS_2_TRANSFER_WRITE_BIT,
+  VK_ACCESS_2_HOST_WRITE_BIT,
+  VK_ACCESS_2_MEMORY_WRITE_BIT,
+  VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
 };
 constexpr auto write_access_bits =
   std::reduce(write_accesses.begin(), write_accesses.end(), VkAccessFlags2{}, [](auto a, auto b) {
@@ -164,7 +166,8 @@ constexpr auto read_access_bits =
 void checkAccessSupported(VkAccessFlags2 access) {
   toy::throwf(
     (access & (write_access_bits | read_access_bits)) == access,
-    "The access contains bit that is not supported"
+    "The access contains bit that is not supported: {}",
+    refl::accessMask(access & ~write_access_bits & ~read_access_bits)
   );
 }
 auto extractWriteAccess(VkAccessFlags2 access) -> VkAccessFlags2 {
@@ -177,7 +180,7 @@ auto extractWriteAccess(VkAccessFlags2 access) -> VkAccessFlags2 {
  * @param access
  * @return AccessType
  */
-auto checkAccessType(VkAccessFlags access) -> AccessType {
+auto checkAccessType(VkAccessFlags2 access) -> AccessType {
   checkAccessSupported(access);
   return extractWriteAccess(access) == 0 ? AccessType::READ : AccessType::WRITE;
 }
@@ -191,9 +194,31 @@ struct Scope {
     scope.access_mask = rd::extractWriteAccess(scope.access_mask);
     return scope;
   }
-};
+  auto getAccessType() -> AccessType { return checkAccessType(access_mask); }
 
-auto scope2str(Scope scope) -> std::string;
+  friend auto operator==(const Scope& lhs, const Scope& rhs) -> bool {
+    return lhs.stage_mask == rhs.stage_mask && lhs.access_mask == rhs.access_mask;
+  }
+  friend auto operator|(const Scope& lhs, const Scope& rhs) -> Scope {
+    return {
+      .stage_mask = lhs.stage_mask | rhs.stage_mask,
+      .access_mask = lhs.access_mask | rhs.access_mask,
+    };
+  }
+  friend auto operator&(const Scope& lhs, const Scope& rhs) -> Scope {
+    return {
+      .stage_mask = lhs.stage_mask & rhs.stage_mask,
+      .access_mask = lhs.access_mask & rhs.access_mask,
+    };
+  }
+
+  auto toJson() const -> json::Json {
+    return json::Json{
+      { "stage_mask", refl::stageMask(stage_mask) },
+      { "access_mask", refl::accessMask(access_mask) },
+    };
+  }
+};
 
 void recordPipelineBarrier(
   VkCommandBuffer                         cmdbuf,
@@ -270,4 +295,4 @@ void recordImageBarrier(
 
 } // namespace rd
 
-CUSTOM_FORMATTER(rd::Scope, scope2str);
+CUSTOM_FORMATTER_JSON(rd::Scope, [](rd::Scope const& scope) { return scope.toJson(); });

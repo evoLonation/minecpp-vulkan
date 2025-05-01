@@ -133,11 +133,11 @@ class VertexBuffer : public DeviceLocalBuffer {
 public:
   VertexBuffer() = default;
   template <ranges::contiguous_range R>
-  VertexBuffer(R&& range, VkPipelineStageFlags usage = 0)
+  VertexBuffer(R&& range, VkPipelineStageFlags2 usage = 0)
     : VertexBuffer{ std::span<const ranges::range_value_t<R>>{ range }, usage } {}
   template <typename VertexT>
     requires toy::InstantiationOf<VertexT, Vertex>
-  VertexBuffer(std::span<const VertexT> vertex_data, VkPipelineStageFlags usage = 0)
+  VertexBuffer(std::span<const VertexT> vertex_data, VkPipelineStageFlags2 usage = 0)
     : VertexBuffer{
         std::as_bytes(vertex_data),
         VertexT::getVertexInfo(),
@@ -146,7 +146,7 @@ public:
       } {}
   template <typename DataT>
     requires(!toy::InstantiationOf<DataT, Vertex>)
-  VertexBuffer(std::span<const DataT> vertex_data, VkPipelineStageFlags usage = 0)
+  VertexBuffer(std::span<const DataT> vertex_data, VkPipelineStageFlags2 usage = 0)
     : VertexBuffer{
         vertex_data | views::transform([](auto& data) { return Vertex<DataT>{ data }; }) |
           ranges::to<std::vector>(),
@@ -164,7 +164,7 @@ private:
     std::span<const std::byte> vertex_data,
     VertexInfo                 vertex_info,
     uint32                     vertex_number,
-    VkPipelineStageFlags       usage
+    VkPipelineStageFlags2      usage
   )
     : DeviceLocalBuffer(vertex_data, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | usage),
       _vertex_info(vertex_info), _vertex_number(vertex_number) {}
@@ -173,7 +173,7 @@ private:
 class IndexBuffer : public DeviceLocalBuffer {
 public:
   IndexBuffer() = default;
-  IndexBuffer(std::span<const uint16_t> indices, VkPipelineStageFlags usage = 0)
+  IndexBuffer(std::span<const uint16_t> indices, VkPipelineStageFlags2 usage = 0)
     : DeviceLocalBuffer(std::as_bytes(indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT | usage),
       _index_number(indices.size()) {}
 

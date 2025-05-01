@@ -10,13 +10,11 @@ export namespace rd::refl {
 
 template <typename T>
 concept Enum =
-  (std::same_as<T, VkImageLayout> ||            //
-   std::same_as<T, VkPipelineStageFlagBits> ||  //
-   std::same_as<T, VkPipelineStageFlagBits2> || //
-   std::same_as<T, VkAccessFlagBits> ||         //
-   std::same_as<T, VkAccessFlagBits2> ||        //
-   std::same_as<T, VkColorSpaceKHR> ||          //
-   std::same_as<T, VkResult> ||                 //
+  (std::same_as<T, VkImageLayout> ||           //
+   std::same_as<T, VkPipelineStageFlagBits> || //
+   std::same_as<T, VkAccessFlagBits> ||        //
+   std::same_as<T, VkColorSpaceKHR> ||         //
+   std::same_as<T, VkResult> ||                //
    std::same_as<T, VkSampleCountFlagBits>);
 auto enum2str(Enum auto value) -> std::string_view;
 
@@ -63,8 +61,6 @@ auto enum2str(Enum auto value) -> std::string_view {
     return imageLayout(value);
   } else if constexpr (std::same_as<decltype(value), VkPipelineStageFlagBits>) {
     return stageFlag(static_cast<VkPipelineStageFlagBits2>(value));
-  } else if constexpr (std::same_as<decltype(value), VkPipelineStageFlagBits2>) {
-    return stageFlag(value);
   } else if constexpr (std::same_as<decltype(value), VkAccessFlagBits>) {
     return accessFlag(static_cast<VkAccessFlagBits2>(value));
   } else if constexpr (std::same_as<decltype(value), VkAccessFlagBits2>) {
@@ -90,17 +86,17 @@ constexpr auto enum2str(ConstexprEnum auto value) -> std::string_view {
   }
 }
 
-template <typename FlagBitsT>
-auto flags(uint64 flags) -> std::string {
+template <typename FlagBitsT, typename FlagsT>
+auto flags(FlagsT flags, auto bit2str = enum2str) -> std::string {
   auto str_list = std::vector<std::string>{};
   for (auto i = 0; i < sizeof(FlagBitsT) * 8; ++i) {
-    auto access = static_cast<FlagBitsT>(1 << i);
+    auto access = static_cast<FlagBitsT>(FlagsT{ 1 } << i);
     if (access & flags) {
-      str_list.push_back(std::string{ enum2str(access) } + " | ");
+      str_list.push_back(std::string{ bit2str(access) } + " | ");
     }
   }
   if (str_list.empty()) {
-    return std::string{ enum2str(static_cast<FlagBitsT>(0)) };
+    return std::string{ bit2str(static_cast<FlagBitsT>(0)) };
   } else {
     return views::join(str_list) | views::reverse | views::drop(3) | views::reverse |
            ranges::to<std::string>();
@@ -108,11 +104,11 @@ auto flags(uint64 flags) -> std::string {
 }
 
 auto stageMask(VkPipelineStageFlags2 stage_mask) -> std::string {
-  return flags<VkPipelineStageFlagBits2>(stage_mask);
+  return flags<VkPipelineStageFlagBits2, VkPipelineStageFlags2>(stage_mask, stageFlag);
 }
 
 auto accessMask(VkAccessFlags2 access_mask) -> std::string {
-  return flags<VkAccessFlagBits2>(access_mask);
+  return flags<VkAccessFlagBits2, VkAccessFlags2>(access_mask, accessFlag);
 }
 
 template <typename Resource>

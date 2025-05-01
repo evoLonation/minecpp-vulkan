@@ -223,11 +223,6 @@ auto Fence::isSignaled() -> bool {
   return result == VK_SUCCESS;
 }
 
-auto scope2str(Scope scope) -> std::string {
-  return "{" + refl::flags<VkPipelineStageFlagBits2>(scope.stage_mask) + " / " +
-         refl::flags<VkAccessFlagBits2>(scope.access_mask) + "}";
-}
-
 void recordPipelineBarrier(
   VkCommandBuffer                         cmdbuf,
   std::span<const VkMemoryBarrier2>       memory_barriers,

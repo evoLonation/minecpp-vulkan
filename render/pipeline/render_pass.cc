@@ -161,7 +161,7 @@ void RenderPassPipeline::recordDraw(std::span<FrameImageManager*> images) {
           auto type = binding.getType();
           auto shader_stage = dset->getInfo()[binding_i].stage;
           auto resource_contexts = binding.getResourceContexts();
-          auto stage = [&]() -> VkPipelineStageFlags {
+          auto stage = [&]() -> VkPipelineStageFlags2 {
             switch (shader_stage) {
             case VK_SHADER_STAGE_FRAGMENT_BIT:
               return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
@@ -171,7 +171,7 @@ void RenderPassPipeline::recordDraw(std::span<FrameImageManager*> images) {
               toy::throwf("unsupported shader stage");
             }
           }();
-          auto access = [&]() -> VkAccessFlags {
+          auto access = [&]() -> VkAccessFlags2 {
             switch (type) {
             case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
               return VK_ACCESS_SHADER_READ_BIT;
