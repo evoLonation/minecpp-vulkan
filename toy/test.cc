@@ -9,6 +9,25 @@ import glm;
 
 using namespace toy;
 
+TEST(assert) {
+  int a = 1;
+  int b = 2;
+  try {
+    TOY_ASSERT_EQ(a, b);
+  } catch (const std::runtime_error& err) {
+    toy::debug(err.what());
+  }
+  struct A {
+    auto operator==(const A&) const -> bool { return false; }
+  };
+  A a1, b1;
+  try {
+    TOY_ASSERT_EQ(a1, b1);
+  } catch (const std::runtime_error& err) {
+    toy::debug(err.what());
+  }
+}
+
 TEST(log) {
   constexpr auto location = std::source_location::current();
   constexpr auto func = location.function_name();

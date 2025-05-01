@@ -172,7 +172,7 @@ constexpr void throwf(First condition, FormatWithLocation<Args...> fmt_location,
 namespace macro {
 
 template <typename... Args>
-constexpr auto getTuple(Args&&... args) -> std::tuple<Args&&...> {
+constexpr auto getRefTuple(Args&&... args) -> std::tuple<Args&&...> {
   return std::tuple<Args&&...>{ std::forward<Args>(args)... };
 }
 
@@ -190,6 +190,35 @@ constexpr auto nameTupleFormat(std::string_view names, std::tuple<Args...> args)
   auto str = std::string{};
   toy::templateForEach<sizeof...(Args)>([&]<size_t index>() {
     str += std::format("\"{}\": {}, ", *iter++, std::get<index>(args));
+  });
+  return str;
+}
+
+// https://stackoverflow.com/questions/72430369/how-to-check-that-a-type-is-formattable-using-type-traits-concepts
+template <typename T>
+concept formattable = requires(T& v, std::format_context ctx) {
+  std::formatter<std::remove_cvref_t<T>>().format(v, ctx);
+};
+
+// just format args which can be formatted
+template <typename... Args>
+constexpr auto nameTupleFormatIfCan(std::string_view names, std::tuple<Args...> args)
+  -> std::string {
+  auto splited_names = //
+    names | views::split(',') | views::transform([&](auto str) {
+      // trim left
+      // if trim right, need construct a string
+      // std::isspace has 2 overload, so can not directly pass to drop_while
+      auto view = str | views::drop_while([](char c) { return std::isspace(c); });
+      return std::string_view{ view.begin(), view.end() };
+    });
+  auto iter = splited_names.begin();
+  auto str = std::string{};
+  toy::templateForEach<sizeof...(Args)>([&]<size_t index>() {
+    if constexpr (formattable<typename toy::TypePack<Args...>::template at<index>>) {
+      str += std::format("\"{}\": {}, ", *iter, std::get<index>(args));
+    }
+    iter++;
   });
   return str;
 }

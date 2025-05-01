@@ -4,13 +4,23 @@
 #define FORWARD(v) std::forward<decltype(v)>(v)
 
 #define NAME_TUPLE_STRING(...)                                                                     \
-  toy::macro::nameTupleFormat({ #__VA_ARGS__ }, toy::macro::getTuple(__VA_ARGS__))
+  toy::macro::nameTupleFormat({ #__VA_ARGS__ }, toy::macro::getRefTuple(__VA_ARGS__))
 
 #define TOY_ASSERT(condition, ...)                                                                 \
   toy::throwf(                                                                                     \
     static_cast<bool>(condition),                                                                  \
     "{}",                                                                                          \
     toy::macro::nextLineIfExist("assert error: " #condition, NAME_TUPLE_STRING(__VA_ARGS__))       \
+  )
+
+#define TOY_ASSERT_EQ(a, b)                                                                        \
+  toy::throwf(                                                                                     \
+    static_cast<bool>(a == b),                                                                     \
+    "{}",                                                                                          \
+    toy::macro::nextLineIfExist(                                                                   \
+      "assert error: " #a " == " #b,                                                               \
+      toy::macro::nameTupleFormatIfCan({ #a "," #b }, toy::macro::getRefTuple(a, b))               \
+    )                                                                                              \
   )
 
 #define TOY_CHECK(condition, ...)                                                                  \
@@ -78,6 +88,19 @@
                                                                                                    \
   private:                                                                                         \
     auto formatString(const type& e) const -> std::string { return func(e); }                      \
+  };
+
+#define CUSTOM_FORMATTER_JSON(type, func)                                                          \
+  export template <>                                                                               \
+  class std::formatter<type> : public std::formatter<json::Json> {                                 \
+  public:                                                                                          \
+    template <typename FormatContext, typename... Args>                                            \
+    auto format(const type& e, FormatContext& ctx) const {                                         \
+      return std::formatter<json::Json>::format(formatString(e), ctx);                             \
+    }                                                                                              \
+                                                                                                   \
+  private:                                                                                         \
+    auto formatString(const type& e) const -> json::Json { return func(e); }                       \
   };
 
 #define PROACTIVE_SINGLETON(cls) toy::ProactiveSingleton<cls, #cls>
