@@ -250,14 +250,14 @@ TEST(AssetName) {
   }
   // resetAssetName
   {
-    auto asset_names = package->getAllAssetNames();
+    auto asset_names = package->getAllAssetNames() | ranges::to<std::vector>();
     std::sort(asset_names.begin(), asset_names.end());
     auto expected_asset_names = std::vector<std::string>{ "asset1", "asset2" };
     std::sort(expected_asset_names.begin(), expected_asset_names.end());
     TOY_ASSERT(asset_names == expected_asset_names);
     auto asset1 = package->getAssetShared<TestAsset1>("asset1");
     asset1->resetAssetName();
-    asset_names = package->getAllAssetNames();
+    asset_names = package->getAllAssetNames() | ranges::to<std::vector>();
     TOY_ASSERT(asset_names.size() == 1 && asset_names[0] == "asset2");
   }
   // duplicate name error
