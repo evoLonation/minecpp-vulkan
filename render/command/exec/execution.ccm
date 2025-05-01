@@ -3,6 +3,7 @@ module;
 #include <vulkan_tool.h>
 export module render.execution;
 
+import render.tracker2;
 import render.cmdbuf;
 export import render.execution0;
 import render.tool;
@@ -13,7 +14,37 @@ import toy;
 
 export namespace rd::exec {
 
+class Submitter {
+public:
+  Submitter(VkQueue queue) {
+    _queue = queue;
+  }
+  void addWait(Execution exec, VkPipelineStageFlags2 stage) {
+    _batch.waits.push_back({ stage, std::move(exec) });
+  }
+  void addSignal(VkPipelineStageFlags2 stage) {
+    _batch.signals.insert(stage);
+  }
+  void addWait(VkSemaphore semaphore, VkPipelineStageFlags2 stage) {
+    _batch.raw_waits.push_back({stage, semaphore});
+  }
+  void addSignal(VkSemaphore semaphore, VkPipelineStageFlags2 stage) {
+    _batch.raw_signals.push_back({stage, semaphore});
+  }
+  auto addCommandBuffer() -> RecordableCmdbuf& {
+    auto cmdbuf = RecordableCmdbuf{ CommandBufferPool::get() };
+    _batch.cmdbufs.push_back(std::move(cmdbuf));
+    return _batch.cmdbufs.back(); 
+  }
+  auto getCommandBuffers() -> std::span<VkCommandBuffer>;
+  auto getLastCommandBuffer() -> VkCommandBuffer;
 
+  auto submit() -> Execution;
+
+private:
+  VkQueue     _queue{};
+  CommandBatch _batch;
+};
 class Synchronizer {
 public:
   void startExecution(VkCommandBuffer cmdbuf, uint32 family, VkQueue queue) {
