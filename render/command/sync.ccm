@@ -186,8 +186,8 @@ auto checkAccessType(VkAccessFlags2 access) -> AccessType {
 }
 
 struct Scope {
-  VkPipelineStageFlags2 stage_mask;
-  VkAccessFlags2        access_mask;
+  VkPipelineStageFlags2 stage_mask{};
+  VkAccessFlags2        access_mask{};
 
   auto extractWriteAccess() const -> Scope {
     auto scope = *this;

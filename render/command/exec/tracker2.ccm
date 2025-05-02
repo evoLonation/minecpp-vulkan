@@ -49,6 +49,7 @@ public:
   // if write, clear all old scopes and set new write scope
   // if read, just accumulate the read stages
   void updateScope(Scope scope) {
+    TOY_ASSERT(scope.stage_mask != 0);
     auto type = scope.getAccessType();
     if (type == AccessType::READ) {
       _last_read_stages |= scope.stage_mask;
@@ -69,6 +70,7 @@ public:
   // NOTE: is different with resetScope and updateScope!
   // 通常的场景是中间有很多不知道的操作，只知道最后的操作，所以需要强制刷新
   void setNeedSync(Scope scope) {
+    TOY_ASSERT(scope.stage_mask != 0);
     // 无论如何设置为 write_scope，因为后面的操作无论如何都需要直接与之同步
     _last_read_stages = 0;
     _last_write_scope = scope.extractWriteAccess();
@@ -84,7 +86,7 @@ private:
 
 struct ImageScope {
   Scope         scope;
-  VkImageLayout layout;
+  VkImageLayout layout{};
 
   auto extractWriteAccess() const -> ImageScope {
     auto scope = *this;
@@ -153,6 +155,7 @@ public:
   }
 
   void updateScope(ImageScope scope) {
+    TOY_ASSERT(scope.scope.stage_mask != 0);
     auto type = scope.scope.getAccessType();
     if (type == AccessType::READ && scope.layout == _last_layout) {
       _last_read_stages |= scope.scope.stage_mask;
@@ -172,6 +175,7 @@ public:
     updateScope(scope);
   }
   void setNeedSync(ImageScope scope) {
+    TOY_ASSERT(scope.scope.stage_mask != 0);
     _last_read_stages = 0;
     _last_write_scope = scope.scope.extractWriteAccess();
     _last_layout = scope.layout;

@@ -103,7 +103,7 @@ auto getTransferQueueChecker() -> QueueFamilyChecker {
 
 class QueueManagerBuilder {
 public:
-  QueueManagerBuilder(std::span<QueueFamilyRequirement> family_requirements) {
+  QueueManagerBuilder(std::span<QueueFamilyRequirement const> family_requirements) {
     TOY_ASSERT(
       (family_requirements | views::transform([](auto& r) { return r.family; }) |
        ranges::to<std::unordered_set>())

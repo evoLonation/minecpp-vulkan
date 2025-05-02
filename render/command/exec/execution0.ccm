@@ -91,7 +91,7 @@ class SemaphorePool : public toy::ObjectPoolHelper<IncrementalSemaphore>,
 public:
   friend ObjectPoolHelper;
 
-  SemaphorePool() { _idle_semas.resize(10); }
+  SemaphorePool() = default;
   void recycle(IncrementalSemaphore s) {
     TOY_ASSERT(s.hostWait(0));
     _idle_semas.push_back(std::move(s));
@@ -169,9 +169,11 @@ class Execution {
 public:
   Execution() = default;
   Execution(VkQueue queue, CommandBatch batch) {
+    _queue = queue;
     auto [submit_info, _] = initToReadySubmit(batch);
-    CHECK_VK_RESULT(vkQueueSubmit2(queue, 1, &submit_info, VK_NULL_HANDLE));
+    CHECK_VK_RESULT(vkQueueSubmit2KHR(queue, 1, &submit_info, VK_NULL_HANDLE));
   }
+  DEFAULT_COPYABLE_MOVEABLE(Execution)
   static auto submits(VkQueue queue, std::span<CommandBatch> batches) -> std::vector<Execution> {
     auto ret = std::vector<Execution>{};
     ret.resize(batches.size());
@@ -182,7 +184,7 @@ public:
       submit_infos.push_back(std::move(exec));
       submit_info_ctxs.push_back(std::move(ctx));
     }
-    CHECK_VK_RESULT(vkQueueSubmit2(
+    CHECK_VK_RESULT(vkQueueSubmit2KHR(
       queue, static_cast<uint32>(submit_infos.size()), submit_infos.data(), VK_NULL_HANDLE
     ));
     return ret;
@@ -243,6 +245,7 @@ private:
     }
     auto cmdbuf_infos = std::vector<VkCommandBufferSubmitInfo>{};
     for (auto& cmdbuf : batch.cmdbufs) {
+      cmdbuf.endRecord();
       cmdbuf_infos.push_back(
         {
           .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
@@ -261,8 +264,7 @@ private:
       .pSignalSemaphoreInfos = signal_infos.data(),
     };
     _ctx = ctx;
-    addToQueue(std::move(ctx));
-    TOY_ASSERT(_worker.joinable());
+    Worker::getInstance().addToQueue(std::move(ctx));
     return {
       submit_info,
       std::tuple{ std::move(wait_infos), std::move(cmdbuf_infos), std::move(signal_infos) },
@@ -285,47 +287,61 @@ public:
     _signal_stages.reset();
   }
   auto valid() -> bool { return _signal_stages.get(); }
-  auto getQueue() -> VkQueue;
+  auto getQueue() -> VkQueue { return _queue; }
   auto canWait(VkPipelineStageFlags2 stage) -> bool { return _signal_stages->contains(stage); }
 
-  static void initWorker() { _worker = std::thread{ work }; }
-
 private:
+  VkQueue                                                    _queue{};
+  // _signal_stages may by still valid when _ctx is invalid to make sure other execution can wait
   std::shared_ptr<std::unordered_set<VkPipelineStageFlags2>> _signal_stages;
   std::weak_ptr<ExecutionContext>                            _ctx;
 
-  static inline std::deque<std::shared_ptr<ExecutionContext>> _exec_queue;
-  static inline SpinMutex                                     _queue_mutex;
-  static inline std::thread                                   _worker;
+public:
+  class Worker : public PROACTIVE_SINGLETON(Worker) {
+  public:
+    Worker() { _worker = std::thread{ &Worker::work, this }; }
+    ~Worker() {
+      _should_stop = true;
+      _worker.join();
+      TOY_CHECK(_exec_queue.empty());
+    }
+    UNCOPYABLE_MOVEABLE(Worker)
 
-  void addToQueue(std::shared_ptr<ExecutionContext> ctx) {
-    std::lock_guard lock{ _queue_mutex };
-    _exec_queue.push_back(std::move(ctx));
-  }
-  static void work() {
-    while (true) {
-      auto ctx = std::shared_ptr<ExecutionContext>{};
-      {
-        auto lock = std::lock_guard{ _queue_mutex };
-        if (_exec_queue.empty()) {
-          _queue_mutex.unlock();
-          using namespace std::chrono_literals;
-          std::this_thread::sleep_for(10ms);
-          continue;
+    void addToQueue(std::shared_ptr<ExecutionContext> ctx) {
+      std::lock_guard lock{ _queue_mutex };
+      _exec_queue.push_back(std::move(ctx));
+    }
+    void work() {
+      while (!(_should_stop && _exec_queue.empty())) {
+        auto ctx = std::shared_ptr<ExecutionContext>{};
+        {
+          auto lock = std::lock_guard{ _queue_mutex };
+          if (_exec_queue.empty()) {
+            _queue_mutex.unlock();
+            using namespace std::chrono_literals;
+            std::this_thread::sleep_for(10ms);
+            continue;
+          }
+          ctx = _exec_queue.front();
+          _exec_queue.pop_front();
         }
-        ctx = _exec_queue.front();
-        _exec_queue.pop_front();
-      }
-      auto done = ctx->signal_semas.at(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT)
-                    .hostWait(1000 * 1000 * 10); // 10ms
-      if (done) {
-        ctx->execution_done = true;
-      } else {
-        auto lock = std::lock_guard{ _queue_mutex };
-        _exec_queue.push_back(ctx);
+        auto done = ctx->signal_semas.at(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT)
+                      .hostWait(1000 * 1000 * 10); // 10ms
+        if (done) {
+          ctx->execution_done = true;
+        } else {
+          auto lock = std::lock_guard{ _queue_mutex };
+          _exec_queue.push_back(ctx);
+        }
       }
     }
-  }
+
+  private:
+    std::deque<std::shared_ptr<ExecutionContext>> _exec_queue;
+    SpinMutex                                     _queue_mutex;
+    std::thread                                   _worker;
+    bool                                          _should_stop = false;
+  };
 };
 
 } // namespace rd::exec

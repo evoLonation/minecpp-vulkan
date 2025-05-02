@@ -3,6 +3,13 @@ import std;
 import render.tracker2;
 import render.sync;
 import <vulkan_config.h>;
+import render.execution;
+import render.instance;
+import render.device;
+import render.queue;
+import render.sampler;
+import render.cmdbuf;
+import render.buffer;
 
 #include <test.h>
 #include <toy.h>
@@ -204,4 +211,63 @@ TEST(ImageTracker) {
       ImageScope(Scope(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
     );
   }
+}
+
+TEST(Submitter) {
+  // init contexts
+  auto instance_extensions = std::vector<std::string>{};
+  auto instance = std::make_unique<rd::InstanceResource>("test submitter", instance_extensions);
+  using namespace std::placeholders;
+  auto queue_builder = QueueManagerBuilder{
+    std::vector<QueueFamilyRequirement>{
+      QueueFamilyRequirement{
+        .family = FamilyType::GRAPHICS,
+        .queue_count = 1,
+        // .queue_count = 2,
+        .checker = getGraphicQueueChecker(),
+      },
+      QueueFamilyRequirement{
+        .family = FamilyType::TRANSFER,
+        .queue_count = 1,
+        .checker = getTransferQueueChecker(),
+      },
+    },
+  };
+  auto device_checkers = std::vector<rd::DeviceCapabilityChecker>{
+    [&](auto& ctx) { return queue_builder.checkPdevice(ctx); },
+    rd::device_checkers::sync,
+  };
+  auto device = std::make_unique<rd::Device>(rd::Device::create(device_checkers));
+  auto queue_manager = queue_builder.build();
+  auto cmdbuf_manager = CmdbufManager{};
+  auto sema_pool = SemaphorePool{};
+  auto worker = Execution::Worker{};
+
+  // todo: add assert to test
+  auto write_scope1 = Scope{
+    .stage_mask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+    .access_mask = VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT,
+  };
+  auto write_scope2 = Scope{
+    .stage_mask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
+    .access_mask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT,
+  };
+  auto read_scope1 = Scope{
+    .stage_mask = VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT,
+    .access_mask = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT,
+  };
+  auto read_scope2 = Scope{
+    .stage_mask = VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT,
+    .access_mask = VK_ACCESS_2_INDEX_READ_BIT,
+  };
+  auto queue = queue_manager.getQueue(FamilyType::TRANSFER, 0);
+  auto buffer = rd::Buffer{ 8, VK_BUFFER_USAGE_2_TRANSFER_DST_BIT, VkMemoryPropertyFlags{} };
+  auto submitter = SubmitterAutoSync{ queue };
+  auto cmdbuf = submitter.addCommandBuffer();
+  auto syner = Synchronizer{ buffer };
+  submitter.sync(syner, write_scope1);
+  submitter.sync(syner, read_scope1);
+  submitter.sync(syner, read_scope2);
+  submitter.sync(syner, write_scope2);
+  submitter.submit();
 }
