@@ -3,6 +3,7 @@ module;
 #include <vulkan_tool.h>
 export module render.execution;
 
+import render.queue;
 import render.tracker2;
 import render.cmdbuf;
 export import render.execution0;
@@ -16,48 +17,76 @@ export namespace rd::exec {
 
 class Submitter {
 public:
-  Submitter(VkQueue queue) {
-    _queue = queue;
-  }
+  Submitter(VkQueue queue) { _queue = queue; }
+  UNCOPYABLE_MOVEABLE(Submitter)
+  auto getQueue() -> VkQueue { return _queue; }
   void addWait(Execution exec, VkPipelineStageFlags2 stage) {
     _batch.waits.push_back({ stage, std::move(exec) });
   }
-  void addSignal(VkPipelineStageFlags2 stage) {
-    _batch.signals.insert(stage);
-  }
+  void addSignal(VkPipelineStageFlags2 stage) { _batch.signals.insert(stage); }
   void addWait(VkSemaphore semaphore, VkPipelineStageFlags2 stage) {
-    _batch.raw_waits.push_back({stage, semaphore});
+    _batch.raw_waits.push_back({ stage, semaphore });
   }
   void addSignal(VkSemaphore semaphore, VkPipelineStageFlags2 stage) {
-    _batch.raw_signals.push_back({stage, semaphore});
+    _batch.raw_signals.push_back({ stage, semaphore });
   }
-  auto addCommandBuffer() -> RecordableCmdbuf& {
-    auto cmdbuf = RecordableCmdbuf{ CommandBufferPool::get() };
-    _batch.cmdbufs.push_back(std::move(cmdbuf));
-    return _batch.cmdbufs.back(); 
-  }
-  auto getCommandBuffers() -> std::span<VkCommandBuffer>;
-  auto getLastCommandBuffer() -> VkCommandBuffer;
+  class CommandBuffer {
+  public:
+    CommandBuffer() = default;
+    CommandBuffer(Submitter& submitter, size_t index, VkCommandBuffer cmdbuf) {
+      _submitter = &submitter;
+      _index = index;
+      _cmdbuf = cmdbuf;
+    }
+    operator VkCommandBuffer() { return _cmdbuf; }
+    auto getIndex() -> size_t { return _index; }
+    auto get() -> VkCommandBuffer { return _cmdbuf; }
+    auto getSubmitter() -> Submitter& { return *_submitter; }
 
-  auto submit() -> Execution;
+  private:
+    Submitter*      _submitter{};
+    size_t          _index{};
+    VkCommandBuffer _cmdbuf{};
+  };
+  auto addCommandBuffer() -> CommandBuffer {
+    auto cmdbuf =
+      CmdbufManager::getInstance().get(QueueManager::getInstance().getFamilyIndex(_queue));
+    auto index = _batch.cmdbufs.size();
+    _batch.cmdbufs.push_back(std::move(cmdbuf));
+    return CommandBuffer{ *this, index, _batch.cmdbufs.back().get() };
+  }
+  auto getCommandBuffers() -> std::vector<CommandBuffer> {
+    return _batch.cmdbufs | toy::enumerate | views::transform([this](auto x) {
+             auto [index, cmdbuf] = x;
+             return CommandBuffer{ *this, index, cmdbuf };
+           }) |
+           ranges::to<std::vector>();
+  }
+  auto getLastCommandBuffer() -> CommandBuffer {
+    TOY_ASSERT(!_batch.cmdbufs.empty());
+    auto index = _batch.cmdbufs.size() - 1;
+    auto cmdbuf = _batch.cmdbufs.back().get();
+    return CommandBuffer{ *this, index, cmdbuf };
+  }
+
+  auto submit() -> Execution { return Execution{ _queue, std::move(_batch) }; }
 
 private:
-  VkQueue     _queue{};
+  VkQueue      _queue{};
   CommandBatch _batch;
 };
+
 class Synchronizer {
 public:
-  void startExecution(VkCommandBuffer cmdbuf, uint32 family, VkQueue queue) {
-    _now_cmdbuf = cmdbuf;
-    _now_family = family;
-    _now_queue = queue;
-    _synced_in_exec = false;
+  void startExecution(Submitter& submitter) {
+    _now_submitter = &submitter;
     TOY_ASSERT(!_is_recording);
     _is_recording = true;
   }
-  void setCmdbuf(VkCommandBuffer cmdbuf) {
+  void setCommandBuffer(Submitter::CommandBuffer cmdbuf) {
     TOY_ASSERT(_is_recording);
-    _now_cmdbuf = cmdbuf;
+    TOY_ASSERT(_now_submitter == &cmdbuf.getSubmitter());
+    _now_cmdbuf = cmdbuf.get();
   }
   void endExecution(Execution execution) {
     TOY_ASSERT(_synced_in_exec);
@@ -70,9 +99,12 @@ public:
     TOY_ASSERT(_is_recording);
     _synced_in_exec = true;
 
+    auto now_queue = _now_submitter->getQueue();
+    auto now_family = QueueManager::getInstance().getFamilyIndex(now_queue);
+
     auto familyTransfer = [&](Scope src_scope) {
-      auto family_info = FamilyTransferInfo{ _prev_exec.getFamily(), _now_family };
-      auto cmdbuf = RecordableCmdbuf{ CommandBufferPool::get(_now_family) };
+      auto family_info = FamilyTransferInfo{ _prev_exec.getFamily(), now_family };
+      auto cmdbuf = CmdbufManager::getInstance().get(now_family);
       recordBufferBarrier(cmdbuf, _buffer, BarrierScope::release(src_scope), family_info);
       auto cmdbufs = std::vector<RecordableCmdbuf>{};
       cmdbufs.push_back(std::move(cmdbuf));
@@ -95,12 +127,13 @@ public:
       recordBufferBarrier(_now_cmdbuf, _buffer, BarrierScope{ src_scope, scope }, {});
     };
 
-    if (_prev_exec.valid() && _prev_exec.getQueue() != _now_queue) {
+    if (_prev_exec.valid() && _prev_exec.getQueue() != now_queue) {
       // first record and diff queue, can't directly use barrier, and need sync all previous scopes
+      auto prev_family = QueueManager::getInstance().getFamilyIndex(_prev_exec.getQueue());
       auto need_sync = _tracker.getAllNeedSync();
       if (!need_sync) {
         // call syncHost before: dont need sync any scopes, just want to transfer family (if needed)
-        if (_now_family != _prev_exec.getFamily()) {
+        if (now_family != prev_family) {
           familyTransfer(Scope{});
           _tracker.setNeedSync(scope);
         } else {
@@ -108,7 +141,7 @@ public:
         }
       } else {
         _tracker.resetScope();
-        if (_now_family != _prev_exec.getFamily()) {
+        if (now_family != prev_family) {
           familyTransfer(*need_sync);
           _tracker.setNeedSync(scope);
         } else {
@@ -127,11 +160,7 @@ public:
   }
   void addWait(Execution exec, VkPipelineStageFlags2 stage) {
     TOY_ASSERT(_is_recording);
-    _waits.push_back({ stage, std::move(exec) });
-  }
-  auto getNeedWaits() -> std::vector<ExecWaitInfo> {
-    TOY_ASSERT(_is_recording);
-    return std::move(_waits);
+    _now_submitter->addWait(std::move(exec), stage);
   }
 
   void syncHost(AccessTypeFlags access) {
@@ -140,7 +169,8 @@ public:
     if (_prev_exec.valid()) {
       auto need_sync = _tracker.getAllNeedSync();
       if (need_sync) {
-        auto cmdbuf = RecordableCmdbuf{ CommandBufferPool::get(_prev_exec.getFamily()) };
+        auto prev_family = QueueManager::getInstance().getFamilyIndex(_prev_exec.getQueue());
+        auto cmdbuf = CmdbufManager::getInstance().get(prev_family);
         auto dst_scope = Scope{
           .stage_mask = VK_PIPELINE_STAGE_2_HOST_BIT,
         };
@@ -166,17 +196,36 @@ public:
   }
 
 private:
-  VkBuffer                  _buffer;
-  Execution                 _prev_exec;
-  ScopeTracker              _tracker;
+  VkBuffer        _buffer;
+  Execution       _prev_exec;
+  ScopeTracker    _tracker;
   // use to make sure must call a sync() between startExecution and endExecution
-  bool                      _synced_in_exec = false;
+  bool            _synced_in_exec = false;
   // use to make sure start -> end, and must call sync between them, call syncHost outside
-  bool                      _is_recording = false;
-  VkCommandBuffer           _now_cmdbuf;
-  uint32                    _now_family;
-  VkQueue                   _now_queue;
-  std::vector<ExecWaitInfo> _waits;
+  bool            _is_recording = false;
+  Submitter*      _now_submitter{};
+  VkCommandBuffer _now_cmdbuf{};
+};
+
+class SubmitterAutoSync : public Submitter {
+public:
+  void sync(Synchronizer& syner, Scope scope) {
+    if (!_syners.contains(&syner)) {
+      _syners.insert(&syner);
+      syner.startExecution(*this);
+    }
+    syner.sync(scope);
+  }
+  auto submit() -> Execution {
+    auto execution = Submitter::submit();
+    for (auto& syner : _syners) {
+      syner->endExecution(execution);
+    }
+    _syners.clear();
+  }
+
+private:
+  std::unordered_set<Synchronizer*> _syners;
 };
 
 class Recorder {

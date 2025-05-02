@@ -286,7 +286,6 @@ public:
   }
   auto valid() -> bool { return _signal_stages.get(); }
   auto getQueue() -> VkQueue;
-  auto getFamily() -> uint32;
   auto canWait(VkPipelineStageFlags2 stage) -> bool { return _signal_stages->contains(stage); }
 
   static void initWorker() { _worker = std::thread{ work }; }
