@@ -91,11 +91,6 @@ public:
     rs::CommandBuffers::join(range);
   }
 
-  static auto get(uint32 family) -> CommandBufferPool& {
-    static std::unordered_map<uint32, CommandBufferPool> pools;
-    return pools.try_emplace(family, family).first->second;
-  }
-
 private:
   rs::CommandPool            _pool;
   std::vector<CommandBuffer> _idle_cmdbufs;
@@ -139,7 +134,7 @@ private:
 };
 
 // can directly record
-// must NOT be destroyed during execution 
+// must NOT be destroyed during execution
 class RecordableCmdbuf : public toy::RecyclableObject<CommandBufferPool, CommandBuffer> {
   friend RecyclableObject;
 
@@ -150,6 +145,17 @@ public:
   using RecyclableObject::get;
   using RecyclableObject::valid;
   using RecyclableObject::operator VkCommandBuffer;
+};
+
+class CmdbufManager : public PROACTIVE_SINGLETON(CmdbufManager) {
+public:
+  auto get(uint32 family_index) -> RecordableCmdbuf {
+    auto& pool = _pools.try_emplace(family_index, family_index).first->second;
+    return RecordableCmdbuf{ pool };
+  }
+
+private:
+  std::unordered_map<uint32, CommandBufferPool> _pools;
 };
 
 } // namespace rd::exec

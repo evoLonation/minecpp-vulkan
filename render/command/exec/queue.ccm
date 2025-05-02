@@ -16,7 +16,7 @@ struct FamilyInfo {
   std::vector<VkQueue> queues;
 };
 
-class QueueManager {
+class QueueManager : public PROACTIVE_SINGLETON(QueueManager) {
 public:
   QueueManager() = default;
   QueueManager(std::unordered_map<FamilyType, FamilyInfo> family_infos) {
