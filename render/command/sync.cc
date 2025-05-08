@@ -12,7 +12,7 @@ namespace rd {
 auto device_checkers::sync(DeviceCapabilityBuilder& builder) -> toy::Expected<void> {
   if constexpr (PLATFORM_VULKAN_VERSION >= VK_API_VERSION_1_3) {
     if (!builder.enableFeature(&VkPhysicalDeviceVulkan13Features::synchronization2)) {
-      return toy::UnExpected{ "synchronization2 not supported" };
+      return toy::unexpected("synchronization2 not supported");
     }
   } else {
     if (!builder.enableExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME) ||
@@ -21,11 +21,11 @@ auto device_checkers::sync(DeviceCapabilityBuilder& builder) -> toy::Expected<vo
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES>(
           { &VkPhysicalDeviceSynchronization2Features::synchronization2 }
         )) {
-      return toy::UnExpected{ "synchronization2 extension not supported" };
+      return toy::unexpected("synchronization2 extension not supported");
     }
   }
   if (!builder.enableFeature(&VkPhysicalDeviceVulkan12Features::timelineSemaphore)) {
-    return toy::UnExpected{ "timelineSemaphore not supported" };
+    return toy::unexpected("timelineSemaphore not supported");
   }
   return {};
 }

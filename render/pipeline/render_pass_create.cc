@@ -25,23 +25,26 @@ auto depst_formats = std::array{
   VK_FORMAT_D32_SFLOAT,
 };
 
-auto device_checkers::attachment(DeviceCapabilityBuilder& builder)
-  -> toy::Expected<void> {
+auto device_checkers::attachment(DeviceCapabilityBuilder& builder) -> toy::Expected<void> {
   auto& pdevice = builder.getPdevice();
   if (!pdevice.checkFormatSupport(
         FormatTarget::OPTIMAL_TILING, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT, color_formats
       )) {
-    return toy::UnExpected{ "color formats is not support for attachment" };
+    return toy::unexpected("color formats is not support for attachment");
   }
   if (!pdevice.checkFormatSupport(
         FormatTarget::OPTIMAL_TILING, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT, depst_formats
       )) {
-    return toy::UnExpected{ std::format(
-      "depst formats is not support for attachment: {::}",
-      pdevice.getUnsupportFormats(
-        FormatTarget::OPTIMAL_TILING, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT, depst_formats
+    return toy::unexpected(
+      std::format(
+        "depst formats is not support for attachment: {::}",
+        pdevice.getUnsupportFormats(
+          FormatTarget::OPTIMAL_TILING,
+          VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
+          depst_formats
+        )
       )
-    ) };
+    );
   }
   return {};
 }

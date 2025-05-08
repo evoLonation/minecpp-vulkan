@@ -214,7 +214,7 @@ auto QueueManagerBuilder::checkPdevice(DeviceCapabilityBuilder& request) -> toy:
     }
     return {};
   } else {
-    return toy::UnExpected("queue request failed");
+    return toy::unexpected("queue request failed");
   }
 }
 

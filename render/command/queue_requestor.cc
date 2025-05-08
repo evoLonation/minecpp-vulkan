@@ -82,7 +82,7 @@ auto QueueRequestor::checkPdevice(DeviceCapabilityBuilder& request)
     }
     return {};
   } else {
-    return toy::UnExpected("queue request failed");
+    return toy::unexpected("queue request failed");
   }
 }
 } // namespace rd

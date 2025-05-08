@@ -83,10 +83,9 @@ decltype(SampledImage::_available_formats) SampledImage::_available_formats = {
   VK_FORMAT_D32_SFLOAT,
 };
 
-auto SampledImage::checkPdevice(DeviceCapabilityBuilder& request)
-  -> toy::Expected<void> {
+auto SampledImage::checkPdevice(DeviceCapabilityBuilder& request) -> toy::Expected<void> {
   if (!request.enableFeature(&VkPhysicalDeviceFeatures::samplerAnisotropy)) {
-    return toy::UnExpected{ "sampler anisotropy not supported" };
+    return toy::unexpected("sampler anisotropy not supported");
   }
   if (!request.getPdevice().checkFormatSupport(
         FormatTarget::OPTIMAL_TILING,
@@ -94,7 +93,7 @@ auto SampledImage::checkPdevice(DeviceCapabilityBuilder& request)
           VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT,
         _available_formats
       )) {
-    return toy::UnExpected{ "formats is not support for sampled texture" };
+    return toy::unexpected("formats is not support for sampled texture");
   }
   return {};
 }

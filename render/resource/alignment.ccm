@@ -14,7 +14,7 @@ namespace device_checkers {
 
 auto alignment(DeviceCapabilityBuilder& builder) -> toy::Expected<void> {
   if (!builder.enableFeature(&VkPhysicalDeviceVulkan12Features::uniformBufferStandardLayout)) {
-    return toy::UnExpected{ "uniformBufferStandardLayout not supported" };
+    return toy::unexpected("uniformBufferStandardLayout not supported");
   }
   return {};
 }
