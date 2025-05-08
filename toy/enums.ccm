@@ -136,8 +136,8 @@ public:
   auto end() const { return Iterator(*this, _bitset.size()); }
 
 private:
-  EnumFlags(std::bitset<(size_t)max_enum_value> bitset) : _bitset(bitset) {}
-  std::bitset<(size_t)max_enum_value> _bitset;
+  EnumFlags(std::bitset<(size_t)max_enum_value + 1> bitset) : _bitset(bitset) {}
+  std::bitset<(size_t)max_enum_value + 1> _bitset;
 };
 
 } // namespace toy
