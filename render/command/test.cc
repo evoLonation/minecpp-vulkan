@@ -213,17 +213,12 @@ TEST(ImageTracker) {
   }
 }
 
-TEST(Submitter) {
-  // init contexts
-  auto instance_extensions = std::vector<std::string>{};
-  auto instance = std::make_unique<rd::InstanceResource>("test submitter", instance_extensions);
-  using namespace std::placeholders;
+auto createDeviceAndQueueManager(uint32 graphics_queue_count) -> toy::Expected<std::any> {
   auto queue_builder = QueueManagerBuilder{
     std::vector<QueueFamilyRequirement>{
       QueueFamilyRequirement{
         .family = FamilyType::GRAPHICS,
-        .queue_count = 1,
-        // .queue_count = 2,
+        .queue_count = graphics_queue_count,
         .checker = getGraphicQueueChecker(),
       },
       QueueFamilyRequirement{
@@ -237,11 +232,42 @@ TEST(Submitter) {
     [&](auto& ctx) { return queue_builder.checkPdevice(ctx); },
     rd::device_checkers::sync,
   };
-  auto device = std::make_unique<rd::Device>(rd::Device::create(device_checkers));
-  auto queue_manager = queue_builder.build();
-  auto cmdbuf_manager = CmdbufManager{};
-  auto sema_pool = SemaphorePool{};
-  auto worker = Execution::Worker{};
+  try {
+    auto device = std::make_shared<rd::Device>(rd::Device::create(device_checkers));
+    auto queue_manager = std::make_shared<rd::exec::QueueManager>(queue_builder.build());
+    return std::any{ std::tuple{
+      std::move(device),
+      std::move(queue_manager),
+    } };
+  } catch (const std::exception& e) {
+    return toy::unexpected(e.what());
+  }
+}
+
+TEST(Synchronizer) {
+  // init contexts
+  auto instance_extensions = std::vector<std::string>{};
+  auto instance = std::make_unique<rd::InstanceResource>("test submitter", instance_extensions);
+  using namespace std::placeholders;
+
+  auto has_multi_queue = true;
+  auto device_and_queue_manager = createDeviceAndQueueManager(2);
+  if (!device_and_queue_manager) {
+    toy::debugf(
+      "Failed to create device and queue manager with 2 graphics queues, try create 1 queue and "
+      "multi queue test won't run: \n{}",
+      device_and_queue_manager.error()
+    );
+    has_multi_queue = false;
+    device_and_queue_manager = createDeviceAndQueueManager(1);
+    if (!device_and_queue_manager.has_value()) {
+      toy::throwf("{}", device_and_queue_manager.error());
+    }
+  }
+  auto& queue_manager = rd::exec::QueueManager::getInstance();
+  auto  cmdbuf_manager = CmdbufManager{};
+  auto  sema_pool = SemaphorePool{};
+  auto  worker = Execution::Worker{};
 
   // todo: add assert to test
   auto write_scope1 = Scope{
@@ -260,14 +286,49 @@ TEST(Submitter) {
     .stage_mask = VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT,
     .access_mask = VK_ACCESS_2_INDEX_READ_BIT,
   };
-  auto queue = queue_manager.getQueue(FamilyType::TRANSFER, 0);
+
+  auto transfer_queue = queue_manager.getQueue(FamilyType::TRANSFER, 0);
+  auto graphics_queue = queue_manager.getQueue(FamilyType::GRAPHICS, 0);
   auto buffer = rd::Buffer{ 8, VK_BUFFER_USAGE_2_TRANSFER_DST_BIT, VkMemoryPropertyFlags{} };
-  auto submitter = SubmitterAutoSync{ queue };
-  auto cmdbuf = submitter.addCommandBuffer();
-  auto syner = Synchronizer{ buffer };
-  submitter.sync(syner, write_scope1);
-  submitter.sync(syner, read_scope1);
-  submitter.sync(syner, read_scope2);
-  submitter.sync(syner, write_scope2);
-  submitter.submit();
+  auto syner = Synchronizer{ buffer.get() };
+  // multi sync in one submitter
+  toy::debugf("multi sync in one submitter");
+  {
+    auto submitter = SubmitterAutoSync{ transfer_queue };
+    submitter.sync(syner, write_scope1);
+    submitter.sync(syner, read_scope1);
+    submitter.sync(syner, read_scope2);
+    submitter.sync(syner, write_scope2);
+    submitter.submit();
+  }
+  // across family sync
+  toy::debugf("across family sync");
+  {
+    auto submitter = SubmitterAutoSync{ graphics_queue };
+    submitter.sync(syner, write_scope1);
+    submitter.submit();
+  }
+  // same queue sync (same as multi sync in one submitter)
+  toy::debugf("same queue sync");
+  {
+    auto submitter = SubmitterAutoSync{ graphics_queue };
+    submitter.sync(syner, read_scope1);
+    submitter.sync(syner, read_scope2);
+    submitter.sync(syner, write_scope2);
+    submitter.submit();
+  }
+  // insert a syncHost between two submitters
+  toy::debugf("insert a syncHost between two submitters");
+  {
+    syner.syncHost(AccessType::READ | AccessType::WRITE);
+    auto submitter = SubmitterAutoSync{ graphics_queue };
+    submitter.sync(syner, write_scope1);
+    submitter.submit();
+  }
+  {
+    syner.syncHost(AccessType::READ | AccessType::WRITE);
+    auto submitter = SubmitterAutoSync{ transfer_queue };
+    submitter.sync(syner, write_scope1);
+    submitter.submit().hostWait();
+  }
 }

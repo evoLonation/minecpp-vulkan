@@ -7,6 +7,7 @@ import render.queue;
 import render.tracker2;
 import render.cmdbuf;
 export import render.execution0;
+import render.reflections;
 import render.tool;
 import <vulkan_config.h>;
 import render;
@@ -17,10 +18,13 @@ export namespace rd::exec {
 
 class Submitter {
 public:
-  Submitter(VkQueue queue) { _queue = queue; }
+  Submitter(VkQueue queue) {
+    _queue = queue;
+    addCommandBuffer();
+  }
   UNCOPYABLE_MOVEABLE(Submitter)
   auto getQueue() -> VkQueue { return _queue; }
-  void addWait(Execution exec, VkPipelineStageFlags2 stage) {
+  void addWait(Execution exec, VkPipelineStageFlags2 stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT) {
     _batch.waits.push_back({ stage, std::move(exec) });
   }
   void addSignal(VkPipelineStageFlags2 stage) { _batch.signals.insert(stage); }
@@ -70,6 +74,10 @@ public:
   }
 
   auto submit() -> Execution { return Execution{ _queue, std::move(_batch) }; }
+  void reset() {
+    _batch = CommandBatch{};
+    addCommandBuffer();
+  }
 
 private:
   VkQueue      _queue{};
@@ -107,20 +115,22 @@ public:
     auto familyTransfer = [&](Scope src_scope) {
       auto prev_family = QueueManager::getInstance().getFamilyIndex(_prev_exec.getQueue());
       auto family_info = FamilyTransferInfo{ prev_family, now_family };
-      auto release_cmdbuf = CmdbufManager::getInstance().get(now_family);
-      recordBufferBarrier(release_cmdbuf, _buffer, BarrierScope::release(src_scope), family_info);
-      auto cmdbufs = std::vector<RecordableCmdbuf>{};
-      cmdbufs.push_back(std::move(release_cmdbuf));
-      auto exec = Execution{
-        _prev_exec.getQueue(),
-        CommandBatch{
-          .cmdbufs = std::move(cmdbufs),
-        },
-      };
-      addWait(std::move(exec), VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
+      toy::debugf(
+        "family transfer: \n\tsrc_scope: \n{}\n\tdst_scope: \n{}\n\t family: {} -> {}",
+        src_scope,
+        scope,
+        family_info.src_family,
+        family_info.dst_family
+      );
+      auto release_submitter = Submitter{ _prev_exec.getQueue() };
+      recordBufferBarrier(
+        release_submitter.addCommandBuffer(), _buffer, BarrierScope::release(src_scope), family_info
+      );
+      addWait(release_submitter.submit(), VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
       recordBufferBarrier(*cmdbuf, _buffer, BarrierScope::acquire(scope), family_info);
     };
     auto waitPrevExec = [&](VkPipelineStageFlags2 wait_stage) {
+      toy::debugf("wait prev exec: {}", rd::refl::stageMask(wait_stage));
       if (!_prev_exec.canWait(wait_stage)) {
         wait_stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
       }
