@@ -1,136 +1,17 @@
 module;
 #include <toy.h>
 #include <vulkan_tool.h>
-export module render.execution0;
+export module render.execution;
 
 import render.tool;
 import render.cmdbuf;
+import render.semaphore;
 import <vulkan_config.h>;
 import render;
 import std;
 import toy;
 
 export namespace rd::exec {
-
-class TimelineSemaphore : public rs::Semaphore {
-public:
-  TimelineSemaphore() = default;
-  TimelineSemaphore(uint64 initial_value) {
-    auto type_info = VkSemaphoreTypeCreateInfo{
-      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
-      .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
-      .initialValue = initial_value,
-    };
-    VkSemaphoreCreateInfo create_info{
-      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-      .pNext = &type_info,
-    };
-    rs::Semaphore::operator=(create_info);
-  }
-  auto hostWait(uint64 value, uint64 nano_timeout = max_timeout) -> bool {
-    return hostWait(std::array{ std::pair{ this, value } }, false, nano_timeout);
-  }
-  static auto hostWait(
-    std::span<std::pair<TimelineSemaphore*, uint64> const> semaphores,
-    bool                                                   any = false,
-    uint64                                                 nano_timeout = max_timeout
-  ) -> bool {
-    if (semaphores.empty()) {
-      return true;
-    }
-    auto handles = semaphores | views::transform([](auto& s) { return s.first->get(); }) |
-                   ranges::to<std::vector>();
-    auto values =
-      semaphores | views::transform([](auto& s) { return s.second; }) | ranges::to<std::vector>();
-    auto wait_info = VkSemaphoreWaitInfo{
-      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-      .flags = any ? VK_SEMAPHORE_WAIT_ANY_BIT : 0u,
-      .semaphoreCount = static_cast<uint32>(semaphores.size()),
-      .pSemaphores = handles.data(),
-      .pValues = values.data(),
-    };
-    auto res = CHECK_VK_RESULT(
-      vkWaitSemaphores(Device::getInstance(), &wait_info, nano_timeout), { VK_SUCCESS, VK_TIMEOUT }
-    );
-    return res == VK_SUCCESS;
-  }
-  void hostSignal(uint64 value) {
-    auto signal_info = VkSemaphoreSignalInfo{
-      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO,
-      .semaphore = get(),
-      .value = value,
-    };
-    CHECK_VK_RESULT(vkSignalSemaphore(Device::getInstance(), &signal_info));
-  }
-};
-
-class IncrementalSemaphore {
-public:
-  IncrementalSemaphore() = default;
-  IncrementalSemaphore(bool init) {
-    if (init) {
-      _sema = TimelineSemaphore(_value);
-    }
-  }
-  auto getNowValue() -> uint64 { return _value; }
-  void increaseValue() { _value++; }
-  auto hostWait(uint64 nano_timeout = max_timeout) -> bool {
-    return _sema.hostWait(_value, nano_timeout);
-  }
-  auto get() -> VkSemaphore { return _sema.get(); }
-  auto valid() -> bool { return get(); }
-  operator VkSemaphore() { return get(); }
-
-private:
-  TimelineSemaphore _sema;
-  uint64            _value{};
-};
-
-class SemaphorePool : public toy::ObjectPoolHelper<IncrementalSemaphore>,
-                      public PROACTIVE_SINGLETON(SemaphorePool) {
-public:
-  friend ObjectPoolHelper;
-
-  SemaphorePool() = default;
-  void recycle(IncrementalSemaphore s) {
-    TOY_ASSERT(s.hostWait(0));
-    _idle_semas.push_back(std::move(s));
-  }
-
-private:
-  std::vector<IncrementalSemaphore> _idle_semas;
-
-  void expand() { _idle_semas.push_back({ true }); }
-  auto isEmpty() -> bool { return _idle_semas.empty(); }
-  auto extract() -> IncrementalSemaphore {
-    auto ret = std::move(_idle_semas.back());
-    ret.increaseValue();
-    _idle_semas.pop_back();
-    return ret;
-  }
-  void tryShrink() {
-    auto shrink_size = 5;
-    toy::debugf("shrink {} -> {}", _idle_semas.size(), shrink_size);
-    if (_idle_semas.size() <= shrink_size) {
-      return;
-    }
-    _idle_semas.erase(_idle_semas.begin() + shrink_size, _idle_semas.end());
-  }
-  void workingToIdle() {}
-};
-
-// can only submit one signal op by specified value
-// the signal/wait op must done before destroyed
-class DisposableSemaphore : private toy::RecyclableObject<SemaphorePool, IncrementalSemaphore> {
-public:
-  using RecyclableObject::RecyclableObject;
-  using RecyclableObject::operator=;
-  using RecyclableObject::get;
-  using RecyclableObject::valid;
-  using RecyclableObject::operator VkSemaphore;
-  using RecyclableObject::getNowValue;
-  using RecyclableObject::hostWait;
-};
 
 class SpinMutex {
 private:

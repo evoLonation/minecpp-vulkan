@@ -1,11 +1,13 @@
 module:
 - cmdbuf.ccm:
     provide: render.cmdbuf
-- execution.ccm:
-    provide: render.execution
+- submitter2.ccm:
+    provide: render.submitter2
 - execution0.ccm:
-    provide: render.execution0
+    provide: render.execution
 - queue.ccm:
     provide: render.queue
 - tracker2.ccm:
     provide: render.tracker2
+- semaphore.ccm:
+    provide: render.semaphore
