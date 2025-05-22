@@ -84,10 +84,12 @@ private:
   CommandBatch _batch;
 };
 
-class BufferSynchronizer {
+class Synchronizer {
 public:
-  BufferSynchronizer(VkBuffer buffer) : _buffer(buffer) {}
-  UNCOPYABLE_MOVEABLE(BufferSynchronizer)
+  Synchronizer(VkBuffer buffer) : _context(BufferContext{ buffer }) {}
+  Synchronizer(VkImage image, VkImageSubresourceRange subresource_range)
+    : _context(ImageContext{ image, subresource_range }) {}
+  UNCOPYABLE_MOVEABLE(Synchronizer)
   void startExecution(Submitter& submitter) {
     _now_submitter = &submitter;
     TOY_ASSERT(!_is_recording);
@@ -99,8 +101,12 @@ public:
     _is_recording = false;
     _prev_exec = std::move(execution);
   }
+  using ScopeVariant = std::variant<Scope, ImageScope>;
   // diff family or queue only happens in the first time after call startExecution
-  void sync(Scope scope, std::optional<Submitter::CommandBuffer> cmdbuf = std::nullopt) {
+  void sync(ScopeVariant scope, std::optional<Submitter::CommandBuffer> cmdbuf = std::nullopt) {
+    TOY_ASSERT(
+      std::holds_alternative<Scope>(scope) == std::holds_alternative<BufferContext>(_context)
+    );
     TOY_ASSERT(_is_recording);
     _synced_in_exec = true;
     if (!cmdbuf) {
@@ -112,57 +118,75 @@ public:
     auto now_queue = _now_submitter->getQueue();
     auto now_family = QueueManager::getInstance().getFamilyIndex(now_queue);
 
-    auto familyTransfer = [&](Scope src_scope) {
+    // return if record layout transition
+    auto syncAcrossFamily = [&](std::optional<ScopeVariant> src_scope_) {
+      auto src_scope = src_scope_.value_or(
+        std::holds_alternative<Scope>(scope) ? ScopeVariant{ Scope{} }
+                                             : ScopeVariant{ ImageScope{} }
+      );
       auto prev_family = QueueManager::getInstance().getFamilyIndex(_prev_exec.getQueue());
       auto family_info = FamilyTransferInfo{ prev_family, now_family };
-      toy::debugf(
-        "family transfer: \n\tsrc_scope: \n{}\n\tdst_scope: \n{}\n\t family: {} -> {}",
-        src_scope,
-        scope,
-        family_info.src_family,
-        family_info.dst_family
-      );
       auto release_submitter = Submitter{ _prev_exec.getQueue() };
-      recordBufferBarrier(
-        release_submitter.addCommandBuffer(), _buffer, BarrierScope::release(src_scope), family_info
+      _context.recordReleaseBarrier(
+        release_submitter.addCommandBuffer(), src_scope, scope, family_info
       );
       addWait(release_submitter.submit(), VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
-      recordBufferBarrier(*cmdbuf, _buffer, BarrierScope::acquire(scope), family_info);
+      _context.recordAcquireBarrier(*cmdbuf, src_scope, scope, family_info);
     };
-    auto waitPrevExec = [&](VkPipelineStageFlags2 wait_stage) {
-      toy::debugf("wait prev exec: {}", rd::refl::stageMask(wait_stage));
-      if (!_prev_exec.canWait(wait_stage)) {
-        wait_stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    auto syncAcrossQueue = [&](ScopeVariant src_scope) -> bool {
+      VkPipelineStageFlags2 wait_stage{};
+      if (auto* x = std::get_if<Scope>(&src_scope)) {
+        wait_stage = x->stage_mask;
+      } else if (auto* x = std::get_if<ImageScope>(&src_scope)) {
+        wait_stage = x->scope.stage_mask;
       }
-      addWait(std::move(_prev_exec), wait_stage);
+      if (wait_stage != VK_PIPELINE_STAGE_2_NONE) {
+        toy::debugf("wait prev exec: {}", rd::refl::stageMask(wait_stage));
+        if (!_prev_exec.canWait(wait_stage)) {
+          wait_stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        }
+        addWait(std::move(_prev_exec), wait_stage);
+      }
+      if (auto* x = std::get_if<ImageScope>(&src_scope);
+          x && x->layout != std::get<ImageScope>(scope).layout) {
+        // layout transition
+        _context.recordBarrier(*cmdbuf, ImageScope{ Scope{}, x->layout }, scope);
+        return true;
+      } else {
+        return false;
+      }
     };
-    auto recordBarrier = [&](Scope src_scope) {
-      toy::debugf("record barrier: \n\tsrc_scope: \n{}\n\tdst_scope: \n{}", src_scope, scope);
-      recordBufferBarrier(*cmdbuf, _buffer, BarrierScope{ src_scope, scope }, {});
+    auto recordBarrier = [&](ScopeVariant src_scope) {
+      _context.recordBarrier(*cmdbuf, src_scope, scope);
     };
 
     if (_prev_exec.valid() && _prev_exec.getQueue() != now_queue) {
       // first record and diff queue, can't directly use barrier, and need sync all previous scopes
       auto prev_family = QueueManager::getInstance().getFamilyIndex(_prev_exec.getQueue());
-      auto need_sync = _tracker.getAllNeedSync();
-      _tracker.resetScope();
-      // if !need_sync, must call syncHost before. In this case, dont need sync any scopes, just want to transfer family (if needed)
+      auto need_sync = _context.getAllNeedSync(scope);
+      _context.resetScope();
+      // if !need_sync (buffer), must has called syncHost before.
       if (now_family != prev_family) {
-        familyTransfer(need_sync.value_or(Scope{}));
-        _tracker.setNeedSync(scope);
+        syncAcrossFamily(need_sync);
+        _context.setNeedSync(scope);
       } else {
+        bool recorded_layout_transition = false;
         if (need_sync) {
-          waitPrevExec(need_sync->stage_mask);
+          recorded_layout_transition = syncAcrossQueue(*need_sync);
         }
-        _tracker.updateScope(scope);
+        if (recorded_layout_transition) {
+          _context.setNeedSync(scope);
+        } else {
+          _context.updateScope(scope);
+        }
       }
       _prev_exec.detach();
     } else {
-      auto need_sync = _tracker.getNeedSync(scope);
+      auto need_sync = _context.getNeedSync(scope);
       if (need_sync) {
         recordBarrier(*need_sync);
       }
-      _tracker.updateScope(scope);
+      _context.updateScope(scope);
     }
   }
   void addWait(Execution exec, VkPipelineStageFlags2 stage) {
@@ -170,11 +194,14 @@ public:
     _now_submitter->addWait(std::move(exec), stage);
   }
 
+  // only for buffer, not for image
   void syncHost(AccessTypeFlags access) {
+    TOY_ASSERT(std::holds_alternative<BufferContext>(_context));
     TOY_ASSERT(!_is_recording);
     TOY_ASSERT(access);
+    auto& [buffer, tracker] = std::get<BufferContext>(_context);
     if (_prev_exec.valid()) {
-      auto need_sync = _tracker.getAllNeedSync();
+      auto need_sync = tracker.getAllNeedSync();
       if (need_sync) {
         auto prev_family = QueueManager::getInstance().getFamilyIndex(_prev_exec.getQueue());
         auto cmdbuf = CmdbufManager::getInstance().get(prev_family);
@@ -187,7 +214,9 @@ public:
         if (access & AccessType::WRITE) {
           dst_scope.access_mask |= VK_ACCESS_2_HOST_WRITE_BIT;
         }
-        recordBufferBarrier(cmdbuf, _buffer, BarrierScope{ *need_sync, dst_scope }, {});
+        // use _context.recordBarrier to log
+        _context.recordBarrier(cmdbuf, *need_sync, dst_scope);
+        // recordBufferBarrier(cmdbuf, buffer, BarrierScope{ *need_sync, dst_scope }, {});
         auto cmdbufs = std::vector<RecordableCmdbuf>{};
         cmdbufs.push_back(std::move(cmdbuf));
         auto exec = Execution{
@@ -197,20 +226,201 @@ public:
           },
         };
         exec.hostWait();
-        _tracker.resetScope();
+        tracker.resetScope();
       }
     }
   }
 
 private:
-  VkBuffer     _buffer;
-  Execution    _prev_exec;
-  ScopeTracker _tracker;
+  struct BufferContext {
+    VkBuffer     buffer;
+    ScopeTracker tracker;
+  };
+  struct ImageContext {
+    VkImage                 image;
+    VkImageSubresourceRange subresource_range;
+    ImageScopeTracker       tracker;
+  };
+  struct ContextVariant : std::variant<BufferContext, ImageContext> {
+    void recordBarrier(
+      VkCommandBuffer cmdbuf, ScopeVariant const& src_scope, ScopeVariant const& dst_scope
+    ) {
+      toy::debugf(
+        "record barrier: \n\tsrc_scope: \n{}\n\tdst_scope: \n{}",
+        std::visit([](auto& x) { return std::format("{}", x); }, src_scope),
+        std::visit([](auto& x) { return std::format("{}", x); }, dst_scope)
+      );
+      if (auto* buffer_context = std::get_if<BufferContext>(this)) {
+        recordBufferBarrier(
+          cmdbuf,
+          buffer_context->buffer,
+          BarrierScope{ std::get<Scope>(src_scope), std::get<Scope>(dst_scope) },
+          {}
+        );
+      } else if (auto* image_context = std::get_if<ImageContext>(this)) {
+        recordImageBarrier(
+          cmdbuf,
+          image_context->image,
+          image_context->subresource_range,
+          LayoutTransitionInfo{
+            std::get<ImageScope>(src_scope).layout,
+            std::get<ImageScope>(dst_scope).layout,
+          },
+          BarrierScope{
+            std::get<ImageScope>(src_scope).scope,
+            std::get<ImageScope>(dst_scope).scope,
+          },
+          {}
+        );
+      } else {
+        toy::throwf("unreachable");
+      }
+    }
+    void recordReleaseBarrier(
+      VkCommandBuffer     cmdbuf,
+      ScopeVariant const& src_scope,
+      ScopeVariant const& dst_scope,
+      FamilyTransferInfo  family_info
+    ) {
+      toy::debugf(
+        "record release barrier: \n\tsrc_scope: \n{}\n\tfamily: {} -> {}",
+        std::visit([](auto& x) { return std::format("{}", x); }, src_scope),
+        family_info.src_family,
+        family_info.dst_family
+      );
+      if (auto* buffer_context = std::get_if<BufferContext>(this)) {
+        recordBufferBarrier(
+          cmdbuf,
+          buffer_context->buffer,
+          BarrierScope::release(std::get<Scope>(src_scope)),
+          family_info
+        );
+      } else if (auto* image_context = std::get_if<ImageContext>(this)) {
+        recordImageBarrier(
+          cmdbuf,
+          image_context->image,
+          image_context->subresource_range,
+          LayoutTransitionInfo{
+            std::get<ImageScope>(src_scope).layout,
+            std::get<ImageScope>(dst_scope).layout,
+          },
+          BarrierScope::release(std::get<ImageScope>(src_scope).scope),
+          family_info
+        );
+      } else {
+        toy::throwf("unreachable");
+      }
+    }
+    void recordAcquireBarrier(
+      VkCommandBuffer     cmdbuf,
+      ScopeVariant const& src_scope,
+      ScopeVariant const& dst_scope,
+      FamilyTransferInfo  family_info
+    ) {
+      toy::debugf(
+        "record acquire barrier: \n\tdst_scope: \n{}\n\tfamily: {} -> {}",
+        std::visit([](auto& x) { return std::format("{}", x); }, dst_scope),
+        family_info.src_family,
+        family_info.dst_family
+      );
+      if (auto* buffer_context = std::get_if<BufferContext>(this)) {
+        recordBufferBarrier(
+          cmdbuf,
+          buffer_context->buffer,
+          BarrierScope::acquire(std::get<Scope>(dst_scope)),
+          family_info
+        );
+      } else if (auto* image_context = std::get_if<ImageContext>(this)) {
+        recordImageBarrier(
+          cmdbuf,
+          image_context->image,
+          image_context->subresource_range,
+          LayoutTransitionInfo{
+            std::get<ImageScope>(src_scope).layout,
+            std::get<ImageScope>(dst_scope).layout,
+          },
+          BarrierScope::acquire(std::get<ImageScope>(dst_scope).scope),
+          family_info
+        );
+      } else {
+        toy::throwf("unreachable");
+      }
+    }
+    void updateScope(ScopeVariant const& scope) {
+      if (auto* buffer_context = std::get_if<BufferContext>(this)) {
+        buffer_context->tracker.updateScope(std::get<Scope>(scope));
+      } else if (auto* image_context = std::get_if<ImageContext>(this)) {
+        image_context->tracker.updateScope(std::get<ImageScope>(scope));
+      } else {
+        toy::throwf("unreachable");
+      }
+    }
+    auto getAllNeedSync(ScopeVariant const& scope) -> std::optional<ScopeVariant> {
+      if (auto* buffer_context = std::get_if<BufferContext>(this)) {
+        return buffer_context->tracker.getAllNeedSync();
+      } else if (auto* image_context = std::get_if<ImageContext>(this)) {
+        return image_context->tracker.getAllNeedSync(std::get<ImageScope>(scope).layout);
+      } else {
+        toy::throwf("unreachable");
+      }
+    }
+    auto getNeedSync(ScopeVariant const& scope) -> std::optional<ScopeVariant> {
+      if (auto* buffer_context = std::get_if<BufferContext>(this)) {
+        return buffer_context->tracker.getNeedSync(std::get<Scope>(scope));
+      } else if (auto* image_context = std::get_if<ImageContext>(this)) {
+        return image_context->tracker.getNeedSync(std::get<ImageScope>(scope));
+      } else {
+        toy::throwf("unreachable");
+      }
+    }
+    void setNeedSync(ScopeVariant const& scope) {
+      if (auto* buffer_context = std::get_if<BufferContext>(this)) {
+        buffer_context->tracker.setNeedSync(std::get<Scope>(scope));
+      } else if (auto* image_context = std::get_if<ImageContext>(this)) {
+        image_context->tracker.setNeedSync(std::get<ImageScope>(scope));
+      } else {
+        toy::throwf("unreachable");
+      }
+    }
+    void resetScope() {
+      if (auto* buffer_context = std::get_if<BufferContext>(this)) {
+        buffer_context->tracker.resetScope();
+      } else if (auto* image_context = std::get_if<ImageContext>(this)) {
+        image_context->tracker.resetScopeWithoutLayout();
+      } else {
+        toy::throwf("unreachable");
+      }
+    }
+  };
+  ContextVariant _context;
+  Execution      _prev_exec;
   // use to make sure must call a sync() between startExecution and endExecution
-  bool         _synced_in_exec = false;
+  bool           _synced_in_exec = false;
   // use to make sure start -> end, and must call sync between them, call syncHost outside
-  bool         _is_recording = false;
-  Submitter*   _now_submitter{};
+  bool           _is_recording = false;
+  Submitter*     _now_submitter{};
+};
+
+class BufferSynchronizer : private Synchronizer {
+public:
+  BufferSynchronizer(VkBuffer buffer) : Synchronizer(buffer) {}
+  using Synchronizer::endExecution;
+  using Synchronizer::startExecution;
+  void sync(Scope scope, std::optional<Submitter::CommandBuffer> cmdbuf = std::nullopt) {
+    Synchronizer::sync(scope, std::move(cmdbuf));
+  }
+  void syncHost(AccessTypeFlags access) { Synchronizer::syncHost(access); }
+};
+
+class ImageSynchronizer : private Synchronizer {
+public:
+  ImageSynchronizer(VkImage image, VkImageSubresourceRange subresource_range)
+    : Synchronizer(image, subresource_range) {}
+  using Synchronizer::endExecution;
+  using Synchronizer::startExecution;
+  void sync(ImageScope scope, std::optional<Submitter::CommandBuffer> cmdbuf = std::nullopt) {
+    Synchronizer::sync(scope, std::move(cmdbuf));
+  }
 };
 
 class SubmitterAutoSync : public Submitter {
@@ -221,23 +431,38 @@ public:
     Scope                                   scope,
     std::optional<Submitter::CommandBuffer> cmdbuf = std::nullopt
   ) {
-    if (!_syners.contains(&syner)) {
-      _syners.insert(&syner);
+    if (!_buffer_syners.contains(&syner)) {
+      _buffer_syners.insert(&syner);
+      syner.startExecution(*this);
+    }
+    syner.sync(scope, std::move(cmdbuf));
+  }
+  void sync(
+    ImageSynchronizer&                      syner,
+    ImageScope                              scope,
+    std::optional<Submitter::CommandBuffer> cmdbuf = std::nullopt
+  ) {
+    if (!_image_syners.contains(&syner)) {
+      _image_syners.insert(&syner);
       syner.startExecution(*this);
     }
     syner.sync(scope, std::move(cmdbuf));
   }
   auto submit() -> Execution {
     auto execution = Submitter::submit();
-    for (auto& syner : _syners) {
+    for (auto& syner : _buffer_syners) {
       syner->endExecution(execution);
     }
-    _syners.clear();
+    for (auto& syner : _image_syners) {
+      syner->endExecution(execution);
+    }
+    _buffer_syners.clear();
     return execution;
   }
 
 private:
-  std::unordered_set<BufferSynchronizer*> _syners;
+  std::unordered_set<BufferSynchronizer*> _buffer_syners;
+  std::unordered_set<ImageSynchronizer*>  _image_syners;
 };
 
 } // namespace rd::exec

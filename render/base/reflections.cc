@@ -45,9 +45,10 @@ auto stageFlag(VkPipelineStageFlagBits2 stage) -> std::string_view {
     CASE(VK_PIPELINE_STAGE_2_NONE);
     CASE(VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT);
     CASE(VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT);
+    CASE(VK_PIPELINE_STAGE_2_HOST_BIT);
   default:
     toy::debugf(
-      "error: unknown VkPipelineStageFlagBits2: {}", static_cast<VkPipelineStageFlags2>(stage)
+      "error: unknown VkPipelineStageFlagBits2: 0x{:x}", static_cast<VkPipelineStageFlags2>(stage)
     );
     return "unknown";
   }
@@ -70,8 +71,10 @@ auto accessFlag(VkAccessFlagBits2 access) -> std::string_view {
     CASE(VK_ACCESS_2_NONE);
     CASE(VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
     CASE(VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
+    CASE(VK_ACCESS_2_HOST_READ_BIT);
+    CASE(VK_ACCESS_2_HOST_WRITE_BIT);
   default:
-    toy::debugf("error: unknown VkAccessFlagBits2: {}", static_cast<VkAccessFlags2>(access));
+    toy::debugf("error: unknown VkAccessFlagBits2: 0x{:x}", static_cast<VkAccessFlags2>(access));
     return "unknown";
   };
 }

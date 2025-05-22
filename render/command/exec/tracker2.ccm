@@ -153,6 +153,7 @@ public:
   auto getNeedSync(ImageScope scope) const -> std::optional<ImageScope> {
     return getNeedSync(scope.scope.getAccessType(), scope.layout);
   }
+  auto getNowLayout() const -> VkImageLayout { return _last_layout; }
 
   void updateScope(ImageScope scope) {
     TOY_ASSERT(scope.scope.stage_mask != 0);
@@ -169,6 +170,10 @@ public:
     _last_read_stages = 0;
     _last_write_scope = {};
     _last_layout = layout;
+  }
+  void resetScopeWithoutLayout() {
+    _last_read_stages = 0;
+    _last_write_scope = {};
   }
   void resetAndUpdate(ImageScope scope) {
     resetScope();

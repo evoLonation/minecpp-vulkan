@@ -1,9 +1,11 @@
 import toy;
 import std;
+import render.semaphore;
 import render.tracker2;
 import render.sync;
 import <vulkan_config.h>;
 import render.execution;
+import render.submitter2;
 import render.instance;
 import render.device;
 import render.queue;
@@ -244,7 +246,7 @@ auto createDeviceAndQueueManager(uint32 graphics_queue_count) -> toy::Expected<s
   }
 }
 
-TEST(Synchronizer) {
+TEST(BufferSynchronizer) {
   // init contexts
   auto instance_extensions = std::vector<std::string>{};
   auto instance = std::make_unique<rd::InstanceResource>("test submitter", instance_extensions);
@@ -290,7 +292,7 @@ TEST(Synchronizer) {
   auto transfer_queue = queue_manager.getQueue(FamilyType::TRANSFER, 0);
   auto graphics_queue = queue_manager.getQueue(FamilyType::GRAPHICS, 0);
   auto buffer = rd::Buffer{ 8, VK_BUFFER_USAGE_2_TRANSFER_DST_BIT, VkMemoryPropertyFlags{} };
-  auto syner = Synchronizer{ buffer.get() };
+  auto syner = BufferSynchronizer{ buffer.get() };
   // multi sync in one submitter
   toy::debugf("multi sync in one submitter");
   {
