@@ -289,48 +289,264 @@ TEST(BufferSynchronizer) {
     .access_mask = VK_ACCESS_2_INDEX_READ_BIT,
   };
 
+  auto transfer_family = queue_manager.getFamilyIndex(FamilyType::TRANSFER);
+  auto graphics_family = queue_manager.getFamilyIndex(FamilyType::GRAPHICS);
   auto transfer_queue = queue_manager.getQueue(FamilyType::TRANSFER, 0);
   auto graphics_queue = queue_manager.getQueue(FamilyType::GRAPHICS, 0);
+
+  VkQueue graphics_queue2{};
+  if (has_multi_queue) {
+    graphics_queue2 = queue_manager.getQueue(FamilyType::GRAPHICS, 1);
+  }
   auto buffer = rd::Buffer{ 8, VK_BUFFER_USAGE_2_TRANSFER_DST_BIT, VkMemoryPropertyFlags{} };
   auto syner = BufferSynchronizer{ buffer.get() };
+  auto sync_queue = SyncOperationQueue{};
+  syner.setSyncOperationQueue(sync_queue);
+  auto graphics_submitter = SubmitterAutoSync{ graphics_queue };
+  auto transfer_submitter = SubmitterAutoSync{ transfer_queue };
+  auto graphics_submitter2 = std::optional<SubmitterAutoSync>{};
+  if (has_multi_queue) {
+    graphics_submitter2.emplace(graphics_queue2);
+  }
+  auto temp_exec = Execution{};
   // multi sync in one submitter
   toy::debugf("multi sync in one submitter");
   {
-    auto submitter = SubmitterAutoSync{ transfer_queue };
-    submitter.sync(syner, write_scope1);
-    submitter.sync(syner, read_scope1);
-    submitter.sync(syner, read_scope2);
-    submitter.sync(syner, write_scope2);
-    submitter.submit();
+    transfer_submitter.sync(syner, write_scope1);
+    TOY_ASSERT(sync_queue.isEmpty());
+
+    transfer_submitter.sync(syner, read_scope1);
+    TOY_ASSERT_EQ(
+      sync_queue.popBufferBarrier(),
+      (BufferBarrier{
+        &transfer_submitter,
+        nullptr,
+        buffer.get(),
+        BarrierScope{ write_scope1.extractWriteAccess(), read_scope1 },
+        {},
+      })
+    );
+
+    transfer_submitter.sync(syner, read_scope2);
+    TOY_ASSERT_EQ(
+      sync_queue.popBufferBarrier(),
+      (BufferBarrier{
+        &transfer_submitter,
+        nullptr,
+        buffer.get(),
+        BarrierScope{ write_scope1.extractWriteAccess(), read_scope2 },
+        {},
+      })
+    );
+
+    transfer_submitter.sync(syner, write_scope2);
+    TOY_ASSERT_EQ(
+      sync_queue.popBufferBarrier(),
+      (BufferBarrier{
+        &transfer_submitter,
+        nullptr,
+        buffer.get(),
+        BarrierScope{ (read_scope1 | read_scope2).extractWriteAccess(), write_scope2 },
+        {},
+      })
+    );
+
+    transfer_submitter.submit();
+    transfer_submitter.reset();
+    TOY_ASSERT(sync_queue.isEmpty());
   }
   // across family sync
   toy::debugf("across family sync");
   {
-    auto submitter = SubmitterAutoSync{ graphics_queue };
-    submitter.sync(syner, write_scope1);
-    submitter.submit();
+    graphics_submitter.sync(syner, write_scope1);
+    TOY_ASSERT_EQ(
+      sync_queue.popBufferBarrier(true),
+      (BufferBarrier{
+        nullptr,
+        transfer_queue,
+        buffer.get(),
+        BarrierScope{ write_scope2.extractWriteAccess(), {} },
+        { transfer_family, graphics_family },
+      })
+    );
+    TOY_ASSERT_EQ(
+      sync_queue.popBufferBarrier(),
+      (BufferBarrier{
+        &graphics_submitter,
+        nullptr,
+        buffer.get(),
+        BarrierScope{ {}, write_scope1 },
+        { transfer_family, graphics_family },
+      })
+    );
+    auto wait_op = sync_queue.popWaitExecution();
+    TOY_ASSERT(wait_op.awaited_exec.getQueue() == transfer_queue);
+    TOY_ASSERT(wait_op.waiter == &graphics_submitter);
+    TOY_ASSERT(wait_op.wait_stage == VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
+
+    graphics_submitter.submit();
+    graphics_submitter.reset();
+    TOY_ASSERT(sync_queue.isEmpty());
   }
   // same queue sync (same as multi sync in one submitter)
   toy::debugf("same queue sync");
   {
-    auto submitter = SubmitterAutoSync{ graphics_queue };
-    submitter.sync(syner, read_scope1);
-    submitter.sync(syner, read_scope2);
-    submitter.sync(syner, write_scope2);
-    submitter.submit();
+    graphics_submitter.sync(syner, read_scope1);
+    TOY_ASSERT_EQ(
+      sync_queue.popBufferBarrier(),
+      (BufferBarrier{
+        &graphics_submitter,
+        nullptr,
+        buffer.get(),
+        BarrierScope{ write_scope1.extractWriteAccess(), read_scope1 },
+        {},
+      })
+    );
+
+    graphics_submitter.sync(syner, read_scope2);
+    TOY_ASSERT_EQ(
+      sync_queue.popBufferBarrier(),
+      (BufferBarrier{
+        &graphics_submitter,
+        nullptr,
+        buffer.get(),
+        BarrierScope{ write_scope1.extractWriteAccess(), read_scope2 },
+        {},
+      })
+    );
+
+    graphics_submitter.sync(syner, write_scope2);
+    TOY_ASSERT_EQ(
+      sync_queue.popBufferBarrier(),
+      (BufferBarrier{
+        &graphics_submitter,
+        nullptr,
+        buffer.get(),
+        BarrierScope{ (read_scope1 | read_scope2).extractWriteAccess(), write_scope2 },
+      })
+    );
+
+    graphics_submitter.submit();
+    graphics_submitter.reset();
+    TOY_ASSERT(sync_queue.isEmpty());
   }
   // insert a syncHost between two submitters
   toy::debugf("insert a syncHost between two submitters");
   {
     syner.syncHost(AccessType::READ | AccessType::WRITE);
-    auto submitter = SubmitterAutoSync{ graphics_queue };
-    submitter.sync(syner, write_scope1);
-    submitter.submit();
+    TOY_ASSERT_EQ(
+      sync_queue.popBufferBarrier(true),
+      (BufferBarrier{
+        nullptr,
+        graphics_queue,
+        buffer.get(),
+        BarrierScope{
+          write_scope2.extractWriteAccess(),
+          Scope{
+            VK_PIPELINE_STAGE_2_HOST_BIT,
+            VK_ACCESS_2_HOST_READ_BIT | VK_ACCESS_2_HOST_WRITE_BIT,
+          },
+        },
+      })
+    );
+    graphics_submitter.sync(syner, write_scope1);
+    TOY_ASSERT(sync_queue.isEmpty());
+    graphics_submitter.submit();
+    graphics_submitter.reset();
+    TOY_ASSERT(sync_queue.isEmpty());
   }
+  // across family after syncHost
   {
     syner.syncHost(AccessType::READ | AccessType::WRITE);
-    auto submitter = SubmitterAutoSync{ transfer_queue };
-    submitter.sync(syner, write_scope1);
-    submitter.submit().hostWait();
+    TOY_ASSERT_EQ(
+      sync_queue.popBufferBarrier(true),
+      (BufferBarrier{
+        nullptr,
+        graphics_queue,
+        buffer.get(),
+        BarrierScope{
+          write_scope1.extractWriteAccess(),
+          Scope{
+            VK_PIPELINE_STAGE_2_HOST_BIT,
+            VK_ACCESS_2_HOST_READ_BIT | VK_ACCESS_2_HOST_WRITE_BIT,
+          },
+        },
+      })
+    );
+
+    transfer_submitter.sync(syner, write_scope2);
+    TOY_ASSERT_EQ(
+      sync_queue.popBufferBarrier(true),
+      (BufferBarrier{
+        nullptr,
+        graphics_queue,
+        buffer.get(),
+        BarrierScope{ {}, {} },
+        { graphics_family, transfer_family },
+      })
+    );
+    TOY_ASSERT_EQ(
+      sync_queue.popBufferBarrier(),
+      (BufferBarrier{
+        &transfer_submitter,
+        nullptr,
+        buffer.get(),
+        BarrierScope{ {}, write_scope2 },
+        { graphics_family, transfer_family },
+      })
+    );
+    auto wait_op = sync_queue.popWaitExecution();
+    TOY_ASSERT(wait_op.awaited_exec.getQueue() == graphics_queue);
+    TOY_ASSERT(wait_op.waiter == &transfer_submitter);
+    TOY_ASSERT(wait_op.wait_stage == VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
+
+    transfer_submitter.submit().hostWait();
+    transfer_submitter.reset();
+    TOY_ASSERT(sync_queue.isEmpty());
   }
+
+  // // across queue sync
+  // if (has_multi_queue) {
+  //   toy::debugf("across queue sync");
+  //   auto submitter = SubmitterAutoSync{ graphics_queue2 };
+
+  //   submitter.sync(syner, write_scope1);
+  //   auto wait_op = sync_tracker.popWaitExecution();
+  //   TOY_ASSERT_EQ(wait_op.awaited_exec, temp_exec);
+  //   TOY_ASSERT_EQ(wait_op.waiter, &submitter);
+  //   TOY_ASSERT_EQ(wait_op.wait_stage, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
+
+  //   submitter.sync(syner, read_scope1);
+  //   TOY_ASSERT_EQ(
+  //     sync_tracker.popBufferBarrier(),
+  //     (BufferBarrier{
+  //       buffer.get(),
+  //       BarrierScope{ write_scope1.extractWriteAccess(), read_scope1 },
+  //       {},
+  //     })
+  //   );
+
+  //   submitter.sync(syner, read_scope2);
+  //   TOY_ASSERT_EQ(
+  //     sync_tracker.popBufferBarrier(),
+  //     (BufferBarrier{
+  //       buffer.get(),
+  //       BarrierScope{ write_scope1.extractWriteAccess(), read_scope2 },
+  //       {},
+  //     })
+  //   );
+
+  //   submitter.sync(syner, write_scope2);
+  //   TOY_ASSERT_EQ(
+  //     sync_tracker.popBufferBarrier(),
+  //     (BufferBarrier{
+  //       buffer.get(),
+  //       BarrierScope{ (read_scope1 | read_scope2).extractWriteAccess(), write_scope2 },
+  //       {},
+  //     })
+  //   );
+
+  //   submitter.submit();
+  //   TOY_ASSERT(sync_tracker.isEmpty());
+  // }
 }

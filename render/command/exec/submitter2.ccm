@@ -34,6 +34,7 @@ public:
   void addSignal(VkSemaphore semaphore, VkPipelineStageFlags2 stage) {
     _batch.raw_signals.push_back({ stage, semaphore });
   }
+  // just a fat pointer to submitter, index and VkCommandBuffer
   class CommandBuffer {
   public:
     CommandBuffer() = default;
@@ -84,12 +85,88 @@ private:
   CommandBatch _batch;
 };
 
+struct BufferBarrier {
+  // if submitter is valid, queue will be nullptr; otherwise queue is valid and submitter is nullptr
+  Submitter*         submitter;
+  VkQueue            queue;
+  VkBuffer           buffer;
+  BarrierScope       scope;
+  FamilyTransferInfo family_info;
+
+  friend auto operator==(BufferBarrier const& x, BufferBarrier const& y) -> bool = default;
+
+  auto toJson() const -> json::Json {
+    return json::Json::array(
+      {
+        std::format("0x{:x}", uint64(submitter)),
+        std::format("0x{:x}", uint64(queue)),
+        std::format("0x{:x}", uint64(buffer)),
+        scope.src_scope.toJson(),
+        scope.dst_scope.toJson(),
+        family_info.src_family,
+        family_info.dst_family,
+      }
+    );
+  }
+};
+struct ImageBarrier {
+  // if submitter is valid, queue will be nullptr; otherwise queue is valid and submitter is nullptr
+  Submitter*           submitter;
+  VkQueue              queue;
+  VkImage              image;
+  LayoutTransitionInfo layout_transition;
+  BarrierScope         scope;
+  FamilyTransferInfo   family_info;
+
+  friend auto operator==(ImageBarrier const& x, ImageBarrier const& y) -> bool = default;
+};
+struct WaitExecution {
+  Execution             awaited_exec;
+  Submitter*            waiter;
+  VkPipelineStageFlags2 wait_stage;
+};
+class SyncOperationQueue {
+public:
+  SyncOperationQueue() = default;
+  auto popBufferBarrier(
+    bool invalid_submitter = false, std::source_location loc = std::source_location::current()
+  ) -> BufferBarrier {
+    toy::checkf(loc, !_buffer_barriers.empty(), "no buffer barrier to pop");
+    auto barrier = _buffer_barriers.front();
+    _buffer_barriers.pop();
+    if (invalid_submitter) {
+      barrier.submitter = nullptr;
+    } else {
+      barrier.queue = nullptr;
+    }
+    return barrier;
+  }
+  auto popWaitExecution(std::source_location loc = std::source_location::current())
+    -> WaitExecution {
+    toy::checkf(loc, !_wait_executions.empty(), "no wait execution to pop");
+    auto exec = _wait_executions.front();
+    _wait_executions.pop();
+    return exec;
+  }
+  auto isEmpty() -> bool { return _buffer_barriers.empty() && _wait_executions.empty(); }
+  void push(BufferBarrier barrier) { _buffer_barriers.push(std::move(barrier)); }
+  void push(WaitExecution exec) { _wait_executions.push(std::move(exec)); }
+
+private:
+  std::queue<BufferBarrier> _buffer_barriers;
+  std::queue<WaitExecution> _wait_executions;
+};
+
 class Synchronizer {
 public:
   Synchronizer(VkBuffer buffer) : _context(BufferContext{ buffer }) {}
   Synchronizer(VkImage image, VkImageSubresourceRange subresource_range)
     : _context(ImageContext{ image, subresource_range }) {}
   UNCOPYABLE_MOVEABLE(Synchronizer)
+  void setSyncOperationQueue(SyncOperationQueue& queue) {
+    _context.sync_op_queue = &queue;
+    _sync_op_queue = &queue;
+  }
   void startExecution(Submitter& submitter) {
     _now_submitter = &submitter;
     TOY_ASSERT(!_is_recording);
@@ -191,6 +268,9 @@ public:
   }
   void addWait(Execution exec, VkPipelineStageFlags2 stage) {
     TOY_ASSERT(_is_recording);
+    if (_sync_op_queue) {
+      _sync_op_queue->push(WaitExecution{ exec, _now_submitter, stage });
+    }
     _now_submitter->addWait(std::move(exec), stage);
   }
 
@@ -199,12 +279,11 @@ public:
     TOY_ASSERT(std::holds_alternative<BufferContext>(_context));
     TOY_ASSERT(!_is_recording);
     TOY_ASSERT(access);
-    auto& [buffer, tracker] = std::get<BufferContext>(_context);
+    auto& tracker = std::get<BufferContext>(_context).tracker;
     if (_prev_exec.valid()) {
       auto need_sync = tracker.getAllNeedSync();
       if (need_sync) {
-        auto prev_family = QueueManager::getInstance().getFamilyIndex(_prev_exec.getQueue());
-        auto cmdbuf = CmdbufManager::getInstance().get(prev_family);
+        auto submitter = Submitter{ _prev_exec.getQueue() };
         auto dst_scope = Scope{
           .stage_mask = VK_PIPELINE_STAGE_2_HOST_BIT,
         };
@@ -215,17 +294,8 @@ public:
           dst_scope.access_mask |= VK_ACCESS_2_HOST_WRITE_BIT;
         }
         // use _context.recordBarrier to log
-        _context.recordBarrier(cmdbuf, *need_sync, dst_scope);
-        // recordBufferBarrier(cmdbuf, buffer, BarrierScope{ *need_sync, dst_scope }, {});
-        auto cmdbufs = std::vector<RecordableCmdbuf>{};
-        cmdbufs.push_back(std::move(cmdbuf));
-        auto exec = Execution{
-          _prev_exec.getQueue(),
-          CommandBatch{
-            .cmdbufs = std::move(cmdbufs),
-          },
-        };
-        exec.hostWait();
+        _context.recordBarrier(submitter.getLastCommandBuffer(), *need_sync, dst_scope);
+        submitter.submit().hostWait();
         tracker.resetScope();
       }
     }
@@ -242,8 +312,10 @@ private:
     ImageScopeTracker       tracker;
   };
   struct ContextVariant : std::variant<BufferContext, ImageContext> {
+    SyncOperationQueue* sync_op_queue;
+
     void recordBarrier(
-      VkCommandBuffer cmdbuf, ScopeVariant const& src_scope, ScopeVariant const& dst_scope
+      Submitter::CommandBuffer cmdbuf, ScopeVariant const& src_scope, ScopeVariant const& dst_scope
     ) {
       toy::debugf(
         "record barrier: \n\tsrc_scope: \n{}\n\tdst_scope: \n{}",
@@ -257,6 +329,17 @@ private:
           BarrierScope{ std::get<Scope>(src_scope), std::get<Scope>(dst_scope) },
           {}
         );
+        if (sync_op_queue) {
+          sync_op_queue->push(
+            BufferBarrier{
+              .submitter = &cmdbuf.getSubmitter(),
+              .queue = cmdbuf.getSubmitter().getQueue(),
+              .buffer = buffer_context->buffer,
+              .scope = BarrierScope{ std::get<Scope>(src_scope), std::get<Scope>(dst_scope) },
+              .family_info = {},
+            }
+          );
+        }
       } else if (auto* image_context = std::get_if<ImageContext>(this)) {
         recordImageBarrier(
           cmdbuf,
@@ -277,10 +360,10 @@ private:
       }
     }
     void recordReleaseBarrier(
-      VkCommandBuffer     cmdbuf,
-      ScopeVariant const& src_scope,
-      ScopeVariant const& dst_scope,
-      FamilyTransferInfo  family_info
+      Submitter::CommandBuffer cmdbuf,
+      ScopeVariant const&      src_scope,
+      ScopeVariant const&      dst_scope,
+      FamilyTransferInfo       family_info
     ) {
       toy::debugf(
         "record release barrier: \n\tsrc_scope: \n{}\n\tfamily: {} -> {}",
@@ -295,6 +378,17 @@ private:
           BarrierScope::release(std::get<Scope>(src_scope)),
           family_info
         );
+        if (sync_op_queue) {
+          sync_op_queue->push(
+            BufferBarrier{
+              .submitter = &cmdbuf.getSubmitter(),
+              .queue = cmdbuf.getSubmitter().getQueue(),
+              .buffer = buffer_context->buffer,
+              .scope = BarrierScope::release(std::get<Scope>(src_scope)),
+              .family_info = family_info,
+            }
+          );
+        }
       } else if (auto* image_context = std::get_if<ImageContext>(this)) {
         recordImageBarrier(
           cmdbuf,
@@ -312,10 +406,10 @@ private:
       }
     }
     void recordAcquireBarrier(
-      VkCommandBuffer     cmdbuf,
-      ScopeVariant const& src_scope,
-      ScopeVariant const& dst_scope,
-      FamilyTransferInfo  family_info
+      Submitter::CommandBuffer cmdbuf,
+      ScopeVariant const&      src_scope,
+      ScopeVariant const&      dst_scope,
+      FamilyTransferInfo       family_info
     ) {
       toy::debugf(
         "record acquire barrier: \n\tdst_scope: \n{}\n\tfamily: {} -> {}",
@@ -330,6 +424,17 @@ private:
           BarrierScope::acquire(std::get<Scope>(dst_scope)),
           family_info
         );
+        if (sync_op_queue) {
+          sync_op_queue->push(
+            BufferBarrier{
+              .submitter = &cmdbuf.getSubmitter(),
+              .queue = cmdbuf.getSubmitter().getQueue(),
+              .buffer = buffer_context->buffer,
+              .scope = BarrierScope::acquire(std::get<Scope>(dst_scope)),
+              .family_info = family_info,
+            }
+          );
+        }
       } else if (auto* image_context = std::get_if<ImageContext>(this)) {
         recordImageBarrier(
           cmdbuf,
@@ -392,19 +497,21 @@ private:
       }
     }
   };
-  ContextVariant _context;
-  Execution      _prev_exec;
+  ContextVariant      _context;
+  Execution           _prev_exec;
   // use to make sure must call a sync() between startExecution and endExecution
-  bool           _synced_in_exec = false;
+  bool                _synced_in_exec = false;
   // use to make sure start -> end, and must call sync between them, call syncHost outside
-  bool           _is_recording = false;
-  Submitter*     _now_submitter{};
+  bool                _is_recording = false;
+  Submitter*          _now_submitter{};
+  SyncOperationQueue* _sync_op_queue;
 };
 
 class BufferSynchronizer : private Synchronizer {
 public:
   BufferSynchronizer(VkBuffer buffer) : Synchronizer(buffer) {}
   using Synchronizer::endExecution;
+  using Synchronizer::setSyncOperationQueue;
   using Synchronizer::startExecution;
   void sync(Scope scope, std::optional<Submitter::CommandBuffer> cmdbuf = std::nullopt) {
     Synchronizer::sync(scope, std::move(cmdbuf));
@@ -417,6 +524,7 @@ public:
   ImageSynchronizer(VkImage image, VkImageSubresourceRange subresource_range)
     : Synchronizer(image, subresource_range) {}
   using Synchronizer::endExecution;
+  using Synchronizer::setSyncOperationQueue;
   using Synchronizer::startExecution;
   void sync(ImageScope scope, std::optional<Submitter::CommandBuffer> cmdbuf = std::nullopt) {
     Synchronizer::sync(scope, std::move(cmdbuf));
@@ -457,7 +565,13 @@ public:
       syner->endExecution(execution);
     }
     _buffer_syners.clear();
+    _image_syners.clear();
     return execution;
+  }
+  void reset() {
+    Submitter::reset();
+    _buffer_syners.clear();
+    _image_syners.clear();
   }
 
 private:
@@ -466,3 +580,5 @@ private:
 };
 
 } // namespace rd::exec
+
+CUSTOM_FORMATTER_JSON(rd::exec::BufferBarrier, [](auto& x) { return x.toJson(); });

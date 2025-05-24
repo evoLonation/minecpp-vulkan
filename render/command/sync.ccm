@@ -196,9 +196,7 @@ struct Scope {
   }
   auto getAccessType() -> AccessType { return checkAccessType(access_mask); }
 
-  friend auto operator==(const Scope& lhs, const Scope& rhs) -> bool {
-    return lhs.stage_mask == rhs.stage_mask && lhs.access_mask == rhs.access_mask;
-  }
+  friend auto operator==(const Scope& lhs, const Scope& rhs) -> bool = default;
   friend auto operator|(const Scope& lhs, const Scope& rhs) -> Scope {
     return {
       .stage_mask = lhs.stage_mask | rhs.stage_mask,
@@ -265,11 +263,15 @@ struct BarrierScope {
       dst_scope,
     };
   }
+  friend auto operator==(const BarrierScope& lhs, const BarrierScope& rhs) -> bool = default;
 };
 
 struct FamilyTransferInfo {
   uint32 src_family = VK_QUEUE_FAMILY_IGNORED;
   uint32 dst_family = VK_QUEUE_FAMILY_IGNORED;
+
+  friend auto operator==(const FamilyTransferInfo& lhs, const FamilyTransferInfo& rhs)
+    -> bool = default;
 };
 
 void recordBufferBarrier(
@@ -282,6 +284,9 @@ void recordBufferBarrier(
 struct LayoutTransitionInfo {
   VkImageLayout src_layout;
   VkImageLayout dst_layout;
+
+  friend auto operator==(const LayoutTransitionInfo& lhs, const LayoutTransitionInfo& rhs)
+    -> bool = default;
 };
 
 void recordImageBarrier(

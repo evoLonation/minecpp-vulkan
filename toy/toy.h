@@ -14,14 +14,18 @@
   )
 
 #define TOY_ASSERT_EQ(a, b)                                                                        \
-  toy::throwf(                                                                                     \
-    static_cast<bool>(a == b),                                                                     \
-    "{}",                                                                                          \
-    toy::macro::nextLineIfExist(                                                                   \
-      "assert error: " #a " == " #b,                                                               \
-      toy::macro::nameTupleFormatIfCan({ #a "," #b }, toy::macro::getRefTuple(a, b))               \
-    )                                                                                              \
-  )
+  do {                                                                                             \
+    auto a_ = a;                                                                                   \
+    auto b_ = b;                                                                                   \
+    toy::throwf(                                                                                   \
+      static_cast<bool>(a_ == b_),                                                                 \
+      "{}",                                                                                        \
+      toy::macro::nextLineIfExist(                                                                 \
+        "assert error: " #a " == " #b,                                                             \
+        toy::macro::nameTupleFormatIfCan({ #a "," #b }, toy::macro::getRefTuple(a_, b_))           \
+      )                                                                                            \
+    );                                                                                             \
+  } while (0)
 
 #define TOY_CHECK(condition, ...)                                                                  \
   toy::checkf(                                                                                     \
