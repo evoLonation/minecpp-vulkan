@@ -25,14 +25,17 @@ PFN_vkReleaseSwapchainImagesEXT p_PFN_vkReleaseSwapchainImagesEXT = nullptr;
 PFN_vkQueueSubmit2KHR           p_PFN_vkQueueSubmit2KHR = nullptr;
 PFN_vkCmdPipelineBarrier2KHR    p_PFN_vkCmdPipelineBarrier2KHR = nullptr;
 
+bool enable_release_swapchain_images = true;
+
 void loadDeviceFunctions(VkDevice device) {
 #define REGISTER_DEVICE_FUNC(name)                                                                 \
   p_PFN_##name = reinterpret_cast<PFN_##name>(vkGetDeviceProcAddr(device, #name));                 \
   if (p_PFN_##name == nullptr) {                                                                   \
     toy::throwf("error: {} not found", #name);                                                     \
   }
-
-  REGISTER_DEVICE_FUNC(vkReleaseSwapchainImagesEXT);
+  if (enable_release_swapchain_images) {
+    REGISTER_DEVICE_FUNC(vkReleaseSwapchainImagesEXT);
+  }
   REGISTER_DEVICE_FUNC(vkQueueSubmit2KHR);
   REGISTER_DEVICE_FUNC(vkCmdPipelineBarrier2KHR);
 #undef REGISTER_DEVICE_FUNC

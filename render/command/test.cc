@@ -12,6 +12,7 @@ import render.queue;
 import render.sampler;
 import render.cmdbuf;
 import render.buffer;
+import render.loader;
 
 #include <test.h>
 #include <toy.h>
@@ -216,6 +217,7 @@ TEST(ImageTracker) {
 }
 
 auto createDeviceAndQueueManager(uint32 graphics_queue_count) -> toy::Expected<std::any> {
+  rd::enable_release_swapchain_images = false;
   auto queue_builder = QueueManagerBuilder{
     std::vector<QueueFamilyRequirement>{
       QueueFamilyRequirement{
